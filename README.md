@@ -171,8 +171,9 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | Shared enums, domain schemas, ID conventions, and API response models | Implemented |
 | Project CRUD APIs and persistence | Implemented |
 | ClientInput APIs and persistence foundation | Implemented; requirement processing remains planned |
+| Orchestrator core policy, workflow snapshot, and event history | Implemented; later executable transitions remain planned |
 | First Orchestrator transition and WorkflowEvent persistence | Implemented only for `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, with a ClientInput prerequisite |
-| Backend test suite | Implemented; 135 tests passing in the current verified suite |
+| Backend test suite | Implemented; 146 tests passing in the current verified suite |
 | Frontend application | Planned; not initialized |
 | Agent intelligence, approval APIs, and later workflow stages | Planned |
 | Remaining artifact persistence, traceability behavior, reports, and integrations | Planned |

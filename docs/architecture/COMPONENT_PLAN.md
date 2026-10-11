@@ -112,7 +112,16 @@ This map translates the approved architecture into implementation ownership and 
 | IDs produced | `EVT-###`, approved `APP-###`, and relevant `TRACE-###` where orchestration creates links |
 | Dependencies | All four agents, Shared Knowledge Base, canonical stages/decisions, approval UI, report completion checks |
 | Must not do | Perform agent domain work, skip/auto-approve gates, hide failures, exceed retry limits, overwrite approved versions, allow agent-controlled global transitions |
-| Current status | The authenticated, owner-scoped first next-step endpoint, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS` transition, ClientInput prerequisite, and WorkflowEvent persistence are implemented. Remaining stages, approvals, failure routing, retries, escalation, correction loops, and UI remain planned |
+| Current status | The centralized transition policy and stage ownership metadata, authenticated owner-scoped workflow snapshot/event-history endpoints, first next-step endpoint, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS` transition, ClientInput prerequisite, and WorkflowEvent persistence are implemented. The O2 Approval persistence contract is approved but not implemented. O3 approval-driven transitions, O4 REJECT/REQUEST_CHANGES routing, O6 HOLD/release behavior, other later transitions, failure routing, retries, escalation, correction loops, and UI remain planned |
+
+### Orchestrator Phase Boundaries
+
+- **O2 — approved contract, not implemented:** authenticate and authorize the Project owner, validate the matching H1-H5 waiting stage, append an immutable Approval, identify the newest gate decision as effective, and append exactly one `APPROVAL_DECISION` event without changing `Project.current_stage`.
+- **O3 — planned:** consume an effective `APPROVE`, execute the canonical forward Project transition, and create `STAGE_CHANGED`.
+- **O4 — planned:** implement REJECT routing and REQUEST_CHANGES correction routing.
+- **O6 — planned:** persist richer `ON_HOLD` runtime state and implement authorized release/resume behavior.
+
+These phases preserve four research agents. Project ownership remains the O2 authorization boundary; no reviewer roles, RBAC, teams, organizations, or `reviewer_user_id` are introduced.
 
 ## 6. Shared Knowledge Base
 

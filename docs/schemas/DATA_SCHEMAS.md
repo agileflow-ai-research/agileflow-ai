@@ -329,13 +329,22 @@ Source-supported `module_type` values are `BACKEND`, `FRONTEND`, `CONFIG`, and `
 - **Producer:** human reviewer through approval UI/API; stored/coordinated by the Orchestrator.
 - **Consumers:** Orchestrator, all agents, workflow UI, Reports/Traceability.
 - **ID:** `approval_id` using the approved `APP-###` format.
-- **Required by File 12 for every decision:** `project_id`, `gate_id`, `reviewer_name` or `reviewer_role`, `decision`, `comment`, `timestamp`, `artifact_version`, `next_stage`.
-- **Additional File 06 fields:** `approval_id`, `artifact_type`.
+- **Active O2 fields:** `approval_id`, `project_id`, `gate_id`, `reviewer_name`, `reviewer_role`, `decision`, `comment`, `timestamp`, `artifact_version`, `next_stage`.
+- **Client-provided fields:** `reviewer_name`, `reviewer_role`, `decision`, `comment`, `artifact_version`. At least one reviewer identity field is required; `decision` and `comment` are required; `artifact_version` is a required positive integer.
+- **Route-derived/server-controlled fields:** `project_id`, `gate_id`, `approval_id`, `timestamp`, `next_stage`. The client must not submit these fields. `project_id` uses `PRJ-###`, `approval_id` uses `APP-###`, the route supplies the project, the endpoint supplies the gate, and the server generates the identifier and timestamp.
 - **Relationships:** refers to one gate and reviewed artifact version; an approved decision permits only the defined next stage.
 - **Traceability:** decision/comment/version become workflow and report evidence.
-- **Lifecycle:** append decision records; lock accepted artifact versions; do not silently approve or overwrite history.
+- **Lifecycle:** append immutable decision records; never overwrite earlier history. Multiple records for the same `project_id + gate_id` are allowed, and the newest record for that pair is the effective/current decision. No uniqueness constraint is defined on `project_id + gate_id`.
 
-File 06 uses `gate`, `reviewer_comment`, `reviewed_by`, and `reviewed_at`, whereas specialized File 12 uses `gate_id`, `comment`, reviewer name/role, and `timestamp`. The approved shared schema adopts File 12 terminology; legacy aliases are not part of the current implementation.
+For O2, `artifact_version` is supplied by the reviewer/client and represents the positive integer version of the artifact or artifact package reviewed at the gate. O2 does not validate it against, update, or lock component-specific artifact collections and does not define multi-artifact version matching. Artifact-lock enforcement remains planned with the relevant artifact pipelines.
+
+`next_stage` is server-derived. An `APPROVE` records the canonical forward stage for the gate: H1 → `DESIGN_IN_PROGRESS`, H2 → `TEST_PLANNING_IN_PROGRESS`, H3 → `IMPLEMENTATION_IN_PROGRESS`, H4 → `VALIDATION_IN_PROGRESS`, and H5 → `COMPLETED`. `REJECT`, `REQUEST_CHANGES`, and `HOLD` record the current matching `Hx_WAITING_APPROVAL` stage. O2 persists the decision but does not mutate `Project.current_stage`.
+
+File 06 historically mentions `artifact_type`, but it is not part of the active approved O2 Approval schema. `reviewer_user_id` is also not approved. File 06's legacy `gate`, `reviewer_comment`, `reviewed_by`, and `reviewed_at` names remain superseded by `gate_id`, `comment`, reviewer name/role, and `timestamp`.
+
+Every successfully persisted Approval creates exactly one `APPROVAL_DECISION` WorkflowEvent and no `STAGE_CHANGED` event. O3 owns approval-driven stage transitions. O4 owns later REJECT/REQUEST_CHANGES routing, and O6 owns richer HOLD persistence and release behavior.
+
+The O2 contract is approved but its API, persistence, and event behavior are not yet implemented.
 
 ## TraceabilityLink
 

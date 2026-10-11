@@ -17,7 +17,7 @@ class OrchestratorRepositoryError(RuntimeError):
 
 
 class OrchestratorRepository:
-    """Persistence operations required for controlled workflow transitions."""
+    """Persistence operations for workflow state and event history."""
 
     def __init__(self, database: Database[dict[str, Any]] | None = None) -> None:
         configured_database = database if database is not None else get_database()
@@ -76,6 +76,18 @@ class OrchestratorRepository:
         except PyMongoError as exc:
             raise OrchestratorRepositoryError(
                 "Could not check workflow prerequisites"
+            ) from exc
+
+    def list_workflow_events(self, project_id: str) -> list[dict[str, Any]]:
+        try:
+            documents = self._workflow_events.find(
+                {"project_id": project_id},
+                {"_id": 0},
+            ).sort([("created_at", 1), ("event_id", 1)])
+            return [self._public_document(document) for document in documents]
+        except PyMongoError as exc:
+            raise OrchestratorRepositoryError(
+                "Could not list workflow events"
             ) from exc
 
     def persist_stage_change(

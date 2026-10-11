@@ -18,6 +18,12 @@ from app.modules.orchestrator.repository import (
     OrchestratorRepository,
     OrchestratorRepositoryError,
 )
+from app.modules.orchestrator.policy import (
+    STAGE_OWNERS,
+    TRANSITIONS,
+    get_transition,
+    is_legal_transition,
+)
 from app.modules.orchestrator.router import get_orchestrator_repository
 from app.schemas.workflow import WorkflowEvent
 
@@ -72,6 +78,13 @@ class FakeOrchestratorRepository:
         return any(
             item["project_id"] == project_id for item in self.client_inputs
         )
+
+    def list_workflow_events(self, project_id: str) -> list[dict[str, Any]]:
+        return [
+            event.model_dump(mode="python")
+            for event in self.events
+            if event.project_id == project_id
+        ]
 
     def persist_stage_change(
         self,
@@ -319,6 +332,247 @@ def test_transition_does_not_change_another_project(
     assert repository.projects["PRJ-002"]["current_stage"] == "PROJECT_CREATED"
 
 
+def test_transition_policy_contains_the_canonical_forward_sequence() -> None:
+    stages = list(WorkflowStage)
+
+    assert set(STAGE_OWNERS) == set(stages)
+    assert [transition.source_stage for transition in TRANSITIONS] == stages[:-1]
+    assert [transition.target_stage for transition in TRANSITIONS] == stages[1:]
+    assert all(
+        is_legal_transition(source, target)
+        for source, target in zip(stages, stages[1:])
+    )
+
+
+def test_stage_ownership_uses_only_official_component_names() -> None:
+    assert STAGE_OWNERS[WorkflowStage.PROJECT_CREATED] == (
+        "Central SDLC Orchestrator / shared foundation"
+    )
+    assert STAGE_OWNERS[WorkflowStage.REQUIREMENTS_IN_PROGRESS] == (
+        "Requirement Gathering and Analysis Agent"
+    )
+    assert STAGE_OWNERS[WorkflowStage.DESIGN_IN_PROGRESS] == (
+        "Project Management and Design Agent"
+    )
+    assert STAGE_OWNERS[WorkflowStage.TEST_PLANNING_IN_PROGRESS] == (
+        "Testing, Validation and Security Agent"
+    )
+    assert STAGE_OWNERS[WorkflowStage.IMPLEMENTATION_IN_PROGRESS] == (
+        "Implementation and Git Automation Agent"
+    )
+    assert STAGE_OWNERS[WorkflowStage.VALIDATION_IN_PROGRESS] == (
+        "Testing, Validation and Security Agent"
+    )
+    assert all(
+        "Human approval managed by Central SDLC Orchestrator"
+        == STAGE_OWNERS[stage]
+        for stage in (
+            WorkflowStage.H1_WAITING_APPROVAL,
+            WorkflowStage.H2_WAITING_APPROVAL,
+            WorkflowStage.H3_WAITING_APPROVAL,
+            WorkflowStage.H4_WAITING_APPROVAL,
+            WorkflowStage.H5_WAITING_APPROVAL,
+        )
+    )
+    assert not any(
+        forbidden in owner
+        for owner in STAGE_OWNERS.values()
+        for forbidden in (
+            "Agent 1",
+            "Agent 2",
+            "Agent 3",
+            "Agent 4",
+            "Pre-Code Test Planning Agent",
+        )
+    )
+
+
+def test_only_first_transition_is_currently_executable() -> None:
+    executable = [transition for transition in TRANSITIONS if transition.executable]
+
+    assert len(executable) == 1
+    assert executable[0].source_stage is WorkflowStage.PROJECT_CREATED
+    assert executable[0].target_stage is WorkflowStage.REQUIREMENTS_IN_PROGRESS
+    assert get_transition(WorkflowStage.REQUIREMENTS_IN_PROGRESS) is not None
+    assert not get_transition(WorkflowStage.REQUIREMENTS_IN_PROGRESS).executable
+
+
+def test_workflow_snapshot_reports_available_first_transition(
+    orchestrator_client,
+) -> None:
+    client, repository = orchestrator_client
+    original_project = deepcopy(repository.projects["PRJ-001"])
+
+    response = client.get("/api/v1/projects/PRJ-001/workflow")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "project_id": "PRJ-001",
+        "current_stage": "PROJECT_CREATED",
+        "current_stage_owner": (
+            "Central SDLC Orchestrator / shared foundation"
+        ),
+        "next_stage": "REQUIREMENTS_IN_PROGRESS",
+        "next_stage_owner": "Requirement Gathering and Analysis Agent",
+        "next_transition_available": True,
+        "approval_gate": None,
+    }
+    assert repository.projects["PRJ-001"] == original_project
+    assert repository.events == []
+
+
+def test_workflow_snapshot_reports_unsatisfied_client_input(
+    authentication_context,
+) -> None:
+    repository = FakeOrchestratorRepository(has_input=False)
+    app.dependency_overrides[get_orchestrator_repository] = lambda: repository
+    try:
+        response = authentication_context.client().get(
+            "/api/v1/projects/PRJ-001/workflow"
+        )
+    finally:
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["next_stage"] == "REQUIREMENTS_IN_PROGRESS"
+    assert response.json()["data"]["next_transition_available"] is False
+
+
+def test_workflow_snapshot_shows_structural_but_unavailable_later_transition(
+    authentication_context,
+) -> None:
+    repository = FakeOrchestratorRepository(
+        stage=WorkflowStage.REQUIREMENTS_IN_PROGRESS
+    )
+    app.dependency_overrides[get_orchestrator_repository] = lambda: repository
+    try:
+        response = authentication_context.client().get(
+            "/api/v1/projects/PRJ-001/workflow"
+        )
+    finally:
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["next_stage"] == "H1_WAITING_APPROVAL"
+    assert data["next_stage_owner"] == (
+        "Human approval managed by Central SDLC Orchestrator"
+    )
+    assert data["approval_gate"] == "H1"
+    assert data["next_transition_available"] is False
+
+
+def test_workflow_snapshot_requires_owner_authentication(
+    orchestrator_client,
+    authentication_context,
+) -> None:
+    anonymous = authentication_context.anonymous_client().get(
+        "/api/v1/projects/PRJ-001/workflow"
+    )
+    foreign = authentication_context.client("USR-002").get(
+        "/api/v1/projects/PRJ-001/workflow"
+    )
+    missing = orchestrator_client[0].get(
+        "/api/v1/projects/PRJ-999/workflow"
+    )
+
+    assert anonymous.status_code == 401
+    assert foreign.status_code == 404
+    assert missing.status_code == 404
+    assert foreign.json() == missing.json()
+
+
+def test_workflow_snapshot_is_project_specific(orchestrator_client) -> None:
+    client, repository = orchestrator_client
+    second = project_document(WorkflowStage.REQUIREMENTS_IN_PROGRESS)
+    second["project_id"] = "PRJ-002"
+    repository.projects["PRJ-002"] = second
+
+    first_snapshot = client.get("/api/v1/projects/PRJ-001/workflow").json()[
+        "data"
+    ]
+    second_snapshot = client.get("/api/v1/projects/PRJ-002/workflow").json()[
+        "data"
+    ]
+
+    assert first_snapshot["current_stage"] == "PROJECT_CREATED"
+    assert second_snapshot["current_stage"] == "REQUIREMENTS_IN_PROGRESS"
+
+
+def _event(
+    event_id: str,
+    project_id: str,
+    created_at: datetime,
+) -> WorkflowEvent:
+    return WorkflowEvent(
+        event_id=event_id,
+        project_id=project_id,
+        event_type=EventType.STAGE_CHANGED,
+        source_component="Central SDLC Orchestrator",
+        target_component="Requirement Gathering and Analysis Agent",
+        stage_before=WorkflowStage.PROJECT_CREATED,
+        stage_after=WorkflowStage.REQUIREMENTS_IN_PROGRESS,
+        message="Test transition",
+        created_at=created_at,
+    )
+
+
+def test_event_history_is_scoped_ordered_and_public(orchestrator_client) -> None:
+    client, repository = orchestrator_client
+    repository.events.extend(
+        [
+            _event("EVT-003", "PRJ-001", datetime(2026, 1, 3, tzinfo=timezone.utc)),
+            _event("EVT-001", "PRJ-001", datetime(2026, 1, 1, tzinfo=timezone.utc)),
+            _event("EVT-002", "PRJ-002", datetime(2026, 1, 2, tzinfo=timezone.utc)),
+        ]
+    )
+
+    response = client.get("/api/v1/projects/PRJ-001/events")
+
+    assert response.status_code == 200
+    assert [item["event_id"] for item in response.json()["data"]] == [
+        "EVT-001",
+        "EVT-003",
+    ]
+    assert all("_id" not in item for item in response.json()["data"])
+
+
+def test_event_history_empty_and_requires_owner_authentication(
+    orchestrator_client,
+    authentication_context,
+) -> None:
+    client, _ = orchestrator_client
+
+    empty = client.get("/api/v1/projects/PRJ-001/events")
+    anonymous = authentication_context.anonymous_client().get(
+        "/api/v1/projects/PRJ-001/events"
+    )
+    foreign = authentication_context.client("USR-002").get(
+        "/api/v1/projects/PRJ-001/events"
+    )
+
+    assert empty.status_code == 200
+    assert empty.json()["data"] == []
+    assert anonymous.status_code == 401
+    assert foreign.status_code == 404
+
+
+def test_event_history_missing_project_matches_foreign_not_found(
+    orchestrator_client,
+    authentication_context,
+) -> None:
+    owner_client, _ = orchestrator_client
+
+    missing = owner_client.get("/api/v1/projects/PRJ-999/events")
+    foreign = authentication_context.client("USR-002").get(
+        "/api/v1/projects/PRJ-001/events"
+    )
+
+    assert missing.status_code == 404
+    assert foreign.status_code == 404
+    assert missing.json() == foreign.json()
+
+
 def test_repository_selects_only_canonical_transition_collections() -> None:
     class FakeCollection:
         pass
@@ -347,7 +601,12 @@ def test_exact_orchestrator_route_and_existing_project_routes() -> None:
     orchestrator_operations = {
         (method.upper(), path)
         for path, operations in paths.items()
-        if "/orchestrator/" in path
+        if path
+        in {
+            "/api/v1/projects/{project_id}/workflow",
+            "/api/v1/projects/{project_id}/orchestrator/next-step",
+            "/api/v1/projects/{project_id}/events",
+        }
         for method in operations
     }
     project_operations = {
@@ -362,7 +621,9 @@ def test_exact_orchestrator_route_and_existing_project_routes() -> None:
     }
 
     assert orchestrator_operations == {
-        ("POST", "/api/v1/projects/{project_id}/orchestrator/next-step")
+        ("GET", "/api/v1/projects/{project_id}/workflow"),
+        ("POST", "/api/v1/projects/{project_id}/orchestrator/next-step"),
+        ("GET", "/api/v1/projects/{project_id}/events"),
     }
     assert project_operations == {
         ("POST", "/api/v1/projects"),

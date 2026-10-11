@@ -35,14 +35,14 @@ backend/
 │   │   ├── implementation/     # package placeholder
 │   │   └── reports/            # package placeholder
 │   └── schemas/                # shared domain schemas
-├── tests/                       # 135-test backend suite
+├── tests/                       # 146-test backend suite
 ├── .env.example
 └── requirements.txt
 ```
 
-Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable `get_current_user` authentication, centralized Project ownership authorization, owner-scoped Project CRUD and ClientInput access, the owner-scoped first Orchestrator transition with ClientInput prerequisite and WorkflowEvent persistence, and backend tests.
+Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable `get_current_user` authentication, centralized Project ownership authorization, owner-scoped Project CRUD and ClientInput access, the centralized Orchestrator transition policy and stage ownership metadata, workflow snapshot/event-history endpoints, the owner-scoped first transition with ClientInput prerequisite and WorkflowEvent persistence, and backend tests.
 
-Not implemented: Project sharing/collaboration, Requirement Agent processing or intelligence, approval APIs/gate processing, later Orchestrator transitions, failure routing, retry loops, traceability persistence/generation, reports, frontend, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
+Not implemented: Project sharing/collaboration, Requirement Agent processing or intelligence, approval APIs/gate processing, later executable Orchestrator transitions, failure routing, retry loops, traceability persistence/generation, reports, frontend, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
 
 ## Approved Backend Stack
 
@@ -201,6 +201,14 @@ The Orchestrator alone enforces:
 - final completion only after H5 approval and validation evidence.
 
 Every major action should create/update the relevant artifacts, traceability links, and workflow events when those features are implemented.
+
+### Approved O2 Approval Persistence Contract
+
+O2 is approved but not implemented. Its future approval routes must follow `get_current_user` → `authorize_project_access` → approval service → approval repository. The route supplies `project_id`, the gate-specific endpoint supplies `gate_id`, and the server generates `APP-###` `approval_id`, UTC `timestamp`, and `next_stage`. Clients supply only `reviewer_name`, `reviewer_role`, `decision`, `comment`, and a positive integer `artifact_version`; at least one reviewer identity field is required. Extra server-controlled fields, `artifact_type`, and `reviewer_user_id` must be rejected. O2 records the reviewed version but does not validate, update, or lock specialist artifact records.
+
+Approval records are immutable and append-only. Multiple records for one `project_id + gate_id` are permitted, the newest is effective, and no uniqueness constraint may be placed on that pair. The canonical persistence target is the existing `approvals` collection. A prototype largest-`APP-###` scan-and-increment allocator may be used later, with its concurrency limitation documented; no counter collection is approved.
+
+Every successfully persisted O2 decision creates exactly one `APPROVAL_DECISION` WorkflowEvent, with the matching waiting stage used for both `stage_before` and `stage_after`. O2 never changes `Project.current_stage` and never creates `STAGE_CHANGED`. APPROVE records the canonical forward `next_stage`; REJECT, REQUEST_CHANGES, and HOLD record the current waiting stage and block forward progression. O3 owns the later APPROVE transition and `STAGE_CHANGED`; O4 owns correction/routing; O6 owns richer HOLD/release behavior.
 
 ## Error Handling and Logging
 
