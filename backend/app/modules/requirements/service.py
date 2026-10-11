@@ -3,7 +3,11 @@ from datetime import datetime, timezone
 
 from pydantic import ValidationError
 
-from app.common.id_generator import validate_id
+from app.modules.auth.authorization import (
+    ProjectAccessNotFoundError,
+    authorize_project_access,
+)
+from app.modules.auth.schemas import UserPublicResponse
 from app.modules.requirements.repository import (
     ClientInputRepository,
     ClientInputRepositoryError,
@@ -12,10 +16,6 @@ from app.modules.requirements.schemas import (
     ClientInputCreateRequest,
     ClientInputResponse,
 )
-
-
-class ClientInputProjectNotFoundError(LookupError):
-    """Raised when the owning project does not exist."""
 
 
 class ClientInputServiceError(RuntimeError):
@@ -41,11 +41,10 @@ class ClientInputService:
         self,
         project_id: str,
         request: ClientInputCreateRequest,
+        current_user: UserPublicResponse,
     ) -> ClientInputResponse:
-        validate_id(project_id, "PRJ")
         try:
-            if not self._repository.project_exists(project_id):
-                raise ClientInputProjectNotFoundError(project_id)
+            authorize_project_access(project_id, current_user, self._repository)
 
             client_input = ClientInputResponse(
                 project_id=project_id,
@@ -58,26 +57,31 @@ class ClientInputService:
             )
             document = self._repository.create_client_input(client_input)
             return ClientInputResponse.model_validate(document)
-        except ClientInputProjectNotFoundError:
+        except ProjectAccessNotFoundError:
             raise
         except (ClientInputRepositoryError, ValidationError) as exc:
             raise ClientInputServiceError(
                 "Client input creation failed"
             ) from exc
 
-    def list_client_inputs(self, project_id: str) -> list[ClientInputResponse]:
-        validate_id(project_id, "PRJ")
+    def list_client_inputs(
+        self,
+        project_id: str,
+        current_user: UserPublicResponse,
+    ) -> list[ClientInputResponse]:
         try:
-            if not self._repository.project_exists(project_id):
-                raise ClientInputProjectNotFoundError(project_id)
+            authorize_project_access(project_id, current_user, self._repository)
 
             return [
                 ClientInputResponse.model_validate(document)
                 for document in self._repository.list_client_inputs(project_id)
             ]
-        except ClientInputProjectNotFoundError:
+        except ProjectAccessNotFoundError:
             raise
         except (ClientInputRepositoryError, ValidationError) as exc:
             raise ClientInputServiceError(
                 "Client input listing failed"
             ) from exc
+
+
+ClientInputProjectNotFoundError = ProjectAccessNotFoundError

@@ -5,6 +5,8 @@ from fastapi.responses import JSONResponse
 
 from app.common.response import ErrorDetail, ErrorResponse, SuccessResponse
 from app.common.status import WorkflowStage
+from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.schemas import UserPublicResponse
 from app.modules.orchestrator.repository import OrchestratorRepository
 from app.modules.orchestrator.schemas import WorkflowTransitionResult
 from app.modules.orchestrator.service import (
@@ -39,6 +41,7 @@ OrchestratorServiceDependency = Annotated[
     OrchestratorService,
     Depends(get_orchestrator_service),
 ]
+CurrentUserDependency = Annotated[UserPublicResponse, Depends(get_current_user)]
 
 
 def _error_response(
@@ -66,9 +69,10 @@ def _error_response(
 def next_step(
     project_id: str,
     service: OrchestratorServiceDependency,
+    current_user: CurrentUserDependency,
 ) -> SuccessResponse[WorkflowTransitionResult] | JSONResponse:
     try:
-        transition = service.next_step(project_id)
+        transition = service.next_step(project_id, current_user)
     except MissingClientInputError as exc:
         return _error_response(
             status.HTTP_409_CONFLICT,

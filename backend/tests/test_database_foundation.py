@@ -4,6 +4,7 @@ from app.database import mongodb
 
 
 EXPECTED_COLLECTIONS = {
+    "USERS": "users",
     "PROJECTS": "projects",
     "CLIENT_INPUTS": "client_inputs",
     "REQUIREMENTS": "requirements",
@@ -47,21 +48,33 @@ class FakeMongoClient:
 def test_mongodb_settings_defaults(monkeypatch) -> None:
     monkeypatch.delenv("MONGODB_URI", raising=False)
     monkeypatch.delenv("MONGODB_DATABASE", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.delenv("JWT_ALGORITHM", raising=False)
+    monkeypatch.delenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", raising=False)
 
     configured_settings = Settings(_env_file=None)
 
     assert configured_settings.mongodb_uri == "mongodb://localhost:27017"
     assert configured_settings.mongodb_database == "agileflow_ai"
+    assert configured_settings.jwt_secret_key is None
+    assert configured_settings.jwt_algorithm == "HS256"
+    assert configured_settings.jwt_access_token_expire_minutes == 60
 
 
 def test_mongodb_settings_read_environment(monkeypatch) -> None:
     monkeypatch.setenv("MONGODB_URI", "mongodb://db.example.test:27018")
     monkeypatch.setenv("MONGODB_DATABASE", "agileflow_test")
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-only-secret")
+    monkeypatch.setenv("JWT_ALGORITHM", "HS256")
+    monkeypatch.setenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 
     configured_settings = Settings(_env_file=None)
 
     assert configured_settings.mongodb_uri == "mongodb://db.example.test:27018"
     assert configured_settings.mongodb_database == "agileflow_test"
+    assert configured_settings.jwt_secret_key == "test-only-secret"
+    assert configured_settings.jwt_algorithm == "HS256"
+    assert configured_settings.jwt_access_token_expire_minutes == 30
 
 
 def test_official_collection_names() -> None:

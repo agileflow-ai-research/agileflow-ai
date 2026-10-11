@@ -28,6 +28,7 @@ INITIAL_TIME = datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
 def project_document(stage: WorkflowStage) -> dict[str, Any]:
     return {
         "project_id": "PRJ-001",
+        "owner_user_id": "USR-001",
         "name": "Book Management System",
         "domain": "Library / Education",
         "description": "A controlled sample project",
@@ -75,13 +76,18 @@ class FakeOrchestratorRepository:
     def persist_stage_change(
         self,
         project_id: str,
+        owner_user_id: str,
         stage_before: WorkflowStage,
         stage_after: WorkflowStage,
         updated_at: datetime,
         event: WorkflowEvent,
     ) -> dict[str, Any] | None:
         document = self.projects.get(project_id)
-        if document is None or document["current_stage"] != stage_before.value:
+        if (
+            document is None
+            or document.get("owner_user_id") != owner_user_id
+            or document["current_stage"] != stage_before.value
+        ):
             return None
 
         document["current_stage"] = stage_after.value
@@ -94,13 +100,13 @@ class FakeOrchestratorRepository:
 
 
 @pytest.fixture
-def orchestrator_client():
+def orchestrator_client(authentication_context):
     repository = FakeOrchestratorRepository()
     app.dependency_overrides[get_orchestrator_repository] = lambda: repository
     try:
-        yield TestClient(app), repository
+        yield authentication_context.client(), repository
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
 
 
 def test_valid_first_transition_updates_project_and_creates_event(
@@ -152,15 +158,17 @@ def test_next_step_rejects_invalid_project_id(orchestrator_client) -> None:
     assert repository.events == []
 
 
-def test_next_step_returns_not_found_for_missing_project() -> None:
+def test_next_step_returns_not_found_for_missing_project(
+    authentication_context,
+) -> None:
     repository = FakeOrchestratorRepository(stage=None)
     app.dependency_overrides[get_orchestrator_repository] = lambda: repository
     try:
-        response = TestClient(app).post(
+        response = authentication_context.client().post(
             "/api/v1/projects/PRJ-999/orchestrator/next-step"
         )
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
 
     assert response.status_code == 404
     assert response.json()["errors"] == [
@@ -168,15 +176,17 @@ def test_next_step_returns_not_found_for_missing_project() -> None:
     ]
 
 
-def test_project_created_without_client_input_cannot_advance() -> None:
+def test_project_created_without_client_input_cannot_advance(
+    authentication_context,
+) -> None:
     repository = FakeOrchestratorRepository(has_input=False)
     app.dependency_overrides[get_orchestrator_repository] = lambda: repository
     try:
-        response = TestClient(app).post(
+        response = authentication_context.client().post(
             "/api/v1/projects/PRJ-001/orchestrator/next-step"
         )
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
 
     assert response.status_code == 409
     payload = response.json()
@@ -195,15 +205,18 @@ def test_project_created_without_client_input_cannot_advance() -> None:
         WorkflowStage.COMPLETED,
     ],
 )
-def test_unsupported_stage_does_not_advance(stage: WorkflowStage) -> None:
+def test_unsupported_stage_does_not_advance(
+    stage: WorkflowStage,
+    authentication_context,
+) -> None:
     repository = FakeOrchestratorRepository(stage=stage)
     app.dependency_overrides[get_orchestrator_repository] = lambda: repository
     try:
-        response = TestClient(app).post(
+        response = authentication_context.client().post(
             "/api/v1/projects/PRJ-001/orchestrator/next-step"
         )
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
 
     assert response.status_code == 409
     payload = response.json()
@@ -261,6 +274,49 @@ def test_event_failure_is_reported_after_stage_update(orchestrator_client) -> No
         "REQUIREMENTS_IN_PROGRESS"
     )
     assert repository.events == []
+
+
+def test_next_step_requires_authentication(authentication_context) -> None:
+    response = authentication_context.anonymous_client().post(
+        "/api/v1/projects/PRJ-001/orchestrator/next-step"
+    )
+
+    assert response.status_code == 401
+
+
+def test_foreign_user_cannot_advance_project(
+    orchestrator_client,
+    authentication_context,
+) -> None:
+    _, repository = orchestrator_client
+    original_project = deepcopy(repository.projects["PRJ-001"])
+
+    response = authentication_context.client("USR-002").post(
+        "/api/v1/projects/PRJ-001/orchestrator/next-step"
+    )
+
+    assert response.status_code == 404
+    assert repository.projects["PRJ-001"] == original_project
+    assert repository.events == []
+
+
+def test_transition_does_not_change_another_project(
+    orchestrator_client,
+) -> None:
+    client, repository = orchestrator_client
+    second_project = project_document(WorkflowStage.PROJECT_CREATED)
+    second_project["project_id"] = "PRJ-002"
+    repository.projects["PRJ-002"] = second_project
+
+    response = client.post(
+        "/api/v1/projects/PRJ-001/orchestrator/next-step"
+    )
+
+    assert response.status_code == 200
+    assert repository.projects["PRJ-001"]["current_stage"] == (
+        "REQUIREMENTS_IN_PROGRESS"
+    )
+    assert repository.projects["PRJ-002"]["current_stage"] == "PROJECT_CREATED"
 
 
 def test_repository_selects_only_canonical_transition_collections() -> None:

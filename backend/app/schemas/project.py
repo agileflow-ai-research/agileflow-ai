@@ -10,6 +10,7 @@ class Project(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     project_id: str
+    owner_user_id: str
     name: str
     domain: str
     description: str
@@ -23,3 +24,8 @@ class Project(BaseModel):
     @classmethod
     def validate_project_id(cls, value: str) -> str:
         return validate_id(value, "PRJ")
+
+    @field_validator("owner_user_id")
+    @classmethod
+    def validate_owner_user_id(cls, value: str) -> str:
+        return validate_id(value, "USR")

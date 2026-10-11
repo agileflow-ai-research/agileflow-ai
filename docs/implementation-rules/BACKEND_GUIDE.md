@@ -18,13 +18,14 @@ backend/
 │   │   └── errors.py           # placeholder
 │   ├── database/
 │   │   ├── mongodb.py          # shared client/database/ping/close helpers
-│   │   └── collections.py      # 14 canonical collection constants
+│   │   └── collections.py      # 15 canonical collection constants
 │   ├── common/
 │   │   ├── response.py         # shared response models
 │   │   ├── status.py           # shared enums
 │   │   ├── id_generator.py     # canonical ID helpers
 │   │   └── traceability.py     # shared traceability validation
 │   ├── modules/
+│   │   ├── auth/               # registration, login, JWT, and /auth/me
 │   │   ├── projects/           # Project CRUD module
 │   │   ├── approvals/          # package placeholder
 │   │   ├── orchestrator/       # first transition only
@@ -34,14 +35,14 @@ backend/
 │   │   ├── implementation/     # package placeholder
 │   │   └── reports/            # package placeholder
 │   └── schemas/                # shared domain schemas
-├── tests/                       # 76-test backend suite
+├── tests/                       # 135-test backend suite
 ├── .env.example
 └── requirements.txt
 ```
 
-Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, collection constants, shared enums/schemas/response and ID helpers, layered Project CRUD, layered ClientInput persistence, the first Orchestrator transition with ClientInput prerequisite and WorkflowEvent persistence, and backend tests.
+Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable `get_current_user` authentication, centralized Project ownership authorization, owner-scoped Project CRUD and ClientInput access, the owner-scoped first Orchestrator transition with ClientInput prerequisite and WorkflowEvent persistence, and backend tests.
 
-Not implemented: Requirement Agent processing or intelligence, approval APIs/gate processing, later Orchestrator transitions, failure routing, retry loops, traceability persistence/generation, reports, frontend, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
+Not implemented: Project sharing/collaboration, Requirement Agent processing or intelligence, approval APIs/gate processing, later Orchestrator transitions, failure routing, retry loops, traceability persistence/generation, reports, frontend, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
 
 ## Approved Backend Stack
 
@@ -95,6 +96,9 @@ The health endpoint and unit tests do not require a live MongoDB server. A real 
 - `FRONTEND_ORIGIN`
 - `MONGODB_URI` (safe local default)
 - `MONGODB_DATABASE`
+- `JWT_SECRET_KEY` with no production-suitable default; `.env.example` may contain only a safe placeholder
+- `JWT_ALGORITHM` with recommended prototype value `HS256`
+- `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` with recommended prototype value `60`
 
 Keep real values in ignored `.env`; `.env.example` contains safe examples only. Never hardcode or document credentials.
 
@@ -123,6 +127,17 @@ app/modules/<module_name>/
 
 The direction is `router → service → repository → database`. Services may call the Orchestrator through an approved interface but must not duplicate global transition rules.
 
+The shared authentication and ownership boundary is:
+
+```text
+request
+  → get_current_user
+  → authorize_project_access
+  → component service
+```
+
+JWT parsing is implemented in the reusable `get_current_user` authentication dependency. Project ownership authorization is implemented in the shared `authorize_project_access` boundary; routers and agents must not duplicate either concern.
+
 ## Shared MongoDB Foundation
 
 `app/database/mongodb.py` is the canonical database module. It creates one reusable `MongoClient` from `settings.mongodb_uri`, selects `settings.mongodb_database`, exposes `get_database()`, supplies `ping_database()`, and supplies `close_mongodb_client()`.
@@ -135,7 +150,7 @@ Rules:
 - Do not hardcode credentials or Atlas strings.
 - Close the client during an approved application shutdown lifecycle when lifecycle handling is implemented.
 
-The canonical collections are `projects`, `client_inputs`, `requirements`, `design_artifacts`, `backlog_items`, `test_cases`, `implementation_artifacts`, `execution_logs`, `test_results`, `security_findings`, `bug_reports`, `approvals`, `traceability_links`, and `workflow_events`.
+The canonical collection set contains 15 implemented constants: `users`, `projects`, `client_inputs`, `requirements`, `design_artifacts`, `backlog_items`, `test_cases`, `implementation_artifacts`, `execution_logs`, `test_results`, `security_findings`, `bug_reports`, `approvals`, `traceability_links`, and `workflow_events`. Do not create alternate user collections.
 
 ## API and Response Rules
 
@@ -156,11 +171,13 @@ Use the shared response shape:
 
 Validation/error responses retain the same fields with `success: false`, `data: null`, and structured error items. File 11's alternate `workflow_status`, `traceability_updated`, `error_code`, and `details` shape is not the canonical envelope.
 
+JWT Bearer registration, login, token validation, and `/auth/me` are implemented. Missing or invalid authentication returns HTTP 401. Every currently implemented Project-scoped endpoint enforces ownership through the Project record. Authenticated access to a missing, ownerless legacy, or non-owned Project returns HTTP 404 to avoid disclosing another user's project identifier. Future Project-scoped routes must reuse the same boundary.
+
 ## Data, IDs, and Traceability
 
 Follow [DATA_SCHEMAS.md](../schemas/DATA_SCHEMAS.md). Important artifacts carry project/artifact identifiers, type, title, status, approval gate, creator, timestamps, version, and traceability references. Do not duplicate Project, Requirement, TestCase, Approval, or traceability models.
 
-Preserve the ID families `PRJ`, `REQ`, `US`, `AC`, `DES`, `API`, `DB`, `TASK`, `TEST`, `CODE`, `BUG`, `SEC`, `TRACE`, and `EVT` as documented. The required research trace is:
+Preserve the ID families `USR`, `PRJ`, `REQ`, `US`, `AC`, `DES`, `API`, `DB`, `TASK`, `TEST`, `CODE`, `BUG`, `SEC`, `TRACE`, `EVT`, and `APP` as documented. `USR-###` identifies a user; `Project.owner_user_id` is assigned server-side from that authenticated user. The required research trace is:
 
 ```text
 Requirement → Design → Backlog → Test → Code
@@ -228,6 +245,9 @@ Cross-module or shared-contract changes require coordination and documentation u
 ## Security and Secrets
 
 - Keep secrets only in ignored local environment configuration.
+- Hash passwords with Argon2; never persist or return plaintext passwords, and never expose `password_hash`.
+- Load JWT signing secrets from environment configuration; never hardcode them or place private user data or project IDs in tokens.
+- Keep authentication and ownership centralized through reusable dependencies/helpers; do not trust a syntactically valid `project_id` without ownership authorization.
 - Maintain safe `.env.example` placeholders; never store usernames/passwords or private URIs.
 - Do not log credentials, tokens, private uploaded data, or complete sensitive content.
 - Sanitize upload names and use project-scoped storage when uploads are implemented.

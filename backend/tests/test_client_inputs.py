@@ -28,9 +28,13 @@ TEXT_INPUT = {
 }
 
 
-def project_document(project_id: str) -> dict[str, Any]:
+def project_document(
+    project_id: str,
+    owner_user_id: str = "USR-001",
+) -> dict[str, Any]:
     return {
         "project_id": project_id,
+        "owner_user_id": owner_user_id,
         "name": f"Project {project_id}",
         "domain": "Education",
         "description": "Client input test project",
@@ -60,9 +64,10 @@ class FakeClientInputRepository:
     def _public(document: dict[str, Any]) -> dict[str, Any]:
         return {key: value for key, value in document.items() if key != "_id"}
 
-    def project_exists(self, project_id: str) -> bool:
+    def get_project(self, project_id: str) -> dict[str, Any] | None:
         self._check_available()
-        return project_id in self.projects
+        document = self.projects.get(project_id)
+        return self._public(deepcopy(document)) if document is not None else None
 
     def create_client_input(
         self,
@@ -91,13 +96,13 @@ class FakeClientInputRepository:
 
 
 @pytest.fixture
-def client_input_client():
+def client_input_client(authentication_context):
     repository = FakeClientInputRepository()
     app.dependency_overrides[get_client_input_repository] = lambda: repository
     try:
-        yield TestClient(app), repository
+        yield authentication_context.client(), repository
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_client_input_repository, None)
 
 
 def test_create_text_client_input_successfully(client_input_client) -> None:
@@ -279,6 +284,34 @@ def test_client_input_repository_failure_is_safe(client_input_client) -> None:
 
     assert response.status_code == 503
     assert "private database detail" not in response.text
+
+
+def test_client_input_routes_require_authentication(authentication_context) -> None:
+    client = authentication_context.anonymous_client()
+
+    assert client.post(
+        "/api/v1/projects/PRJ-001/inputs",
+        json=TEXT_INPUT,
+    ).status_code == 401
+    assert client.get("/api/v1/projects/PRJ-001/inputs").status_code == 401
+
+
+def test_foreign_user_cannot_create_or_list_project_inputs(
+    client_input_client,
+    authentication_context,
+) -> None:
+    _, repository = client_input_client
+    foreign_client = authentication_context.client("USR-002")
+
+    create_response = foreign_client.post(
+        "/api/v1/projects/PRJ-001/inputs",
+        json=TEXT_INPUT,
+    )
+    list_response = foreign_client.get("/api/v1/projects/PRJ-001/inputs")
+
+    assert create_response.status_code == 404
+    assert list_response.status_code == 404
+    assert repository.client_inputs == []
 
 
 def test_client_input_type_values_are_exact() -> None:

@@ -51,9 +51,13 @@ class FakeProjectRepository:
         self.documents[project.project_id] = document
         return self._public(deepcopy(document))
 
-    def list_projects(self) -> list[dict[str, Any]]:
+    def list_projects(self, owner_user_id: str) -> list[dict[str, Any]]:
         self._check_available()
-        return [self._public(deepcopy(document)) for document in self.documents.values()]
+        return [
+            self._public(deepcopy(document))
+            for document in self.documents.values()
+            if document.get("owner_user_id") == owner_user_id
+        ]
 
     def get_project(self, project_id: str) -> dict[str, Any] | None:
         self._check_available()
@@ -63,24 +67,25 @@ class FakeProjectRepository:
     def update_project(
         self,
         project_id: str,
+        owner_user_id: str,
         updates: dict[str, Any],
     ) -> dict[str, Any] | None:
         self._check_available()
         document = self.documents.get(project_id)
-        if document is None:
+        if document is None or document.get("owner_user_id") != owner_user_id:
             return None
         document.update(updates)
         return self._public(deepcopy(document))
 
 
 @pytest.fixture
-def project_client() -> tuple[TestClient, FakeProjectRepository]:
+def project_client(authentication_context) -> tuple[TestClient, FakeProjectRepository]:
     repository = FakeProjectRepository()
     app.dependency_overrides[get_project_repository] = lambda: repository
     try:
-        yield TestClient(app), repository
+        yield authentication_context.client(), repository
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_project_repository, None)
 
 
 def create_project(client: TestClient, payload: dict[str, str] | None = None):
@@ -107,6 +112,7 @@ def test_create_project_successfully(project_client) -> None:
     payload = response.json()
     assert payload["success"] is True
     assert payload["data"]["project_id"] == "PRJ-001"
+    assert payload["data"]["owner_user_id"] == "USR-001"
     assert payload["data"]["current_stage"] == "PROJECT_CREATED"
     assert payload["workflow_stage"] == "PROJECT_CREATED"
     assert payload["data"]["status"] == "IN_PROGRESS"
@@ -214,8 +220,11 @@ def test_update_missing_project(project_client) -> None:
     ("field", "value"),
     [
         ("project_id", "PRJ-999"),
+        ("owner_user_id", "USR-002"),
         ("current_stage", "COMPLETED"),
         ("created_at", "2026-01-01T00:00:00Z"),
+        ("updated_at", "2026-01-01T00:00:00Z"),
+        ("status", "COMPLETED"),
     ],
 )
 def test_update_rejects_protected_fields(project_client, field, value) -> None:
@@ -281,11 +290,100 @@ def test_database_failure_does_not_expose_exception(project_client) -> None:
     assert response.json()["errors"][0]["field"] == "database"
 
 
+def test_project_routes_require_authentication(authentication_context) -> None:
+    client = authentication_context.anonymous_client()
+
+    assert client.post("/api/v1/projects", json=CREATE_PAYLOAD).status_code == 401
+    assert client.get("/api/v1/projects").status_code == 401
+    assert client.get("/api/v1/projects/PRJ-001").status_code == 401
+    assert client.patch(
+        "/api/v1/projects/PRJ-001",
+        json={"name": "Blocked"},
+    ).status_code == 401
+
+
+def test_create_rejects_client_controlled_owner(project_client) -> None:
+    client, repository = project_client
+
+    response = create_project(
+        client,
+        {**CREATE_PAYLOAD, "owner_user_id": "USR-002"},
+    )
+
+    assert response.status_code == 422
+    assert repository.documents == {}
+
+
+def test_project_listing_is_owner_scoped(
+    project_client,
+    authentication_context,
+) -> None:
+    owner_a_client, _ = project_client
+    owner_b_client = authentication_context.client("USR-002")
+    create_project(owner_a_client, {**CREATE_PAYLOAD, "name": "Owner A one"})
+    create_project(owner_a_client, {**CREATE_PAYLOAD, "name": "Owner A two"})
+    create_project(owner_b_client, {**CREATE_PAYLOAD, "name": "Owner B"})
+
+    owner_a_projects = owner_a_client.get("/api/v1/projects").json()["data"]
+    owner_b_projects = owner_b_client.get("/api/v1/projects").json()["data"]
+
+    assert [item["project_id"] for item in owner_a_projects] == [
+        "PRJ-001",
+        "PRJ-002",
+    ]
+    assert [item["project_id"] for item in owner_b_projects] == ["PRJ-003"]
+    assert {item["owner_user_id"] for item in owner_a_projects} == {"USR-001"}
+    assert owner_b_projects[0]["owner_user_id"] == "USR-002"
+
+
+def test_foreign_project_get_and_update_use_safe_not_found(
+    project_client,
+    authentication_context,
+) -> None:
+    owner_client, repository = project_client
+    foreign_client = authentication_context.client("USR-002")
+    create_project(owner_client)
+    original = deepcopy(repository.documents["PRJ-001"])
+
+    missing = foreign_client.get("/api/v1/projects/PRJ-999")
+    foreign_get = foreign_client.get("/api/v1/projects/PRJ-001")
+    foreign_patch = foreign_client.patch(
+        "/api/v1/projects/PRJ-001",
+        json={"name": "Foreign update"},
+    )
+
+    assert foreign_get.status_code == 404
+    assert foreign_patch.status_code == 404
+    assert foreign_get.json() == missing.json()
+    assert repository.documents["PRJ-001"] == original
+
+
+def test_legacy_ownerless_project_is_not_accessible(
+    project_client,
+) -> None:
+    client, repository = project_client
+    now = datetime.now(timezone.utc)
+    repository.documents["PRJ-001"] = {
+        "project_id": "PRJ-001",
+        "name": "Legacy",
+        "domain": "Legacy",
+        "description": "No owner",
+        "current_stage": "PROJECT_CREATED",
+        "status": "IN_PROGRESS",
+        "created_by": "legacy",
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    assert client.get("/api/v1/projects/PRJ-001").status_code == 404
+
+
 def test_project_repository_uses_projects_collection_and_strips_mongodb_id() -> None:
     now = datetime(2026, 10, 11, 12, 0, tzinfo=timezone.utc)
     document = {
         "_id": "mongo-internal-id",
         "project_id": "PRJ-001",
+        "owner_user_id": "USR-001",
         "name": "Book Management System",
         "domain": "Library / Education",
         "description": "A controlled sample project",
@@ -298,6 +396,7 @@ def test_project_repository_uses_projects_collection_and_strips_mongodb_id() -> 
 
     class FakeCollection:
         def find(self, query, projection):
+            assert query == {"owner_user_id": "USR-001"}
             return [deepcopy(document)]
 
     class FakeDatabase:
@@ -311,7 +410,7 @@ def test_project_repository_uses_projects_collection_and_strips_mongodb_id() -> 
     database = FakeDatabase()
     repository = ProjectRepository(database)
 
-    projects = repository.list_projects()
+    projects = repository.list_projects("USR-001")
 
     assert database.requested_collection == PROJECTS
     assert projects[0]["project_id"] == "PRJ-001"
@@ -337,6 +436,32 @@ def test_only_canonical_project_routes_are_registered() -> None:
         ("GET", "/api/v1/projects/{project_id}"),
         ("PATCH", "/api/v1/projects/{project_id}"),
     }
+
+
+def test_all_current_project_scoped_routes_require_bearer_authentication() -> None:
+    paths = app.openapi()["paths"]
+    operations = {
+        ("post", "/api/v1/projects"),
+        ("get", "/api/v1/projects"),
+        ("get", "/api/v1/projects/{project_id}"),
+        ("patch", "/api/v1/projects/{project_id}"),
+        ("post", "/api/v1/projects/{project_id}/inputs"),
+        ("get", "/api/v1/projects/{project_id}/inputs"),
+        (
+            "post",
+            "/api/v1/projects/{project_id}/orchestrator/next-step",
+        ),
+    }
+
+    for method, path in operations:
+        assert paths[path][method]["security"] == [{"HTTPBearer": []}]
+
+
+def test_project_request_schemas_do_not_accept_owner_user_id() -> None:
+    schemas = app.openapi()["components"]["schemas"]
+
+    assert "owner_user_id" not in schemas["ProjectCreateRequest"]["properties"]
+    assert "owner_user_id" not in schemas["ProjectUpdateRequest"]["properties"]
 
 
 def test_swagger_and_openapi_remain_available(project_client) -> None:

@@ -5,6 +5,11 @@ from fastapi.responses import JSONResponse
 
 from app.common.response import ErrorDetail, ErrorResponse
 from app.core.config import settings
+from app.modules.auth.dependencies import (
+    AuthenticationError,
+    AuthenticationServiceError,
+)
+from app.modules.auth.router import router as auth_router
 from app.modules.orchestrator.router import router as orchestrator_router
 from app.modules.projects.router import router as projects_router
 from app.modules.requirements.router import router as client_inputs_router
@@ -23,6 +28,49 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(AuthenticationError)
+async def authentication_exception_handler(
+    request: Request,
+    exc: AuthenticationError,
+) -> JSONResponse:
+    del request, exc
+    payload = ErrorResponse(
+        message="Authentication failed",
+        errors=[
+            ErrorDetail(
+                field="authorization",
+                message="Authentication failed",
+            )
+        ],
+    )
+    return JSONResponse(
+        status_code=401,
+        content=payload.model_dump(mode="json"),
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+@app.exception_handler(AuthenticationServiceError)
+async def authentication_service_exception_handler(
+    request: Request,
+    exc: AuthenticationServiceError,
+) -> JSONResponse:
+    del request, exc
+    payload = ErrorResponse(
+        message="Authentication failed",
+        errors=[
+            ErrorDetail(
+                field="authentication",
+                message="Authentication service is unavailable",
+            )
+        ],
+    )
+    return JSONResponse(
+        status_code=503,
+        content=payload.model_dump(mode="json"),
+    )
 
 
 @app.exception_handler(RequestValidationError)
@@ -47,6 +95,7 @@ async def request_validation_exception_handler(
     )
 
 
+app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(projects_router, prefix=settings.api_v1_prefix)
 app.include_router(orchestrator_router, prefix=settings.api_v1_prefix)
 app.include_router(client_inputs_router, prefix=settings.api_v1_prefix)

@@ -84,6 +84,7 @@ def test_event_type_values_are_limited_to_documented_types() -> None:
 
 
 def test_generate_id_is_deterministic_and_zero_padded() -> None:
+    assert generate_id("USR", 1) == "USR-001"
     assert generate_id("PRJ", 1) == "PRJ-001"
     assert generate_id("REQ", 12) == "REQ-012"
     assert generate_id("APP", 3) == "APP-003"
@@ -98,6 +99,7 @@ def test_generate_id_rejects_unapproved_prefix() -> None:
 def test_project_schema_accepts_documented_fields() -> None:
     project = Project(
         project_id="PRJ-001",
+        owner_user_id="USR-001",
         name="Book Management System",
         domain="Library / Education",
         description="A controlled sample project",
@@ -112,6 +114,7 @@ def test_project_schema_accepts_documented_fields() -> None:
     assert project.current_stage is WorkflowStage.PROJECT_CREATED
     assert set(Project.model_fields) == {
         "project_id",
+        "owner_user_id",
         "name",
         "domain",
         "description",
@@ -127,6 +130,23 @@ def test_project_schema_rejects_invalid_project_id() -> None:
     with pytest.raises(ValidationError):
         Project(
             project_id="REQ-001",
+            owner_user_id="USR-001",
+            name="Book Management System",
+            domain="Library / Education",
+            description="A controlled sample project",
+            current_stage=WorkflowStage.PROJECT_CREATED,
+            status=ArtifactStatus.IN_PROGRESS,
+            created_by="foundation_user",
+            created_at=NOW,
+            updated_at=NOW,
+        )
+
+
+def test_project_schema_rejects_invalid_owner_user_id() -> None:
+    with pytest.raises(ValidationError):
+        Project(
+            project_id="PRJ-001",
+            owner_user_id="PRJ-001",
             name="Book Management System",
             domain="Library / Education",
             description="A controlled sample project",

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     mongodb_uri: str = "mongodb://localhost:27017"
     mongodb_database: str = "agileflow_ai"
+    jwt_secret_key: str | None = None
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 60
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",
