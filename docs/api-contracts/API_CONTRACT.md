@@ -80,16 +80,47 @@ The only verified HTTP endpoint is `GET /health` at the application root. It is 
 
 File 12 describes a retry action but File 06 does not include a canonical retry route. No retry endpoint is established by this contract; retry execution requires human contract approval before implementation.
 
+For the first approved transition, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, the Orchestrator must verify that at least one ClientInput exists for the project. If no ClientInput exists, the transition is blocked: the project stage is not changed and no `STAGE_CHANGED` event is created.
+
 ## Requirement Gathering and Analysis Routes
 
 | Method | Path | Purpose | Owner | Request schema/reference | Response schema/reference | Approval relevance | Status |
 |---|---|---|---|---|---|---|---|
-| POST | `/api/v1/projects/{project_id}/inputs` | Upload or submit client inputs | Requirement Gathering and Analysis Agent | Body/upload fields not formally defined | Client input schema not formally defined | Input to H1 artifacts | Planned |
-| GET | `/api/v1/projects/{project_id}/inputs` | List submitted input sources | Requirement Gathering and Analysis Agent | Path parameter | Client input schema not formally defined | Supports H1 review | Planned |
+| POST | `/api/v1/projects/{project_id}/inputs` | Submit a client input | Requirement Gathering and Analysis Agent | ClientInput creation request | ClientInput | Input to H1 artifacts; does not advance workflow | Planned |
+| GET | `/api/v1/projects/{project_id}/inputs` | List submitted input sources | Requirement Gathering and Analysis Agent | Path parameter | Project-scoped ClientInput list without MongoDB `_id` | Supports H1 review | Planned |
 | POST | `/api/v1/projects/{project_id}/requirements/process` | Generate structured requirements | Requirement Gathering and Analysis Agent | Input references/body not formally defined | Requirement, UserStory, AcceptanceCriteria | Produces H1 package | Planned |
 | GET | `/api/v1/projects/{project_id}/requirements` | Get requirements, stories, and acceptance criteria | Requirement Gathering and Analysis Agent | Path parameter | Requirement, UserStory, AcceptanceCriteria | Reviewed at H1 | Planned |
 | POST | `/api/v1/projects/{project_id}/requirements/clarifications` | Add clarification questions or human feedback | Requirement Gathering and Analysis Agent | Not formally defined | Not formally defined | Supports H1 correction loop | Planned |
 | POST | `/api/v1/projects/{project_id}/approvals/h1` | Record requirement decision | Requirement Gathering and Analysis Agent / Orchestrator | Approval fields | Approval | H1 | Planned |
+
+### ClientInput Request and Response Contract
+
+The ClientInput creation request has these required client-provided fields:
+
+- `input_type`
+- `content`
+
+It may also include these optional client-provided fields:
+
+- `original_filename`
+- `mime_type`
+- `metadata`
+
+The server supplies `project_id` from the canonical path parameter and sets `created_at`. These fields are not client-controlled. MongoDB `_id` is an internal persistence field and must never be exposed as a public API identifier. ClientInput has no public ID and no new ID prefix is established.
+
+`content` is a string in the Sprint 1 foundation. Supported `input_type` values and meanings are:
+
+| `input_type` | Meaning |
+|---|---|
+| `TEXT` | Typed or chat textual input; `content` contains the client-provided text. |
+| `DOCUMENT` | Document-based input; `content` may initially contain a stored reference or already-extracted textual representation. |
+| `AUDIO` | Recorded audio input; `content` may initially contain a stored reference or already-extracted textual representation. |
+| `VIDEO` | Recorded video input; `content` may initially contain a stored reference or already-extracted textual representation. |
+| `LIVE_INTERVIEW` | Captured live-interview input; `content` may initially contain a stored reference or already-extracted textual representation. |
+
+Multipart upload fields and behavior are not defined. This contract does not establish storage-path guarantees beyond permitting `content` to hold a prototype reference. It does not include transcription, parsing, extraction, live capture, requirement processing, or AI/LLM behavior.
+
+Creating a ClientInput persists it for the path project only. Creation must not change the project's workflow stage, process requirements, call an LLM, or create an H1 approval. Listing inputs returns only records belonging to the path project and excludes internal MongoDB `_id`.
 
 ## Project Management and Design Routes
 

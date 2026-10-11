@@ -36,6 +36,8 @@ This document is the shared data-contract baseline. No Pydantic domain schemas a
 
 File 06 shows `APP-001` as an Approval example but does not include an approval family in its common ID-standard table. The approval ID format therefore requires human confirmation before implementation; do not silently establish a new canonical family.
 
+ClientInput has no approved public identifier or ID prefix. In particular, no `INPUT-###` family is established. MongoDB `_id` is internal persistence state and must not be exposed through the public API.
+
 ## Common Artifact Fields
 
 File 11 requires every important artifact to carry:
@@ -149,6 +151,32 @@ The workflow rules also require events for project creation, agent completion, a
 - **Lifecycle:** `current_stage` uses WorkflowStage; `status` uses the applicable project/artifact status concept pending model approval.
 
 File 06's sample `REQUIREMENT_GATHERING` stage is superseded by File 12's canonical detailed stages.
+
+## ClientInput
+
+- **Purpose:** preserve project-owned client input before requirement processing.
+- **Producer:** client/user through the Requirement Gathering and Analysis Agent input API.
+- **Consumers:** Requirement Gathering and Analysis Agent and Central SDLC Orchestrator.
+- **Public ID:** none. MongoDB `_id` remains internal and is never returned as a public identifier.
+- **Required client-provided fields:** `input_type`, `content`.
+- **Optional client-provided fields:** `original_filename`, `mime_type`, `metadata`.
+- **Server-controlled fields:** `project_id`, `created_at`.
+- **Relationships:** belongs to exactly one `PRJ-###` project and may later be referenced by requirements.
+- **Lifecycle:** creation stores input only; it does not advance workflow, process requirements, call an LLM, or create an H1 approval.
+
+`content` is a string for the Sprint 1 foundation. Approved `input_type` values are:
+
+| Value | Semantics |
+|---|---|
+| `TEXT` | Typed or chat textual input. `content` contains the client-provided text. |
+| `DOCUMENT` | Document-based input. `content` may initially contain a stored reference or already-extracted textual representation. |
+| `AUDIO` | Recorded audio input. `content` may initially contain a stored reference or already-extracted textual representation. |
+| `VIDEO` | Recorded video input. `content` may initially contain a stored reference or already-extracted textual representation. |
+| `LIVE_INTERVIEW` | Captured live-interview input. `content` may initially contain a stored reference or already-extracted textual representation. |
+
+Actual multipart upload behavior and fields are not defined. No storage-path guarantee is established beyond allowing `content` to hold a reference in the prototype. Transcription, parsing, extraction, live capture, and AI processing are outside this contract.
+
+The `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS` Orchestrator transition requires at least one ClientInput belonging to the project. Without one, the project stage remains unchanged and no `STAGE_CHANGED` workflow event is created.
 
 ## Requirement
 
@@ -301,14 +329,14 @@ Whether `target_component`, `stage_before`, or `stage_after` may be absent for n
 
 ## Schemas Mentioned but Not Formally Defined
 
-The sources mention ClientInput, RequirementQualityIssue, ApiSpec, DbSchema, GitMetadata, ExecutionLog, TestResult, ValidationReport, final reports, and export payloads, but do not provide complete field contracts. Their fields must be approved before implementation rather than inferred here.
+The sources mention RequirementQualityIssue, ApiSpec, DbSchema, GitMetadata, ExecutionLog, TestResult, ValidationReport, final reports, and export payloads, but do not provide complete field contracts. Their fields must be approved before implementation rather than inferred here.
 
 ## Canonical MongoDB Collections
 
 | Constant/value | Purpose |
 |---|---|
 | `projects` | Project metadata and current workflow state |
-| `client_inputs` | Submitted text/file/link/audio/video metadata |
+| `client_inputs` | Project-owned text/document/audio/video/live-interview content and metadata |
 | `requirements` | Requirements, stories, acceptance criteria, quality findings |
 | `design_artifacts` | UML/API/DB/UI/wireframe artifacts |
 | `backlog_items` | Epics, stories, tasks, subtasks, bugs/sprint items |

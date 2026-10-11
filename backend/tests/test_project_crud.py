@@ -320,10 +320,14 @@ def test_project_repository_uses_projects_collection_and_strips_mongodb_id() -> 
 
 def test_only_canonical_project_routes_are_registered() -> None:
     openapi_paths = app.openapi()["paths"]
+    project_crud_paths = {
+        "/api/v1/projects",
+        "/api/v1/projects/{project_id}",
+    }
     project_routes = {
         (method.upper(), path)
         for path, operations in openapi_paths.items()
-        if path.startswith("/api")
+        if path in project_crud_paths
         for method in operations
     }
 

@@ -5,7 +5,9 @@ from fastapi.responses import JSONResponse
 
 from app.common.response import ErrorDetail, ErrorResponse
 from app.core.config import settings
+from app.modules.orchestrator.router import router as orchestrator_router
 from app.modules.projects.router import router as projects_router
+from app.modules.requirements.router import router as client_inputs_router
 
 
 app = FastAPI(
@@ -46,6 +48,8 @@ async def request_validation_exception_handler(
 
 
 app.include_router(projects_router, prefix=settings.api_v1_prefix)
+app.include_router(orchestrator_router, prefix=settings.api_v1_prefix)
+app.include_router(client_inputs_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")
