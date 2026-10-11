@@ -4,7 +4,7 @@ Project ID: **J26-SE-358**
 Primary authority: **File 06 — API and Data Schema Plan**  
 Workflow/approval authority: **File 12 — Orchestrator Workflow and Approval Rules**
 
-This document is the shared data-contract baseline. The current repository implements shared enums and foundation ID helpers; Pydantic models for User, Project, Approval, WorkflowEvent, TraceabilityLink, BaseArtifact, and the API response envelope; and module request/response models for registration, login, access tokens, `/auth/me`, and ClientInput. Project ownership enforcement remains planned. Fields below remain authoritative; do not create alternate names or infer missing fields.
+This document is the shared data-contract baseline. The current repository implements shared enums and foundation ID helpers; Pydantic models for User, Project, Approval, WorkflowEvent, TraceabilityLink, BaseArtifact, and the API response envelope; module request/response models for registration, login, access tokens, `/auth/me`, and ClientInput; and authenticated Project ownership for current Project-scoped APIs. Fields below remain authoritative; do not create alternate names or infer missing fields.
 
 ## Current Schema Implementation Status
 
@@ -13,7 +13,7 @@ This document is the shared data-contract baseline. The current repository imple
 - **Schema only:** TraceabilityLink has a shared pairwise schema, but traceability persistence and generation are not implemented.
 - **ClientInput foundation only:** request validation, project-scoped persistence, and response serialization are implemented; requirement extraction, analysis, generation, and clarification behavior remain planned.
 - **Implemented:** login/JWT DTOs and `/auth/me` safe public responses.
-- **Planned / approved contract:** Project ownership enforcement is defined below but is not implemented.
+- **Implemented:** Project includes validated `owner_user_id`; current Project, ClientInput, and Orchestrator APIs enforce authenticated ownership.
 - Other planned domain artifacts and their persistence are not implied to be implemented by their definitions in this document.
 
 ## Contract Rules

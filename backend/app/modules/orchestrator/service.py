@@ -3,8 +3,13 @@ from datetime import datetime, timezone
 
 from pydantic import ValidationError
 
-from app.common.id_generator import generate_id, validate_id
+from app.common.id_generator import generate_id
 from app.common.status import EventType, WorkflowStage
+from app.modules.auth.authorization import (
+    ProjectAccessNotFoundError,
+    authorize_project_access,
+)
+from app.modules.auth.schemas import UserPublicResponse
 from app.modules.orchestrator.repository import (
     OrchestratorRepository,
     OrchestratorRepositoryError,
@@ -16,10 +21,6 @@ from app.schemas.workflow import WorkflowEvent
 
 ORCHESTRATOR_COMPONENT = "Central SDLC Orchestrator"
 REQUIREMENTS_COMPONENT = "Requirement Gathering and Analysis Agent"
-
-
-class OrchestratorProjectNotFoundError(LookupError):
-    """Raised when a requested project does not exist."""
 
 
 class UnsupportedWorkflowStageError(ValueError):
@@ -55,15 +56,17 @@ class OrchestratorService:
         self._repository = repository
         self._clock = clock
 
-    def next_step(self, project_id: str) -> WorkflowTransitionResult:
-        validate_id(project_id, "PRJ")
-
+    def next_step(
+        self,
+        project_id: str,
+        current_user: UserPublicResponse,
+    ) -> WorkflowTransitionResult:
         try:
-            document = self._repository.get_project(project_id)
-            if document is None:
-                raise OrchestratorProjectNotFoundError(project_id)
-
-            project = Project.model_validate(document)
+            project = authorize_project_access(
+                project_id,
+                current_user,
+                self._repository,
+            )
             if project.current_stage is not WorkflowStage.PROJECT_CREATED:
                 raise UnsupportedWorkflowStageError(project.current_stage)
             if not self._repository.has_client_input(project_id):
@@ -95,6 +98,7 @@ class OrchestratorService:
 
             updated_project = self._repository.persist_stage_change(
                 project_id=project_id,
+                owner_user_id=current_user.user_id,
                 stage_before=stage_before,
                 stage_after=stage_after,
                 updated_at=now,
@@ -112,7 +116,7 @@ class OrchestratorService:
                 stage_after=stage_after,
             )
         except (
-            OrchestratorProjectNotFoundError,
+            ProjectAccessNotFoundError,
             UnsupportedWorkflowStageError,
             MissingClientInputError,
             OrchestratorServiceError,
@@ -122,3 +126,6 @@ class OrchestratorService:
             raise OrchestratorServiceError(
                 "Workflow transition failed"
             ) from exc
+
+
+OrchestratorProjectNotFoundError = ProjectAccessNotFoundError

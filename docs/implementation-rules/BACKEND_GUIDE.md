@@ -35,14 +35,14 @@ backend/
 │   │   ├── implementation/     # package placeholder
 │   │   └── reports/            # package placeholder
 │   └── schemas/                # shared domain schemas
-├── tests/                       # 119-test backend suite
+├── tests/                       # 135-test backend suite
 ├── .env.example
 └── requirements.txt
 ```
 
-Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable `get_current_user` authentication, layered Project CRUD, layered ClientInput persistence, the first Orchestrator transition with ClientInput prerequisite and WorkflowEvent persistence, and backend tests.
+Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable `get_current_user` authentication, centralized Project ownership authorization, owner-scoped Project CRUD and ClientInput access, the owner-scoped first Orchestrator transition with ClientInput prerequisite and WorkflowEvent persistence, and backend tests.
 
-Not implemented: Project ownership enforcement, Requirement Agent processing or intelligence, approval APIs/gate processing, later Orchestrator transitions, failure routing, retry loops, traceability persistence/generation, reports, frontend, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
+Not implemented: Project sharing/collaboration, Requirement Agent processing or intelligence, approval APIs/gate processing, later Orchestrator transitions, failure routing, retry loops, traceability persistence/generation, reports, frontend, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
 
 ## Approved Backend Stack
 
@@ -127,7 +127,7 @@ app/modules/<module_name>/
 
 The direction is `router → service → repository → database`. Services may call the Orchestrator through an approved interface but must not duplicate global transition rules.
 
-The shared authentication and planned ownership boundary is:
+The shared authentication and ownership boundary is:
 
 ```text
 request
@@ -136,7 +136,7 @@ request
   → component service
 ```
 
-JWT parsing is implemented in the reusable `get_current_user` authentication dependency. Project ownership authorization remains planned and belongs in one shared helper/service boundary such as `authorize_project_access`; routers and agents must not duplicate either concern.
+JWT parsing is implemented in the reusable `get_current_user` authentication dependency. Project ownership authorization is implemented in the shared `authorize_project_access` boundary; routers and agents must not duplicate either concern.
 
 ## Shared MongoDB Foundation
 
@@ -171,7 +171,7 @@ Use the shared response shape:
 
 Validation/error responses retain the same fields with `success: false`, `data: null`, and structured error items. File 11's alternate `workflow_status`, `traceability_updated`, `error_code`, and `details` shape is not the canonical envelope.
 
-JWT Bearer registration, login, token validation, and `/auth/me` are implemented. Missing or invalid authentication returns HTTP 401. Project-scoped endpoints remain pre-authentication until the planned ownership step. Under that approved contract, authenticated access to a project not owned by the user returns HTTP 404 to avoid disclosing another user's project identifier, and all Project routes and every current or future project-scoped route must enforce ownership through the Project record.
+JWT Bearer registration, login, token validation, and `/auth/me` are implemented. Missing or invalid authentication returns HTTP 401. Every currently implemented Project-scoped endpoint enforces ownership through the Project record. Authenticated access to a missing, ownerless legacy, or non-owned Project returns HTTP 404 to avoid disclosing another user's project identifier. Future Project-scoped routes must reuse the same boundary.
 
 ## Data, IDs, and Traceability
 

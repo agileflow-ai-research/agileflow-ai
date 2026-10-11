@@ -12,7 +12,7 @@ This is the canonical implementation API contract. It describes planned interfac
 - **Project-scoped pattern:** `/api/v1/projects/{project_id}/...`
 - **Request content:** `application/json`; `multipart/form-data` only for upload endpoints where needed
 - **Response content:** `application/json`; report export formats are planned for later
-- **Authentication:** registration, JWT Bearer login, token validation, and `/auth/me` are implemented; project ownership enforcement remains planned
+- **Authentication:** registration, JWT Bearer login, token validation, `/auth/me`, and Project ownership enforcement are implemented for the current Project-scoped APIs
 - **Path parameter:** use `{project_id}`, not `{projectId}`
 
 Do not create a parallel `/api/projects/...` family. Non-versioned routes in general implementation or workflow guides are examples superseded by File 06 for API naming.
@@ -58,7 +58,7 @@ Schema names and supported fields are defined in [DATA_SCHEMAS.md](../schemas/DA
 
 ## Current Implementation Status
 
-The implemented HTTP surface currently consists of `GET /health`, the three Authentication routes, the four Project routes, the two ClientInput routes, and the first Orchestrator `next-step` route listed below. FastAPI also supplies `/docs` automatically. Registration, login, JWT issuance/validation, and `/auth/me` are implemented. Project-scoped routes are still pre-authentication, and ownership enforcement is **Planned / approved contract**; every other unimplemented route remains **Planned / later sprint**.
+The implemented HTTP surface currently consists of `GET /health`, the three Authentication routes, the four Project routes, the two ClientInput routes, and the first Orchestrator `next-step` route listed below. FastAPI also supplies `/docs` automatically. Registration, login, JWT issuance/validation, `/auth/me`, and authenticated Project ownership for every currently implemented Project-scoped route are implemented; every other unimplemented route remains **Planned / later sprint**.
 
 ## Authentication Routes
 
@@ -87,7 +87,7 @@ No logout route, refresh token, token-revocation store, session database, OAuth/
 | GET | `/api/v1/projects/{project_id}` | Get project details/current state | Core/Foundation | Path parameter | Project | Shows gate context | Implemented |
 | PATCH | `/api/v1/projects/{project_id}` | Update basic project metadata | Core/Foundation | Project update body: not formally defined | Project | No direct gate transition | Implemented |
 
-The approved ownership update requires Bearer authentication for all four Project routes. Project creation sets server-controlled `owner_user_id` from the authenticated user's `user_id`; clients cannot provide or patch it. Project listing returns only projects owned by the authenticated user. Project detail and update require ownership. The currently implemented routes do not enforce this yet.
+All four Project routes require Bearer authentication. Project creation sets server-controlled `owner_user_id` from the authenticated user's `user_id`; clients cannot provide or patch it. Project listing returns only projects owned by the authenticated user. Project detail and update require ownership. Missing, ownerless legacy, and non-owned Projects use the same HTTP 404 response.
 
 ## Workflow and Orchestrator Routes
 
@@ -144,7 +144,7 @@ Creating a ClientInput persists it for the path project only. Creation must not 
 
 ## Project-Scoped Authorization
 
-The approved next foundation update requires authenticated Project ownership for every project-scoped API. This includes the currently implemented ClientInput POST/GET and Orchestrator `next-step` endpoint, as well as all future Agent, Approval, Artifact, Traceability, Workflow, and Report endpoints.
+Authenticated Project ownership is implemented for every currently implemented project-scoped API, including ClientInput POST/GET and Orchestrator `next-step`. The same boundary is required for all future Agent, Approval, Artifact, Traceability, Workflow, and Report endpoints.
 
 ```text
 authenticated user_id

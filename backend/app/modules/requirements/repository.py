@@ -24,19 +24,17 @@ class ClientInputRepository:
     def _public_document(document: dict[str, Any]) -> dict[str, Any]:
         return {key: value for key, value in document.items() if key != "_id"}
 
-    def project_exists(self, project_id: str) -> bool:
+    def get_project(self, project_id: str) -> dict[str, Any] | None:
         try:
-            return (
-                self._projects.find_one(
-                    {"project_id": project_id},
-                    {"_id": 1},
-                )
-                is not None
+            document = self._projects.find_one(
+                {"project_id": project_id},
+                {"_id": 0},
             )
         except PyMongoError as exc:
             raise ClientInputRepositoryError(
                 "Could not verify project"
             ) from exc
+        return self._public_document(document) if document is not None else None
 
     def create_client_input(
         self,

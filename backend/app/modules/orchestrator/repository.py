@@ -81,6 +81,7 @@ class OrchestratorRepository:
     def persist_stage_change(
         self,
         project_id: str,
+        owner_user_id: str,
         stage_before: WorkflowStage,
         stage_after: WorkflowStage,
         updated_at: datetime,
@@ -91,6 +92,7 @@ class OrchestratorRepository:
             project = self._projects.find_one_and_update(
                 {
                     "project_id": project_id,
+                    "owner_user_id": owner_user_id,
                     "current_stage": stage_before.value,
                 },
                 {

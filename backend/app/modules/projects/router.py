@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 
 from app.common.response import ErrorDetail, ErrorResponse, SuccessResponse
+from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.schemas import UserPublicResponse
 from app.modules.projects.repository import ProjectRepository
 from app.modules.projects.schemas import ProjectCreateRequest, ProjectUpdateRequest
 from app.modules.projects.service import (
@@ -28,6 +30,7 @@ def get_project_service(
 
 
 ProjectServiceDependency = Annotated[ProjectService, Depends(get_project_service)]
+CurrentUserDependency = Annotated[UserPublicResponse, Depends(get_current_user)]
 
 
 def _error_response(
@@ -54,9 +57,10 @@ def _error_response(
 def create_project(
     request: ProjectCreateRequest,
     service: ProjectServiceDependency,
+    current_user: CurrentUserDependency,
 ) -> SuccessResponse[Project] | JSONResponse:
     try:
-        project = service.create_project(request)
+        project = service.create_project(request, current_user)
     except ProjectServiceError:
         return _error_response(
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -74,9 +78,10 @@ def create_project(
 @router.get("", response_model=SuccessResponse[list[Project]])
 def list_projects(
     service: ProjectServiceDependency,
+    current_user: CurrentUserDependency,
 ) -> SuccessResponse[list[Project]] | JSONResponse:
     try:
-        projects = service.list_projects()
+        projects = service.list_projects(current_user)
     except ProjectServiceError:
         return _error_response(
             status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -94,9 +99,10 @@ def list_projects(
 def get_project(
     project_id: str,
     service: ProjectServiceDependency,
+    current_user: CurrentUserDependency,
 ) -> SuccessResponse[Project] | JSONResponse:
     try:
-        project = service.get_project(project_id)
+        project = service.get_project(project_id, current_user)
     except ValueError as exc:
         return _error_response(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -130,9 +136,10 @@ def update_project(
     project_id: str,
     request: ProjectUpdateRequest,
     service: ProjectServiceDependency,
+    current_user: CurrentUserDependency,
 ) -> SuccessResponse[Project] | JSONResponse:
     try:
-        project = service.update_project(project_id, request)
+        project = service.update_project(project_id, request, current_user)
     except ValueError as exc:
         return _error_response(
             status.HTTP_422_UNPROCESSABLE_CONTENT,

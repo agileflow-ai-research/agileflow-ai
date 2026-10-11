@@ -3,18 +3,19 @@ from datetime import datetime, timezone
 
 from pydantic import ValidationError
 
-from app.common.id_generator import generate_id, validate_id
+from app.common.id_generator import generate_id
 from app.common.status import ArtifactStatus, WorkflowStage
+from app.modules.auth.authorization import (
+    ProjectAccessNotFoundError,
+    authorize_project_access,
+)
+from app.modules.auth.schemas import UserPublicResponse
 from app.modules.projects.repository import (
     ProjectRepository,
     ProjectRepositoryError,
 )
 from app.modules.projects.schemas import ProjectCreateRequest, ProjectUpdateRequest
 from app.schemas.project import Project
-
-
-class ProjectNotFoundError(LookupError):
-    """Raised when a requested project does not exist."""
 
 
 class ProjectServiceError(RuntimeError):
@@ -36,12 +37,17 @@ class ProjectService:
         self._repository = repository
         self._clock = clock
 
-    def create_project(self, request: ProjectCreateRequest) -> Project:
+    def create_project(
+        self,
+        request: ProjectCreateRequest,
+        current_user: UserPublicResponse,
+    ) -> Project:
         try:
             sequence = self._repository.next_project_sequence()
             now = self._clock()
             project = Project(
                 project_id=generate_id("PRJ", sequence),
+                owner_user_id=current_user.user_id,
                 name=request.name,
                 domain=request.domain,
                 description=request.description,
@@ -56,23 +62,29 @@ class ProjectService:
         except (ProjectRepositoryError, ValidationError) as exc:
             raise ProjectServiceError("Project creation failed") from exc
 
-    def list_projects(self) -> list[Project]:
+    def list_projects(self, current_user: UserPublicResponse) -> list[Project]:
         try:
             return [
                 Project.model_validate(document)
-                for document in self._repository.list_projects()
+                for document in self._repository.list_projects(
+                    current_user.user_id
+                )
             ]
         except (ProjectRepositoryError, ValidationError) as exc:
             raise ProjectServiceError("Project listing failed") from exc
 
-    def get_project(self, project_id: str) -> Project:
-        validate_id(project_id, "PRJ")
+    def get_project(
+        self,
+        project_id: str,
+        current_user: UserPublicResponse,
+    ) -> Project:
         try:
-            document = self._repository.get_project(project_id)
-            if document is None:
-                raise ProjectNotFoundError(project_id)
-            return Project.model_validate(document)
-        except ProjectNotFoundError:
+            return authorize_project_access(
+                project_id,
+                current_user,
+                self._repository,
+            )
+        except ProjectAccessNotFoundError:
             raise
         except (ProjectRepositoryError, ValidationError) as exc:
             raise ProjectServiceError("Project retrieval failed") from exc
@@ -81,16 +93,24 @@ class ProjectService:
         self,
         project_id: str,
         request: ProjectUpdateRequest,
+        current_user: UserPublicResponse,
     ) -> Project:
-        validate_id(project_id, "PRJ")
         updates = request.model_dump(exclude_unset=True)
         updates["updated_at"] = self._clock()
         try:
-            document = self._repository.update_project(project_id, updates)
+            authorize_project_access(project_id, current_user, self._repository)
+            document = self._repository.update_project(
+                project_id,
+                current_user.user_id,
+                updates,
+            )
             if document is None:
-                raise ProjectNotFoundError(project_id)
+                raise ProjectAccessNotFoundError(project_id)
             return Project.model_validate(document)
-        except ProjectNotFoundError:
+        except ProjectAccessNotFoundError:
             raise
         except (ProjectRepositoryError, ValidationError) as exc:
             raise ProjectServiceError("Project update failed") from exc
+
+
+ProjectNotFoundError = ProjectAccessNotFoundError

@@ -53,9 +53,12 @@ class ProjectRepository:
             raise ProjectRepositoryError("Could not create project") from exc
         return self._public_document(document)
 
-    def list_projects(self) -> list[dict[str, Any]]:
+    def list_projects(self, owner_user_id: str) -> list[dict[str, Any]]:
         try:
-            documents = self._collection.find({}, {"_id": 0})
+            documents = self._collection.find(
+                {"owner_user_id": owner_user_id},
+                {"_id": 0},
+            )
             return [self._public_document(document) for document in documents]
         except PyMongoError as exc:
             raise ProjectRepositoryError("Could not list projects") from exc
@@ -73,11 +76,15 @@ class ProjectRepository:
     def update_project(
         self,
         project_id: str,
+        owner_user_id: str,
         updates: dict[str, Any],
     ) -> dict[str, Any] | None:
         try:
             document = self._collection.find_one_and_update(
-                {"project_id": project_id},
+                {
+                    "project_id": project_id,
+                    "owner_user_id": owner_user_id,
+                },
                 {"$set": updates},
                 projection={"_id": 0},
                 return_document=ReturnDocument.AFTER,

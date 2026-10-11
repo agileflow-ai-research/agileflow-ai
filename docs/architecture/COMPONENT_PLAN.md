@@ -32,7 +32,7 @@ This map translates the approved architecture into implementation ownership and 
 | IDs produced | `REQ-###`, `US-###`, `AC-###`, relevant `TRACE-###` |
 | Dependencies | Project foundation, shared schemas/IDs, Shared Knowledge Base, Orchestrator, H1 UI/API, common response/error utilities |
 | Must not do | Generate design/code/final validation; advance global workflow; rename common fields; own another agent's module |
-| Current status | ClientInput request/response validation, project-scoped persistence, and POST/GET APIs are implemented. Requirement processing, extraction, quality/ambiguity/missing-information analysis, clarification, structured requirements, user stories, acceptance criteria, H1 preparation, and UI remain planned |
+| Current status | ClientInput request/response validation, authenticated owner-scoped persistence access, and POST/GET APIs are implemented. Requirement processing, extraction, quality/ambiguity/missing-information analysis, clarification, structured requirements, user stories, acceptance criteria, H1 preparation, and UI remain planned |
 
 ## 2. Project Management and Design Agent
 
@@ -112,7 +112,7 @@ This map translates the approved architecture into implementation ownership and 
 | IDs produced | `EVT-###`, approved `APP-###`, and relevant `TRACE-###` where orchestration creates links |
 | Dependencies | All four agents, Shared Knowledge Base, canonical stages/decisions, approval UI, report completion checks |
 | Must not do | Perform agent domain work, skip/auto-approve gates, hide failures, exceed retry limits, overwrite approved versions, allow agent-controlled global transitions |
-| Current status | The first next-step endpoint, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS` transition, ClientInput prerequisite, and WorkflowEvent persistence are implemented. Remaining stages, approvals, failure routing, retries, escalation, correction loops, and UI remain planned |
+| Current status | The authenticated, owner-scoped first next-step endpoint, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS` transition, ClientInput prerequisite, and WorkflowEvent persistence are implemented. Remaining stages, approvals, failure routing, retries, escalation, correction loops, and UI remain planned |
 
 ## 6. Shared Knowledge Base
 
@@ -131,11 +131,11 @@ This map translates the approved architecture into implementation ownership and 
 | IDs consumed/produced | Stores all canonical IDs; ID generation responsibility is shared utility/component-specific and not database-client logic |
 | Dependencies | Environment settings, PyMongo, approved schemas/repositories, security/secret handling |
 | Must not do | Contain agent queries/business logic in the client module, create duplicate clients/collections, decide workflow, expose credentials |
-| Current status | Foundation implemented: one settings-driven client, database accessor, ping/close helper, 15 collection constants, tests, and repository-backed User, Project, ClientInput, and WorkflowEvent persistence. Project ownership enforcement remains planned |
+| Current status | Foundation implemented: one settings-driven client, database accessor, ping/close helper, 15 collection constants, tests, repository-backed User, Project, ClientInput, and WorkflowEvent persistence, and authenticated Project ownership for current Project-scoped APIs |
 
 ## Shared Authentication and Project Ownership Foundation
 
-Steps A and B implement User persistence, `USR-###`, Argon2 password hashing, public registration, JWT Bearer login and validation, `/auth/me`, and reusable `get_current_user` authentication. The planned ownership step will provide the shared `authorize_project_access` boundary before requests reach component services. JWT parsing must not be duplicated in every router, and ownership checks must not be independently reimplemented by every agent.
+Steps A, B, and C implement User persistence, `USR-###`, Argon2 password hashing, public registration, JWT Bearer login and validation, `/auth/me`, reusable `get_current_user` authentication, `Project.owner_user_id`, and the shared `authorize_project_access` boundary. JWT parsing must not be duplicated in every router, and ownership checks must not be independently reimplemented by every agent.
 
 One user may own multiple independent projects. All project-scoped components continue to use `project_id`, and access is permitted only when the authenticated `user_id` matches `project.owner_user_id`. Cross-user sharing, roles/RBAC, organizations, teams, OAuth/social login, refresh tokens, and administrator behavior are not approved. This foundation does not change the responsibilities of the four research agents or the Central SDLC Orchestrator.
 

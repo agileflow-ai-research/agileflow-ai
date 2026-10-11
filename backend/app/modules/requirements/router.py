@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 
 from app.common.response import ErrorDetail, ErrorResponse, SuccessResponse
+from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.schemas import UserPublicResponse
 from app.modules.requirements.repository import ClientInputRepository
 from app.modules.requirements.schemas import (
     ClientInputCreateRequest,
@@ -39,6 +41,7 @@ ClientInputServiceDependency = Annotated[
     ClientInputService,
     Depends(get_client_input_service),
 ]
+CurrentUserDependency = Annotated[UserPublicResponse, Depends(get_current_user)]
 
 
 def _error_response(
@@ -66,9 +69,14 @@ def create_client_input(
     project_id: str,
     request: ClientInputCreateRequest,
     service: ClientInputServiceDependency,
+    current_user: CurrentUserDependency,
 ) -> SuccessResponse[ClientInputResponse] | JSONResponse:
     try:
-        client_input = service.create_client_input(project_id, request)
+        client_input = service.create_client_input(
+            project_id,
+            request,
+            current_user,
+        )
     except ValueError as exc:
         return _error_response(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -101,9 +109,10 @@ def create_client_input(
 def list_client_inputs(
     project_id: str,
     service: ClientInputServiceDependency,
+    current_user: CurrentUserDependency,
 ) -> SuccessResponse[list[ClientInputResponse]] | JSONResponse:
     try:
-        client_inputs = service.list_client_inputs(project_id)
+        client_inputs = service.list_client_inputs(project_id, current_user)
     except ValueError as exc:
         return _error_response(
             status.HTTP_422_UNPROCESSABLE_CONTENT,

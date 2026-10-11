@@ -172,18 +172,18 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | Project CRUD APIs and persistence | Implemented |
 | ClientInput APIs and persistence foundation | Implemented; requirement processing remains planned |
 | First Orchestrator transition and WorkflowEvent persistence | Implemented only for `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, with a ClientInput prerequisite |
-| Backend test suite | Implemented; 119 tests passing in the current verified suite |
+| Backend test suite | Implemented; 135 tests passing in the current verified suite |
 | Frontend application | Planned; not initialized |
 | Agent intelligence, approval APIs, and later workflow stages | Planned |
 | Remaining artifact persistence, traceability behavior, reports, and integrations | Planned |
 | User persistence, `USR-###`, Argon2 hashing, and registration API | Implemented |
 | Login, JWT issuance/validation, and `/auth/me` | Implemented |
-| Project-ownership enforcement | Approved contract; implementation not started |
+| Project ownership and project-scoped authorization | Implemented for Project CRUD, ClientInput, and the first Orchestrator endpoint |
 
 This is a Sprint 1 prototype foundation, not a production-ready system. The presence of a module directory or a planned route in documentation does not mean that functionality is implemented.
 
-## Planned Authentication and Project Ownership
+## Authentication and Project Ownership
 
-Registration, User persistence, Argon2 password hashing, public `USR-###` user identifiers, JWT Bearer login, token validation, `/auth/me`, and the reusable `get_current_user` dependency are implemented. Owner-scoped Project access remains planned. A user may own multiple independent projects. Authentication identifies the user, `project_id` identifies the active project, and the planned `Project.owner_user_id` check must authorize access. Cross-user project sharing, OAuth/social login, refresh tokens, sessions, MFA, organizations, teams, RBAC, and administrator roles are not approved.
+Registration, User persistence, Argon2 password hashing, public `USR-###` user identifiers, JWT Bearer login, token validation, `/auth/me`, reusable `get_current_user`, and centralized Project ownership authorization are implemented. A user may own multiple independent projects. Authentication identifies the user, `project_id` identifies the active project, and `Project.owner_user_id` authorizes access. Cross-user project sharing, OAuth/social login, refresh tokens, sessions, MFA, organizations, teams, RBAC, and administrator roles are not approved.
 
-The existing Project CRUD, ClientInput, and first Orchestrator endpoints are currently pre-authentication. Their next foundation update must enforce authenticated ownership without changing agent responsibilities or workflow stages.
+The Project CRUD, ClientInput, and first Orchestrator endpoints require authentication and enforce Project ownership. Missing or invalid authentication returns HTTP 401; missing, ownerless legacy, and foreign Projects use the same HTTP 404 behavior. This does not change agent responsibilities or workflow stages.
