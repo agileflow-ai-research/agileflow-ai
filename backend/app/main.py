@@ -1,7 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from app.common.response import ErrorDetail, ErrorResponse
 from app.core.config import settings
+from app.modules.projects.router import router as projects_router
 
 
 app = FastAPI(
@@ -17,6 +21,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    del request
+    errors = []
+    for error in exc.errors():
+        location = [str(part) for part in error["loc"] if part != "body"]
+        errors.append(
+            ErrorDetail(
+                field=".".join(location) or "request",
+                message=error["msg"],
+            )
+        )
+    payload = ErrorResponse(message="Validation failed", errors=errors)
+    return JSONResponse(
+        status_code=422,
+        content=payload.model_dump(mode="json"),
+    )
+
+
+app.include_router(projects_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")
