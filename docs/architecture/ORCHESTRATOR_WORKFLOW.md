@@ -7,13 +7,15 @@ This is the canonical complete workflow contract. Most of the workflow remains p
 
 ## Current Implementation Status
 
-- **Endpoints:** `GET /api/v1/projects/{project_id}/workflow`, `POST /api/v1/projects/{project_id}/orchestrator/next-step`, and `GET /api/v1/projects/{project_id}/events`
-- **Core policy:** the canonical forward sequence and official stage ownership metadata are centralized; later transitions are structurally modeled but not executable.
-- **Only implemented transition:** `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`
+- **Endpoints:** workflow snapshot, next-step, event history, and the five H1-H5 Approval POST endpoints are implemented under canonical `/api/v1/projects/{project_id}/...` routes.
+- **Core policy:** the canonical forward sequence, prerequisite type, and official stage ownership metadata are centralized.
+- **Executable transitions:** `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS` plus the five effective-APPROVE transitions from H1-H5 waiting stages to their canonical targets.
 - **Prerequisite:** at least one ClientInput must belong to the project.
 - **Successful behavior:** update the project's `current_stage` and `updated_at`, then persist one `STAGE_CHANGED` WorkflowEvent.
 - **Read behavior:** authenticated owners can retrieve a read-only workflow snapshot and chronologically ordered project WorkflowEvents.
-- **Still planned:** H1-H5 handling, every later executable transition, approval-gate processing, failure routing, bounded retries, human-review escalation, and correction loops.
+- **Approval persistence:** O2 validates matching waiting stages, appends immutable Approval history, exposes effective/latest repository lookup, and creates exactly one `APPROVAL_DECISION` event without changing Project stage.
+- **Approval transitions:** O3 uses the newest project/gate decision; only canonical `APPROVE` permits next-step, which creates exactly one `STAGE_CHANGED` event.
+- **Still planned:** specialist in-progress transitions into H1-H5 waiting stages, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, bounded retries, human-review escalation, and correction loops.
 
 This foundation does not execute the Requirement Gathering and Analysis Agent and does not represent a complete Orchestrator implementation.
 
@@ -91,7 +93,7 @@ Every decision requires `project_id`, `gate_id`, reviewer name or role, `decisio
 
 ### Approved O2 Persistence Boundary
 
-O2 defines Approval decision validation and persistence but remains **not implemented**. It does not perform approval-driven Project stage transitions. Each gate endpoint is valid only at its matching current stage: H1 through H5 require `H1_WAITING_APPROVAL` through `H5_WAITING_APPROVAL` respectively.
+O2 Approval decision validation and persistence are implemented. O2 does not perform approval-driven Project stage transitions. Each gate endpoint is valid only at its matching current stage: H1 through H5 require `H1_WAITING_APPROVAL` through `H5_WAITING_APPROVAL` respectively.
 
 The client provides `reviewer_name`, `reviewer_role`, `decision`, `comment`, and a positive integer `artifact_version`; at least one reviewer identity field is required. The server derives the route `project_id`, endpoint `gate_id`, generated `APP-###` `approval_id`, UTC `timestamp`, and `next_stage`. Those server-controlled fields cannot be submitted by the client. `artifact_type` and `reviewer_user_id` are not part of O2. O2 records the reviewed version but does not validate, update, or lock specialist artifact records; artifact-lock enforcement remains planned with those artifact pipelines.
 
@@ -103,9 +105,9 @@ The client provides `reviewer_name`, `reviewer_role`, `decision`, `comment`, and
 | H4 | `H4_WAITING_APPROVAL` | `VALIDATION_IN_PROGRESS` | `H4_WAITING_APPROVAL` |
 | H5 | `H5_WAITING_APPROVAL` | `COMPLETED` | `H5_WAITING_APPROVAL` |
 
-In this table, non-approve means `REJECT`, `REQUEST_CHANGES`, or `HOLD`. O2 records `next_stage` as the decision's currently permitted or intended outcome and leaves `Project.current_stage` unchanged for every decision, including `APPROVE`. O3 will later inspect the newest/effective `APPROVE`, perform the canonical forward transition, and create `STAGE_CHANGED`.
+In this table, non-approve means `REJECT`, `REQUEST_CHANGES`, or `HOLD`. O2 records `next_stage` as the decision's currently permitted or intended outcome and leaves `Project.current_stage` unchanged for every decision, including `APPROVE`. O3 inspects the newest/effective decision through next-step; a canonical `APPROVE` performs the forward transition and creates one `STAGE_CHANGED`, while a missing or non-approve decision leaves the Project unchanged.
 
-Approvals are append-only immutable history. Multiple records for the same `project_id + gate_id` are allowed; the newest record is the effective decision and older decisions remain evidence. A uniqueness constraint on that pair is prohibited. Prototype `APP-###` allocation may later scan the largest existing valid identifier and increment it; this is concurrency-limited and no counter collection is approved.
+Approvals are append-only immutable history. Multiple records for the same `project_id + gate_id` are allowed; the newest record is the effective decision and older decisions remain evidence. A uniqueness constraint on that pair is prohibited. The prototype `APP-###` allocator scans the largest existing valid identifier and increments it; this is concurrency-limited and no counter collection is used.
 
 Every successfully persisted O2 decision creates exactly one `APPROVAL_DECISION` WorkflowEvent and no `STAGE_CHANGED` event. The event uses `Human Stakeholder / Reviewer` as source, `Central SDLC Orchestrator` as target, and the current matching waiting stage for both `stage_before` and `stage_after`. Safe metadata may contain `approval_id`, `gate_id`, `decision`, and `artifact_version`; reviewer comments and sensitive authentication data are excluded. The message is a concise approval-decision audit message.
 

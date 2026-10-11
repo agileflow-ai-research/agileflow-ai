@@ -26,7 +26,7 @@ Supporting shared components are:
 
 - **Central SDLC Orchestrator** — controls stage order, handovers, approvals, bounded retries, failure routing, and workflow events. It does not perform the agents' domain work.
 - **Shared Knowledge Base** — MongoDB storage for structured project artifacts, workflow information, approvals, logs, and traceability links.
-- **Authentication and Project Ownership** — shared-platform registration and JWT Bearer authentication are implemented; owner-based project isolation remains planned. This is not a fifth research agent.
+- **Authentication and Project Ownership** — shared-platform registration, JWT Bearer authentication, Project ownership, and owner-based isolation are implemented. This is not a fifth research agent.
 - **Reports / Traceability** — shared functionality for evidence, exports, and the Requirement → Design → Backlog → Test → Code → Bug/Security Finding → Validation → Report/Correction chain.
 
 ## Human-in-the-Loop Workflow
@@ -171,15 +171,17 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | Shared enums, domain schemas, ID conventions, and API response models | Implemented |
 | Project CRUD APIs and persistence | Implemented |
 | ClientInput APIs and persistence foundation | Implemented; requirement processing remains planned |
-| Orchestrator core policy, workflow snapshot, and event history | Implemented; later executable transitions remain planned |
+| Orchestrator core policy, workflow snapshot, and event history | Implemented; snapshots evaluate ClientInput and effective-Approval prerequisites |
 | First Orchestrator transition and WorkflowEvent persistence | Implemented only for `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, with a ClientInput prerequisite |
-| Backend test suite | Implemented; 146 tests passing in the current verified suite |
+| H1-H5 Approval persistence | Implemented with authenticated ownership, `APP-###`, append-only history, effective/latest lookup, and one `APPROVAL_DECISION` event per decision; no stage transition |
+| Approval-driven Orchestrator transitions | Implemented for H1-H5 waiting stages when the effective decision is APPROVE; each creates one `STAGE_CHANGED` event |
+| Backend test suite | Implemented; 240 tests passing in the current verified suite |
 | Frontend application | Planned; not initialized |
-| Agent intelligence, approval APIs, and later workflow stages | Planned |
+| Agent intelligence, specialist-stage completion transitions, O4 correction routing, O6 HOLD/release behavior, and remaining workflow behavior | Planned |
 | Remaining artifact persistence, traceability behavior, reports, and integrations | Planned |
 | User persistence, `USR-###`, Argon2 hashing, and registration API | Implemented |
 | Login, JWT issuance/validation, and `/auth/me` | Implemented |
-| Project ownership and project-scoped authorization | Implemented for Project CRUD, ClientInput, and the first Orchestrator endpoint |
+| Project ownership and project-scoped authorization | Implemented for Project CRUD, ClientInput, current Orchestrator endpoints, and H1-H5 Approval submission |
 
 This is a Sprint 1 prototype foundation, not a production-ready system. The presence of a module directory or a planned route in documentation does not mean that functionality is implemented.
 
@@ -187,4 +189,4 @@ This is a Sprint 1 prototype foundation, not a production-ready system. The pres
 
 Registration, User persistence, Argon2 password hashing, public `USR-###` user identifiers, JWT Bearer login, token validation, `/auth/me`, reusable `get_current_user`, and centralized Project ownership authorization are implemented. A user may own multiple independent projects. Authentication identifies the user, `project_id` identifies the active project, and `Project.owner_user_id` authorizes access. Cross-user project sharing, OAuth/social login, refresh tokens, sessions, MFA, organizations, teams, RBAC, and administrator roles are not approved.
 
-The Project CRUD, ClientInput, and first Orchestrator endpoints require authentication and enforce Project ownership. Missing or invalid authentication returns HTTP 401; missing, ownerless legacy, and foreign Projects use the same HTTP 404 behavior. This does not change agent responsibilities or workflow stages.
+The Project CRUD, ClientInput, current Orchestrator, and H1-H5 Approval endpoints require authentication and enforce Project ownership. Missing or invalid authentication returns HTTP 401; missing, ownerless legacy, and foreign Projects use the same HTTP 404 behavior. This does not change agent responsibilities or workflow stages.

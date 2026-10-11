@@ -13,6 +13,7 @@ from app.modules.orchestrator.schemas import (
     WorkflowTransitionResult,
 )
 from app.modules.orchestrator.service import (
+    ApprovalPrerequisiteError,
     MissingClientInputError,
     OrchestratorProjectNotFoundError,
     OrchestratorService,
@@ -156,6 +157,14 @@ def next_step(
 ) -> SuccessResponse[WorkflowTransitionResult] | JSONResponse:
     try:
         transition = service.next_step(project_id, current_user)
+    except ApprovalPrerequisiteError as exc:
+        return _error_response(
+            status.HTTP_409_CONFLICT,
+            "Approval prerequisite is not satisfied",
+            "approval",
+            str(exc),
+            workflow_stage=exc.current_stage,
+        )
     except MissingClientInputError as exc:
         return _error_response(
             status.HTTP_409_CONFLICT,

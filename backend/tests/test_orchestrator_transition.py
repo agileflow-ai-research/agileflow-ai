@@ -1,11 +1,16 @@
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.common.status import EventType, WorkflowStage
+from app.common.status import (
+    ApprovalDecision,
+    ApprovalGate,
+    EventType,
+    WorkflowStage,
+)
 from app.database.collections import (
     APPROVALS,
     CLIENT_INPUTS,
@@ -25,10 +30,45 @@ from app.modules.orchestrator.policy import (
     is_legal_transition,
 )
 from app.modules.orchestrator.router import get_orchestrator_repository
+from app.schemas.approval import Approval
 from app.schemas.workflow import WorkflowEvent
 
 
 INITIAL_TIME = datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
+
+
+APPROVAL_TRANSITION_CASES = [
+    (
+        ApprovalGate.H1,
+        WorkflowStage.H1_WAITING_APPROVAL,
+        WorkflowStage.DESIGN_IN_PROGRESS,
+        "Project Management and Design Agent",
+    ),
+    (
+        ApprovalGate.H2,
+        WorkflowStage.H2_WAITING_APPROVAL,
+        WorkflowStage.TEST_PLANNING_IN_PROGRESS,
+        "Testing, Validation and Security Agent",
+    ),
+    (
+        ApprovalGate.H3,
+        WorkflowStage.H3_WAITING_APPROVAL,
+        WorkflowStage.IMPLEMENTATION_IN_PROGRESS,
+        "Implementation and Git Automation Agent",
+    ),
+    (
+        ApprovalGate.H4,
+        WorkflowStage.H4_WAITING_APPROVAL,
+        WorkflowStage.VALIDATION_IN_PROGRESS,
+        "Testing, Validation and Security Agent",
+    ),
+    (
+        ApprovalGate.H5,
+        WorkflowStage.H5_WAITING_APPROVAL,
+        WorkflowStage.COMPLETED,
+        "Central SDLC Orchestrator / completed workflow",
+    ),
+]
 
 
 def project_document(stage: WorkflowStage) -> dict[str, Any]:
@@ -46,6 +86,28 @@ def project_document(stage: WorkflowStage) -> dict[str, Any]:
     }
 
 
+def approval_record(
+    approval_id: str,
+    gate: ApprovalGate,
+    decision: ApprovalDecision,
+    next_stage: WorkflowStage,
+    *,
+    project_id: str = "PRJ-001",
+    offset_seconds: int = 0,
+) -> Approval:
+    return Approval(
+        approval_id=approval_id,
+        project_id=project_id,
+        gate_id=gate,
+        reviewer_role="Supervisor",
+        decision=decision,
+        comment="Reviewed.",
+        timestamp=INITIAL_TIME + timedelta(seconds=offset_seconds),
+        artifact_version=1,
+        next_stage=next_stage,
+    )
+
+
 class FakeOrchestratorRepository:
     def __init__(
         self,
@@ -56,35 +118,59 @@ class FakeOrchestratorRepository:
             {"PRJ-001": project_document(stage)} if stage is not None else {}
         )
         self.events: list[WorkflowEvent] = []
+        self.approvals: list[Approval] = []
         self.client_inputs = (
             [{"project_id": "PRJ-001", "content": "Build a library app"}]
             if has_input
             else []
         )
-        self.accessed_collections = {PROJECTS, CLIENT_INPUTS, WORKFLOW_EVENTS}
+        self.accessed_collections: set[str] = set()
         self.fail_get = False
         self.fail_event_insert = False
 
     def get_project(self, project_id: str) -> dict[str, Any] | None:
+        self.accessed_collections.add(PROJECTS)
         if self.fail_get:
             raise OrchestratorRepositoryError("private database detail")
         document = self.projects.get(project_id)
         return deepcopy(document) if document is not None else None
 
     def next_event_sequence(self) -> int:
+        self.accessed_collections.add(WORKFLOW_EVENTS)
         return len(self.events) + 1
 
     def has_client_input(self, project_id: str) -> bool:
+        self.accessed_collections.add(CLIENT_INPUTS)
         return any(
             item["project_id"] == project_id for item in self.client_inputs
         )
 
     def list_workflow_events(self, project_id: str) -> list[dict[str, Any]]:
+        self.accessed_collections.add(WORKFLOW_EVENTS)
         return [
             event.model_dump(mode="python")
             for event in self.events
             if event.project_id == project_id
         ]
+
+    def get_effective_approval(
+        self,
+        project_id: str,
+        gate_id: ApprovalGate,
+    ) -> dict[str, Any] | None:
+        self.accessed_collections.add(APPROVALS)
+        matches = [
+            approval
+            for approval in self.approvals
+            if approval.project_id == project_id and approval.gate_id is gate_id
+        ]
+        if not matches:
+            return None
+        latest = max(
+            matches,
+            key=lambda approval: (approval.timestamp, approval.approval_id),
+        )
+        return latest.model_dump(mode="python")
 
     def persist_stage_change(
         self,
@@ -95,6 +181,7 @@ class FakeOrchestratorRepository:
         updated_at: datetime,
         event: WorkflowEvent,
     ) -> dict[str, Any] | None:
+        self.accessed_collections.update({PROJECTS, WORKFLOW_EVENTS})
         document = self.projects.get(project_id)
         if (
             document is None
@@ -214,7 +301,7 @@ def test_project_created_without_client_input_cannot_advance(
     "stage",
     [
         WorkflowStage.REQUIREMENTS_IN_PROGRESS,
-        WorkflowStage.H1_WAITING_APPROVAL,
+        WorkflowStage.DESIGN_IN_PROGRESS,
         WorkflowStage.COMPLETED,
     ],
 )
@@ -237,6 +324,295 @@ def test_unsupported_stage_does_not_advance(
     assert payload["workflow_stage"] == stage.value
     assert payload["errors"][0]["field"] == "current_stage"
     assert repository.projects["PRJ-001"]["current_stage"] == stage.value
+    assert repository.events == []
+
+
+@pytest.mark.parametrize(
+    "gate,waiting_stage,target_stage,target_component",
+    APPROVAL_TRANSITION_CASES,
+)
+def test_waiting_stage_without_effective_approval_is_blocked(
+    gate: ApprovalGate,
+    waiting_stage: WorkflowStage,
+    target_stage: WorkflowStage,
+    target_component: str,
+    authentication_context,
+) -> None:
+    del gate, target_stage, target_component
+    repository = FakeOrchestratorRepository(stage=waiting_stage)
+    original = deepcopy(repository.projects["PRJ-001"])
+    app.dependency_overrides[get_orchestrator_repository] = lambda: repository
+    try:
+        response = authentication_context.client().post(
+            "/api/v1/projects/PRJ-001/orchestrator/next-step"
+        )
+    finally:
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
+
+    assert response.status_code == 409
+    assert response.json()["errors"][0]["field"] == "approval"
+    assert repository.projects["PRJ-001"] == original
+    assert repository.events == []
+
+
+@pytest.mark.parametrize(
+    "gate,waiting_stage,target_stage,target_component",
+    APPROVAL_TRANSITION_CASES,
+)
+def test_effective_approve_advances_and_creates_one_stage_event(
+    gate: ApprovalGate,
+    waiting_stage: WorkflowStage,
+    target_stage: WorkflowStage,
+    target_component: str,
+    authentication_context,
+) -> None:
+    repository = FakeOrchestratorRepository(stage=waiting_stage)
+    approval = approval_record("APP-001", gate, ApprovalDecision.APPROVE, target_stage)
+    repository.approvals.append(approval)
+    original_approval = approval.model_copy(deep=True)
+    app.dependency_overrides[get_orchestrator_repository] = lambda: repository
+    try:
+        response = authentication_context.client().post(
+            "/api/v1/projects/PRJ-001/orchestrator/next-step"
+        )
+    finally:
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
+
+    assert response.status_code == 200
+    assert response.json()["data"] == {
+        "project_id": "PRJ-001",
+        "stage_before": waiting_stage.value,
+        "stage_after": target_stage.value,
+    }
+    project = repository.projects["PRJ-001"]
+    assert project["current_stage"] == target_stage.value
+    assert project["updated_at"] > INITIAL_TIME
+    assert project["status"] == "IN_PROGRESS"
+    assert repository.approvals == [original_approval]
+    assert len(repository.events) == 1
+
+    event = repository.events[0]
+    assert event.event_type is EventType.STAGE_CHANGED
+    assert event.stage_before is waiting_stage
+    assert event.stage_after is target_stage
+    assert event.source_component == "Central SDLC Orchestrator"
+    assert event.target_component == target_component
+    assert event.metadata == {
+        "approval_id": "APP-001",
+        "gate_id": gate.value,
+    }
+    assert "Agent 1" not in event.target_component
+    assert EventType.APPROVAL_DECISION not in [item.event_type for item in repository.events]
+
+
+@pytest.mark.parametrize(
+    "decision",
+    [
+        ApprovalDecision.REJECT,
+        ApprovalDecision.REQUEST_CHANGES,
+        ApprovalDecision.HOLD,
+    ],
+)
+def test_effective_non_approve_blocks_without_mutation_or_event(
+    decision: ApprovalDecision,
+    authentication_context,
+) -> None:
+    repository = FakeOrchestratorRepository(
+        stage=WorkflowStage.H1_WAITING_APPROVAL
+    )
+    repository.approvals.append(
+        approval_record(
+            "APP-001",
+            ApprovalGate.H1,
+            decision,
+            WorkflowStage.H1_WAITING_APPROVAL,
+        )
+    )
+    original_project = deepcopy(repository.projects["PRJ-001"])
+    app.dependency_overrides[get_orchestrator_repository] = lambda: repository
+    try:
+        response = authentication_context.client().post(
+            "/api/v1/projects/PRJ-001/orchestrator/next-step"
+        )
+    finally:
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
+
+    assert response.status_code == 409
+    assert repository.projects["PRJ-001"] == original_project
+    assert repository.events == []
+
+
+@pytest.mark.parametrize(
+    ("older_decision", "newer_decision", "may_advance"),
+    [
+        (ApprovalDecision.REQUEST_CHANGES, ApprovalDecision.APPROVE, True),
+        (ApprovalDecision.APPROVE, ApprovalDecision.REQUEST_CHANGES, False),
+        (ApprovalDecision.APPROVE, ApprovalDecision.REJECT, False),
+        (ApprovalDecision.APPROVE, ApprovalDecision.HOLD, False),
+    ],
+)
+def test_only_latest_approval_controls_progression(
+    older_decision: ApprovalDecision,
+    newer_decision: ApprovalDecision,
+    may_advance: bool,
+    authentication_context,
+) -> None:
+    repository = FakeOrchestratorRepository(
+        stage=WorkflowStage.H1_WAITING_APPROVAL
+    )
+    repository.approvals.extend(
+        [
+            approval_record(
+                "APP-001",
+                ApprovalGate.H1,
+                older_decision,
+                (
+                    WorkflowStage.DESIGN_IN_PROGRESS
+                    if older_decision is ApprovalDecision.APPROVE
+                    else WorkflowStage.H1_WAITING_APPROVAL
+                ),
+            ),
+            approval_record(
+                "APP-002",
+                ApprovalGate.H1,
+                newer_decision,
+                (
+                    WorkflowStage.DESIGN_IN_PROGRESS
+                    if newer_decision is ApprovalDecision.APPROVE
+                    else WorkflowStage.H1_WAITING_APPROVAL
+                ),
+                offset_seconds=1,
+            ),
+        ]
+    )
+    app.dependency_overrides[get_orchestrator_repository] = lambda: repository
+    try:
+        response = authentication_context.client().post(
+            "/api/v1/projects/PRJ-001/orchestrator/next-step"
+        )
+    finally:
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
+
+    assert response.status_code == (200 if may_advance else 409)
+    assert repository.projects["PRJ-001"]["current_stage"] == (
+        "DESIGN_IN_PROGRESS" if may_advance else "H1_WAITING_APPROVAL"
+    )
+    assert len(repository.events) == (1 if may_advance else 0)
+
+
+def test_approve_with_noncanonical_next_stage_is_blocked(
+    authentication_context,
+) -> None:
+    repository = FakeOrchestratorRepository(
+        stage=WorkflowStage.H1_WAITING_APPROVAL
+    )
+    repository.approvals.append(
+        approval_record(
+            "APP-001",
+            ApprovalGate.H1,
+            ApprovalDecision.APPROVE,
+            WorkflowStage.COMPLETED,
+        )
+    )
+    original = deepcopy(repository.projects["PRJ-001"])
+    app.dependency_overrides[get_orchestrator_repository] = lambda: repository
+    try:
+        response = authentication_context.client().post(
+            "/api/v1/projects/PRJ-001/orchestrator/next-step"
+        )
+    finally:
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
+
+    assert response.status_code == 409
+    assert repository.projects["PRJ-001"] == original
+    assert repository.events == []
+
+
+@pytest.mark.parametrize(
+    "gate,waiting_stage,target_stage,target_component",
+    APPROVAL_TRANSITION_CASES,
+)
+@pytest.mark.parametrize(
+    "decision,available",
+    [
+        (None, False),
+        (ApprovalDecision.APPROVE, True),
+        (ApprovalDecision.REJECT, False),
+        (ApprovalDecision.REQUEST_CHANGES, False),
+        (ApprovalDecision.HOLD, False),
+    ],
+)
+def test_snapshot_reports_effective_approval_availability_without_writes(
+    gate: ApprovalGate,
+    waiting_stage: WorkflowStage,
+    target_stage: WorkflowStage,
+    target_component: str,
+    decision: ApprovalDecision | None,
+    available: bool,
+    authentication_context,
+) -> None:
+    del target_component
+    repository = FakeOrchestratorRepository(stage=waiting_stage)
+    if decision is not None:
+        repository.approvals.append(
+            approval_record(
+                "APP-001",
+                gate,
+                decision,
+                (
+                    target_stage
+                    if decision is ApprovalDecision.APPROVE
+                    else waiting_stage
+                ),
+            )
+        )
+    original_project = deepcopy(repository.projects["PRJ-001"])
+    original_approvals = deepcopy(repository.approvals)
+    app.dependency_overrides[get_orchestrator_repository] = lambda: repository
+    try:
+        response = authentication_context.client().get(
+            "/api/v1/projects/PRJ-001/workflow"
+        )
+    finally:
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["current_stage"] == waiting_stage.value
+    assert data["next_stage"] == target_stage.value
+    assert data["next_transition_available"] is available
+    assert repository.projects["PRJ-001"] == original_project
+    assert repository.approvals == original_approvals
+    assert repository.events == []
+
+
+def test_other_project_approval_cannot_enable_transition(
+    authentication_context,
+) -> None:
+    repository = FakeOrchestratorRepository(
+        stage=WorkflowStage.H1_WAITING_APPROVAL
+    )
+    repository.approvals.append(
+        approval_record(
+            "APP-001",
+            ApprovalGate.H1,
+            ApprovalDecision.APPROVE,
+            WorkflowStage.DESIGN_IN_PROGRESS,
+            project_id="PRJ-002",
+        )
+    )
+    app.dependency_overrides[get_orchestrator_repository] = lambda: repository
+    try:
+        response = authentication_context.client().post(
+            "/api/v1/projects/PRJ-001/orchestrator/next-step"
+        )
+    finally:
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
+
+    assert response.status_code == 409
+    assert repository.projects["PRJ-001"]["current_stage"] == (
+        "H1_WAITING_APPROVAL"
+    )
     assert repository.events == []
 
 
@@ -387,14 +763,48 @@ def test_stage_ownership_uses_only_official_component_names() -> None:
     )
 
 
-def test_only_first_transition_is_currently_executable() -> None:
+def test_o1_and_approval_driven_transitions_are_executable() -> None:
     executable = [transition for transition in TRANSITIONS if transition.executable]
 
-    assert len(executable) == 1
-    assert executable[0].source_stage is WorkflowStage.PROJECT_CREATED
-    assert executable[0].target_stage is WorkflowStage.REQUIREMENTS_IN_PROGRESS
-    assert get_transition(WorkflowStage.REQUIREMENTS_IN_PROGRESS) is not None
-    assert not get_transition(WorkflowStage.REQUIREMENTS_IN_PROGRESS).executable
+    assert [
+        (transition.source_stage, transition.target_stage)
+        for transition in executable
+    ] == [
+        (
+            WorkflowStage.PROJECT_CREATED,
+            WorkflowStage.REQUIREMENTS_IN_PROGRESS,
+        ),
+        (
+            WorkflowStage.H1_WAITING_APPROVAL,
+            WorkflowStage.DESIGN_IN_PROGRESS,
+        ),
+        (
+            WorkflowStage.H2_WAITING_APPROVAL,
+            WorkflowStage.TEST_PLANNING_IN_PROGRESS,
+        ),
+        (
+            WorkflowStage.H3_WAITING_APPROVAL,
+            WorkflowStage.IMPLEMENTATION_IN_PROGRESS,
+        ),
+        (
+            WorkflowStage.H4_WAITING_APPROVAL,
+            WorkflowStage.VALIDATION_IN_PROGRESS,
+        ),
+        (
+            WorkflowStage.H5_WAITING_APPROVAL,
+            WorkflowStage.COMPLETED,
+        ),
+    ]
+    for stage in (
+        WorkflowStage.REQUIREMENTS_IN_PROGRESS,
+        WorkflowStage.DESIGN_IN_PROGRESS,
+        WorkflowStage.TEST_PLANNING_IN_PROGRESS,
+        WorkflowStage.IMPLEMENTATION_IN_PROGRESS,
+        WorkflowStage.VALIDATION_IN_PROGRESS,
+    ):
+        transition = get_transition(stage)
+        assert transition is not None
+        assert transition.executable is False
 
 
 def test_workflow_snapshot_reports_available_first_transition(
@@ -593,6 +1003,7 @@ def test_repository_selects_only_canonical_transition_collections() -> None:
         PROJECTS,
         CLIENT_INPUTS,
         WORKFLOW_EVENTS,
+        APPROVALS,
     ]
 
 

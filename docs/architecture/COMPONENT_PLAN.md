@@ -112,12 +112,12 @@ This map translates the approved architecture into implementation ownership and 
 | IDs produced | `EVT-###`, approved `APP-###`, and relevant `TRACE-###` where orchestration creates links |
 | Dependencies | All four agents, Shared Knowledge Base, canonical stages/decisions, approval UI, report completion checks |
 | Must not do | Perform agent domain work, skip/auto-approve gates, hide failures, exceed retry limits, overwrite approved versions, allow agent-controlled global transitions |
-| Current status | The centralized transition policy and stage ownership metadata, authenticated owner-scoped workflow snapshot/event-history endpoints, first next-step endpoint, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS` transition, ClientInput prerequisite, and WorkflowEvent persistence are implemented. The O2 Approval persistence contract is approved but not implemented. O3 approval-driven transitions, O4 REJECT/REQUEST_CHANGES routing, O6 HOLD/release behavior, other later transitions, failure routing, retries, escalation, correction loops, and UI remain planned |
+| Current status | The centralized transition policy and stage ownership metadata, authenticated owner-scoped workflow snapshot/event-history endpoints, next-step, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, O2 H1-H5 Approval persistence, and O3 effective-APPROVE transitions are implemented. Specialist in-progress transitions into approval gates, O4 REJECT/REQUEST_CHANGES routing, O6 HOLD/release behavior, failure routing, retries, escalation, correction loops, and UI remain planned |
 
 ### Orchestrator Phase Boundaries
 
-- **O2 — approved contract, not implemented:** authenticate and authorize the Project owner, validate the matching H1-H5 waiting stage, append an immutable Approval, identify the newest gate decision as effective, and append exactly one `APPROVAL_DECISION` event without changing `Project.current_stage`.
-- **O3 — planned:** consume an effective `APPROVE`, execute the canonical forward Project transition, and create `STAGE_CHANGED`.
+- **O2 — implemented:** authenticate and authorize the Project owner, validate the matching H1-H5 waiting stage, append an immutable Approval, identify the newest gate decision as effective, and append exactly one `APPROVAL_DECISION` event without changing `Project.current_stage`.
+- **O3 — implemented:** consume the newest/effective matching-gate `APPROVE`, verify its `next_stage` against policy, execute the canonical forward Project transition through next-step, and create exactly one `STAGE_CHANGED`.
 - **O4 — planned:** implement REJECT routing and REQUEST_CHANGES correction routing.
 - **O6 — planned:** persist richer `ON_HOLD` runtime state and implement authorized release/resume behavior.
 

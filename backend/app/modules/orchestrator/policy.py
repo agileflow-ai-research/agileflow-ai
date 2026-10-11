@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 from types import MappingProxyType
 
 from app.common.status import ApprovalGate, WorkflowStage
@@ -9,6 +10,11 @@ REQUIREMENTS_COMPONENT = "Requirement Gathering and Analysis Agent"
 DESIGN_COMPONENT = "Project Management and Design Agent"
 TESTING_COMPONENT = "Testing, Validation and Security Agent"
 IMPLEMENTATION_COMPONENT = "Implementation and Git Automation Agent"
+
+
+class TransitionPrerequisite(str, Enum):
+    CLIENT_INPUT = "CLIENT_INPUT"
+    EFFECTIVE_APPROVAL = "EFFECTIVE_APPROVAL"
 
 
 STAGE_OWNERS = MappingProxyType(
@@ -49,6 +55,7 @@ class TransitionDefinition:
     target_stage: WorkflowStage
     responsible_component: str
     approval_gate: ApprovalGate | None = None
+    prerequisite: TransitionPrerequisite | None = None
     executable: bool = False
 
 
@@ -57,6 +64,7 @@ TRANSITIONS = (
         WorkflowStage.PROJECT_CREATED,
         WorkflowStage.REQUIREMENTS_IN_PROGRESS,
         REQUIREMENTS_COMPONENT,
+        prerequisite=TransitionPrerequisite.CLIENT_INPUT,
         executable=True,
     ),
     TransitionDefinition(
@@ -70,6 +78,8 @@ TRANSITIONS = (
         WorkflowStage.DESIGN_IN_PROGRESS,
         DESIGN_COMPONENT,
         ApprovalGate.H1,
+        TransitionPrerequisite.EFFECTIVE_APPROVAL,
+        executable=True,
     ),
     TransitionDefinition(
         WorkflowStage.DESIGN_IN_PROGRESS,
@@ -82,6 +92,8 @@ TRANSITIONS = (
         WorkflowStage.TEST_PLANNING_IN_PROGRESS,
         TESTING_COMPONENT,
         ApprovalGate.H2,
+        TransitionPrerequisite.EFFECTIVE_APPROVAL,
+        executable=True,
     ),
     TransitionDefinition(
         WorkflowStage.TEST_PLANNING_IN_PROGRESS,
@@ -94,6 +106,8 @@ TRANSITIONS = (
         WorkflowStage.IMPLEMENTATION_IN_PROGRESS,
         IMPLEMENTATION_COMPONENT,
         ApprovalGate.H3,
+        TransitionPrerequisite.EFFECTIVE_APPROVAL,
+        executable=True,
     ),
     TransitionDefinition(
         WorkflowStage.IMPLEMENTATION_IN_PROGRESS,
@@ -106,6 +120,8 @@ TRANSITIONS = (
         WorkflowStage.VALIDATION_IN_PROGRESS,
         TESTING_COMPONENT,
         ApprovalGate.H4,
+        TransitionPrerequisite.EFFECTIVE_APPROVAL,
+        executable=True,
     ),
     TransitionDefinition(
         WorkflowStage.VALIDATION_IN_PROGRESS,
@@ -118,6 +134,8 @@ TRANSITIONS = (
         WorkflowStage.COMPLETED,
         STAGE_OWNERS[WorkflowStage.COMPLETED],
         ApprovalGate.H5,
+        TransitionPrerequisite.EFFECTIVE_APPROVAL,
+        executable=True,
     ),
 )
 

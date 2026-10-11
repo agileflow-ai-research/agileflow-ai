@@ -10,6 +10,7 @@ from app.modules.auth.dependencies import (
     AuthenticationServiceError,
 )
 from app.modules.auth.router import router as auth_router
+from app.modules.approvals.router import router as approvals_router
 from app.modules.orchestrator.router import router as orchestrator_router
 from app.modules.projects.router import router as projects_router
 from app.modules.requirements.router import router as client_inputs_router
@@ -99,6 +100,7 @@ app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(projects_router, prefix=settings.api_v1_prefix)
 app.include_router(orchestrator_router, prefix=settings.api_v1_prefix)
 app.include_router(client_inputs_router, prefix=settings.api_v1_prefix)
+app.include_router(approvals_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")

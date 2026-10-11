@@ -1,10 +1,11 @@
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from pydantic import ValidationError
 
 from app.common.id_generator import generate_id
-from app.common.status import EventType, WorkflowStage
+from app.common.status import ApprovalDecision, EventType, WorkflowStage
 from app.modules.auth.authorization import (
     ProjectAccessNotFoundError,
     authorize_project_access,
@@ -13,6 +14,7 @@ from app.modules.auth.schemas import UserPublicResponse
 from app.modules.orchestrator.policy import (
     ORCHESTRATOR_COMPONENT,
     TransitionDefinition,
+    TransitionPrerequisite,
     get_stage_owner,
     get_transition,
 )
@@ -24,6 +26,7 @@ from app.modules.orchestrator.schemas import (
     WorkflowSnapshot,
     WorkflowTransitionResult,
 )
+from app.schemas.approval import Approval
 from app.schemas.project import Project
 from app.schemas.workflow import WorkflowEvent
 
@@ -42,12 +45,27 @@ class MissingClientInputError(ValueError):
     """Raised when the first transition has no project ClientInput."""
 
 
+class ApprovalPrerequisiteError(ValueError):
+    """Raised when the effective gate decision does not allow progression."""
+
+    def __init__(self, current_stage: WorkflowStage, detail: str) -> None:
+        self.current_stage = current_stage
+        super().__init__(detail)
+
+
 class OrchestratorServiceError(RuntimeError):
     """Raised when a workflow transition cannot be completed safely."""
 
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@dataclass(frozen=True, slots=True)
+class PrerequisiteEvaluation:
+    satisfied: bool
+    approval: Approval | None = None
+    detail: str | None = None
 
 
 class OrchestratorService:
@@ -61,14 +79,83 @@ class OrchestratorService:
         self._repository = repository
         self._clock = clock
 
-    def _prerequisites_satisfied(
+    def _client_input_prerequisite(
         self,
         project_id: str,
         transition: TransitionDefinition,
-    ) -> bool:
-        if transition.source_stage is WorkflowStage.PROJECT_CREATED:
-            return self._repository.has_client_input(project_id)
-        return False
+    ) -> PrerequisiteEvaluation:
+        del transition
+        satisfied = self._repository.has_client_input(project_id)
+        return PrerequisiteEvaluation(
+            satisfied=satisfied,
+            detail=(
+                None
+                if satisfied
+                else "At least one ClientInput is required before starting requirements"
+            ),
+        )
+
+    def _effective_approval_prerequisite(
+        self,
+        project_id: str,
+        transition: TransitionDefinition,
+    ) -> PrerequisiteEvaluation:
+        if transition.approval_gate is None:
+            return PrerequisiteEvaluation(
+                satisfied=False,
+                detail="The transition has no matching approval gate",
+            )
+        document = self._repository.get_effective_approval(
+            project_id,
+            transition.approval_gate,
+        )
+        if document is None:
+            return PrerequisiteEvaluation(
+                satisfied=False,
+                detail=(
+                    f"{transition.approval_gate.value} approval is required "
+                    "before progression"
+                ),
+            )
+        approval = Approval.model_validate(document)
+        if approval.decision is not ApprovalDecision.APPROVE:
+            return PrerequisiteEvaluation(
+                satisfied=False,
+                approval=approval,
+                detail=(
+                    f"Effective {transition.approval_gate.value} decision "
+                    "does not permit progression"
+                ),
+            )
+        if approval.next_stage is not transition.target_stage:
+            return PrerequisiteEvaluation(
+                satisfied=False,
+                approval=approval,
+                detail=(
+                    f"Effective {transition.approval_gate.value} approval "
+                    "does not match the canonical next stage"
+                ),
+            )
+        return PrerequisiteEvaluation(satisfied=True, approval=approval)
+
+    def _evaluate_prerequisite(
+        self,
+        project_id: str,
+        transition: TransitionDefinition,
+    ) -> PrerequisiteEvaluation:
+        handlers = {
+            TransitionPrerequisite.CLIENT_INPUT: self._client_input_prerequisite,
+            TransitionPrerequisite.EFFECTIVE_APPROVAL: (
+                self._effective_approval_prerequisite
+            ),
+        }
+        handler = handlers.get(transition.prerequisite)
+        if handler is None:
+            return PrerequisiteEvaluation(
+                satisfied=False,
+                detail="The transition prerequisite is not implemented",
+            )
+        return handler(project_id, transition)
 
     def get_workflow_snapshot(
         self,
@@ -82,11 +169,12 @@ class OrchestratorService:
                 self._repository,
             )
             transition = get_transition(project.current_stage)
-            available = (
-                transition is not None
-                and transition.executable
-                and self._prerequisites_satisfied(project_id, transition)
-            )
+            available = False
+            if transition is not None and transition.executable:
+                available = self._evaluate_prerequisite(
+                    project_id,
+                    transition,
+                ).satisfied
             return WorkflowSnapshot(
                 project_id=project.project_id,
                 current_stage=project.current_stage,
@@ -147,9 +235,14 @@ class OrchestratorService:
             transition = get_transition(project.current_stage)
             if transition is None or not transition.executable:
                 raise UnsupportedWorkflowStageError(project.current_stage)
-            if not self._prerequisites_satisfied(project_id, transition):
-                raise MissingClientInputError(
-                    "At least one ClientInput is required before starting requirements"
+            prerequisite = self._evaluate_prerequisite(project_id, transition)
+            if not prerequisite.satisfied:
+                if transition.prerequisite is TransitionPrerequisite.CLIENT_INPUT:
+                    raise MissingClientInputError(prerequisite.detail or "")
+                raise ApprovalPrerequisiteError(
+                    project.current_stage,
+                    prerequisite.detail
+                    or "An effective approval is required before progression",
                 )
 
             stage_before = transition.source_stage
@@ -167,10 +260,17 @@ class OrchestratorService:
                 stage_before=stage_before,
                 stage_after=stage_after,
                 message=(
-                    "Project advanced from PROJECT_CREATED to "
-                    "REQUIREMENTS_IN_PROGRESS."
+                    f"Project advanced from {stage_before.value} to "
+                    f"{stage_after.value}."
                 ),
-                metadata={},
+                metadata=(
+                    {
+                        "approval_id": prerequisite.approval.approval_id,
+                        "gate_id": prerequisite.approval.gate_id.value,
+                    }
+                    if prerequisite.approval is not None
+                    else {}
+                ),
                 created_at=now,
             )
 
@@ -197,6 +297,7 @@ class OrchestratorService:
             ProjectAccessNotFoundError,
             UnsupportedWorkflowStageError,
             MissingClientInputError,
+            ApprovalPrerequisiteError,
             OrchestratorServiceError,
         ):
             raise

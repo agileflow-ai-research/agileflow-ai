@@ -9,7 +9,7 @@ This document is the shared data-contract baseline. The current repository imple
 ## Current Schema Implementation Status
 
 - **Implemented schemas and helpers:** User, Project, Approval, WorkflowEvent, pairwise TraceabilityLink, BaseArtifact, API success/error response models, registration and ClientInput request/response models, shared enums, and ID-format/generation helpers including `USR-###`.
-- **Schema only:** Approval has a shared schema, but no Approval API or approval-gate workflow behavior is implemented.
+- **Implemented O2 foundation:** Approval request validation, authenticated H1-H5 POST APIs, append-only persistence, `APP-###` allocation, effective/latest repository lookup, and `APPROVAL_DECISION` event generation are implemented without Project stage mutation.
 - **Schema only:** TraceabilityLink has a shared pairwise schema, but traceability persistence and generation are not implemented.
 - **ClientInput foundation only:** request validation, project-scoped persistence, and response serialization are implemented; requirement extraction, analysis, generation, and clarification behavior remain planned.
 - **Implemented:** login/JWT DTOs and `/auth/me` safe public responses.
@@ -342,9 +342,9 @@ For O2, `artifact_version` is supplied by the reviewer/client and represents the
 
 File 06 historically mentions `artifact_type`, but it is not part of the active approved O2 Approval schema. `reviewer_user_id` is also not approved. File 06's legacy `gate`, `reviewer_comment`, `reviewed_by`, and `reviewed_at` names remain superseded by `gate_id`, `comment`, reviewer name/role, and `timestamp`.
 
-Every successfully persisted Approval creates exactly one `APPROVAL_DECISION` WorkflowEvent and no `STAGE_CHANGED` event. O3 owns approval-driven stage transitions. O4 owns later REJECT/REQUEST_CHANGES routing, and O6 owns richer HOLD persistence and release behavior.
+Every successfully persisted Approval creates exactly one `APPROVAL_DECISION` WorkflowEvent and no `STAGE_CHANGED` event. The implemented O3 next-step behavior separately consumes the effective APPROVE and creates one `STAGE_CHANGED` while leaving Approval history immutable. O4 owns later REJECT/REQUEST_CHANGES routing, and O6 owns richer HOLD persistence and release behavior.
 
-The O2 contract is approved but its API, persistence, and event behavior are not yet implemented.
+The O2 API, persistence, effective/latest lookup, and event behavior are implemented. O3 approval-driven H1-H5 transitions are implemented; O4 correction/routing and O6 richer HOLD/release behavior remain planned.
 
 ## TraceabilityLink
 
