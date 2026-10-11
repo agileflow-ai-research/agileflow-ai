@@ -15,7 +15,8 @@ This is the canonical complete workflow contract. Most of the workflow remains p
 - **Read behavior:** authenticated owners can retrieve a read-only workflow snapshot and chronologically ordered project WorkflowEvents.
 - **Approval persistence:** O2 validates matching waiting stages, appends immutable Approval history, exposes effective/latest repository lookup, and creates exactly one `APPROVAL_DECISION` event without changing Project stage.
 - **Approval transitions:** O3 uses the newest project/gate decision; only canonical `APPROVE` permits next-step, which creates exactly one `STAGE_CHANGED` event.
-- **Still planned:** specialist in-progress transitions into H1-H5 waiting stages, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, bounded retries, human-review escalation, and correction loops.
+- **Approved, not implemented:** O3.5 defines specialist handoff readiness through a final `ARTIFACT_GENERATED` marker plus minimum persisted evidence; the five specialist-to-gate transitions remain non-executable.
+- **Still planned:** O3.5 implementation, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, bounded retries, human-review escalation, and correction loops.
 
 This foundation does not execute the Requirement Gathering and Analysis Agent and does not represent a complete Orchestrator implementation.
 
@@ -130,6 +131,28 @@ O2 persists REJECT, REQUEST_CHANGES, and HOLD, keeps the waiting stage unchanged
 | `H5_WAITING_APPROVAL` | H5 approved | Decision is `APPROVE` | `COMPLETED` |
 
 Before moving, the Orchestrator validates required artifacts, persists the new state, creates a `STAGE_CHANGED` event, and identifies the next responsible component. A missing approval or artifact blocks the transition.
+
+### Approved O3.5 Specialist Handoff Readiness — Not Implemented
+
+All five specialist-to-gate handoffs reuse `POST /api/v1/projects/{project_id}/orchestrator/next-step`. The authenticated Project owner may invoke the endpoint after specialist processing completes. No separate completion, handoff, submit-for-approval, or stage-complete endpoint is approved. Specialist components create and persist domain artifacts, record readiness evidence, and return control; only the Central SDLC Orchestrator may update `Project.current_stage`.
+
+The canonical machine-readable readiness marker is the newest valid project-scoped `ARTIFACT_GENERATED` event for the current source stage, expected target stage, and expected specialist. The event uses the specialist as `source_component`, `Central SDLC Orchestrator` as `target_component`, and metadata containing `handoff_ready: true`, `source_stage`, `target_stage`, and a positive integer `artifact_version`. Sensitive authentication data, reviewer data, and comments are excluded.
+
+| Current stage | Waiting stage | Readiness-event source component | Additional minimum persisted evidence |
+|---|---|---|---|
+| `REQUIREMENTS_IN_PROGRESS` | `H1_WAITING_APPROVAL` | Requirement Gathering and Analysis Agent | At least one same-project `requirements` record |
+| `DESIGN_IN_PROGRESS` | `H2_WAITING_APPROVAL` | Project Management and Design Agent | At least one same-project `design_artifacts` record and one `backlog_items` record |
+| `TEST_PLANNING_IN_PROGRESS` | `H3_WAITING_APPROVAL` | Testing, Validation and Security Agent | At least one same-project `test_cases` record |
+| `IMPLEMENTATION_IN_PROGRESS` | `H4_WAITING_APPROVAL` | Implementation and Git Automation Agent | At least one same-project `implementation_artifacts` record and one `execution_logs` record |
+| `VALIDATION_IN_PROGRESS` | `H5_WAITING_APPROVAL` | Testing, Validation and Security Agent | At least one same-project `test_results` record |
+
+Both the valid readiness marker and every listed evidence predicate are required. A marker from another project, stage, target gate, or component is invalid. ArtifactStatus `WAITING_FOR_APPROVAL` and `COMPLETED` are not readiness predicates. H4 does not require a successful build/runtime status, and H5 does not require bug or security findings to exist; readiness means the evidence package is ready for human review, not that every technical check passed.
+
+The workflow snapshot and next-step must use the same readiness evaluator. The snapshot remains read-only, always shows the structural next stage, and reports availability only when the event and evidence predicates pass. Incomplete readiness makes next-step return HTTP 409 without changing the Project or creating an event or Approval.
+
+A successful handoff updates `current_stage` and `updated_at` and creates exactly one `STAGE_CHANGED` event: source `Central SDLC Orchestrator`, target `Human Stakeholder / Reviewer`, `stage_before` equal to the specialist stage, and `stage_after` equal to its waiting stage. It does not create an Approval or `APPROVAL_DECISION`; reviewer submission through H1-H5 later creates those records.
+
+The readiness event's positive `artifact_version` represents the specialist approval-package version. O3.5 records it without cross-validating O2 Approval versions and without creating a package collection. Traceability remains an architectural, reviewer, and final-completion requirement, but O3.5 introduces no machine-checkable gate-entry threshold.
 
 ## Failure Routing and Correction Loops
 

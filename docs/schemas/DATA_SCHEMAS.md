@@ -10,6 +10,7 @@ This document is the shared data-contract baseline. The current repository imple
 
 - **Implemented schemas and helpers:** User, Project, Approval, WorkflowEvent, pairwise TraceabilityLink, BaseArtifact, API success/error response models, registration and ClientInput request/response models, shared enums, and ID-format/generation helpers including `USR-###`.
 - **Implemented O2 foundation:** Approval request validation, authenticated H1-H5 POST APIs, append-only persistence, `APP-###` allocation, effective/latest repository lookup, and `APPROVAL_DECISION` event generation are implemented without Project stage mutation.
+- **Approved, not implemented:** O3.5 specialist handoff readiness uses an existing `ARTIFACT_GENERATED` WorkflowEvent plus minimum project-scoped persisted evidence; it adds no schema, collection, EventType, or Project readiness field.
 - **Schema only:** TraceabilityLink has a shared pairwise schema, but traceability persistence and generation are not implemented.
 - **ClientInput foundation only:** request validation, project-scoped persistence, and response serialization are implemented; requirement extraction, analysis, generation, and clarification behavior remain planned.
 - **Implemented:** login/JWT DTOs and `/auth/me` safe public responses.
@@ -162,6 +163,23 @@ STAGE_CHANGED
 ```
 
 The workflow rules also require events for project creation, agent completion, artifact revision/approval/rejection/locking, retry results, report generation, and H5 approval, but names for those additional event types are not formally defined. Do not invent them without approval.
+
+#### O3.5 `ARTIFACT_GENERATED` Readiness Metadata — Approved, Not Implemented
+
+O3.5 uses `ARTIFACT_GENERATED`; it does not introduce a completion EventType. A final specialist readiness event contains safe metadata with:
+
+| Metadata field | Contract |
+|---|---|
+| `handoff_ready` | Required literal `true` |
+| `source_stage` | Required current specialist in-progress WorkflowStage |
+| `target_stage` | Required matching `Hx_WAITING_APPROVAL` WorkflowStage |
+| `artifact_version` | Required positive integer representing the specialist approval-package version |
+
+The event's `project_id` scopes the readiness evidence. Its `source_component` is the responsible specialist and its `target_component` is `Central SDLC Orchestrator`. The Orchestrator selects the newest valid event matching `project_id`, expected source stage, expected target stage, and expected source component. Reviewer identity, comments, email, JWTs, passwords, password hashes, and other private authentication data are prohibited from readiness metadata.
+
+The readiness event is necessary but not sufficient. O3.5 also requires project-scoped persisted evidence: `requirements` for H1; both `design_artifacts` and `backlog_items` for H2; `test_cases` for H3; both `implementation_artifacts` and `execution_logs` for H4; and `test_results` for H5. Each named collection must contain at least one record for the same project. No new package collection is approved.
+
+`WAITING_FOR_APPROVAL` and `COMPLETED` remain available ArtifactStatus values but are not O3.5 readiness predicates. The readiness `artifact_version` is handoff evidence only and is not yet cross-validated against O2 `Approval.artifact_version` or specialist artifact versions.
 
 ### Runtime Control States
 
