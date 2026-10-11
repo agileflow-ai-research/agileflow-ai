@@ -3,7 +3,17 @@
 Project ID: **J26-SE-358**  
 Primary authority: **File 12 — Orchestrator Workflow and Approval Rules**
 
-This is the canonical workflow contract. The workflow described here is planned; the current repository contains only an empty Orchestrator module placeholder and no transitions, approval handling, routing, or retry implementation.
+This is the canonical complete workflow contract. Most of the workflow remains planned; the current repository implements only the limited Sprint 1 foundation described below.
+
+## Current Implementation Status
+
+- **Endpoint:** `POST /api/v1/projects/{project_id}/orchestrator/next-step`
+- **Only implemented transition:** `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`
+- **Prerequisite:** at least one ClientInput must belong to the project.
+- **Successful behavior:** update the project's `current_stage` and `updated_at`, then persist one `STAGE_CHANGED` WorkflowEvent.
+- **Still planned:** H1-H5 handling, every later transition, approval-gate processing, failure routing, bounded retries, human-review escalation, and correction loops.
+
+This foundation does not execute the Requirement Gathering and Analysis Agent and does not represent a complete Orchestrator implementation.
 
 ## Purpose and Boundaries
 

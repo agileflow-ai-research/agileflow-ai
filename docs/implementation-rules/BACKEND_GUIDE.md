@@ -14,36 +14,34 @@ backend/
 │   ├── main.py
 │   ├── core/
 │   │   ├── config.py
-│   │   ├── constants.py        # placeholder
+│   │   ├── constants.py        # shared constants
 │   │   └── errors.py           # placeholder
 │   ├── database/
 │   │   ├── mongodb.py          # shared client/database/ping/close helpers
 │   │   └── collections.py      # 14 canonical collection constants
 │   ├── common/
-│   │   ├── response.py         # placeholder
-│   │   ├── status.py           # placeholder
-│   │   ├── id_generator.py     # placeholder
-│   │   └── traceability.py     # placeholder
+│   │   ├── response.py         # shared response models
+│   │   ├── status.py           # shared enums
+│   │   ├── id_generator.py     # canonical ID helpers
+│   │   └── traceability.py     # shared traceability validation
 │   ├── modules/
-│   │   ├── projects/           # package placeholder
+│   │   ├── projects/           # Project CRUD module
 │   │   ├── approvals/          # package placeholder
-│   │   ├── orchestrator/       # package placeholder
-│   │   ├── requirements/       # package placeholder
+│   │   ├── orchestrator/       # first transition only
+│   │   ├── requirements/       # ClientInput foundation only
 │   │   ├── design/             # package placeholder
 │   │   ├── testing/            # package placeholder
 │   │   ├── implementation/     # package placeholder
 │   │   └── reports/            # package placeholder
-│   └── schemas/                # package placeholder
-├── tests/
-│   ├── test_health.py
-│   └── test_database_foundation.py
+│   └── schemas/                # shared domain schemas
+├── tests/                       # 76-test backend suite
 ├── .env.example
 └── requirements.txt
 ```
 
-Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, collection constants, and focused foundation tests.
+Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, collection constants, shared enums/schemas/response and ID helpers, layered Project CRUD, layered ClientInput persistence, the first Orchestrator transition with ClientInput prerequisite and WorkflowEvent persistence, and backend tests.
 
-Not implemented: project/agent APIs, domain Pydantic schemas, module routers/services/repositories, persistence operations, approvals, Orchestrator transitions, traceability/report generation, or external integrations.
+Not implemented: Requirement Agent processing or intelligence, approval APIs/gate processing, later Orchestrator transitions, failure routing, retry loops, traceability persistence/generation, reports, frontend, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
 
 ## Approved Backend Stack
 

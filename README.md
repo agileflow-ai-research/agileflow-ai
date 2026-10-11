@@ -166,11 +166,13 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | Environment-based settings | Implemented |
 | Shared PyMongo client, configured database accessor, ping, close | Implemented |
 | Fourteen centralized MongoDB collection constants | Implemented |
-| Backend health and database-foundation tests | Implemented |
+| Shared enums, domain schemas, ID conventions, and API response models | Implemented |
+| Project CRUD APIs and persistence | Implemented |
+| ClientInput APIs and persistence foundation | Implemented; requirement processing remains planned |
+| First Orchestrator transition and WorkflowEvent persistence | Implemented only for `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, with a ClientInput prerequisite |
+| Backend test suite | Implemented; 76 tests passing in the current verified suite |
 | Frontend application | Planned; not initialized |
-| Project CRUD APIs and schemas | Planned |
-| Agent logic and agent APIs | Planned |
-| Approval APIs and Orchestrator transitions | Planned |
-| Artifact persistence, traceability, reports, integrations | Planned |
+| Agent intelligence, approval APIs, and later workflow stages | Planned |
+| Remaining artifact persistence, traceability behavior, reports, and integrations | Planned |
 
-The presence of a module directory or a planned route in documentation does not mean that functionality is implemented.
+This is a Sprint 1 prototype foundation, not a production-ready system. The presence of a module directory or a planned route in documentation does not mean that functionality is implemented.

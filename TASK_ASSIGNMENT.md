@@ -68,6 +68,22 @@ Individual agents do not own global transitions, shared contracts, or another co
 | `feature/orchestrator` | Stage control, H1-H5, routing, bounded retries, workflow events |
 | `feature/reports-traceability` | Final reports, exports, and traceability matrix |
 
+## Approved Sprint 1 Foundation Integration Exception
+
+For Sprint 1 only, `feature/project-foundation` may contain the ClientInput persistence foundation, the first Central SDLC Orchestrator transition (`PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`), and the first WorkflowEvent persistence path. This one-time integration exception was approved to validate the common end-to-end foundation:
+
+```text
+Project creation
+  → ClientInput persistence
+  → Orchestrator prerequisite validation
+  → first controlled workflow transition
+  → WorkflowEvent persistence
+```
+
+This exception does **not** transfer long-term component ownership. Future Requirement Gathering and Analysis Agent work must continue on `feature/agent-requirements`. Future Central SDLC Orchestrator stages, approvals, failure routing, retry logic, and later workflow behavior must continue on `feature/orchestrator`.
+
+After this foundation is merged into `develop`, component branches should branch from or synchronize with the updated `develop` before continuing their independently owned implementation.
+
 ## Integration Rules
 
 1. No direct development or push to `main`.

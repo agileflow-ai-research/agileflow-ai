@@ -58,36 +58,36 @@ Schema names and supported fields are defined in [DATA_SCHEMAS.md](../schemas/DA
 
 ## Current Implementation Status
 
-The only verified HTTP endpoint is `GET /health` at the application root. It is an implemented foundation diagnostic, not a member of the planned `/api/v1` domain contract. FastAPI also supplies `/docs` automatically. Every route below is **Planned / later sprint**.
+The implemented HTTP surface currently consists of `GET /health`, the four Project routes, the two ClientInput routes, and the first Orchestrator `next-step` route listed below. FastAPI also supplies `/docs` automatically. Every other route in this contract remains **Planned / later sprint**.
 
 ## Project Routes
 
 | Method | Path | Purpose | Owner | Request schema/reference | Response schema/reference | Approval relevance | Status |
 |---|---|---|---|---|---|---|---|
-| POST | `/api/v1/projects` | Create a project | Core/Foundation | Project create body: not formally defined; Project fields are the reference | Project | Initializes workflow before H1 | Planned |
-| GET | `/api/v1/projects` | List projects for the dashboard | Core/Foundation | None | Project list; list wrapper details not formally defined | Shows current stages/gates | Planned |
-| GET | `/api/v1/projects/{project_id}` | Get project details/current state | Core/Foundation | Path parameter | Project | Shows gate context | Planned |
-| PATCH | `/api/v1/projects/{project_id}` | Update basic project metadata | Core/Foundation | Project update body: not formally defined | Project | No direct gate transition | Planned |
+| POST | `/api/v1/projects` | Create a project | Core/Foundation | Project create body: not formally defined; Project fields are the reference | Project | Initializes workflow before H1 | Implemented |
+| GET | `/api/v1/projects` | List projects for the dashboard | Core/Foundation | None | Project list; list wrapper details not formally defined | Shows current stages/gates | Implemented |
+| GET | `/api/v1/projects/{project_id}` | Get project details/current state | Core/Foundation | Path parameter | Project | Shows gate context | Implemented |
+| PATCH | `/api/v1/projects/{project_id}` | Update basic project metadata | Core/Foundation | Project update body: not formally defined | Project | No direct gate transition | Implemented |
 
 ## Workflow and Orchestrator Routes
 
 | Method | Path | Purpose | Owner | Request schema/reference | Response schema/reference | Approval relevance | Status |
 |---|---|---|---|---|---|---|---|
 | GET | `/api/v1/projects/{project_id}/workflow` | Get current stage and gate state | Central SDLC Orchestrator | Path parameter | Project, Approval, WorkflowEvent; aggregate body not formally defined | Reports H1-H5 state | Planned |
-| POST | `/api/v1/projects/{project_id}/orchestrator/next-step` | Validate and perform the next allowed action | Central SDLC Orchestrator | Not formally defined | Workflow state; body not formally defined | Must block at unapproved gates | Planned |
+| POST | `/api/v1/projects/{project_id}/orchestrator/next-step` | Validate and perform the next allowed action | Central SDLC Orchestrator | Not formally defined | Workflow state; body not formally defined | Must block at unapproved gates | Implemented for the first transition only |
 | POST | `/api/v1/projects/{project_id}/orchestrator/route-failure` | Route requirement, build, test, security, or traceability failure | Central SDLC Orchestrator | Not formally defined | WorkflowEvent and relevant issue reference | May return work to gate owner | Planned |
 | GET | `/api/v1/projects/{project_id}/events` | Get workflow activity timeline | Central SDLC Orchestrator | Path parameter | WorkflowEvent list | Includes approval events | Planned |
 
 File 12 describes a retry action but File 06 does not include a canonical retry route. No retry endpoint is established by this contract; retry execution requires human contract approval before implementation.
 
-For the first approved transition, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, the Orchestrator must verify that at least one ClientInput exists for the project. If no ClientInput exists, the transition is blocked: the project stage is not changed and no `STAGE_CHANGED` event is created.
+Only the first approved transition is currently implemented: `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`. The Orchestrator verifies that at least one ClientInput exists for the project. If no ClientInput exists, the transition is blocked: the project stage is not changed and no `STAGE_CHANGED` event is created. A successful transition updates `current_stage` and `updated_at` and persists one `STAGE_CHANGED` WorkflowEvent. Later transitions and approval-gate processing remain planned.
 
 ## Requirement Gathering and Analysis Routes
 
 | Method | Path | Purpose | Owner | Request schema/reference | Response schema/reference | Approval relevance | Status |
 |---|---|---|---|---|---|---|---|
-| POST | `/api/v1/projects/{project_id}/inputs` | Submit a client input | Requirement Gathering and Analysis Agent | ClientInput creation request | ClientInput | Input to H1 artifacts; does not advance workflow | Planned |
-| GET | `/api/v1/projects/{project_id}/inputs` | List submitted input sources | Requirement Gathering and Analysis Agent | Path parameter | Project-scoped ClientInput list without MongoDB `_id` | Supports H1 review | Planned |
+| POST | `/api/v1/projects/{project_id}/inputs` | Submit a client input | Requirement Gathering and Analysis Agent | ClientInput creation request | ClientInput | Input to H1 artifacts; does not advance workflow | Implemented |
+| GET | `/api/v1/projects/{project_id}/inputs` | List submitted input sources | Requirement Gathering and Analysis Agent | Path parameter | Project-scoped ClientInput list without MongoDB `_id` | Supports H1 review | Implemented |
 | POST | `/api/v1/projects/{project_id}/requirements/process` | Generate structured requirements | Requirement Gathering and Analysis Agent | Input references/body not formally defined | Requirement, UserStory, AcceptanceCriteria | Produces H1 package | Planned |
 | GET | `/api/v1/projects/{project_id}/requirements` | Get requirements, stories, and acceptance criteria | Requirement Gathering and Analysis Agent | Path parameter | Requirement, UserStory, AcceptanceCriteria | Reviewed at H1 | Planned |
 | POST | `/api/v1/projects/{project_id}/requirements/clarifications` | Add clarification questions or human feedback | Requirement Gathering and Analysis Agent | Not formally defined | Not formally defined | Supports H1 correction loop | Planned |

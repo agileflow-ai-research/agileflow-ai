@@ -4,7 +4,15 @@ Project ID: **J26-SE-358**
 Primary authority: **File 06 — API and Data Schema Plan**  
 Workflow/approval authority: **File 12 — Orchestrator Workflow and Approval Rules**
 
-This document is the shared data-contract baseline. No Pydantic domain schemas are implemented in the repository yet. Fields below are source-supported planned fields; do not create alternate names or infer missing fields.
+This document is the shared data-contract baseline. The current repository implements shared enums and ID helpers; Pydantic models for Project, Approval, WorkflowEvent, TraceabilityLink, BaseArtifact, and the API response envelope; and module request/response models for ClientInput. Fields below remain authoritative; do not create alternate names or infer missing fields.
+
+## Current Schema Implementation Status
+
+- **Implemented schemas and helpers:** Project, Approval, WorkflowEvent, pairwise TraceabilityLink, BaseArtifact, API success/error response models, ClientInput creation/response models, shared enums, and canonical ID-format/generation helpers.
+- **Schema only:** Approval has a shared schema, but no Approval API or approval-gate workflow behavior is implemented.
+- **Schema only:** TraceabilityLink has a shared pairwise schema, but traceability persistence and generation are not implemented.
+- **ClientInput foundation only:** request validation, project-scoped persistence, and response serialization are implemented; requirement extraction, analysis, generation, and clarification behavior remain planned.
+- Other planned domain artifacts and their persistence are not implied to be implemented by their definitions in this document.
 
 ## Contract Rules
 
@@ -33,8 +41,9 @@ This document is the shared data-contract baseline. No Pydantic domain schemas a
 | Security finding | `SEC-###` |
 | Traceability link | `TRACE-###` |
 | Workflow event | `EVT-###` |
+| Approval | `APP-###` |
 
-File 06 shows `APP-001` as an Approval example but does not include an approval family in its common ID-standard table. The approval ID format therefore requires human confirmation before implementation; do not silently establish a new canonical family.
+The approved shared convention uses `APP-###` for Approval identifiers, consistent with File 06's `APP-001` example.
 
 ClientInput has no approved public identifier or ID prefix. In particular, no `INPUT-###` family is established. MongoDB `_id` is internal persistence state and must not be exposed through the public API.
 
@@ -56,7 +65,7 @@ File 11 requires every important artifact to carry:
 | `version` | Artifact version; approved versions must not be overwritten |
 | `traceability_refs` | Related `TRACE-###` identifiers |
 
-These common fields are a cross-artifact requirement. How they are composed with each File 06 model is not yet implemented.
+These common fields are a cross-artifact requirement. BaseArtifact implements the shared foundation; composition with each future agent-specific File 06 model remains planned.
 
 ## Separate Domain Enumerations
 
@@ -292,14 +301,14 @@ Source-supported `module_type` values are `BACKEND`, `FRONTEND`, `CONFIG`, and `
 - **Purpose:** immutable evidence of a human decision at H1-H5.
 - **Producer:** human reviewer through approval UI/API; stored/coordinated by the Orchestrator.
 - **Consumers:** Orchestrator, all agents, workflow UI, Reports/Traceability.
-- **ID:** `approval_id`; File 06 example `APP-001`, canonical format pending human confirmation.
+- **ID:** `approval_id` using the approved `APP-###` format.
 - **Required by File 12 for every decision:** `project_id`, `gate_id`, `reviewer_name` or `reviewer_role`, `decision`, `comment`, `timestamp`, `artifact_version`, `next_stage`.
 - **Additional File 06 fields:** `approval_id`, `artifact_type`.
 - **Relationships:** refers to one gate and reviewed artifact version; an approved decision permits only the defined next stage.
 - **Traceability:** decision/comment/version become workflow and report evidence.
 - **Lifecycle:** append decision records; lock accepted artifact versions; do not silently approve or overwrite history.
 
-File 06 uses `gate`, `reviewer_comment`, `reviewed_by`, and `reviewed_at`, whereas specialized File 12 uses `gate_id`, `comment`, reviewer name/role, and `timestamp`. This baseline adopts File 12 terminology for workflow-required fields, but migration/alias treatment requires human schema approval before implementation.
+File 06 uses `gate`, `reviewer_comment`, `reviewed_by`, and `reviewed_at`, whereas specialized File 12 uses `gate_id`, `comment`, reviewer name/role, and `timestamp`. The approved shared schema adopts File 12 terminology; legacy aliases are not part of the current implementation.
 
 ## TraceabilityLink
 
@@ -307,12 +316,11 @@ File 06 uses `gate`, `reviewer_comment`, `reviewed_by`, and `reviewed_at`, where
 - **Producer:** all agents and Reports/Traceability functionality.
 - **Consumers:** all components and final reports.
 - **ID:** `trace_id` using `TRACE-###`.
-- **Aggregate fields from File 06:** `trace_id`, `project_id`, `requirement_id`, `design_ids`, `task_ids`, `test_ids`, `code_ids`, `bug_ids`, `security_ids`, `current_status`.
-- **Pairwise fields from File 11:** `source_type`, `source_id`, `target_type`, `target_id`, `relationship`, `status`.
+- **Approved pairwise fields:** `trace_id`, `project_id`, `source_artifact_id`, `source_artifact_type`, `target_artifact_id`, `target_artifact_type`, `relation_type`, `created_at`.
 - **Relationships:** Requirement → Design → Backlog → Test → Code → Bug/Security Finding → Validation → Report/Correction.
 - **Lifecycle:** created and updated at artifact creation, correction, validation, and report generation.
 
-File 06 defines an aggregate traceability document while File 11 shows a pairwise link representation. The storage representation is not resolved by the source authority rules and requires human approval; implementations must not create competing models.
+The approved implementation decision uses pairwise TraceabilityLink records. The aggregate representation described in File 06 is not the current storage model, and implementations must not create a competing aggregate model.
 
 ## WorkflowEvent
 
@@ -357,5 +365,5 @@ Do not introduce alternate collection names. MongoDB is the Shared Knowledge Bas
 1. Workflow stages use File 12 values rather than File 06's older stage list.
 2. ApprovalDecision uses File 12 action values, while ArtifactStatus retains approved/rejected state values.
 3. `ON_HOLD` and `HUMAN_REVIEW_REQUIRED` remain runtime controls, not generic artifact statuses.
-4. Approval field-name aliases and aggregate-versus-pairwise traceability storage require human model approval before implementation.
+4. Approval uses the approved File 12 field names, and TraceabilityLink uses the approved pairwise storage model; legacy aliases and a competing aggregate model are not implemented.
 5. The canonical connection implementation is `backend/app/database/mongodb.py`; this document defines data contracts, not another client.

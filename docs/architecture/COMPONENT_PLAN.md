@@ -20,7 +20,7 @@ This map translates the approved architecture into implementation ownership and 
 | Official name | Requirement Gathering and Analysis Agent |
 | Owner | N A Illangasinghe — IT23391536 |
 | Branch | `feature/agent-requirements` |
-| Backend area | `backend/app/modules/requirements/` (package placeholder exists) |
+| Backend area | `backend/app/modules/requirements/` (ClientInput foundation implemented) |
 | Frontend area | Planned `frontend/src/pages/requirements/` and requirement service/components using shared UI |
 | Primary inputs | Project/client idea; text, document/link/audio/video metadata; interview responses; clarification and human feedback |
 | Responsibilities | Structure SRS/FR/NFR, requirements, stories, acceptance criteria; detect ambiguity/missing/conflicting/duplicate information; preserve source references; prepare H1 package |
@@ -31,7 +31,7 @@ This map translates the approved architecture into implementation ownership and 
 | IDs produced | `REQ-###`, `US-###`, `AC-###`, relevant `TRACE-###` |
 | Dependencies | Project foundation, shared schemas/IDs, Shared Knowledge Base, Orchestrator, H1 UI/API, common response/error utilities |
 | Must not do | Generate design/code/final validation; advance global workflow; rename common fields; own another agent's module |
-| Current status | Module placeholder only; no agent logic, routes, schemas, repository, service, persistence, or UI implemented |
+| Current status | ClientInput request/response validation, project-scoped persistence, and POST/GET APIs are implemented. Requirement processing, extraction, quality/ambiguity/missing-information analysis, clarification, structured requirements, user stories, acceptance criteria, H1 preparation, and UI remain planned |
 
 ## 2. Project Management and Design Agent
 
@@ -100,7 +100,7 @@ This map translates the approved architecture into implementation ownership and 
 | Official name | Central SDLC Orchestrator |
 | Owner | Shared/group-level; foundation/group leader coordinates integration |
 | Branch | `feature/orchestrator` |
-| Backend area | `backend/app/modules/orchestrator/` plus coordinated approvals/project/shared utilities (placeholder packages exist) |
+| Backend area | `backend/app/modules/orchestrator/` plus coordinated approvals/project/shared utilities |
 | Frontend area | Planned `frontend/src/pages/orchestrator/` and shared workflow/approval components |
 | Primary inputs | Current project stage, persisted artifacts, H1-H5 decisions, failures, retry state, traceability state |
 | Responsibilities | Enforce one active stage, prerequisite checks, handovers, approvals, failure routing, bounded retries, workflow events, runtime holds/human review, final completion rules |
@@ -108,10 +108,10 @@ This map translates the approved architecture into implementation ownership and 
 | Approval gate | Coordinates all H1-H5; does not own artifact acceptance itself |
 | Collections used | `projects`, `approvals`, `workflow_events`, `traceability_links`, and all artifact/evidence collections for prerequisite verification |
 | IDs consumed | All project/artifact/traceability IDs |
-| IDs produced | `EVT-###`; approval identifier format needs final schema approval; relevant `TRACE-###` where orchestration creates links |
+| IDs produced | `EVT-###`, approved `APP-###`, and relevant `TRACE-###` where orchestration creates links |
 | Dependencies | All four agents, Shared Knowledge Base, canonical stages/decisions, approval UI, report completion checks |
 | Must not do | Perform agent domain work, skip/auto-approve gates, hide failures, exceed retry limits, overwrite approved versions, allow agent-controlled global transitions |
-| Current status | Package placeholder only; no stages, gates, approvals, routing, retry logic, events, APIs, or UI implemented |
+| Current status | The first next-step endpoint, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS` transition, ClientInput prerequisite, and WorkflowEvent persistence are implemented. Remaining stages, approvals, failure routing, retries, escalation, correction loops, and UI remain planned |
 
 ## 6. Shared Knowledge Base
 
@@ -130,7 +130,7 @@ This map translates the approved architecture into implementation ownership and 
 | IDs consumed/produced | Stores all canonical IDs; ID generation responsibility is shared utility/component-specific and not database-client logic |
 | Dependencies | Environment settings, PyMongo, approved schemas/repositories, security/secret handling |
 | Must not do | Contain agent queries/business logic in the client module, create duplicate clients/collections, decide workflow, expose credentials |
-| Current status | Foundation implemented: one settings-driven client, database accessor, ping/close helper, exact collection constants, unit tests. Repositories and artifact persistence are planned |
+| Current status | Foundation implemented: one settings-driven client, database accessor, ping/close helper, exact collection constants, tests, and repository-backed Project, ClientInput, and WorkflowEvent persistence. Persistence for the remaining artifact types is planned |
 
 ## 7. Reports / Traceability
 
