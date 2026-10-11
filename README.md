@@ -26,7 +26,7 @@ Supporting shared components are:
 
 - **Central SDLC Orchestrator** — controls stage order, handovers, approvals, bounded retries, failure routing, and workflow events. It does not perform the agents' domain work.
 - **Shared Knowledge Base** — MongoDB storage for structured project artifacts, workflow information, approvals, logs, and traceability links.
-- **Authentication and Project Ownership** — shared-platform registration and JWT Bearer authentication are implemented; owner-based project isolation remains planned. This is not a fifth research agent.
+- **Authentication and Project Ownership** — shared-platform registration, JWT Bearer authentication, Project ownership, and owner-based project isolation are implemented. This is not a fifth research agent.
 - **Reports / Traceability** — shared functionality for evidence, exports, and the Requirement → Design → Backlog → Test → Code → Bug/Security Finding → Validation → Report/Correction chain.
 
 ## Human-in-the-Loop Workflow
