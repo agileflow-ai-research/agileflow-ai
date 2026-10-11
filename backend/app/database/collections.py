@@ -1,3 +1,4 @@
+USERS = "users"
 PROJECTS = "projects"
 CLIENT_INPUTS = "client_inputs"
 REQUIREMENTS = "requirements"

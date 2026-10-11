@@ -12,7 +12,7 @@ This is the canonical implementation API contract. It describes planned interfac
 - **Project-scoped pattern:** `/api/v1/projects/{project_id}/...`
 - **Request content:** `application/json`; `multipart/form-data` only for upload endpoints where needed
 - **Response content:** `application/json`; report export formats are planned for later
-- **Authentication:** optional/not formally defined for the MVP; no authentication contract is established here
+- **Authentication:** registration, JWT Bearer login, token validation, and `/auth/me` are implemented; project ownership enforcement remains planned
 - **Path parameter:** use `{project_id}`, not `{projectId}`
 
 Do not create a parallel `/api/projects/...` family. Non-versioned routes in general implementation or workflow guides are examples superseded by File 06 for API naming.
@@ -58,7 +58,25 @@ Schema names and supported fields are defined in [DATA_SCHEMAS.md](../schemas/DA
 
 ## Current Implementation Status
 
-The implemented HTTP surface currently consists of `GET /health`, the four Project routes, the two ClientInput routes, and the first Orchestrator `next-step` route listed below. FastAPI also supplies `/docs` automatically. Every other route in this contract remains **Planned / later sprint**.
+The implemented HTTP surface currently consists of `GET /health`, the three Authentication routes, the four Project routes, the two ClientInput routes, and the first Orchestrator `next-step` route listed below. FastAPI also supplies `/docs` automatically. Registration, login, JWT issuance/validation, and `/auth/me` are implemented. Project-scoped routes are still pre-authentication, and ownership enforcement is **Planned / approved contract**; every other unimplemented route remains **Planned / later sprint**.
+
+## Authentication Routes
+
+| Method | Path | Purpose | Authentication | Request | Response data | Status |
+|---|---|---|---|---|---|---|
+| POST | `/api/v1/auth/register` | Register one active user | Public | `name`, `email`, `password` | Safe User data only | Implemented |
+| POST | `/api/v1/auth/login` | Verify credentials and issue an access token | Public | `email`, `password` | `access_token`, `token_type: bearer` | Implemented |
+| GET | `/api/v1/auth/me` | Return the authenticated user's safe public data | Bearer token required | None | `user_id`, `name`, `email`, `is_active`, `created_at`, `updated_at` | Implemented |
+
+Registration normalizes and validates email through normal schema validation, rejects duplicate email, hashes the password with Argon2, generates `USR-###`, sets `is_active` to `true`, records UTC timestamps, and persists to `users`. It returns user information only; registration does not create a Project or issue a token. The user must call login separately.
+
+Login locates the normalized email, requires an active user, verifies the Argon2 hash, and issues a JWT access token. Invalid credentials must not reveal whether the email or password was incorrect. Public responses must never contain `password` or `password_hash`.
+
+`GET /api/v1/auth/me` requires `Authorization: Bearer <access_token>` and returns only the safe public User fields shown above.
+
+The access token minimally contains `sub = user_id` and may include standard `iat` and `exp` claims. It must not contain passwords, password hashes, project IDs, or private user information. Signing configuration comes from `JWT_SECRET_KEY`, `JWT_ALGORITHM`, and `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`; the prototype recommendations are `HS256` and 60 minutes. `JWT_SECRET_KEY` has no production-suitable default and may use only a clearly non-production placeholder in `.env.example`.
+
+No logout route, refresh token, token-revocation store, session database, OAuth/social provider, MFA, organization, team, collaboration, role, RBAC, or administrator contract is approved. With stateless access tokens, client-side token removal represents logout unless a later contract establishes revocation.
 
 ## Project Routes
 
@@ -68,6 +86,8 @@ The implemented HTTP surface currently consists of `GET /health`, the four Proje
 | GET | `/api/v1/projects` | List projects for the dashboard | Core/Foundation | None | Project list; list wrapper details not formally defined | Shows current stages/gates | Implemented |
 | GET | `/api/v1/projects/{project_id}` | Get project details/current state | Core/Foundation | Path parameter | Project | Shows gate context | Implemented |
 | PATCH | `/api/v1/projects/{project_id}` | Update basic project metadata | Core/Foundation | Project update body: not formally defined | Project | No direct gate transition | Implemented |
+
+The approved ownership update requires Bearer authentication for all four Project routes. Project creation sets server-controlled `owner_user_id` from the authenticated user's `user_id`; clients cannot provide or patch it. Project listing returns only projects owned by the authenticated user. Project detail and update require ownership. The currently implemented routes do not enforce this yet.
 
 ## Workflow and Orchestrator Routes
 
@@ -121,6 +141,20 @@ The server supplies `project_id` from the canonical path parameter and sets `cre
 Multipart upload fields and behavior are not defined. This contract does not establish storage-path guarantees beyond permitting `content` to hold a prototype reference. It does not include transcription, parsing, extraction, live capture, requirement processing, or AI/LLM behavior.
 
 Creating a ClientInput persists it for the path project only. Creation must not change the project's workflow stage, process requirements, call an LLM, or create an H1 approval. Listing inputs returns only records belonging to the path project and excludes internal MongoDB `_id`.
+
+## Project-Scoped Authorization
+
+The approved next foundation update requires authenticated Project ownership for every project-scoped API. This includes the currently implemented ClientInput POST/GET and Orchestrator `next-step` endpoint, as well as all future Agent, Approval, Artifact, Traceability, Workflow, and Report endpoints.
+
+```text
+authenticated user_id
+        ↓
+project.owner_user_id
+        ↓
+must match
+```
+
+A syntactically valid `project_id` is not authorization. Missing or invalid authentication returns HTTP 401. For this prototype, an authenticated user requesting a project they do not own receives HTTP 404 so the API does not reveal whether another user's project identifier exists. No ownership data for another user's project may be returned.
 
 ## Project Management and Design Routes
 

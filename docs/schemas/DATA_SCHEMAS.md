@@ -4,14 +4,16 @@ Project ID: **J26-SE-358**
 Primary authority: **File 06 — API and Data Schema Plan**  
 Workflow/approval authority: **File 12 — Orchestrator Workflow and Approval Rules**
 
-This document is the shared data-contract baseline. The current repository implements shared enums and ID helpers; Pydantic models for Project, Approval, WorkflowEvent, TraceabilityLink, BaseArtifact, and the API response envelope; and module request/response models for ClientInput. Fields below remain authoritative; do not create alternate names or infer missing fields.
+This document is the shared data-contract baseline. The current repository implements shared enums and foundation ID helpers; Pydantic models for User, Project, Approval, WorkflowEvent, TraceabilityLink, BaseArtifact, and the API response envelope; and module request/response models for registration, login, access tokens, `/auth/me`, and ClientInput. Project ownership enforcement remains planned. Fields below remain authoritative; do not create alternate names or infer missing fields.
 
 ## Current Schema Implementation Status
 
-- **Implemented schemas and helpers:** Project, Approval, WorkflowEvent, pairwise TraceabilityLink, BaseArtifact, API success/error response models, ClientInput creation/response models, shared enums, and canonical ID-format/generation helpers.
+- **Implemented schemas and helpers:** User, Project, Approval, WorkflowEvent, pairwise TraceabilityLink, BaseArtifact, API success/error response models, registration and ClientInput request/response models, shared enums, and ID-format/generation helpers including `USR-###`.
 - **Schema only:** Approval has a shared schema, but no Approval API or approval-gate workflow behavior is implemented.
 - **Schema only:** TraceabilityLink has a shared pairwise schema, but traceability persistence and generation are not implemented.
 - **ClientInput foundation only:** request validation, project-scoped persistence, and response serialization are implemented; requirement extraction, analysis, generation, and clarification behavior remain planned.
+- **Implemented:** login/JWT DTOs and `/auth/me` safe public responses.
+- **Planned / approved contract:** Project ownership enforcement is defined below but is not implemented.
 - Other planned domain artifacts and their persistence are not implied to be implemented by their definitions in this document.
 
 ## Contract Rules
@@ -42,10 +44,27 @@ This document is the shared data-contract baseline. The current repository imple
 | Traceability link | `TRACE-###` |
 | Workflow event | `EVT-###` |
 | Approval | `APP-###` |
+| User | `USR-###` |
 
 The approved shared convention uses `APP-###` for Approval identifiers, consistent with File 06's `APP-001` example.
 
+`USR-###` is implemented by the shared ID helper and User registration foundation.
+
 ClientInput has no approved public identifier or ID prefix. In particular, no `INPUT-###` family is established. MongoDB `_id` is internal persistence state and must not be exposed through the public API.
+
+## User
+
+- **Purpose:** represent one authenticated application user who may own multiple independent projects.
+- **Public ID:** `user_id` using `USR-###`; server-controlled.
+- **Canonical fields:** `user_id`, `name`, `email`, `password_hash`, `is_active`, `created_at`, `updated_at`.
+- **Client-provided registration fields:** `name`, `email`, `password`.
+- **Public response fields:** `user_id`, `name`, `email`, `is_active`, `created_at`, `updated_at`.
+- **Internal field:** `password_hash`; never accepted as a public API field and never returned.
+- **Email:** client-provided, normalized/validated, unique, and used for login.
+- **Password:** accepted only by registration/login request models, hashed with Argon2, and never persisted or returned in plaintext.
+- **Lifecycle:** `is_active` defaults to `true`; `created_at` and `updated_at` are server-controlled UTC timestamps.
+
+No additional profile fields, roles, organizations, teams, or collaboration fields are approved.
 
 ## Common Artifact Fields
 
@@ -154,12 +173,20 @@ The workflow rules also require events for project creation, agent completion, a
 - **Producer:** Core/Foundation and Central SDLC Orchestrator.
 - **Consumers:** all components.
 - **ID:** `project_id` using `PRJ-###`.
-- **Contract fields:** `project_id`, `name`, `domain`, `description`, `current_stage`, `status`, `created_by`, `created_at`, `updated_at`.
+- **Contract fields:** `project_id`, `owner_user_id`, `name`, `domain`, `description`, `current_stage`, `status`, `created_by`, `created_at`, `updated_at`.
 - **Relationships:** parent identifier for every project-scoped artifact and event.
 - **Traceability:** referenced by all artifacts; no separate traceability field is defined in the File 06 Project example.
 - **Lifecycle:** `current_stage` uses WorkflowStage; `status` uses the applicable project/artifact status concept pending model approval.
 
 File 06's sample `REQUIREMENT_GATHERING` stage is superseded by File 12's canonical detailed stages.
+
+`owner_user_id` is server-controlled, uses `USR-###`, is assigned from the authenticated user during project creation, and cannot be supplied or changed by a client. A user may own multiple projects; no cross-user sharing is approved.
+
+## Multi-Project Isolation
+
+Authentication establishes the user, `project_id` establishes the active project, and `Project.owner_user_id` authorizes access. Every project-owned record remains scoped by `project_id`, including ClientInputs, requirements, design artifacts, backlog items, test cases, implementation artifacts, execution logs, test results, security findings, bug reports, approvals, traceability links, workflow events, and future agent executions.
+
+Repositories and services must filter by the active `project_id`; an operation for one project must never retrieve or mutate another project's records. Project ownership must be checked before any project-scoped Agent, Orchestrator, Approval, Artifact, Traceability, or Report operation.
 
 ## ClientInput
 
@@ -343,6 +370,7 @@ The sources mention RequirementQualityIssue, ApiSpec, DbSchema, GitMetadata, Exe
 
 | Constant/value | Purpose |
 |---|---|
+| `users` | Authentication identities and internal Argon2 password hashes |
 | `projects` | Project metadata and current workflow state |
 | `client_inputs` | Project-owned text/document/audio/video/live-interview content and metadata |
 | `requirements` | Requirements, stories, acceptance criteria, quality findings |
@@ -358,7 +386,7 @@ The sources mention RequirementQualityIssue, ApiSpec, DbSchema, GitMetadata, Exe
 | `traceability_links` | Artifact relationships |
 | `workflow_events` | Orchestrator audit timeline |
 
-Do not introduce alternate collection names. MongoDB is the Shared Knowledge Base for structured project artifacts and workflow information.
+These are the 15 canonical collections. Do not introduce alternate user collection names such as `user_details`, `accounts`, or `auth_users`. MongoDB is the Shared Knowledge Base for structured project artifacts and workflow information.
 
 ## Contract Resolution Notes
 

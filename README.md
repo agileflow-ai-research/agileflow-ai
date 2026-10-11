@@ -26,6 +26,7 @@ Supporting shared components are:
 
 - **Central SDLC Orchestrator** — controls stage order, handovers, approvals, bounded retries, failure routing, and workflow events. It does not perform the agents' domain work.
 - **Shared Knowledge Base** — MongoDB storage for structured project artifacts, workflow information, approvals, logs, and traceability links.
+- **Authentication and Project Ownership** — shared-platform registration and JWT Bearer authentication are implemented; owner-based project isolation remains planned. This is not a fifth research agent.
 - **Reports / Traceability** — shared functionality for evidence, exports, and the Requirement → Design → Backlog → Test → Code → Bug/Security Finding → Validation → Report/Correction chain.
 
 ## Human-in-the-Loop Workflow
@@ -56,6 +57,7 @@ The canonical workflow stages are defined in [ORCHESTRATOR_WORKFLOW.md](docs/arc
 | Frontend | React, Vite, Tailwind CSS |
 | Backend | Python, FastAPI, Pydantic, pydantic-settings |
 | Shared Knowledge Base | MongoDB, PyMongo |
+| Authentication | JWT Bearer access tokens and Argon2 password hashing |
 | Backend testing | Pytest, HTTPX |
 | Initial file storage | Local `/storage` structure |
 | AI integration | Structured prompts and structured JSON first; optional RAG later where justified |
@@ -136,7 +138,7 @@ Set-Location backend
 
 ## Environment Configuration
 
-Copy `backend/.env.example` to `backend/.env` for local settings. Never commit `.env` or credentials. The safe example contains `APP_NAME`, `APP_ENV`, `API_V1_PREFIX`, `FRONTEND_ORIGIN`, `MONGODB_URI`, and `MONGODB_DATABASE`.
+Copy `backend/.env.example` to `backend/.env` for local settings. Never commit `.env` or credentials. The current safe example also includes `JWT_SECRET_KEY`, `JWT_ALGORITHM`, and `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`. Its JWT secret is an explicitly non-production placeholder that must be replaced locally before issuing or validating tokens.
 
 Use local or placeholder values in documentation and examples. Never add passwords, Atlas credentials, API keys, GitHub/Jira tokens, private client data, or private connection strings.
 
@@ -165,14 +167,23 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | FastAPI Swagger UI at `/docs` | Available through FastAPI |
 | Environment-based settings | Implemented |
 | Shared PyMongo client, configured database accessor, ping, close | Implemented |
-| Fourteen centralized MongoDB collection constants | Implemented |
+| Fifteen centralized MongoDB collection constants, including `users` | Implemented |
 | Shared enums, domain schemas, ID conventions, and API response models | Implemented |
 | Project CRUD APIs and persistence | Implemented |
 | ClientInput APIs and persistence foundation | Implemented; requirement processing remains planned |
 | First Orchestrator transition and WorkflowEvent persistence | Implemented only for `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, with a ClientInput prerequisite |
-| Backend test suite | Implemented; 76 tests passing in the current verified suite |
+| Backend test suite | Implemented; 119 tests passing in the current verified suite |
 | Frontend application | Planned; not initialized |
 | Agent intelligence, approval APIs, and later workflow stages | Planned |
 | Remaining artifact persistence, traceability behavior, reports, and integrations | Planned |
+| User persistence, `USR-###`, Argon2 hashing, and registration API | Implemented |
+| Login, JWT issuance/validation, and `/auth/me` | Implemented |
+| Project-ownership enforcement | Approved contract; implementation not started |
 
 This is a Sprint 1 prototype foundation, not a production-ready system. The presence of a module directory or a planned route in documentation does not mean that functionality is implemented.
+
+## Planned Authentication and Project Ownership
+
+Registration, User persistence, Argon2 password hashing, public `USR-###` user identifiers, JWT Bearer login, token validation, `/auth/me`, and the reusable `get_current_user` dependency are implemented. Owner-scoped Project access remains planned. A user may own multiple independent projects. Authentication identifies the user, `project_id` identifies the active project, and the planned `Project.owner_user_id` check must authorize access. Cross-user project sharing, OAuth/social login, refresh tokens, sessions, MFA, organizations, teams, RBAC, and administrator roles are not approved.
+
+The existing Project CRUD, ClientInput, and first Orchestrator endpoints are currently pre-authentication. Their next foundation update must enforce authenticated ownership without changing agent responsibilities or workflow stages.

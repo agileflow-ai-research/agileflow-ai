@@ -1,0 +1,1 @@
+"""Shared User authentication foundation."""

@@ -46,6 +46,7 @@ Pre-code and post-code work are two phases of this one research component, not s
 |---|---|
 | Central SDLC Orchestrator | All members contribute; foundation/group leader controls shared workflow integration on `feature/orchestrator` |
 | Shared Knowledge Base | Foundation/shared responsibility; database infrastructure and collection contracts require shared review |
+| Authentication and Project ownership | Foundation/shared responsibility; reusable authentication and ownership boundaries require shared review and apply to every project-scoped component |
 | Traceability and reports | Shared responsibility coordinated on `feature/reports-traceability` |
 | Final integration | All members through reviewed PRs into `develop` |
 | Project foundation | Foundation team on `feature/project-foundation` |

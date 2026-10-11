@@ -1,4 +1,5 @@
 ID_PREFIXES = (
+    "USR",
     "PRJ",
     "REQ",
     "US",

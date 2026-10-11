@@ -84,6 +84,7 @@ def test_event_type_values_are_limited_to_documented_types() -> None:
 
 
 def test_generate_id_is_deterministic_and_zero_padded() -> None:
+    assert generate_id("USR", 1) == "USR-001"
     assert generate_id("PRJ", 1) == "PRJ-001"
     assert generate_id("REQ", 12) == "REQ-012"
     assert generate_id("APP", 3) == "APP-003"
