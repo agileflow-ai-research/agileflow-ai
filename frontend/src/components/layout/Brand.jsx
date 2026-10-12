@@ -1,20 +1,48 @@
 import agileflowMark from '../../assets/brand/agileflow-mark.png'
 import agileflowWordmark from '../../assets/brand/agileflow-wordmark-dark.png'
+import { cn } from '../../utils/cn.js'
 
-function Brand() {
+const markSizeClasses = {
+  small: 'h-7 w-7',
+  medium: 'h-9 w-9',
+  large: 'h-12 w-12',
+}
+
+const wordmarkSizeClasses = {
+  small: 'h-5 max-w-32',
+  medium: 'h-7 max-w-40',
+  large: 'h-9 max-w-52',
+}
+
+function Brand({ mode = 'full', size = 'medium', className }) {
+  const showMark = mode === 'full' || mode === 'mark'
+  const showWordmark = mode === 'full' || mode === 'wordmark'
+
   return (
-    <div className="flex items-center gap-3" aria-label="AgileFlow AI">
-      <img
-        className="h-9 w-9 object-contain"
-        src={agileflowMark}
-        alt=""
-        aria-hidden="true"
-      />
-      <img
-        className="h-7 w-auto max-w-40 object-contain"
-        src={agileflowWordmark}
-        alt="AgileFlow AI"
-      />
+    <div
+      className={cn('flex items-center gap-3', className)}
+      role="img"
+      aria-label="AgileFlow AI"
+    >
+      {showMark && (
+        <img
+          className={cn('object-contain', markSizeClasses[size] ?? markSizeClasses.medium)}
+          src={agileflowMark}
+          alt=""
+          aria-hidden="true"
+        />
+      )}
+      {showWordmark && (
+        <img
+          className={cn(
+            'w-auto object-contain',
+            wordmarkSizeClasses[size] ?? wordmarkSizeClasses.medium,
+          )}
+          src={agileflowWordmark}
+          alt=""
+          aria-hidden="true"
+        />
+      )}
     </div>
   )
 }
