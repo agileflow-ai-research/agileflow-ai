@@ -17,7 +17,15 @@ vi.mock('../features/auth/PublicOnlyRoute.jsx', () => ({
 }))
 
 vi.mock('../features/auth/useAuth.js', () => ({
-  useAuth: () => ({ establishSession: vi.fn() }),
+  useAuth: () => ({
+    establishSession: vi.fn(),
+    logout: vi.fn(),
+    user: { name: 'Ada Lovelace', email: 'ada@example.com' },
+  }),
+}))
+
+vi.mock('../services/projectService.js', () => ({
+  getProjects: vi.fn().mockResolvedValue({ data: [] }),
 }))
 
 describe('AppRouter F1.2 route regression', () => {

@@ -11,7 +11,7 @@ function formatUpdatedAt(value) {
 
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
-    return String(value)
+    return null
   }
 
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date)
