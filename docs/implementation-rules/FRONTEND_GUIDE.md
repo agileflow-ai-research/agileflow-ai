@@ -5,7 +5,7 @@ Primary authorities: **File 09 — Frontend Implementation and Centralized Theme
 
 ## Current Status
 
-The F1.2 frontend foundation through F1.8 are implemented with React, Vite, Tailwind CSS, React Router, centralized CSS design tokens, reusable public/application layouts, a native-fetch `apiClient`, session-token storage, `/auth/me` bootstrap, protected routes, accessible shared components, authenticated Project listing/creation, and Vitest/Testing Library coverage. The F1.8 Create Project form persists only Project name and required domain; initial ClientInput persistence remains F1.9 and Project Overview integration remains F1.10.
+The F1.2 frontend foundation through F1.9 are implemented with React, Vite, Tailwind CSS, React Router, centralized CSS design tokens, reusable public/application layouts, a native-fetch `apiClient`, session-token storage, `/auth/me` bootstrap, protected routes, accessible shared components, authenticated Project listing/creation, initial TEXT ClientInput persistence, and Vitest/Testing Library coverage. Project creation and the first ClientInput are separate backend writes; if the second write fails, recovery retries only ClientInput persistence for the existing Project. Because `POST /projects` has no idempotency-key contract, the frontend cannot resolve a network failure where persistence occurred but the response was lost. Project Overview integration remains F1.10.
 
 Frontend component tests use Vitest, Testing Library, `jest-dom`, `user-event`, and jsdom. Run them with `npm test -- --run` from `frontend/`.
 
@@ -179,7 +179,7 @@ UI labels use official component names rather than only “Agent 1” through �
 | Login | `/login` | Foundation |
 | Registration | `/register` | Foundation |
 | Projects | `/projects` | Foundation |
-| Create Project | `/projects/new` | Project creation implemented; initial ClientInput planned for F1.9 |
+| Create Project | `/projects/new` | Project creation and initial TEXT ClientInput implemented through F1.9 |
 | Project Overview | `/projects/:projectId` | Foundation |
 | Project Workflow | `/projects/:projectId/workflow` | Foundation/Orchestrator |
 | Requirement Gathering and Analysis | `/projects/:projectId/requirements` | Requirement component |
