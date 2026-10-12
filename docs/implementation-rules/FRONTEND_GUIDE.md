@@ -5,7 +5,7 @@ Primary authorities: **File 09 — Frontend Implementation and Centralized Theme
 
 ## Current Status
 
-The F1.2 frontend foundation and F1.3 reusable component library are implemented with React, Vite, Tailwind CSS, React Router, centralized CSS design tokens, minimal public/application layouts and route placeholders, a native-fetch `apiClient`, session-token storage, accessible shared controls/presentation components, and Vitest/Testing Library coverage. Finished pages, authentication state/bootstrap, protected-route behavior, and module services remain planned.
+The F1.2 frontend foundation, F1.3 reusable component library, and F1.4 Registration screen/API integration are implemented with React, Vite, Tailwind CSS, React Router, centralized CSS design tokens, reusable public/application layouts, a native-fetch `apiClient`, session-token storage for future login, accessible shared controls/presentation components, and Vitest/Testing Library coverage. Login integration, authentication state/bootstrap, protected-route behavior, and project module services remain planned.
 
 Frontend component tests use Vitest, Testing Library, `jest-dom`, `user-event`, and jsdom. Run them with `npm test -- --run` from `frontend/`.
 

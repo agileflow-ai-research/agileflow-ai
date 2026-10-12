@@ -1,6 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
-import AuthLayout from '../layouts/AuthLayout.jsx'
 import AppLayout from '../layouts/AppLayout.jsx'
 import CreateProjectPage from '../pages/CreateProjectPage.jsx'
 import LoginPage from '../pages/LoginPage.jsx'
@@ -12,10 +11,8 @@ function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route element={<AuthLayout />}>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-        </Route>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
 
         <Route element={<AppLayout />}>
           <Route path="/projects" element={<ProjectsPage />} />
