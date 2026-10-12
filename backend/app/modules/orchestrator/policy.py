@@ -6,6 +6,7 @@ from app.common.status import ApprovalGate, WorkflowStage
 
 
 ORCHESTRATOR_COMPONENT = "Central SDLC Orchestrator"
+HUMAN_REVIEWER_COMPONENT = "Human Stakeholder / Reviewer"
 REQUIREMENTS_COMPONENT = "Requirement Gathering and Analysis Agent"
 DESIGN_COMPONENT = "Project Management and Design Agent"
 TESTING_COMPONENT = "Testing, Validation and Security Agent"
@@ -14,6 +15,7 @@ IMPLEMENTATION_COMPONENT = "Implementation and Git Automation Agent"
 
 class TransitionPrerequisite(str, Enum):
     CLIENT_INPUT = "CLIENT_INPUT"
+    SPECIALIST_HANDOFF = "SPECIALIST_HANDOFF"
     EFFECTIVE_APPROVAL = "EFFECTIVE_APPROVAL"
 
 
@@ -72,6 +74,8 @@ TRANSITIONS = (
         WorkflowStage.H1_WAITING_APPROVAL,
         STAGE_OWNERS[WorkflowStage.H1_WAITING_APPROVAL],
         ApprovalGate.H1,
+        TransitionPrerequisite.SPECIALIST_HANDOFF,
+        executable=True,
     ),
     TransitionDefinition(
         WorkflowStage.H1_WAITING_APPROVAL,
@@ -86,6 +90,8 @@ TRANSITIONS = (
         WorkflowStage.H2_WAITING_APPROVAL,
         STAGE_OWNERS[WorkflowStage.H2_WAITING_APPROVAL],
         ApprovalGate.H2,
+        TransitionPrerequisite.SPECIALIST_HANDOFF,
+        executable=True,
     ),
     TransitionDefinition(
         WorkflowStage.H2_WAITING_APPROVAL,
@@ -100,6 +106,8 @@ TRANSITIONS = (
         WorkflowStage.H3_WAITING_APPROVAL,
         STAGE_OWNERS[WorkflowStage.H3_WAITING_APPROVAL],
         ApprovalGate.H3,
+        TransitionPrerequisite.SPECIALIST_HANDOFF,
+        executable=True,
     ),
     TransitionDefinition(
         WorkflowStage.H3_WAITING_APPROVAL,
@@ -114,6 +122,8 @@ TRANSITIONS = (
         WorkflowStage.H4_WAITING_APPROVAL,
         STAGE_OWNERS[WorkflowStage.H4_WAITING_APPROVAL],
         ApprovalGate.H4,
+        TransitionPrerequisite.SPECIALIST_HANDOFF,
+        executable=True,
     ),
     TransitionDefinition(
         WorkflowStage.H4_WAITING_APPROVAL,
@@ -128,6 +138,8 @@ TRANSITIONS = (
         WorkflowStage.H5_WAITING_APPROVAL,
         STAGE_OWNERS[WorkflowStage.H5_WAITING_APPROVAL],
         ApprovalGate.H5,
+        TransitionPrerequisite.SPECIALIST_HANDOFF,
+        executable=True,
     ),
     TransitionDefinition(
         WorkflowStage.H5_WAITING_APPROVAL,

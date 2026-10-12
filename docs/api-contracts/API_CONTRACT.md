@@ -94,15 +94,15 @@ All four Project routes require Bearer authentication. Project creation sets ser
 | Method | Path | Purpose | Owner | Request schema/reference | Response schema/reference | Approval relevance | Status |
 |---|---|---|---|---|---|---|---|
 | GET | `/api/v1/projects/{project_id}/workflow` | Get current and canonical next-stage state | Central SDLC Orchestrator | Path parameter | Read-only workflow snapshot | Reports structural gate association without fabricating decisions | Implemented |
-| POST | `/api/v1/projects/{project_id}/orchestrator/next-step` | Validate and perform the next allowed action | Central SDLC Orchestrator | No request body | Workflow state | Must block when the applicable transition prerequisite is unmet | Implemented for the ClientInput-backed first transition and O3 approval-driven transitions; O3.5 specialist handoffs approved but not implemented |
+| POST | `/api/v1/projects/{project_id}/orchestrator/next-step` | Validate and perform the next allowed action | Central SDLC Orchestrator | No request body | Workflow state | Must block when the applicable transition prerequisite is unmet | Implemented for all 11 canonical forward transitions using ClientInput, specialist-handoff, or effective-Approval prerequisites |
 | POST | `/api/v1/projects/{project_id}/orchestrator/route-failure` | Route requirement, build, test, security, or traceability failure | Central SDLC Orchestrator | Not formally defined | WorkflowEvent and relevant issue reference | May return work to gate owner | Planned |
 | GET | `/api/v1/projects/{project_id}/events` | Get workflow activity timeline | Central SDLC Orchestrator | Path parameter | Project-scoped WorkflowEvent list | Includes approval events when that behavior is later implemented | Implemented |
 
 File 12 describes a retry action but File 06 does not include a canonical retry route. No retry endpoint is established by this contract; retry execution requires human contract approval before implementation.
 
-The canonical forward transition sequence and stage ownership metadata are implemented as a centralized policy. Executable transitions are `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS` plus the five H1-H5 approval-waiting transitions to their canonical targets. The first transition requires a ClientInput. Each approval-driven transition requires the newest/effective decision for the matching project and gate to be `APPROVE` and its recorded `next_stage` to match policy. Successful next-step execution updates `current_stage` and `updated_at` and persists exactly one `STAGE_CHANGED` WorkflowEvent. The workflow snapshot evaluates the same prerequisite without mutation. The O3.5 contract below is approved, but specialist in-progress transitions into approval-waiting stages remain non-executable until that contract is implemented.
+The canonical forward transition sequence and stage ownership metadata are implemented as a centralized policy. All 11 canonical forward transitions are executable when their configured prerequisite passes. The first transition requires a ClientInput; each specialist-to-gate transition requires the O3.5 readiness marker plus minimum evidence; and each approval-driven transition requires the newest/effective decision for the matching project and gate to be `APPROVE` with a policy-matching `next_stage`. Successful next-step execution updates `current_stage` and `updated_at` and persists exactly one `STAGE_CHANGED` WorkflowEvent. The workflow snapshot evaluates the same prerequisite without mutation.
 
-### Approved O3.5 Specialist Handoff Readiness Contract — Not Implemented
+### Implemented O3.5 Specialist Handoff Readiness Contract
 
 The existing `POST /api/v1/projects/{project_id}/orchestrator/next-step` endpoint is the only HTTP transition endpoint for all five specialist handoffs. No `/complete`, `/handoff`, `/submit-for-approval`, or `/stage-complete` route is approved. In the current HTTP prototype, the authenticated Project owner may invoke next-step after specialist processing completes; future internal orchestration may reuse the same Orchestrator service logic.
 
@@ -125,6 +125,8 @@ The workflow snapshot and next-step operation use the same readiness evaluator. 
 On a successful handoff, only the Orchestrator updates `Project.current_stage` and `updated_at` and creates exactly one `STAGE_CHANGED` event with `Central SDLC Orchestrator` as source, `Human Stakeholder / Reviewer` as target, and the specialist and waiting stages as `stage_before` and `stage_after`. Entering a waiting stage does not create an Approval; an Approval is created only when a reviewer later submits a decision through the existing H1-H5 endpoint.
 
 The readiness `artifact_version` records the specialist approval-package version as handoff evidence. O3.5 does not cross-validate it against `Approval.artifact_version` and does not create a package collection. Gate entry means the evidence package is ready for human review, not that every technical check passed: persisted implementation failures and validation findings may be reviewed at H4 or H5. Correction routing remains planned. End-to-end traceability remains an architectural and final-completion requirement, but no link-count or gate-entry completeness predicate is introduced by O3.5.
+
+O3.5 consumption and validation are implemented. The actual specialist agents do not yet emit these readiness events; that integration remains part of each specialist implementation.
 
 ## Requirement Gathering and Analysis Routes
 

@@ -112,13 +112,13 @@ This map translates the approved architecture into implementation ownership and 
 | IDs produced | `EVT-###`, approved `APP-###`, and relevant `TRACE-###` where orchestration creates links |
 | Dependencies | All four agents, Shared Knowledge Base, canonical stages/decisions, approval UI, report completion checks |
 | Must not do | Perform agent domain work, skip/auto-approve gates, hide failures, exceed retry limits, overwrite approved versions, allow agent-controlled global transitions |
-| Current status | The centralized transition policy and stage ownership metadata, authenticated owner-scoped workflow snapshot/event-history endpoints, next-step, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, O2 H1-H5 Approval persistence, and O3 effective-APPROVE transitions are implemented. The O3.5 specialist handoff readiness contract is approved but not implemented. Specialist in-progress transitions into approval gates, O4 REJECT/REQUEST_CHANGES routing, O6 HOLD/release behavior, failure routing, retries, escalation, correction loops, and UI remain planned |
+| Current status | The centralized transition policy and stage ownership metadata, authenticated owner-scoped workflow snapshot/event-history endpoints, next-step, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, O2 H1-H5 Approval persistence, O3 effective-APPROVE transitions, and O3.5 specialist handoff consumption/validation for all five approval-gate entries are implemented. Specialist readiness-event emission, O4 REJECT/REQUEST_CHANGES routing, O6 HOLD/release behavior, failure routing, retries, escalation, correction loops, and UI remain planned |
 
 ### Orchestrator Phase Boundaries
 
 - **O2 — implemented:** authenticate and authorize the Project owner, validate the matching H1-H5 waiting stage, append an immutable Approval, identify the newest gate decision as effective, and append exactly one `APPROVAL_DECISION` event without changing `Project.current_stage`.
 - **O3 — implemented:** consume the newest/effective matching-gate `APPROVE`, verify its `next_stage` against policy, execute the canonical forward Project transition through next-step, and create exactly one `STAGE_CHANGED`.
-- **O3.5 — approved, not implemented:** each specialist persists its outputs and a final project-scoped `ARTIFACT_GENERATED` readiness marker; next-step and workflow snapshot use that marker plus the approved minimum collection evidence. Only the Orchestrator enters H1-H5 waiting stages and creates the single `STAGE_CHANGED`; entry creates no Approval.
+- **O3.5 — implemented for consumption/validation:** next-step and workflow snapshot use a final project-scoped `ARTIFACT_GENERATED` readiness marker plus the approved minimum collection evidence. Only the Orchestrator enters H1-H5 waiting stages and creates the single `STAGE_CHANGED`; entry creates no Approval. Actual marker emission remains with future specialist implementations.
 - **O4 — planned:** implement REJECT routing and REQUEST_CHANGES correction routing.
 - **O6 — planned:** persist richer `ON_HOLD` runtime state and implement authorized release/resume behavior.
 

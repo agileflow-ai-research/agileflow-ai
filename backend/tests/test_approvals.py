@@ -535,7 +535,7 @@ def test_o2_approval_post_does_not_transition_but_enables_o3_snapshot(
     assert snapshot.json()["data"]["next_transition_available"] is True
     assert history.status_code == 200
     assert history.json()["data"][0]["event_type"] == "APPROVAL_DECISION"
-    assert sum(transition.executable for transition in TRANSITIONS) == 6
+    assert sum(transition.executable for transition in TRANSITIONS) == 11
 
 
 def test_repository_uses_only_approval_collections() -> None:

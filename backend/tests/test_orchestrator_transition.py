@@ -13,9 +13,15 @@ from app.common.status import (
 )
 from app.database.collections import (
     APPROVALS,
+    BACKLOG_ITEMS,
     CLIENT_INPUTS,
+    DESIGN_ARTIFACTS,
+    EXECUTION_LOGS,
+    IMPLEMENTATION_ARTIFACTS,
     PROJECTS,
     REQUIREMENTS,
+    TEST_CASES,
+    TEST_RESULTS,
     WORKFLOW_EVENTS,
 )
 from app.main import app
@@ -26,8 +32,13 @@ from app.modules.orchestrator.repository import (
 from app.modules.orchestrator.policy import (
     STAGE_OWNERS,
     TRANSITIONS,
+    TransitionPrerequisite,
     get_transition,
     is_legal_transition,
+)
+from app.modules.orchestrator.readiness import (
+    SPECIALIST_HANDOFF_RULES,
+    evaluate_specialist_handoff,
 )
 from app.modules.orchestrator.router import get_orchestrator_repository
 from app.schemas.approval import Approval
@@ -119,6 +130,15 @@ class FakeOrchestratorRepository:
         )
         self.events: list[WorkflowEvent] = []
         self.approvals: list[Approval] = []
+        self.evidence: dict[str, list[dict[str, Any]]] = {
+            REQUIREMENTS: [],
+            DESIGN_ARTIFACTS: [],
+            BACKLOG_ITEMS: [],
+            TEST_CASES: [],
+            IMPLEMENTATION_ARTIFACTS: [],
+            EXECUTION_LOGS: [],
+            TEST_RESULTS: [],
+        }
         self.client_inputs = (
             [{"project_id": "PRJ-001", "content": "Build a library app"}]
             if has_input
@@ -152,6 +172,33 @@ class FakeOrchestratorRepository:
             for event in self.events
             if event.project_id == project_id
         ]
+
+    def list_artifact_generated_events(
+        self,
+        project_id: str,
+    ) -> list[dict[str, Any]]:
+        self.accessed_collections.add(WORKFLOW_EVENTS)
+        return [
+            event.model_dump(mode="python")
+            for event in self.events
+            if event.project_id == project_id
+            and event.event_type is EventType.ARTIFACT_GENERATED
+        ]
+
+    def missing_project_evidence(
+        self,
+        project_id: str,
+        collection_names: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        self.accessed_collections.update(collection_names)
+        return tuple(
+            collection_name
+            for collection_name in collection_names
+            if not any(
+                item.get("project_id") == project_id
+                for item in self.evidence[collection_name]
+            )
+        )
 
     def get_effective_approval(
         self,
@@ -298,15 +345,16 @@ def test_project_created_without_client_input_cannot_advance(
 
 
 @pytest.mark.parametrize(
-    "stage",
+    "stage,error_field",
     [
-        WorkflowStage.REQUIREMENTS_IN_PROGRESS,
-        WorkflowStage.DESIGN_IN_PROGRESS,
-        WorkflowStage.COMPLETED,
+        (WorkflowStage.REQUIREMENTS_IN_PROGRESS, "specialist_handoff"),
+        (WorkflowStage.DESIGN_IN_PROGRESS, "specialist_handoff"),
+        (WorkflowStage.COMPLETED, "current_stage"),
     ],
 )
 def test_unsupported_stage_does_not_advance(
     stage: WorkflowStage,
+    error_field: str,
     authentication_context,
 ) -> None:
     repository = FakeOrchestratorRepository(stage=stage)
@@ -322,7 +370,7 @@ def test_unsupported_stage_does_not_advance(
     payload = response.json()
     assert payload["success"] is False
     assert payload["workflow_stage"] == stage.value
-    assert payload["errors"][0]["field"] == "current_stage"
+    assert payload["errors"][0]["field"] == error_field
     assert repository.projects["PRJ-001"]["current_stage"] == stage.value
     assert repository.events == []
 
@@ -763,48 +811,13 @@ def test_stage_ownership_uses_only_official_component_names() -> None:
     )
 
 
-def test_o1_and_approval_driven_transitions_are_executable() -> None:
+def test_all_canonical_forward_transitions_are_executable() -> None:
     executable = [transition for transition in TRANSITIONS if transition.executable]
 
     assert [
         (transition.source_stage, transition.target_stage)
         for transition in executable
-    ] == [
-        (
-            WorkflowStage.PROJECT_CREATED,
-            WorkflowStage.REQUIREMENTS_IN_PROGRESS,
-        ),
-        (
-            WorkflowStage.H1_WAITING_APPROVAL,
-            WorkflowStage.DESIGN_IN_PROGRESS,
-        ),
-        (
-            WorkflowStage.H2_WAITING_APPROVAL,
-            WorkflowStage.TEST_PLANNING_IN_PROGRESS,
-        ),
-        (
-            WorkflowStage.H3_WAITING_APPROVAL,
-            WorkflowStage.IMPLEMENTATION_IN_PROGRESS,
-        ),
-        (
-            WorkflowStage.H4_WAITING_APPROVAL,
-            WorkflowStage.VALIDATION_IN_PROGRESS,
-        ),
-        (
-            WorkflowStage.H5_WAITING_APPROVAL,
-            WorkflowStage.COMPLETED,
-        ),
-    ]
-    for stage in (
-        WorkflowStage.REQUIREMENTS_IN_PROGRESS,
-        WorkflowStage.DESIGN_IN_PROGRESS,
-        WorkflowStage.TEST_PLANNING_IN_PROGRESS,
-        WorkflowStage.IMPLEMENTATION_IN_PROGRESS,
-        WorkflowStage.VALIDATION_IN_PROGRESS,
-    ):
-        transition = get_transition(stage)
-        assert transition is not None
-        assert transition.executable is False
+    ] == list(zip(list(WorkflowStage)[:-1], list(WorkflowStage)[1:]))
 
 
 def test_workflow_snapshot_reports_available_first_transition(
@@ -1003,6 +1016,13 @@ def test_repository_selects_only_canonical_transition_collections() -> None:
         PROJECTS,
         CLIENT_INPUTS,
         WORKFLOW_EVENTS,
+        REQUIREMENTS,
+        DESIGN_ARTIFACTS,
+        BACKLOG_ITEMS,
+        TEST_CASES,
+        IMPLEMENTATION_ARTIFACTS,
+        EXECUTION_LOGS,
+        TEST_RESULTS,
         APPROVALS,
     ]
 
@@ -1050,3 +1070,362 @@ def test_health_swagger_and_openapi_remain_available(orchestrator_client) -> Non
     assert client.get("/health").status_code == 200
     assert client.get("/docs").status_code == 200
     assert client.get("/openapi.json").status_code == 200
+
+
+SPECIALIST_HANDOFF_CASES = [
+    (
+        WorkflowStage.REQUIREMENTS_IN_PROGRESS,
+        WorkflowStage.H1_WAITING_APPROVAL,
+        "Requirement Gathering and Analysis Agent",
+        (REQUIREMENTS,),
+    ),
+    (
+        WorkflowStage.DESIGN_IN_PROGRESS,
+        WorkflowStage.H2_WAITING_APPROVAL,
+        "Project Management and Design Agent",
+        (DESIGN_ARTIFACTS, BACKLOG_ITEMS),
+    ),
+    (
+        WorkflowStage.TEST_PLANNING_IN_PROGRESS,
+        WorkflowStage.H3_WAITING_APPROVAL,
+        "Testing, Validation and Security Agent",
+        (TEST_CASES,),
+    ),
+    (
+        WorkflowStage.IMPLEMENTATION_IN_PROGRESS,
+        WorkflowStage.H4_WAITING_APPROVAL,
+        "Implementation and Git Automation Agent",
+        (IMPLEMENTATION_ARTIFACTS, EXECUTION_LOGS),
+    ),
+    (
+        WorkflowStage.VALIDATION_IN_PROGRESS,
+        WorkflowStage.H5_WAITING_APPROVAL,
+        "Testing, Validation and Security Agent",
+        (TEST_RESULTS,),
+    ),
+]
+
+
+def readiness_event_document(
+    source_stage: WorkflowStage,
+    target_stage: WorkflowStage,
+    source_component: str,
+    *,
+    event_id: str = "EVT-001",
+    project_id: str = "PRJ-001",
+    created_at: datetime = INITIAL_TIME,
+    metadata_updates: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "handoff_ready": True,
+        "source_stage": source_stage.value,
+        "target_stage": target_stage.value,
+        "artifact_version": 1,
+    }
+    if metadata_updates:
+        metadata.update(metadata_updates)
+    return {
+        "event_id": event_id,
+        "project_id": project_id,
+        "event_type": EventType.ARTIFACT_GENERATED,
+        "source_component": source_component,
+        "target_component": "Central SDLC Orchestrator",
+        "stage_before": source_stage,
+        "stage_after": source_stage,
+        "message": "Specialist evidence package is ready for review.",
+        "metadata": metadata,
+        "created_at": created_at,
+    }
+
+
+class ReadinessRepositoryStub:
+    def __init__(
+        self,
+        events: list[dict[str, Any]],
+        evidence: dict[str, list[dict[str, Any]]],
+    ) -> None:
+        self.events = events
+        self.evidence = evidence
+
+    def list_artifact_generated_events(
+        self,
+        project_id: str,
+    ) -> list[dict[str, Any]]:
+        return [
+            deepcopy(event)
+            for event in self.events
+            if event.get("project_id") == project_id
+            and event.get("event_type")
+            in (EventType.ARTIFACT_GENERATED, EventType.ARTIFACT_GENERATED.value)
+        ]
+
+    def missing_project_evidence(
+        self,
+        project_id: str,
+        collection_names: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        return tuple(
+            name
+            for name in collection_names
+            if not any(
+                item.get("project_id") == project_id
+                for item in self.evidence.get(name, [])
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "source_stage,target_stage,component,evidence_collections",
+    SPECIALIST_HANDOFF_CASES,
+)
+def test_valid_specialist_readiness_event_and_evidence_are_recognized(
+    source_stage: WorkflowStage,
+    target_stage: WorkflowStage,
+    component: str,
+    evidence_collections: tuple[str, ...],
+) -> None:
+    event = readiness_event_document(source_stage, target_stage, component)
+    repository = ReadinessRepositoryStub(
+        [event],
+        {
+            name: [{"project_id": "PRJ-001", "status": "FAILED"}]
+            for name in evidence_collections
+        },
+    )
+
+    result = evaluate_specialist_handoff(
+        repository,
+        "PRJ-001",
+        source_stage,
+    )
+
+    assert result.ready is True
+    assert result.readiness_event is not None
+    assert result.readiness_event.event_id == "EVT-001"
+    assert result.missing_evidence == ()
+
+
+@pytest.mark.parametrize(
+    "document_change",
+    [
+        {"metadata": {"handoff_ready": False}},
+        {"remove_metadata_key": "handoff_ready"},
+        {"metadata": {"source_stage": "DESIGN_IN_PROGRESS"}},
+        {"metadata": {"target_stage": "H2_WAITING_APPROVAL"}},
+        {"source_component": "Project Management and Design Agent"},
+        {"target_component": "Human Stakeholder / Reviewer"},
+        {"metadata": {"artifact_version": 0}},
+        {"metadata": {"artifact_version": -1}},
+        {"metadata": {"artifact_version": "1"}},
+        {"metadata": {"artifact_version": True}},
+        {"remove_metadata_key": "artifact_version"},
+        {"replace_metadata": "malformed"},
+        {"event_type": EventType.STAGE_CHANGED},
+    ],
+)
+def test_invalid_or_irrelevant_readiness_event_is_ignored(
+    document_change: dict[str, Any],
+) -> None:
+    event = readiness_event_document(
+        WorkflowStage.REQUIREMENTS_IN_PROGRESS,
+        WorkflowStage.H1_WAITING_APPROVAL,
+        "Requirement Gathering and Analysis Agent",
+    )
+    if "metadata" in document_change:
+        event["metadata"].update(document_change["metadata"])
+    elif "remove_metadata_key" in document_change:
+        event["metadata"].pop(document_change["remove_metadata_key"])
+    elif "replace_metadata" in document_change:
+        event["metadata"] = document_change["replace_metadata"]
+    else:
+        event.update(document_change)
+    repository = ReadinessRepositoryStub(
+        [event],
+        {REQUIREMENTS: [{"project_id": "PRJ-001"}]},
+    )
+
+    result = evaluate_specialist_handoff(
+        repository,
+        "PRJ-001",
+        WorkflowStage.REQUIREMENTS_IN_PROGRESS,
+    )
+
+    assert result.ready is False
+    assert result.readiness_event is None
+
+
+def test_newest_matching_valid_readiness_event_is_selected_deterministically() -> None:
+    base = (
+        WorkflowStage.REQUIREMENTS_IN_PROGRESS,
+        WorkflowStage.H1_WAITING_APPROVAL,
+        "Requirement Gathering and Analysis Agent",
+    )
+    events = [
+        readiness_event_document(*base, event_id="EVT-001"),
+        readiness_event_document(*base, event_id="EVT-002"),
+        readiness_event_document(
+            *base,
+            event_id="EVT-003",
+            created_at=INITIAL_TIME + timedelta(seconds=1),
+            metadata_updates={"handoff_ready": False},
+        ),
+        readiness_event_document(
+            WorkflowStage.DESIGN_IN_PROGRESS,
+            WorkflowStage.H2_WAITING_APPROVAL,
+            "Project Management and Design Agent",
+            event_id="EVT-004",
+            created_at=INITIAL_TIME + timedelta(seconds=2),
+        ),
+    ]
+    repository = ReadinessRepositoryStub(
+        events,
+        {REQUIREMENTS: [{"project_id": "PRJ-001"}]},
+    )
+
+    result = evaluate_specialist_handoff(
+        repository,
+        "PRJ-001",
+        WorkflowStage.REQUIREMENTS_IN_PROGRESS,
+    )
+
+    assert result.ready is True
+    assert result.readiness_event is not None
+    assert result.readiness_event.event_id == "EVT-002"
+
+
+def test_other_project_event_and_evidence_cannot_unlock_handoff() -> None:
+    event = readiness_event_document(
+        WorkflowStage.REQUIREMENTS_IN_PROGRESS,
+        WorkflowStage.H1_WAITING_APPROVAL,
+        "Requirement Gathering and Analysis Agent",
+        project_id="PRJ-002",
+    )
+    repository = ReadinessRepositoryStub(
+        [event],
+        {REQUIREMENTS: [{"project_id": "PRJ-002"}]},
+    )
+
+    result = evaluate_specialist_handoff(
+        repository,
+        "PRJ-001",
+        WorkflowStage.REQUIREMENTS_IN_PROGRESS,
+    )
+
+    assert result.ready is False
+    assert result.readiness_event is None
+    assert result.missing_evidence == (REQUIREMENTS,)
+
+
+@pytest.mark.parametrize(
+    "source_stage,target_stage,component,evidence_collections",
+    SPECIALIST_HANDOFF_CASES,
+)
+def test_specialist_snapshot_and_next_step_share_readiness_behavior(
+    source_stage: WorkflowStage,
+    target_stage: WorkflowStage,
+    component: str,
+    evidence_collections: tuple[str, ...],
+    authentication_context,
+) -> None:
+    repository = FakeOrchestratorRepository(stage=source_stage)
+    for name in evidence_collections:
+        repository.evidence[name].append(
+            {"project_id": "PRJ-001", "status": "FAILED"}
+        )
+    repository.events.append(
+        WorkflowEvent.model_validate(
+            readiness_event_document(source_stage, target_stage, component)
+        )
+    )
+    original_project = deepcopy(repository.projects["PRJ-001"])
+    app.dependency_overrides[get_orchestrator_repository] = lambda: repository
+    try:
+        client = authentication_context.client()
+        snapshot = client.get("/api/v1/projects/PRJ-001/workflow")
+        assert repository.projects["PRJ-001"] == original_project
+        assert len(repository.events) == 1
+        transition = client.post(
+            "/api/v1/projects/PRJ-001/orchestrator/next-step"
+        )
+    finally:
+        app.dependency_overrides.pop(get_orchestrator_repository, None)
+
+    assert snapshot.status_code == 200
+    assert snapshot.json()["data"]["next_stage"] == target_stage.value
+    assert snapshot.json()["data"]["next_transition_available"] is True
+    assert transition.status_code == 200
+    assert transition.json()["data"]["stage_after"] == target_stage.value
+    assert repository.approvals == []
+    stage_events = [
+        event
+        for event in repository.events
+        if event.event_type is EventType.STAGE_CHANGED
+    ]
+    assert len(stage_events) == 1
+    assert stage_events[0].source_component == "Central SDLC Orchestrator"
+    assert stage_events[0].target_component == "Human Stakeholder / Reviewer"
+    assert stage_events[0].stage_before is source_stage
+    assert stage_events[0].stage_after is target_stage
+    assert stage_events[0].metadata == {
+        "readiness_event_id": "EVT-001",
+        "artifact_version": 1,
+    }
+    assert not any(
+        event.event_type is EventType.APPROVAL_DECISION
+        for event in repository.events
+    )
+    assert len(
+        [
+            event
+            for event in repository.events
+            if event.event_type is EventType.ARTIFACT_GENERATED
+        ]
+    ) == 1
+
+
+@pytest.mark.parametrize(
+    "source_stage,target_stage,component,evidence_collections,missing_collection",
+    [
+        (*case, missing)
+        for case in SPECIALIST_HANDOFF_CASES
+        for missing in case[3]
+    ],
+)
+def test_each_required_evidence_collection_is_mandatory(
+    source_stage: WorkflowStage,
+    target_stage: WorkflowStage,
+    component: str,
+    evidence_collections: tuple[str, ...],
+    missing_collection: str,
+) -> None:
+    evidence = {
+        name: [{"project_id": "PRJ-001"}]
+        for name in evidence_collections
+        if name != missing_collection
+    }
+    repository = ReadinessRepositoryStub(
+        [readiness_event_document(source_stage, target_stage, component)],
+        evidence,
+    )
+
+    result = evaluate_specialist_handoff(
+        repository,
+        "PRJ-001",
+        source_stage,
+    )
+
+    assert result.ready is False
+    assert result.missing_evidence == (missing_collection,)
+
+
+def test_specialist_handoff_policy_uses_new_prerequisite_for_exactly_five_rules() -> None:
+    specialist_transitions = [
+        transition
+        for transition in TRANSITIONS
+        if transition.prerequisite is TransitionPrerequisite.SPECIALIST_HANDOFF
+    ]
+
+    assert len(specialist_transitions) == 5
+    assert {
+        transition.source_stage for transition in specialist_transitions
+    } == set(SPECIALIST_HANDOFF_RULES)

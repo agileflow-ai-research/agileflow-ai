@@ -171,13 +171,14 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | Shared enums, domain schemas, ID conventions, and API response models | Implemented |
 | Project CRUD APIs and persistence | Implemented |
 | ClientInput APIs and persistence foundation | Implemented; requirement processing remains planned |
-| Orchestrator core policy, workflow snapshot, and event history | Implemented; snapshots evaluate ClientInput and effective-Approval prerequisites |
-| First Orchestrator transition and WorkflowEvent persistence | Implemented only for `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, with a ClientInput prerequisite |
+| Orchestrator core policy, workflow snapshot, and event history | Implemented; snapshots evaluate ClientInput, specialist-handoff, and effective-Approval prerequisites |
+| Orchestrator forward transitions and WorkflowEvent persistence | Implemented for all 11 canonical forward transitions, subject to their configured prerequisites |
 | H1-H5 Approval persistence | Implemented with authenticated ownership, `APP-###`, append-only history, effective/latest lookup, and one `APPROVAL_DECISION` event per decision; no stage transition |
 | Approval-driven Orchestrator transitions | Implemented for H1-H5 waiting stages when the effective decision is APPROVE; each creates one `STAGE_CHANGED` event |
-| Backend test suite | Implemented; 240 tests passing in the current verified suite |
+| Specialist handoff readiness | O3.5 consumption/validation is implemented for all five specialist-stage → approval-gate transitions using a valid `ARTIFACT_GENERATED` marker plus minimum project-scoped evidence; actual specialist emission remains planned |
+| Backend test suite | Implemented; 273 tests passing in the current verified suite |
 | Frontend application | Planned; not initialized |
-| Agent intelligence, specialist-stage completion transitions, O4 correction routing, O6 HOLD/release behavior, and remaining workflow behavior | Planned |
+| Agent intelligence, specialist readiness-event emission, O4 correction routing, O6 HOLD/release behavior, and remaining workflow behavior | Planned |
 | Remaining artifact persistence, traceability behavior, reports, and integrations | Planned |
 | User persistence, `USR-###`, Argon2 hashing, and registration API | Implemented |
 | Login, JWT issuance/validation, and `/auth/me` | Implemented |

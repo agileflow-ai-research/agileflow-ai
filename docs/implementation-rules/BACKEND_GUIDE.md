@@ -40,9 +40,9 @@ backend/
 └── requirements.txt
 ```
 
-Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable `get_current_user` authentication, centralized Project ownership authorization, owner-scoped Project CRUD and ClientInput access, the centralized Orchestrator transition/prerequisite policy and stage ownership metadata, workflow snapshot/event-history endpoints, the owner-scoped first transition with ClientInput prerequisite, O2 H1-H5 Approval persistence with append-only history/effective lookup, O3 effective-APPROVE transitions, WorkflowEvent persistence, and backend tests.
+Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable `get_current_user` authentication, centralized Project ownership authorization, owner-scoped Project CRUD and ClientInput access, the centralized Orchestrator transition/prerequisite policy and stage ownership metadata, workflow snapshot/event-history endpoints, all 11 canonical forward transitions, O2 H1-H5 Approval persistence with append-only history/effective lookup, O3 effective-APPROVE transitions, O3.5 specialist-handoff consumption/validation and gate-entry `STAGE_CHANGED` evidence, WorkflowEvent persistence, and backend tests.
 
-Not implemented: Project sharing/collaboration, Requirement Agent processing or intelligence, the approved O3.5 specialist in-progress transitions into approval waiting stages, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, retry loops, traceability persistence/generation, reports, frontend, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
+Not implemented: Project sharing/collaboration, specialist-agent processing/intelligence and readiness-event emission, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, retry loops, traceability persistence/generation, reports, frontend, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
 
 ## Approved Backend Stack
 
@@ -202,7 +202,7 @@ The Orchestrator alone enforces:
 
 Every major action should create/update the relevant artifacts, traceability links, and workflow events when those features are implemented.
 
-### Approved O3.5 Specialist Handoff Contract — Not Implemented
+### Implemented O3.5 Specialist Handoff Consumption/Validation Contract
 
 All specialist-to-approval-gate transitions reuse the existing next-step service and `POST /api/v1/projects/{project_id}/orchestrator/next-step`; no completion or handoff route is added. The authenticated owner may invoke the HTTP endpoint after specialist processing. Specialist services persist artifacts and append a final `ARTIFACT_GENERATED` readiness marker but never mutate global stage. The Orchestrator service owns readiness validation, stage mutation, and `STAGE_CHANGED` creation.
 

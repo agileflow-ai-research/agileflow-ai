@@ -10,7 +10,7 @@ This document is the shared data-contract baseline. The current repository imple
 
 - **Implemented schemas and helpers:** User, Project, Approval, WorkflowEvent, pairwise TraceabilityLink, BaseArtifact, API success/error response models, registration and ClientInput request/response models, shared enums, and ID-format/generation helpers including `USR-###`.
 - **Implemented O2 foundation:** Approval request validation, authenticated H1-H5 POST APIs, append-only persistence, `APP-###` allocation, effective/latest repository lookup, and `APPROVAL_DECISION` event generation are implemented without Project stage mutation.
-- **Approved, not implemented:** O3.5 specialist handoff readiness uses an existing `ARTIFACT_GENERATED` WorkflowEvent plus minimum project-scoped persisted evidence; it adds no schema, collection, EventType, or Project readiness field.
+- **Implemented:** O3.5 specialist handoff consumption/validation uses an existing `ARTIFACT_GENERATED` WorkflowEvent plus minimum project-scoped persisted evidence; it adds no schema, collection, EventType, or Project readiness field. Actual specialist emission remains planned.
 - **Schema only:** TraceabilityLink has a shared pairwise schema, but traceability persistence and generation are not implemented.
 - **ClientInput foundation only:** request validation, project-scoped persistence, and response serialization are implemented; requirement extraction, analysis, generation, and clarification behavior remain planned.
 - **Implemented:** login/JWT DTOs and `/auth/me` safe public responses.
@@ -164,7 +164,7 @@ STAGE_CHANGED
 
 The workflow rules also require events for project creation, agent completion, artifact revision/approval/rejection/locking, retry results, report generation, and H5 approval, but names for those additional event types are not formally defined. Do not invent them without approval.
 
-#### O3.5 `ARTIFACT_GENERATED` Readiness Metadata — Approved, Not Implemented
+#### O3.5 `ARTIFACT_GENERATED` Readiness Metadata — Implemented for Consumption/Validation
 
 O3.5 uses `ARTIFACT_GENERATED`; it does not introduce a completion EventType. A final specialist readiness event contains safe metadata with:
 

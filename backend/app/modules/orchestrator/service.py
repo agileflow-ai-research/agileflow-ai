@@ -12,6 +12,7 @@ from app.modules.auth.authorization import (
 )
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.orchestrator.policy import (
+    HUMAN_REVIEWER_COMPONENT,
     ORCHESTRATOR_COMPONENT,
     TransitionDefinition,
     TransitionPrerequisite,
@@ -21,6 +22,10 @@ from app.modules.orchestrator.policy import (
 from app.modules.orchestrator.repository import (
     OrchestratorRepository,
     OrchestratorRepositoryError,
+)
+from app.modules.orchestrator.readiness import (
+    SpecialistHandoffEvaluation,
+    evaluate_specialist_handoff,
 )
 from app.modules.orchestrator.schemas import (
     WorkflowSnapshot,
@@ -53,6 +58,14 @@ class ApprovalPrerequisiteError(ValueError):
         super().__init__(detail)
 
 
+class SpecialistHandoffPrerequisiteError(ValueError):
+    """Raised when specialist readiness evidence is incomplete."""
+
+    def __init__(self, current_stage: WorkflowStage, detail: str) -> None:
+        self.current_stage = current_stage
+        super().__init__(detail)
+
+
 class OrchestratorServiceError(RuntimeError):
     """Raised when a workflow transition cannot be completed safely."""
 
@@ -65,6 +78,7 @@ def utc_now() -> datetime:
 class PrerequisiteEvaluation:
     satisfied: bool
     approval: Approval | None = None
+    specialist_handoff: SpecialistHandoffEvaluation | None = None
     detail: str | None = None
 
 
@@ -138,6 +152,22 @@ class OrchestratorService:
             )
         return PrerequisiteEvaluation(satisfied=True, approval=approval)
 
+    def _specialist_handoff_prerequisite(
+        self,
+        project_id: str,
+        transition: TransitionDefinition,
+    ) -> PrerequisiteEvaluation:
+        evaluation = evaluate_specialist_handoff(
+            self._repository,
+            project_id,
+            transition.source_stage,
+        )
+        return PrerequisiteEvaluation(
+            satisfied=evaluation.ready,
+            specialist_handoff=evaluation,
+            detail=evaluation.detail,
+        )
+
     def _evaluate_prerequisite(
         self,
         project_id: str,
@@ -145,6 +175,9 @@ class OrchestratorService:
     ) -> PrerequisiteEvaluation:
         handlers = {
             TransitionPrerequisite.CLIENT_INPUT: self._client_input_prerequisite,
+            TransitionPrerequisite.SPECIALIST_HANDOFF: (
+                self._specialist_handoff_prerequisite
+            ),
             TransitionPrerequisite.EFFECTIVE_APPROVAL: (
                 self._effective_approval_prerequisite
             ),
@@ -239,6 +272,15 @@ class OrchestratorService:
             if not prerequisite.satisfied:
                 if transition.prerequisite is TransitionPrerequisite.CLIENT_INPUT:
                     raise MissingClientInputError(prerequisite.detail or "")
+                if (
+                    transition.prerequisite
+                    is TransitionPrerequisite.SPECIALIST_HANDOFF
+                ):
+                    raise SpecialistHandoffPrerequisiteError(
+                        project.current_stage,
+                        prerequisite.detail
+                        or "Specialist handoff readiness is required",
+                    )
                 raise ApprovalPrerequisiteError(
                     project.current_stage,
                     prerequisite.detail
@@ -256,7 +298,12 @@ class OrchestratorService:
                 project_id=project_id,
                 event_type=EventType.STAGE_CHANGED,
                 source_component=ORCHESTRATOR_COMPONENT,
-                target_component=transition.responsible_component,
+                target_component=(
+                    HUMAN_REVIEWER_COMPONENT
+                    if transition.prerequisite
+                    is TransitionPrerequisite.SPECIALIST_HANDOFF
+                    else transition.responsible_component
+                ),
                 stage_before=stage_before,
                 stage_after=stage_after,
                 message=(
@@ -269,7 +316,22 @@ class OrchestratorService:
                         "gate_id": prerequisite.approval.gate_id.value,
                     }
                     if prerequisite.approval is not None
-                    else {}
+                    else (
+                        {
+                            "readiness_event_id": (
+                                prerequisite.specialist_handoff.readiness_event.event_id
+                            ),
+                            "artifact_version": (
+                                prerequisite.specialist_handoff.readiness_event.metadata[
+                                    "artifact_version"
+                                ]
+                            ),
+                        }
+                        if prerequisite.specialist_handoff is not None
+                        and prerequisite.specialist_handoff.readiness_event
+                        is not None
+                        else {}
+                    )
                 ),
                 created_at=now,
             )
@@ -297,6 +359,7 @@ class OrchestratorService:
             ProjectAccessNotFoundError,
             UnsupportedWorkflowStageError,
             MissingClientInputError,
+            SpecialistHandoffPrerequisiteError,
             ApprovalPrerequisiteError,
             OrchestratorServiceError,
         ):

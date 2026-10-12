@@ -18,6 +18,7 @@ from app.modules.orchestrator.service import (
     OrchestratorProjectNotFoundError,
     OrchestratorService,
     OrchestratorServiceError,
+    SpecialistHandoffPrerequisiteError,
     UnsupportedWorkflowStageError,
 )
 from app.schemas.workflow import WorkflowEvent
@@ -157,6 +158,14 @@ def next_step(
 ) -> SuccessResponse[WorkflowTransitionResult] | JSONResponse:
     try:
         transition = service.next_step(project_id, current_user)
+    except SpecialistHandoffPrerequisiteError as exc:
+        return _error_response(
+            status.HTTP_409_CONFLICT,
+            "Specialist handoff prerequisite is not satisfied",
+            "specialist_handoff",
+            str(exc),
+            workflow_stage=exc.current_stage,
+        )
     except ApprovalPrerequisiteError as exc:
         return _error_response(
             status.HTTP_409_CONFLICT,
