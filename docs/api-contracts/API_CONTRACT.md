@@ -82,12 +82,12 @@ No logout route, refresh token, token-revocation store, session database, OAuth/
 
 | Method | Path | Purpose | Owner | Request schema/reference | Response schema/reference | Approval relevance | Status |
 |---|---|---|---|---|---|---|---|
-| POST | `/api/v1/projects` | Create a project | Core/Foundation | Project create body: not formally defined; Project fields are the reference | Project | Initializes workflow before H1 | Implemented |
+| POST | `/api/v1/projects` | Create a project | Core/Foundation | Required `name`, `domain`; optional `description` | Project | Initializes workflow before H1 | Implemented |
 | GET | `/api/v1/projects` | List projects for the dashboard | Core/Foundation | None | Project list; list wrapper details not formally defined | Shows current stages/gates | Implemented |
 | GET | `/api/v1/projects/{project_id}` | Get project details/current state | Core/Foundation | Path parameter | Project | Shows gate context | Implemented |
 | PATCH | `/api/v1/projects/{project_id}` | Update basic project metadata | Core/Foundation | Project update body: not formally defined | Project | No direct gate transition | Implemented |
 
-All four Project routes require Bearer authentication. Project creation sets server-controlled `owner_user_id` from the authenticated user's `user_id`; clients cannot provide or patch it. Project listing returns only projects owned by the authenticated user. Project detail and update require ownership. Missing, ownerless legacy, and non-owned Projects use the same HTTP 404 response.
+All four Project routes require Bearer authentication. Project creation accepts required `name` and `domain` plus optional `description`; an omitted description is persisted as an empty string. The server sets both `created_by` and `owner_user_id` from the authenticated user's `user_id`. Clients cannot supply or patch either identity field or any other server-controlled Project field. Project creation does not create a ClientInput or advance workflow. Project listing returns only projects owned by the authenticated user. Project detail and update require ownership. Missing, ownerless legacy, and non-owned Projects use the same HTTP 404 response.
 
 ## Workflow and Orchestrator Routes
 
