@@ -1,0 +1,93 @@
+:root {
+  color-scheme: dark;
+
+  --color-bg-canvas: #0b0714;
+  --color-bg-sidebar: #120a24;
+  --color-bg-surface: #1a102f;
+  --color-bg-elevated: #21153a;
+  --color-border-default: #342454;
+  --color-border-accent: #a855f7;
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
+  --color-primary: #7c3aed;
+  --color-primary-hover: #a855f7;
+  --color-primary-soft: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  --color-accent: #a855f7;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #38bdf8;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  --shadow-card: 0 18px 45px color-mix(in srgb, var(--color-bg-canvas) 65%, transparent);
+  --shadow-glow: 0 0 24px color-mix(in srgb, var(--color-primary) 24%, transparent);
+
+  --font-family-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --text-page-title: 2rem;
+  --text-section-title: 1.5rem;
+  --text-card-title: 1.125rem;
+  --text-body: 1rem;
+  --text-helper: 0.8125rem;
+  --text-label: 0.875rem;
+
+  --page-padding: 1.5rem;
+  --card-padding: 1.5rem;
+  --content-max-width: 90rem;
+}
+
+@theme inline {
+  --color-canvas: var(--color-bg-canvas);
+  --color-sidebar: var(--color-bg-sidebar);
+  --color-surface: var(--color-bg-surface);
+  --color-elevated: var(--color-bg-elevated);
+  --color-default: var(--color-border-default);
+  --color-accent-border: var(--color-border-accent);
+  --color-content-primary: var(--color-text-primary);
+  --color-content-secondary: var(--color-text-secondary);
+  --color-content-muted: var(--color-text-muted);
+  --color-brand: var(--color-primary);
+  --color-brand-hover: var(--color-primary-hover);
+  --color-brand-soft: var(--color-primary-soft);
+  --color-highlight: var(--color-accent);
+  --color-state-success: var(--color-success);
+  --color-state-warning: var(--color-warning);
+  --color-state-danger: var(--color-danger);
+  --color-state-info: var(--color-info);
+  --font-sans: var(--font-family-sans);
+  --radius-control: var(--radius-sm);
+  --radius-button: var(--radius-md);
+  --radius-card: var(--radius-lg);
+  --radius-panel: var(--radius-xl);
+  --shadow-surface: var(--shadow-card);
+  --shadow-brand-glow: var(--shadow-glow);
+  --text-page-heading: var(--text-page-title);
+  --text-section-heading: var(--text-section-title);
+  --text-card-heading: var(--text-card-title);
+  --text-body-copy: var(--text-body);
+  --text-helper-copy: var(--text-helper);
+  --text-label-copy: var(--text-label);
+  --spacing-page: var(--page-padding);
+  --spacing-card: var(--card-padding);
+  --container-content: var(--content-max-width);
+}
+
+@media (max-width: 48rem) {
+  :root {
+    --page-padding: 1rem;
+    --text-page-title: 1.75rem;
+  }
+}

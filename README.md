@@ -70,7 +70,7 @@ Kafka, RabbitMQ, Redis, Celery, Kubernetes, GraphQL, microservices, event sourci
 ```text
 agileflow-ai/
 ├── backend/       FastAPI foundation and future backend modules
-├── frontend/      React/Vite/Tailwind application (not initialized yet)
+├── frontend/      React/Vite/Tailwind application foundation
 ├── docs/          Implementation contracts, guides, and approved source documents
 ├── storage/       Local upload, generated-artifact, log, and report directories
 ├── sample-data/   Future non-confidential demonstration data
@@ -134,7 +134,7 @@ Set-Location backend
 
 ## Frontend Setup
 
-**Planned / not yet available.** The `frontend/` directory currently contains only a placeholder. React, Vite, Tailwind CSS, routes, components, and package scripts have not been initialized. Follow [FRONTEND_GUIDE.md](docs/implementation-rules/FRONTEND_GUIDE.md) when that work is approved.
+The F1.2 React/Vite/Tailwind foundation through F1.10 are available, including the authenticated application shell, owner-scoped Projects Dashboard, complete Create Project flow, and live Project Overview. Project creation and the first TEXT ClientInput are separate backend writes. If Project creation succeeds but ClientInput persistence fails, the recovery action retries only the ClientInput request against the existing Project. There is currently no idempotency-key contract for `POST /projects`; if its response is lost after persistence, the frontend cannot determine whether creation occurred. Project Overview reads the authenticated Project, workflow snapshot, and workflow-event history. Its stage, owners, transition availability, and optional gate are dynamic backend values rather than a hardcoded H1 state. The H1 Pending Figma export remains visual reference material only; specialist artifacts, approval actions/history, and workflow advancement remain later phases. From `frontend/`, run `npm install`, copy `.env.example` to an ignored `.env` for local configuration, then use `npm run dev`. Validate changes with `npm run lint`, `npm test -- --run`, and `npm run build`. Follow [FRONTEND_GUIDE.md](docs/implementation-rules/FRONTEND_GUIDE.md) for the approved structure and design rules.
 
 ## Environment Configuration
 
@@ -176,8 +176,8 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | H1-H5 Approval persistence | Implemented with authenticated ownership, `APP-###`, append-only history, effective/latest lookup, and one `APPROVAL_DECISION` event per decision; no stage transition |
 | Approval-driven Orchestrator transitions | Implemented for H1-H5 waiting stages when the effective decision is APPROVE; each creates one `STAGE_CHANGED` event |
 | Specialist handoff readiness | O3.5 consumption/validation is implemented for all five specialist-stage → approval-gate transitions using a valid `ARTIFACT_GENERATED` marker plus minimum project-scoped evidence; actual specialist emission remains planned |
-| Backend test suite | Implemented; 273 tests passing in the current verified suite |
-| Frontend application | Planned; not initialized |
+| Backend test suite | Implemented; 286 tests passing in the current verified suite |
+| Frontend application | F1.2 foundation through F1.10 implemented, including Create Project, initial TEXT ClientInput integration, and dynamic read-only Project Overview using Project/workflow/event APIs |
 | Agent intelligence, specialist readiness-event emission, O4 correction routing, O6 HOLD/release behavior, and remaining workflow behavior | Planned |
 | Remaining artifact persistence, traceability behavior, reports, and integrations | Planned |
 | User persistence, `USR-###`, Argon2 hashing, and registration API | Implemented |
