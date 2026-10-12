@@ -1,0 +1,108 @@
+import { getAccessToken } from './tokenStorage.js'
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+
+export class ApiError extends Error {
+  constructor({ status, message, errors, workflow_stage, next_action, cause }) {
+    super(message, { cause })
+    this.name = 'ApiError'
+    this.status = status
+    this.errors = errors
+    this.workflow_stage = workflow_stage
+    this.next_action = next_action
+  }
+}
+
+function createApiError(status, payload, fallbackMessage, cause) {
+  return new ApiError({
+    status,
+    message: payload?.message || fallbackMessage,
+    errors: Array.isArray(payload?.errors) ? payload.errors : [],
+    workflow_stage: payload?.workflow_stage ?? null,
+    next_action: payload?.next_action ?? null,
+    cause,
+  })
+}
+
+function buildUrl(path) {
+  if (!API_BASE_URL) {
+    throw createApiError(0, null, 'The API base URL is not configured')
+  }
+
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${API_BASE_URL}${normalizedPath}`
+}
+
+async function parseResponse(response) {
+  const contentType = response.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    return null
+  }
+
+  try {
+    return await response.json()
+  } catch {
+    return null
+  }
+}
+
+export async function request(
+  path,
+  { method = 'GET', body, headers = {}, signal, authenticated = true } = {},
+) {
+  const requestHeaders = new Headers(headers)
+  const token = authenticated ? getAccessToken() : null
+
+  if (body !== undefined && !requestHeaders.has('Content-Type')) {
+    requestHeaders.set('Content-Type', 'application/json')
+  }
+  if (token) {
+    requestHeaders.set('Authorization', `Bearer ${token}`)
+  }
+
+  let response
+  try {
+    response = await fetch(buildUrl(path), {
+      method,
+      headers: requestHeaders,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
+    })
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error
+    }
+    throw createApiError(0, null, 'The API is unavailable', error)
+  }
+
+  const payload = await parseResponse(response)
+  if (!response.ok || payload?.success === false) {
+    throw createApiError(
+      response.status,
+      payload,
+      response.statusText || 'The request failed',
+    )
+  }
+
+  return {
+    success: payload?.success ?? true,
+    message: payload?.message ?? response.statusText,
+    data: payload?.data ?? null,
+    errors: Array.isArray(payload?.errors) ? payload.errors : [],
+    workflow_stage: payload?.workflow_stage ?? null,
+    next_action: payload?.next_action ?? null,
+    status: response.status,
+  }
+}
+
+export const apiClient = {
+  get(path, options) {
+    return request(path, { ...options, method: 'GET' })
+  },
+  post(path, body, options) {
+    return request(path, { ...options, method: 'POST', body })
+  },
+  patch(path, body, options) {
+    return request(path, { ...options, method: 'PATCH', body })
+  },
+}

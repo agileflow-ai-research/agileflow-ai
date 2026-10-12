@@ -70,7 +70,7 @@ Kafka, RabbitMQ, Redis, Celery, Kubernetes, GraphQL, microservices, event sourci
 ```text
 agileflow-ai/
 ├── backend/       FastAPI foundation and future backend modules
-├── frontend/      React/Vite/Tailwind application (not initialized yet)
+├── frontend/      React/Vite/Tailwind application foundation
 ├── docs/          Implementation contracts, guides, and approved source documents
 ├── storage/       Local upload, generated-artifact, log, and report directories
 ├── sample-data/   Future non-confidential demonstration data
@@ -134,7 +134,7 @@ Set-Location backend
 
 ## Frontend Setup
 
-**Planned / not yet available.** The `frontend/` directory currently contains only a placeholder. React, Vite, Tailwind CSS, routes, components, and package scripts have not been initialized. Follow [FRONTEND_GUIDE.md](docs/implementation-rules/FRONTEND_GUIDE.md) when that work is approved.
+The F1.2 React/Vite/Tailwind foundation is available with centralized design tokens, route placeholders, and shared HTTP/token utilities. Finished product pages and authentication state remain planned. From `frontend/`, run `npm install`, copy `.env.example` to an ignored `.env` for local configuration, then use `npm run dev`. Validate changes with `npm run lint` and `npm run build`. Follow [FRONTEND_GUIDE.md](docs/implementation-rules/FRONTEND_GUIDE.md) for the approved structure and design rules.
 
 ## Environment Configuration
 
@@ -177,7 +177,7 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | Approval-driven Orchestrator transitions | Implemented for H1-H5 waiting stages when the effective decision is APPROVE; each creates one `STAGE_CHANGED` event |
 | Specialist handoff readiness | O3.5 consumption/validation is implemented for all five specialist-stage → approval-gate transitions using a valid `ARTIFACT_GENERATED` marker plus minimum project-scoped evidence; actual specialist emission remains planned |
 | Backend test suite | Implemented; 273 tests passing in the current verified suite |
-| Frontend application | Planned; not initialized |
+| Frontend application | F1.2 foundation implemented; finished pages and feature integration remain planned |
 | Agent intelligence, specialist readiness-event emission, O4 correction routing, O6 HOLD/release behavior, and remaining workflow behavior | Planned |
 | Remaining artifact persistence, traceability behavior, reports, and integrations | Planned |
 | User persistence, `USR-###`, Argon2 hashing, and registration API | Implemented |

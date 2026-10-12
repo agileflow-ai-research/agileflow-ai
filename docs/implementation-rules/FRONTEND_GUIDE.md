@@ -5,14 +5,14 @@ Primary authorities: **File 09 — Frontend Implementation and Centralized Theme
 
 ## Current Status
 
-The repository's `frontend/` directory currently contains only `.gitkeep`. React, Vite, Tailwind CSS, routes, services, theme files, and components are **planned and not implemented**. Paths below are the approved implementation target, not a statement of current availability.
+The F1.2 frontend foundation is implemented with React, Vite, Tailwind CSS, React Router, centralized CSS design tokens, minimal public/application layouts and route placeholders, a native-fetch `apiClient`, and session-token storage. Finished pages, authentication state/bootstrap, protected-route behavior, module services, and the reusable F1.3 component library remain planned.
 
 ## Stack and Design Principle
 
 - React with Vite
 - Tailwind CSS backed by centralized CSS variables/theme values
 - React Router for planned application routing
-- One Fetch or Axios wrapper through a shared API client
+- One native Fetch wrapper through a shared API client
 - React state first; optional global state only later where justified
 - Controlled forms or React Hook Form as source-supported options
 
@@ -174,8 +174,11 @@ UI labels use official component names rather than only “Agent 1” through �
 
 | Page | Route | Owner |
 |---|---|---|
-| Dashboard | `/dashboard` | Foundation |
+| Login | `/login` | Foundation |
+| Registration | `/register` | Foundation |
 | Projects | `/projects` | Foundation |
+| Create Project | `/projects/new` | Foundation |
+| Project Overview | `/projects/:projectId` | Foundation |
 | Project Workflow | `/projects/:projectId/workflow` | Foundation/Orchestrator |
 | Requirement Gathering and Analysis | `/projects/:projectId/requirements` | Requirement component |
 | Project Management and Design | `/projects/:projectId/design` | Design component |
@@ -197,7 +200,7 @@ Page → custom hook/state coordinator → module service → apiClient → back
 Page → clean props → reusable visual component
 ```
 
-Use one `apiClient` for the environment base URL, headers, JSON handling, and normalized errors. Module service responsibilities cover projects, workflow, requirements, design, testing, implementation, approvals, and reports. File 06 and Files 08–10 use different example filenames (`projectApi.js` versus `projectService.js`); the final naming choice is not formally resolved. Do not create both sets.
+Use one `apiClient` for the environment base URL, headers, JSON handling, and normalized errors. Module service responsibilities cover projects, workflow, requirements, design, testing, implementation, approvals, and reports. Module services use the approved `*Service.js` naming convention; do not create parallel `*Api.js` modules.
 
 Rules:
 
@@ -266,4 +269,4 @@ Before a frontend PR: verify approved structure/routes/tokens, reuse, loading/er
 1. File 09 is authoritative for exact theme tokens; no alternate theme is introduced.
 2. File 10 is authoritative for the detailed reusable component inventory.
 3. File 06's API response envelope overrides File 09's `metadata` example.
-4. Frontend service filename variants and final report export formats remain unresolved; select one through human approval before implementation.
+4. Frontend module services use the approved `*Service.js` naming convention. Final report export formats remain unresolved.
