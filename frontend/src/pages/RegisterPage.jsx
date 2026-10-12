@@ -102,7 +102,7 @@ function RegisterPage() {
     <AuthLayout illustrationSrc={signupIllustration} illustrationAlt="">
       <main className="w-full max-w-lg rounded-panel border border-default bg-surface p-6 shadow-card sm:p-8 lg:p-10">
         <div className="mb-8">
-          <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand-primary">
+          <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
             Get started
           </p>
           <h1 className="text-3xl font-bold tracking-tight text-content-primary sm:text-4xl">
@@ -165,7 +165,7 @@ function RegisterPage() {
         <p className="mt-7 text-center text-sm text-content-secondary">
           Already have an account?{' '}
           <Link
-            className="font-semibold text-brand-primary transition-colors hover:text-brand-hover"
+            className="font-semibold text-brand transition-colors hover:text-brand-hover"
             to="/login"
             state={{ from: location.state?.from }}
           >

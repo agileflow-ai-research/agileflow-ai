@@ -176,7 +176,7 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | H1-H5 Approval persistence | Implemented with authenticated ownership, `APP-###`, append-only history, effective/latest lookup, and one `APPROVAL_DECISION` event per decision; no stage transition |
 | Approval-driven Orchestrator transitions | Implemented for H1-H5 waiting stages when the effective decision is APPROVE; each creates one `STAGE_CHANGED` event |
 | Specialist handoff readiness | O3.5 consumption/validation is implemented for all five specialist-stage → approval-gate transitions using a valid `ARTIFACT_GENERATED` marker plus minimum project-scoped evidence; actual specialist emission remains planned |
-| Backend test suite | Implemented; 273 tests passing in the current verified suite |
+| Backend test suite | Implemented; 286 tests passing in the current verified suite |
 | Frontend application | F1.2 foundation through F1.10 implemented, including Create Project, initial TEXT ClientInput integration, and dynamic read-only Project Overview using Project/workflow/event APIs |
 | Agent intelligence, specialist readiness-event emission, O4 correction routing, O6 HOLD/release behavior, and remaining workflow behavior | Planned |
 | Remaining artifact persistence, traceability behavior, reports, and integrations | Planned |

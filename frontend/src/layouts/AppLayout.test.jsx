@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -65,5 +65,56 @@ describe('AppLayout', () => {
     expect(screen.queryByRole('link', { name: /design/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /testing/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /reports/i })).not.toBeInTheDocument()
+  })
+
+  it('keeps mobile navigation out of the accessibility tree while closed', () => {
+    renderLayout()
+
+    expect(
+      screen.queryByRole('complementary', { name: 'Mobile navigation' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('complementary', { name: 'Application sidebar' }),
+    ).toBeInTheDocument()
+  })
+
+  it('opens mobile navigation and closes it with Escape while restoring focus', async () => {
+    const user = userEvent.setup()
+    renderLayout()
+    const trigger = screen.getByRole('button', { name: 'Open navigation' })
+
+    await user.click(trigger)
+
+    const mobileNavigation = screen.getByRole('complementary', {
+      name: 'Mobile navigation',
+    })
+    expect(
+      within(mobileNavigation).getByRole('navigation', { name: 'Primary navigation' }),
+    ).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('complementary', { name: 'Mobile navigation' }),
+      ).not.toBeInTheDocument()
+    })
+    expect(trigger).toHaveFocus()
+  })
+
+  it('closes mobile navigation after selecting Projects', async () => {
+    const user = userEvent.setup()
+    renderLayout('/projects/new')
+
+    await user.click(screen.getByRole('button', { name: 'Open navigation' }))
+    const mobileNavigation = screen.getByRole('complementary', {
+      name: 'Mobile navigation',
+    })
+    await user.click(within(mobileNavigation).getByRole('link', { name: 'Projects' }))
+
+    expect(screen.getByRole('heading', { name: 'Protected projects' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('complementary', { name: 'Mobile navigation' }),
+    ).not.toBeInTheDocument()
   })
 })

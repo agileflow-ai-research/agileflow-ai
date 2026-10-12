@@ -186,7 +186,7 @@ function CreateProjectPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-8">
+    <main className="mx-auto w-full max-w-5xl space-y-8 px-page py-8 sm:py-10">
       <PageHeader
         title="Create Project"
         description="Set up the project details that will anchor your AgileFlow workflow."

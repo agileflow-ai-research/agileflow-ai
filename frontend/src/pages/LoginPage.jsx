@@ -122,7 +122,7 @@ function LoginPage() {
         ) : null}
 
         <div className="mb-8">
-          <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand-primary">
+          <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
             Sign in
           </p>
           <h1 className="text-3xl font-bold tracking-tight text-content-primary sm:text-4xl">
@@ -174,7 +174,7 @@ function LoginPage() {
         <p className="mt-7 text-center text-sm text-content-secondary">
           Don&apos;t have an account?{' '}
           <Link
-            className="font-semibold text-brand-primary transition-colors hover:text-brand-hover"
+            className="font-semibold text-brand transition-colors hover:text-brand-hover"
             to="/register"
             state={{ from: location.state?.from }}
           >
