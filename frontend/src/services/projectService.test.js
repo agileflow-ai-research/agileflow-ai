@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from './apiClient.js'
-import { createProject, getProjects } from './projectService.js'
+import { createProject, getProjectById, getProjects } from './projectService.js'
 
 vi.mock('./apiClient.js', () => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
@@ -19,6 +19,19 @@ describe('projectService', () => {
     await expect(getProjects()).resolves.toBe(response)
     expect(apiClient.get).toHaveBeenCalledWith('/projects', { authenticated: true })
     expect(apiClient.get).toHaveBeenCalledOnce()
+  })
+
+  it('gets one owner-scoped project by ID as an authenticated request', async () => {
+    const response = { status: 200, data: { project_id: 'PRJ-001' } }
+    apiClient.get.mockResolvedValue(response)
+
+    await expect(getProjectById('PRJ-001')).resolves.toBe(response)
+
+    expect(apiClient.get).toHaveBeenCalledWith('/projects/PRJ-001', {
+      authenticated: true,
+    })
+    expect(apiClient.get).toHaveBeenCalledOnce()
+    expect(apiClient.get.mock.calls[0]).toHaveLength(2)
   })
 
   it('creates a project using only the authenticated client-owned fields', async () => {
