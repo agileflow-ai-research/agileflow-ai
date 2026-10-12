@@ -9,7 +9,8 @@ This document is the shared data-contract baseline. The current repository imple
 ## Current Schema Implementation Status
 
 - **Implemented schemas and helpers:** User, Project, Approval, WorkflowEvent, pairwise TraceabilityLink, BaseArtifact, API success/error response models, registration and ClientInput request/response models, shared enums, and ID-format/generation helpers including `USR-###`.
-- **Schema only:** Approval has a shared schema, but no Approval API or approval-gate workflow behavior is implemented.
+- **Implemented O2 foundation:** Approval request validation, authenticated H1-H5 POST APIs, append-only persistence, `APP-###` allocation, effective/latest repository lookup, and `APPROVAL_DECISION` event generation are implemented without Project stage mutation.
+- **Implemented:** O3.5 specialist handoff consumption/validation uses an existing `ARTIFACT_GENERATED` WorkflowEvent plus minimum project-scoped persisted evidence; it adds no schema, collection, EventType, or Project readiness field. Actual specialist emission remains planned.
 - **Schema only:** TraceabilityLink has a shared pairwise schema, but traceability persistence and generation are not implemented.
 - **ClientInput foundation only:** request validation, project-scoped persistence, and response serialization are implemented; requirement extraction, analysis, generation, and clarification behavior remain planned.
 - **Implemented:** login/JWT DTOs and `/auth/me` safe public responses.
@@ -162,6 +163,23 @@ STAGE_CHANGED
 ```
 
 The workflow rules also require events for project creation, agent completion, artifact revision/approval/rejection/locking, retry results, report generation, and H5 approval, but names for those additional event types are not formally defined. Do not invent them without approval.
+
+#### O3.5 `ARTIFACT_GENERATED` Readiness Metadata — Implemented for Consumption/Validation
+
+O3.5 uses `ARTIFACT_GENERATED`; it does not introduce a completion EventType. A final specialist readiness event contains safe metadata with:
+
+| Metadata field | Contract |
+|---|---|
+| `handoff_ready` | Required literal `true` |
+| `source_stage` | Required current specialist in-progress WorkflowStage |
+| `target_stage` | Required matching `Hx_WAITING_APPROVAL` WorkflowStage |
+| `artifact_version` | Required positive integer representing the specialist approval-package version |
+
+The event's `project_id` scopes the readiness evidence. Its `source_component` is the responsible specialist and its `target_component` is `Central SDLC Orchestrator`. The Orchestrator selects the newest valid event matching `project_id`, expected source stage, expected target stage, and expected source component. Reviewer identity, comments, email, JWTs, passwords, password hashes, and other private authentication data are prohibited from readiness metadata.
+
+The readiness event is necessary but not sufficient. O3.5 also requires project-scoped persisted evidence: `requirements` for H1; both `design_artifacts` and `backlog_items` for H2; `test_cases` for H3; both `implementation_artifacts` and `execution_logs` for H4; and `test_results` for H5. Each named collection must contain at least one record for the same project. No new package collection is approved.
+
+`WAITING_FOR_APPROVAL` and `COMPLETED` remain available ArtifactStatus values but are not O3.5 readiness predicates. The readiness `artifact_version` is handoff evidence only and is not yet cross-validated against O2 `Approval.artifact_version` or specialist artifact versions.
 
 ### Runtime Control States
 
@@ -329,13 +347,22 @@ Source-supported `module_type` values are `BACKEND`, `FRONTEND`, `CONFIG`, and `
 - **Producer:** human reviewer through approval UI/API; stored/coordinated by the Orchestrator.
 - **Consumers:** Orchestrator, all agents, workflow UI, Reports/Traceability.
 - **ID:** `approval_id` using the approved `APP-###` format.
-- **Required by File 12 for every decision:** `project_id`, `gate_id`, `reviewer_name` or `reviewer_role`, `decision`, `comment`, `timestamp`, `artifact_version`, `next_stage`.
-- **Additional File 06 fields:** `approval_id`, `artifact_type`.
+- **Active O2 fields:** `approval_id`, `project_id`, `gate_id`, `reviewer_name`, `reviewer_role`, `decision`, `comment`, `timestamp`, `artifact_version`, `next_stage`.
+- **Client-provided fields:** `reviewer_name`, `reviewer_role`, `decision`, `comment`, `artifact_version`. At least one reviewer identity field is required; `decision` and `comment` are required; `artifact_version` is a required positive integer.
+- **Route-derived/server-controlled fields:** `project_id`, `gate_id`, `approval_id`, `timestamp`, `next_stage`. The client must not submit these fields. `project_id` uses `PRJ-###`, `approval_id` uses `APP-###`, the route supplies the project, the endpoint supplies the gate, and the server generates the identifier and timestamp.
 - **Relationships:** refers to one gate and reviewed artifact version; an approved decision permits only the defined next stage.
 - **Traceability:** decision/comment/version become workflow and report evidence.
-- **Lifecycle:** append decision records; lock accepted artifact versions; do not silently approve or overwrite history.
+- **Lifecycle:** append immutable decision records; never overwrite earlier history. Multiple records for the same `project_id + gate_id` are allowed, and the newest record for that pair is the effective/current decision. No uniqueness constraint is defined on `project_id + gate_id`.
 
-File 06 uses `gate`, `reviewer_comment`, `reviewed_by`, and `reviewed_at`, whereas specialized File 12 uses `gate_id`, `comment`, reviewer name/role, and `timestamp`. The approved shared schema adopts File 12 terminology; legacy aliases are not part of the current implementation.
+For O2, `artifact_version` is supplied by the reviewer/client and represents the positive integer version of the artifact or artifact package reviewed at the gate. O2 does not validate it against, update, or lock component-specific artifact collections and does not define multi-artifact version matching. Artifact-lock enforcement remains planned with the relevant artifact pipelines.
+
+`next_stage` is server-derived. An `APPROVE` records the canonical forward stage for the gate: H1 → `DESIGN_IN_PROGRESS`, H2 → `TEST_PLANNING_IN_PROGRESS`, H3 → `IMPLEMENTATION_IN_PROGRESS`, H4 → `VALIDATION_IN_PROGRESS`, and H5 → `COMPLETED`. `REJECT`, `REQUEST_CHANGES`, and `HOLD` record the current matching `Hx_WAITING_APPROVAL` stage. O2 persists the decision but does not mutate `Project.current_stage`.
+
+File 06 historically mentions `artifact_type`, but it is not part of the active approved O2 Approval schema. `reviewer_user_id` is also not approved. File 06's legacy `gate`, `reviewer_comment`, `reviewed_by`, and `reviewed_at` names remain superseded by `gate_id`, `comment`, reviewer name/role, and `timestamp`.
+
+Every successfully persisted Approval creates exactly one `APPROVAL_DECISION` WorkflowEvent and no `STAGE_CHANGED` event. The implemented O3 next-step behavior separately consumes the effective APPROVE and creates one `STAGE_CHANGED` while leaving Approval history immutable. O4 owns later REJECT/REQUEST_CHANGES routing, and O6 owns richer HOLD persistence and release behavior.
+
+The O2 API, persistence, effective/latest lookup, and event behavior are implemented. O3 approval-driven H1-H5 transitions are implemented; O4 correction/routing and O6 richer HOLD/release behavior remain planned.
 
 ## TraceabilityLink
 

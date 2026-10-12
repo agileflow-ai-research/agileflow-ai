@@ -58,7 +58,7 @@ Schema names and supported fields are defined in [DATA_SCHEMAS.md](../schemas/DA
 
 ## Current Implementation Status
 
-The implemented HTTP surface currently consists of `GET /health`, the three Authentication routes, the four Project routes, the two ClientInput routes, and the first Orchestrator `next-step` route listed below. FastAPI also supplies `/docs` automatically. Registration, login, JWT issuance/validation, `/auth/me`, and authenticated Project ownership for every currently implemented Project-scoped route are implemented; every other unimplemented route remains **Planned / later sprint**.
+The implemented HTTP surface currently consists of `GET /health`, the three Authentication routes, the four Project routes, the two ClientInput routes, the three Orchestrator routes, and the five H1-H5 Approval POST routes listed below. FastAPI also supplies `/docs` automatically. Registration, login, JWT issuance/validation, `/auth/me`, and authenticated Project ownership for every currently implemented Project-scoped route are implemented; every other unimplemented route remains **Planned / later sprint**.
 
 ## Authentication Routes
 
@@ -93,14 +93,40 @@ All four Project routes require Bearer authentication. Project creation sets ser
 
 | Method | Path | Purpose | Owner | Request schema/reference | Response schema/reference | Approval relevance | Status |
 |---|---|---|---|---|---|---|---|
-| GET | `/api/v1/projects/{project_id}/workflow` | Get current stage and gate state | Central SDLC Orchestrator | Path parameter | Project, Approval, WorkflowEvent; aggregate body not formally defined | Reports H1-H5 state | Planned |
-| POST | `/api/v1/projects/{project_id}/orchestrator/next-step` | Validate and perform the next allowed action | Central SDLC Orchestrator | Not formally defined | Workflow state; body not formally defined | Must block at unapproved gates | Implemented for the first transition only |
+| GET | `/api/v1/projects/{project_id}/workflow` | Get current and canonical next-stage state | Central SDLC Orchestrator | Path parameter | Read-only workflow snapshot | Reports structural gate association without fabricating decisions | Implemented |
+| POST | `/api/v1/projects/{project_id}/orchestrator/next-step` | Validate and perform the next allowed action | Central SDLC Orchestrator | No request body | Workflow state | Must block when the applicable transition prerequisite is unmet | Implemented for all 11 canonical forward transitions using ClientInput, specialist-handoff, or effective-Approval prerequisites |
 | POST | `/api/v1/projects/{project_id}/orchestrator/route-failure` | Route requirement, build, test, security, or traceability failure | Central SDLC Orchestrator | Not formally defined | WorkflowEvent and relevant issue reference | May return work to gate owner | Planned |
-| GET | `/api/v1/projects/{project_id}/events` | Get workflow activity timeline | Central SDLC Orchestrator | Path parameter | WorkflowEvent list | Includes approval events | Planned |
+| GET | `/api/v1/projects/{project_id}/events` | Get workflow activity timeline | Central SDLC Orchestrator | Path parameter | Project-scoped WorkflowEvent list | Includes approval events when that behavior is later implemented | Implemented |
 
 File 12 describes a retry action but File 06 does not include a canonical retry route. No retry endpoint is established by this contract; retry execution requires human contract approval before implementation.
 
-Only the first approved transition is currently implemented: `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`. The Orchestrator verifies that at least one ClientInput exists for the project. If no ClientInput exists, the transition is blocked: the project stage is not changed and no `STAGE_CHANGED` event is created. A successful transition updates `current_stage` and `updated_at` and persists one `STAGE_CHANGED` WorkflowEvent. Later transitions and approval-gate processing remain planned.
+The canonical forward transition sequence and stage ownership metadata are implemented as a centralized policy. All 11 canonical forward transitions are executable when their configured prerequisite passes. The first transition requires a ClientInput; each specialist-to-gate transition requires the O3.5 readiness marker plus minimum evidence; and each approval-driven transition requires the newest/effective decision for the matching project and gate to be `APPROVE` with a policy-matching `next_stage`. Successful next-step execution updates `current_stage` and `updated_at` and persists exactly one `STAGE_CHANGED` WorkflowEvent. The workflow snapshot evaluates the same prerequisite without mutation.
+
+### Implemented O3.5 Specialist Handoff Readiness Contract
+
+The existing `POST /api/v1/projects/{project_id}/orchestrator/next-step` endpoint is the only HTTP transition endpoint for all five specialist handoffs. No `/complete`, `/handoff`, `/submit-for-approval`, or `/stage-complete` route is approved. In the current HTTP prototype, the authenticated Project owner may invoke next-step after specialist processing completes; future internal orchestration may reuse the same Orchestrator service logic.
+
+The specialist persists its domain artifacts and a final project-scoped `ARTIFACT_GENERATED` WorkflowEvent, then returns control to the Central SDLC Orchestrator. The newest valid readiness event for the current handoff must have the expected specialist `source_component`, `Central SDLC Orchestrator` as `target_component`, and metadata containing `handoff_ready: true`, the current specialist `source_stage`, the matching waiting `target_stage`, and a positive integer `artifact_version`. Reviewer data, comments, credentials, tokens, and private authentication data are prohibited from readiness metadata.
+
+Next-step validates both the readiness event and the following minimum project-scoped persisted evidence:
+
+| Current stage | Next stage | Readiness-event source | Minimum persisted evidence |
+|---|---|---|---|
+| `REQUIREMENTS_IN_PROGRESS` | `H1_WAITING_APPROVAL` | Requirement Gathering and Analysis Agent | At least one record in `requirements` |
+| `DESIGN_IN_PROGRESS` | `H2_WAITING_APPROVAL` | Project Management and Design Agent | At least one record in `design_artifacts` and at least one in `backlog_items` |
+| `TEST_PLANNING_IN_PROGRESS` | `H3_WAITING_APPROVAL` | Testing, Validation and Security Agent | At least one record in `test_cases` |
+| `IMPLEMENTATION_IN_PROGRESS` | `H4_WAITING_APPROVAL` | Implementation and Git Automation Agent | At least one record in `implementation_artifacts` and at least one in `execution_logs` |
+| `VALIDATION_IN_PROGRESS` | `H5_WAITING_APPROVAL` | Testing, Validation and Security Agent | At least one record in `test_results` |
+
+All readiness-event and artifact queries must include the active `project_id`. A marker from another project, source stage, target stage, or specialist cannot unlock a transition. O3.5 does not require `WAITING_FOR_APPROVAL` or `COMPLETED` ArtifactStatus values, a successful build/runtime status, a positive count of bug or security findings, or machine-checked traceability completeness.
+
+The workflow snapshot and next-step operation use the same readiness evaluator. The snapshot always exposes the canonical `next_stage` and reports `next_transition_available: true` only when both readiness requirements are satisfied. Missing or invalid readiness returns HTTP 409 from next-step, leaves `Project.current_stage` unchanged, and creates neither `STAGE_CHANGED` nor an Approval.
+
+On a successful handoff, only the Orchestrator updates `Project.current_stage` and `updated_at` and creates exactly one `STAGE_CHANGED` event with `Central SDLC Orchestrator` as source, `Human Stakeholder / Reviewer` as target, and the specialist and waiting stages as `stage_before` and `stage_after`. Entering a waiting stage does not create an Approval; an Approval is created only when a reviewer later submits a decision through the existing H1-H5 endpoint.
+
+The readiness `artifact_version` records the specialist approval-package version as handoff evidence. O3.5 does not cross-validate it against `Approval.artifact_version` and does not create a package collection. Gate entry means the evidence package is ready for human review, not that every technical check passed: persisted implementation failures and validation findings may be reviewed at H4 or H5. Correction routing remains planned. End-to-end traceability remains an architectural and final-completion requirement, but no link-count or gate-entry completeness predicate is introduced by O3.5.
+
+O3.5 consumption and validation are implemented. The actual specialist agents do not yet emit these readiness events; that integration remains part of each specialist implementation.
 
 ## Requirement Gathering and Analysis Routes
 
@@ -111,7 +137,7 @@ Only the first approved transition is currently implemented: `PROJECT_CREATED` �
 | POST | `/api/v1/projects/{project_id}/requirements/process` | Generate structured requirements | Requirement Gathering and Analysis Agent | Input references/body not formally defined | Requirement, UserStory, AcceptanceCriteria | Produces H1 package | Planned |
 | GET | `/api/v1/projects/{project_id}/requirements` | Get requirements, stories, and acceptance criteria | Requirement Gathering and Analysis Agent | Path parameter | Requirement, UserStory, AcceptanceCriteria | Reviewed at H1 | Planned |
 | POST | `/api/v1/projects/{project_id}/requirements/clarifications` | Add clarification questions or human feedback | Requirement Gathering and Analysis Agent | Not formally defined | Not formally defined | Supports H1 correction loop | Planned |
-| POST | `/api/v1/projects/{project_id}/approvals/h1` | Record requirement decision | Requirement Gathering and Analysis Agent / Orchestrator | Approval fields | Approval | H1 | Planned |
+| POST | `/api/v1/projects/{project_id}/approvals/h1` | Record requirement decision | Requirement Gathering and Analysis Agent / Orchestrator | O2 Approval request | Approval | H1 | Implemented |
 
 ### ClientInput Request and Response Contract
 
@@ -165,7 +191,7 @@ A syntactically valid `project_id` is not authorization. Missing or invalid auth
 | GET | `/api/v1/projects/{project_id}/design/artifacts` | Get UML/API/DB/UI/wireframe artifacts | Project Management and Design Agent | Path parameter | DesignArtifact list | Reviewed at H2 | Planned |
 | GET | `/api/v1/projects/{project_id}/design/traceability` | Get requirement-to-design mapping | Project Management and Design Agent | Path parameter | TraceabilityLink; response aggregation not formally defined | H2 evidence | Planned |
 | POST | `/api/v1/projects/{project_id}/design/jira-sync` | Mock or later approved real Jira synchronization | Project Management and Design Agent | Not formally defined | Not formally defined | Does not replace H2 | Planned |
-| POST | `/api/v1/projects/{project_id}/approvals/h2` | Record planning/design decision | Project Management and Design Agent / Orchestrator | Approval fields | Approval | H2 | Planned |
+| POST | `/api/v1/projects/{project_id}/approvals/h2` | Record planning/design decision | Project Management and Design Agent / Orchestrator | O2 Approval request | Approval | H2 | Implemented |
 
 ## Testing, Validation and Security — Pre-Code Routes
 
@@ -175,7 +201,7 @@ These routes belong to the pre-code phase of the single Testing, Validation and 
 |---|---|---|---|---|---|---|---|
 | POST | `/api/v1/projects/{project_id}/tests/pre-code/generate` | Generate test specifications and skeleton metadata | Testing, Validation and Security Agent | Approved requirement/design references; body not formally defined | TestCase | Requires H2; produces H3 package | Planned |
 | GET | `/api/v1/projects/{project_id}/tests/pre-code` | Get draft/approved pre-code package | Testing, Validation and Security Agent | Path parameter | TestCase list | Reviewed at H3 | Planned |
-| POST | `/api/v1/projects/{project_id}/approvals/h3` | Record pre-code test decision | Testing, Validation and Security Agent / Orchestrator | Approval fields | Approval | H3 | Planned |
+| POST | `/api/v1/projects/{project_id}/approvals/h3` | Record pre-code test decision | Testing, Validation and Security Agent / Orchestrator | O2 Approval request | Approval | H3 | Implemented |
 
 ## Implementation and Git Automation Routes
 
@@ -187,7 +213,7 @@ These routes belong to the pre-code phase of the single Testing, Validation and 
 | POST | `/api/v1/projects/{project_id}/implementation/run` | Run or simulate build/execution | Implementation and Git Automation Agent | Not formally defined | Execution-log schema not formally defined | H4 evidence/failure routing | Planned |
 | GET | `/api/v1/projects/{project_id}/implementation/logs` | Get build/runtime logs | Implementation and Git Automation Agent | Path parameter | Execution-log schema not formally defined | Reviewed at H4 | Planned |
 | POST | `/api/v1/projects/{project_id}/implementation/self-fix` | Apply a bounded build/runtime self-fix | Implementation and Git Automation Agent / Orchestrator | Not formally defined | Execution-log/workflow-event details not formally defined | Does not bypass H4 | Planned |
-| POST | `/api/v1/projects/{project_id}/approvals/h4` | Record implementation decision | Implementation and Git Automation Agent / Orchestrator | Approval fields | Approval | H4 | Planned |
+| POST | `/api/v1/projects/{project_id}/approvals/h4` | Record implementation decision | Implementation and Git Automation Agent / Orchestrator | O2 Approval request | Approval | H4 | Implemented |
 
 ## Testing, Validation and Security — Post-Code Routes
 
@@ -196,7 +222,7 @@ These routes belong to the pre-code phase of the single Testing, Validation and 
 | POST | `/api/v1/projects/{project_id}/validation/run-tests` | Run or simulate post-code tests | Testing, Validation and Security Agent | Approved implementation reference; body not formally defined | Test results schema not formally defined; BugReport where applicable | Requires H4; contributes to H5 | Planned |
 | POST | `/api/v1/projects/{project_id}/validation/security-scan` | Run or simulate security validation | Testing, Validation and Security Agent | Approved implementation reference; body not formally defined | SecurityFinding | Contributes to H5 | Planned |
 | GET | `/api/v1/projects/{project_id}/validation/report` | Get combined validation report | Testing, Validation and Security Agent | Path parameter | Validation report schema not formally defined | Reviewed at H5 | Planned |
-| POST | `/api/v1/projects/{project_id}/approvals/h5` | Record final validation decision | Testing, Validation and Security Agent / Orchestrator | Approval fields | Approval | H5 | Planned |
+| POST | `/api/v1/projects/{project_id}/approvals/h5` | Record final validation decision | Testing, Validation and Security Agent / Orchestrator | O2 Approval request | Approval | H5 | Implemented |
 
 ## Reports and Traceability Routes
 
@@ -211,6 +237,20 @@ These routes belong to the pre-code phase of the single Testing, Validation and 
 ## Approval Behavior
 
 Approval decisions are `APPROVE`, `REJECT`, `REQUEST_CHANGES`, and `HOLD` under the specialized workflow authority in File 12. Approval records use the fields documented in `DATA_SCHEMAS.md`. No approval route may silently approve, skip a gate, or advance an invalid stage.
+
+### Approved O2 Approval Request Contract
+
+Orchestrator Phase O2 decision persistence is implemented. Each H1-H5 endpoint requires Bearer authentication and authenticated Project ownership through `get_current_user` and `authorize_project_access`. The endpoint is valid only when the Project is at its matching waiting stage: H1 through H5 correspond respectively to `H1_WAITING_APPROVAL` through `H5_WAITING_APPROVAL`.
+
+The client supplies `reviewer_name`, `reviewer_role`, `decision`, `comment`, and `artifact_version`. At least one of `reviewer_name` or `reviewer_role` is required; `decision`, `comment`, and `artifact_version` are required; and `artifact_version` is a positive integer. The client must not submit the server-controlled fields `approval_id`, `project_id`, `gate_id`, `timestamp`, or `next_stage`. The server derives `project_id` from the route, derives `gate_id` from the endpoint, generates `approval_id` as `APP-###`, generates the timestamp, and derives `next_stage` from the gate and decision. `reviewer_user_id` and `artifact_type` are not part of the approved O2 request or Approval schema.
+
+For `APPROVE`, `next_stage` is `DESIGN_IN_PROGRESS`, `TEST_PLANNING_IN_PROGRESS`, `IMPLEMENTATION_IN_PROGRESS`, `VALIDATION_IN_PROGRESS`, or `COMPLETED` for H1 through H5 respectively. For `REJECT`, `REQUEST_CHANGES`, and `HOLD`, `next_stage` remains the matching `Hx_WAITING_APPROVAL` stage. In O2 this field records the decision's currently permitted or intended outcome; no decision mutates `Project.current_stage`.
+
+O2 records the reviewed `artifact_version` but does not validate, update, or lock records in specialist artifact collections. Artifact-lock enforcement remains planned with the relevant artifact pipelines.
+
+Every successfully persisted decision appends one immutable Approval record and exactly one `APPROVAL_DECISION` WorkflowEvent. The event uses `Human Stakeholder / Reviewer` as `source_component`, `Central SDLC Orchestrator` as `target_component`, and the same matching waiting stage for `stage_before` and `stage_after`. Its metadata is limited to safe audit identifiers such as `approval_id`, `gate_id`, `decision`, and `artifact_version`; reviewer comments and authentication data are not included. O2 never creates `STAGE_CHANGED`.
+
+Multiple Approval records for the same `project_id + gate_id` are allowed. The newest record is the effective decision, while earlier records remain immutable history. There is no uniqueness constraint on that pair. O3 consumes an effective `APPROVE`, performs the canonical Project transition through the existing next-step endpoint, and creates one `STAGE_CHANGED`; O4 will later implement REJECT and REQUEST_CHANGES routing; O6 will later implement full `ON_HOLD` persistence and release/resume behavior.
 
 ## Contract Resolution Notes
 

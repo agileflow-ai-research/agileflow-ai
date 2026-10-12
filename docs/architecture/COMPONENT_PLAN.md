@@ -112,7 +112,17 @@ This map translates the approved architecture into implementation ownership and 
 | IDs produced | `EVT-###`, approved `APP-###`, and relevant `TRACE-###` where orchestration creates links |
 | Dependencies | All four agents, Shared Knowledge Base, canonical stages/decisions, approval UI, report completion checks |
 | Must not do | Perform agent domain work, skip/auto-approve gates, hide failures, exceed retry limits, overwrite approved versions, allow agent-controlled global transitions |
-| Current status | The authenticated, owner-scoped first next-step endpoint, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS` transition, ClientInput prerequisite, and WorkflowEvent persistence are implemented. Remaining stages, approvals, failure routing, retries, escalation, correction loops, and UI remain planned |
+| Current status | The centralized transition policy and stage ownership metadata, authenticated owner-scoped workflow snapshot/event-history endpoints, next-step, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, O2 H1-H5 Approval persistence, O3 effective-APPROVE transitions, and O3.5 specialist handoff consumption/validation for all five approval-gate entries are implemented. Specialist readiness-event emission, O4 REJECT/REQUEST_CHANGES routing, O6 HOLD/release behavior, failure routing, retries, escalation, correction loops, and UI remain planned |
+
+### Orchestrator Phase Boundaries
+
+- **O2 — implemented:** authenticate and authorize the Project owner, validate the matching H1-H5 waiting stage, append an immutable Approval, identify the newest gate decision as effective, and append exactly one `APPROVAL_DECISION` event without changing `Project.current_stage`.
+- **O3 — implemented:** consume the newest/effective matching-gate `APPROVE`, verify its `next_stage` against policy, execute the canonical forward Project transition through next-step, and create exactly one `STAGE_CHANGED`.
+- **O3.5 — implemented for consumption/validation:** next-step and workflow snapshot use a final project-scoped `ARTIFACT_GENERATED` readiness marker plus the approved minimum collection evidence. Only the Orchestrator enters H1-H5 waiting stages and creates the single `STAGE_CHANGED`; entry creates no Approval. Actual marker emission remains with future specialist implementations.
+- **O4 — planned:** implement REJECT routing and REQUEST_CHANGES correction routing.
+- **O6 — planned:** persist richer `ON_HOLD` runtime state and implement authorized release/resume behavior.
+
+These phases preserve four research agents. Project ownership remains the O2 authorization boundary; no reviewer roles, RBAC, teams, organizations, or `reviewer_user_id` are introduced.
 
 ## 6. Shared Knowledge Base
 
@@ -162,6 +172,8 @@ One user may own multiple independent projects. All project-scoped components co
 ## Shared Approval and Traceability Ownership
 
 Component owners prepare artifacts and readiness for their gates. Human reviewers make decisions. The Orchestrator validates and records transitions. The Shared Knowledge Base stores records. Reports/Traceability consumes the evidence. This separation prevents agents from approving their own work or controlling global progression.
+
+For O3.5, readiness is represented without a new collection or status field: the responsible specialist appends a final `ARTIFACT_GENERATED` event carrying `handoff_ready`, source/target stages, and a positive package version. The Orchestrator additionally checks the exact same-project minimum evidence defined in the workflow contract. The Testing, Validation and Security Agent owns both H3 and H5 readiness; this does not create a fifth agent.
 
 ## Contract Resolution Notes
 

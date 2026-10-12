@@ -5,10 +5,28 @@ from pymongo import ReturnDocument
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
-from app.common.id_generator import validate_id
-from app.common.status import WorkflowStage
-from app.database.collections import CLIENT_INPUTS, PROJECTS, WORKFLOW_EVENTS
+from app.common.status import ApprovalGate, WorkflowStage
+from app.database.collections import (
+    APPROVALS,
+    BACKLOG_ITEMS,
+    CLIENT_INPUTS,
+    DESIGN_ARTIFACTS,
+    EXECUTION_LOGS,
+    IMPLEMENTATION_ARTIFACTS,
+    PROJECTS,
+    REQUIREMENTS,
+    TEST_CASES,
+    TEST_RESULTS,
+    WORKFLOW_EVENTS,
+)
 from app.database.mongodb import get_database
+from app.modules.approvals.repository import (
+    ApprovalRepositoryError,
+    EffectiveApprovalLookup,
+)
+from app.modules.orchestrator.event_ids import (
+    next_event_sequence_from_collection,
+)
 from app.schemas.workflow import WorkflowEvent
 
 
@@ -17,13 +35,27 @@ class OrchestratorRepositoryError(RuntimeError):
 
 
 class OrchestratorRepository:
-    """Persistence operations required for controlled workflow transitions."""
+    """Persistence operations for workflow state and event history."""
 
     def __init__(self, database: Database[dict[str, Any]] | None = None) -> None:
         configured_database = database if database is not None else get_database()
         self._projects = configured_database[PROJECTS]
         self._client_inputs = configured_database[CLIENT_INPUTS]
         self._workflow_events = configured_database[WORKFLOW_EVENTS]
+        self._evidence_collections = {
+            REQUIREMENTS: configured_database[REQUIREMENTS],
+            DESIGN_ARTIFACTS: configured_database[DESIGN_ARTIFACTS],
+            BACKLOG_ITEMS: configured_database[BACKLOG_ITEMS],
+            TEST_CASES: configured_database[TEST_CASES],
+            IMPLEMENTATION_ARTIFACTS: configured_database[
+                IMPLEMENTATION_ARTIFACTS
+            ],
+            EXECUTION_LOGS: configured_database[EXECUTION_LOGS],
+            TEST_RESULTS: configured_database[TEST_RESULTS],
+        }
+        self._effective_approvals = EffectiveApprovalLookup(
+            configured_database[APPROVALS]
+        )
 
     @staticmethod
     def _public_document(document: dict[str, Any]) -> dict[str, Any]:
@@ -42,23 +74,7 @@ class OrchestratorRepository:
     def next_event_sequence(self) -> int:
         """Return one greater than the largest valid persisted EVT sequence."""
         try:
-            largest_sequence = 0
-            for document in self._workflow_events.find(
-                {},
-                {"event_id": 1, "_id": 0},
-            ):
-                event_id = document.get("event_id")
-                if not isinstance(event_id, str):
-                    continue
-                try:
-                    validate_id(event_id, "EVT")
-                except ValueError:
-                    continue
-                largest_sequence = max(
-                    largest_sequence,
-                    int(event_id.rsplit("-", maxsplit=1)[1]),
-                )
-            return largest_sequence + 1
+            return next_event_sequence_from_collection(self._workflow_events)
         except PyMongoError as exc:
             raise OrchestratorRepositoryError(
                 "Could not allocate a workflow event ID"
@@ -76,6 +92,73 @@ class OrchestratorRepository:
         except PyMongoError as exc:
             raise OrchestratorRepositoryError(
                 "Could not check workflow prerequisites"
+            ) from exc
+
+    def get_effective_approval(
+        self,
+        project_id: str,
+        gate_id: ApprovalGate,
+    ) -> dict[str, Any] | None:
+        try:
+            return self._effective_approvals.get_effective_approval(
+                project_id,
+                gate_id,
+            )
+        except ApprovalRepositoryError as exc:
+            raise OrchestratorRepositoryError(
+                "Could not check approval prerequisite"
+            ) from exc
+
+    def list_workflow_events(self, project_id: str) -> list[dict[str, Any]]:
+        try:
+            documents = self._workflow_events.find(
+                {"project_id": project_id},
+                {"_id": 0},
+            ).sort([("created_at", 1), ("event_id", 1)])
+            return [self._public_document(document) for document in documents]
+        except PyMongoError as exc:
+            raise OrchestratorRepositoryError(
+                "Could not list workflow events"
+            ) from exc
+
+    def list_artifact_generated_events(
+        self,
+        project_id: str,
+    ) -> list[dict[str, Any]]:
+        """Return project-scoped readiness candidates without trusting metadata."""
+        try:
+            documents = self._workflow_events.find(
+                {
+                    "project_id": project_id,
+                    "event_type": "ARTIFACT_GENERATED",
+                },
+                {"_id": 0},
+            ).sort([("created_at", -1), ("event_id", -1)])
+            return [self._public_document(document) for document in documents]
+        except PyMongoError as exc:
+            raise OrchestratorRepositoryError(
+                "Could not inspect specialist readiness events"
+            ) from exc
+
+    def missing_project_evidence(
+        self,
+        project_id: str,
+        collection_names: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        """Return approved evidence collections with no same-project record."""
+        try:
+            return tuple(
+                collection_name
+                for collection_name in collection_names
+                if self._evidence_collections[collection_name].find_one(
+                    {"project_id": project_id},
+                    {"_id": 1},
+                )
+                is None
+            )
+        except (KeyError, PyMongoError) as exc:
+            raise OrchestratorRepositoryError(
+                "Could not inspect specialist handoff evidence"
             ) from exc
 
     def persist_stage_change(

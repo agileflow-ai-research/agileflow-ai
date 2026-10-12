@@ -8,18 +8,24 @@ from app.common.status import WorkflowStage
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.orchestrator.repository import OrchestratorRepository
-from app.modules.orchestrator.schemas import WorkflowTransitionResult
+from app.modules.orchestrator.schemas import (
+    WorkflowSnapshot,
+    WorkflowTransitionResult,
+)
 from app.modules.orchestrator.service import (
+    ApprovalPrerequisiteError,
     MissingClientInputError,
     OrchestratorProjectNotFoundError,
     OrchestratorService,
     OrchestratorServiceError,
+    SpecialistHandoffPrerequisiteError,
     UnsupportedWorkflowStageError,
 )
+from app.schemas.workflow import WorkflowEvent
 
 
 router = APIRouter(
-    prefix="/projects/{project_id}/orchestrator",
+    prefix="/projects/{project_id}",
     tags=["orchestrator"],
 )
 
@@ -62,8 +68,87 @@ def _error_response(
     )
 
 
+@router.get(
+    "/workflow",
+    response_model=SuccessResponse[WorkflowSnapshot],
+)
+def get_workflow_snapshot(
+    project_id: str,
+    service: OrchestratorServiceDependency,
+    current_user: CurrentUserDependency,
+) -> SuccessResponse[WorkflowSnapshot] | JSONResponse:
+    try:
+        snapshot = service.get_workflow_snapshot(project_id, current_user)
+    except ValueError as exc:
+        return _error_response(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Validation failed",
+            "project_id",
+            str(exc),
+        )
+    except OrchestratorProjectNotFoundError:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            "Project not found",
+            "project_id",
+            "Project not found",
+        )
+    except OrchestratorServiceError:
+        return _error_response(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Workflow retrieval failed",
+            "database",
+            "Workflow storage is unavailable",
+        )
+
+    return SuccessResponse(
+        message="Workflow snapshot retrieved successfully",
+        data=snapshot,
+        workflow_stage=snapshot.current_stage,
+    )
+
+
+@router.get(
+    "/events",
+    response_model=SuccessResponse[list[WorkflowEvent]],
+)
+def list_workflow_events(
+    project_id: str,
+    service: OrchestratorServiceDependency,
+    current_user: CurrentUserDependency,
+) -> SuccessResponse[list[WorkflowEvent]] | JSONResponse:
+    try:
+        events = service.list_workflow_events(project_id, current_user)
+    except ValueError as exc:
+        return _error_response(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Validation failed",
+            "project_id",
+            str(exc),
+        )
+    except OrchestratorProjectNotFoundError:
+        return _error_response(
+            status.HTTP_404_NOT_FOUND,
+            "Project not found",
+            "project_id",
+            "Project not found",
+        )
+    except OrchestratorServiceError:
+        return _error_response(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Workflow event retrieval failed",
+            "database",
+            "Workflow storage is unavailable",
+        )
+
+    return SuccessResponse(
+        message="Workflow events retrieved successfully",
+        data=events,
+    )
+
+
 @router.post(
-    "/next-step",
+    "/orchestrator/next-step",
     response_model=SuccessResponse[WorkflowTransitionResult],
 )
 def next_step(
@@ -73,6 +158,22 @@ def next_step(
 ) -> SuccessResponse[WorkflowTransitionResult] | JSONResponse:
     try:
         transition = service.next_step(project_id, current_user)
+    except SpecialistHandoffPrerequisiteError as exc:
+        return _error_response(
+            status.HTTP_409_CONFLICT,
+            "Specialist handoff prerequisite is not satisfied",
+            "specialist_handoff",
+            str(exc),
+            workflow_stage=exc.current_stage,
+        )
+    except ApprovalPrerequisiteError as exc:
+        return _error_response(
+            status.HTTP_409_CONFLICT,
+            "Approval prerequisite is not satisfied",
+            "approval",
+            str(exc),
+            workflow_stage=exc.current_stage,
+        )
     except MissingClientInputError as exc:
         return _error_response(
             status.HTTP_409_CONFLICT,
