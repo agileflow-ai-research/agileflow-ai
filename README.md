@@ -134,7 +134,7 @@ Set-Location backend
 
 ## Frontend Setup
 
-The F1.2 React/Vite/Tailwind foundation through F1.7 authenticated application shell and owner-scoped Projects Dashboard are available with centralized design tokens, shared HTTP/token utilities, accessible UI primitives, and Vitest/Testing Library coverage. Create Project, initial ClientInput, and Project Overview integration remain planned. From `frontend/`, run `npm install`, copy `.env.example` to an ignored `.env` for local configuration, then use `npm run dev`. Validate changes with `npm run lint`, `npm test -- --run`, and `npm run build`. Follow [FRONTEND_GUIDE.md](docs/implementation-rules/FRONTEND_GUIDE.md) for the approved structure and design rules.
+The F1.2 React/Vite/Tailwind foundation through F1.8 are available, including the authenticated application shell, owner-scoped Projects Dashboard, and Create Project form/service integration. The F1.8 form intentionally persists only Project name and required domain; initial ClientInput persistence remains F1.9 and Project Overview integration remains F1.10. From `frontend/`, run `npm install`, copy `.env.example` to an ignored `.env` for local configuration, then use `npm run dev`. Validate changes with `npm run lint`, `npm test -- --run`, and `npm run build`. Follow [FRONTEND_GUIDE.md](docs/implementation-rules/FRONTEND_GUIDE.md) for the approved structure and design rules.
 
 ## Environment Configuration
 
@@ -177,7 +177,7 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | Approval-driven Orchestrator transitions | Implemented for H1-H5 waiting stages when the effective decision is APPROVE; each creates one `STAGE_CHANGED` event |
 | Specialist handoff readiness | O3.5 consumption/validation is implemented for all five specialist-stage → approval-gate transitions using a valid `ARTIFACT_GENERATED` marker plus minimum project-scoped evidence; actual specialist emission remains planned |
 | Backend test suite | Implemented; 273 tests passing in the current verified suite |
-| Frontend application | F1.2 foundation through F1.7 authenticated application shell and Projects Dashboard implemented; project creation, ClientInput, and Project Overview integration remain planned |
+| Frontend application | F1.2 foundation through F1.8 Create Project page and Project POST integration implemented; initial ClientInput and Project Overview integration remain planned |
 | Agent intelligence, specialist readiness-event emission, O4 correction routing, O6 HOLD/release behavior, and remaining workflow behavior | Planned |
 | Remaining artifact persistence, traceability behavior, reports, and integrations | Planned |
 | User persistence, `USR-###`, Argon2 hashing, and registration API | Implemented |

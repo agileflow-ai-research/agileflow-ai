@@ -26,6 +26,7 @@ vi.mock('../features/auth/useAuth.js', () => ({
 
 vi.mock('../services/projectService.js', () => ({
   getProjects: vi.fn().mockResolvedValue({ data: [] }),
+  createProject: vi.fn(),
 }))
 
 describe('AppRouter F1.2 route regression', () => {
