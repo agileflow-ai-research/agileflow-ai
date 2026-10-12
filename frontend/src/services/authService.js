@@ -7,3 +7,11 @@ export function register({ name, email, password }) {
     { authenticated: false },
   )
 }
+
+export function login({ email, password }) {
+  return apiClient.post(
+    '/auth/login',
+    { email, password },
+    { authenticated: false },
+  )
+}

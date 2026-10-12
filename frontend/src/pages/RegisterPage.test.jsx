@@ -8,6 +8,7 @@ import RegisterPage from './RegisterPage.jsx'
 import { register } from '../services/authService.js'
 
 vi.mock('../services/authService.js', () => ({
+  login: vi.fn(),
   register: vi.fn(),
 }))
 
@@ -150,7 +151,7 @@ describe('RegisterPage', () => {
     expect(
       await screen.findByText('Account created successfully. Sign in to continue.'),
     ).toHaveAttribute('role', 'status')
-    expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
     expect(sessionStorage.getItem('agileflow_access_token')).toBeNull()
   })
 
@@ -217,6 +218,6 @@ describe('RegisterPage', () => {
 
     await user.click(screen.getByRole('link', { name: 'Sign in' }))
 
-    expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
   })
 })

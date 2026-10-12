@@ -5,7 +5,7 @@ import AppRouter from './AppRouter.jsx'
 
 describe('AppRouter F1.2 route regression', () => {
   it.each([
-    ['/login', 'Login'],
+    ['/login', 'Welcome back'],
     ['/register', 'Create your account'],
     ['/projects', 'Projects'],
     ['/projects/new', 'Create Project'],
