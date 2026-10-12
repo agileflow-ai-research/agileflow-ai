@@ -19,7 +19,6 @@ CREATE_PAYLOAD = {
     "name": "Book Management System",
     "domain": "Library / Education",
     "description": "A controlled sample project",
-    "created_by": "foundation_user",
 }
 
 
@@ -113,11 +112,36 @@ def test_create_project_successfully(project_client) -> None:
     assert payload["success"] is True
     assert payload["data"]["project_id"] == "PRJ-001"
     assert payload["data"]["owner_user_id"] == "USR-001"
+    assert payload["data"]["created_by"] == "USR-001"
     assert payload["data"]["current_stage"] == "PROJECT_CREATED"
     assert payload["workflow_stage"] == "PROJECT_CREATED"
     assert payload["data"]["status"] == "IN_PROGRESS"
     assert payload["data"]["created_at"] == payload["data"]["updated_at"]
     assert "PRJ-001" in repository.documents
+
+
+def test_create_project_without_description_persists_empty_string(
+    project_client,
+) -> None:
+    client, repository = project_client
+
+    response = create_project(
+        client,
+        {"name": "Minimal project", "domain": "Education"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["description"] == ""
+    assert repository.documents["PRJ-001"]["description"] == ""
+
+
+def test_create_project_accepts_optional_description(project_client) -> None:
+    client, _ = project_client
+
+    response = create_project(client)
+
+    assert response.status_code == 201
+    assert response.json()["data"]["description"] == CREATE_PAYLOAD["description"]
 
 
 def test_generated_project_ids_follow_sequence(project_client) -> None:
@@ -221,6 +245,7 @@ def test_update_missing_project(project_client) -> None:
     [
         ("project_id", "PRJ-999"),
         ("owner_user_id", "USR-002"),
+        ("created_by", "USR-002"),
         ("current_stage", "COMPLETED"),
         ("created_at", "2026-01-01T00:00:00Z"),
         ("updated_at", "2026-01-01T00:00:00Z"),
@@ -302,16 +327,79 @@ def test_project_routes_require_authentication(authentication_context) -> None:
     ).status_code == 401
 
 
-def test_create_rejects_client_controlled_owner(project_client) -> None:
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("owner_user_id", "USR-002"),
+        ("project_id", "PRJ-999"),
+        ("current_stage", "COMPLETED"),
+        ("status", "COMPLETED"),
+        ("created_at", "2026-01-01T00:00:00Z"),
+        ("updated_at", "2026-01-01T00:00:00Z"),
+    ],
+)
+def test_create_rejects_server_controlled_fields(
+    project_client,
+    field,
+    value,
+) -> None:
     client, repository = project_client
 
     response = create_project(
         client,
-        {**CREATE_PAYLOAD, "owner_user_id": "USR-002"},
+        {**CREATE_PAYLOAD, field: value},
     )
 
     assert response.status_code == 422
     assert repository.documents == {}
+
+
+def test_create_rejects_client_controlled_creator(project_client) -> None:
+    client, repository = project_client
+
+    response = create_project(
+        client,
+        {**CREATE_PAYLOAD, "created_by": "USR-002"},
+    )
+
+    assert response.status_code == 422
+    assert repository.documents == {}
+
+
+@pytest.mark.parametrize("missing_field", ["name", "domain"])
+def test_create_requires_name_and_domain(project_client, missing_field) -> None:
+    client, repository = project_client
+    payload = {
+        "name": "Required fields project",
+        "domain": "Education",
+    }
+    payload.pop(missing_field)
+
+    response = create_project(client, payload)
+
+    assert response.status_code == 422
+    assert repository.documents == {}
+
+
+def test_authenticated_user_cannot_impersonate_another_creator(
+    project_client,
+    authentication_context,
+) -> None:
+    _, repository = project_client
+    owner_b_client = authentication_context.client("USR-002")
+
+    rejected = create_project(
+        owner_b_client,
+        {**CREATE_PAYLOAD, "created_by": "USR-001"},
+    )
+    created = create_project(owner_b_client)
+
+    assert rejected.status_code == 422
+    assert created.status_code == 201
+    project = created.json()["data"]
+    assert project["created_by"] == "USR-002"
+    assert project["owner_user_id"] == "USR-002"
+    assert repository.documents["PRJ-001"]["created_by"] == "USR-002"
 
 
 def test_project_listing_is_owner_scoped(
@@ -334,6 +422,17 @@ def test_project_listing_is_owner_scoped(
     assert [item["project_id"] for item in owner_b_projects] == ["PRJ-003"]
     assert {item["owner_user_id"] for item in owner_a_projects} == {"USR-001"}
     assert owner_b_projects[0]["owner_user_id"] == "USR-002"
+    assert {item["created_by"] for item in owner_a_projects} == {"USR-001"}
+    assert owner_b_projects[0]["created_by"] == "USR-002"
+
+
+def test_project_get_retains_server_derived_creator(project_client) -> None:
+    client, _ = project_client
+    create_project(client)
+
+    project = client.get("/api/v1/projects/PRJ-001").json()["data"]
+
+    assert project["created_by"] == "USR-001"
 
 
 def test_foreign_project_get_and_update_use_safe_not_found(
@@ -457,11 +556,15 @@ def test_all_current_project_scoped_routes_require_bearer_authentication() -> No
         assert paths[path][method]["security"] == [{"HTTPBearer": []}]
 
 
-def test_project_request_schemas_do_not_accept_owner_user_id() -> None:
+def test_project_request_schemas_protect_server_controlled_fields() -> None:
     schemas = app.openapi()["components"]["schemas"]
+    create_schema = schemas["ProjectCreateRequest"]
 
-    assert "owner_user_id" not in schemas["ProjectCreateRequest"]["properties"]
+    assert set(create_schema["properties"]) == {"name", "domain", "description"}
+    assert set(create_schema["required"]) == {"name", "domain"}
+    assert create_schema["properties"]["description"]["default"] == ""
     assert "owner_user_id" not in schemas["ProjectUpdateRequest"]["properties"]
+    assert "created_by" not in schemas["ProjectUpdateRequest"]["properties"]
 
 
 def test_swagger_and_openapi_remain_available(project_client) -> None:

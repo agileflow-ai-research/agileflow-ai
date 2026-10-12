@@ -200,6 +200,8 @@ File 06's sample `REQUIREMENT_GATHERING` stage is superseded by File 12's canoni
 
 `owner_user_id` is server-controlled, uses `USR-###`, is assigned from the authenticated user during project creation, and cannot be supplied or changed by a client. A user may own multiple projects; no cross-user sharing is approved.
 
+The Project create request requires client-provided `name` and `domain` and accepts optional `description`. When omitted, `description` is persisted as an empty string; it is not derived from ClientInput. The server derives both `created_by` and `owner_user_id` from the authenticated user's `user_id`, so they are equal for a normally created Project. Clients cannot supply `created_by`, `owner_user_id`, `project_id`, `current_stage`, `status`, `created_at`, or `updated_at` during creation, and neither identity field is mutable through the Project metadata PATCH API.
+
 ## Multi-Project Isolation
 
 Authentication establishes the user, `project_id` establishes the active project, and `Project.owner_user_id` authorizes access. Every project-owned record remains scoped by `project_id`, including ClientInputs, requirements, design artifacts, backlog items, test cases, implementation artifacts, execution logs, test results, security findings, bug reports, approvals, traceability links, workflow events, and future agent executions.

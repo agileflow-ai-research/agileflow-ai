@@ -53,7 +53,7 @@ class ProjectService:
                 description=request.description,
                 current_stage=WorkflowStage.PROJECT_CREATED,
                 status=ArtifactStatus.IN_PROGRESS,
-                created_by=request.created_by,
+                created_by=current_user.user_id,
                 created_at=now,
                 updated_at=now,
             )
