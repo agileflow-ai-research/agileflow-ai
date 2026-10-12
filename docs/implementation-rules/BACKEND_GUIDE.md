@@ -177,7 +177,7 @@ JWT Bearer registration, login, token validation, and `/auth/me` are implemented
 
 Follow [DATA_SCHEMAS.md](../schemas/DATA_SCHEMAS.md). Important artifacts carry project/artifact identifiers, type, title, status, approval gate, creator, timestamps, version, and traceability references. Do not duplicate Project, Requirement, TestCase, Approval, or traceability models.
 
-Preserve the ID families `USR`, `PRJ`, `REQ`, `US`, `AC`, `DES`, `API`, `DB`, `TASK`, `TEST`, `CODE`, `BUG`, `SEC`, `TRACE`, `EVT`, and `APP` as documented. `USR-###` identifies a user; `Project.owner_user_id` is assigned server-side from that authenticated user. The required research trace is:
+Preserve the ID families `USR`, `PRJ`, `REQ`, `US`, `AC`, `DES`, `API`, `DB`, `TASK`, `TEST`, `CODE`, `BUG`, `SEC`, `TRACE`, `EVT`, and `APP` as documented. `USR-###` identifies a user. Project creation accepts required `name` and `domain` plus optional `description`, defaulting an omitted description to an empty string. Both `Project.created_by` and `Project.owner_user_id` are assigned server-side from the authenticated user's `user_id` and cannot be client-controlled or patched. The required research trace is:
 
 ```text
 Requirement → Design → Backlog → Test → Code

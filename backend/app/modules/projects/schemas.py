@@ -10,8 +10,7 @@ class ProjectCreateRequest(BaseModel):
 
     name: str
     domain: str
-    description: str
-    created_by: str
+    description: str = ""
 
 
 class ProjectUpdateRequest(BaseModel):
