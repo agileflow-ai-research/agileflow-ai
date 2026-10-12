@@ -12,6 +12,10 @@ vi.mock('../services/authService.js', () => ({
   register: vi.fn(),
 }))
 
+vi.mock('../features/auth/useAuth.js', () => ({
+  useAuth: () => ({ establishSession: vi.fn() }),
+}))
+
 function renderRegistration() {
   return render(
     <MemoryRouter initialEntries={['/register']}>

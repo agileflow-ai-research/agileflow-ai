@@ -15,3 +15,7 @@ export function login({ email, password }) {
     { authenticated: false },
   )
 }
+
+export function getCurrentUser() {
+  return apiClient.get('/auth/me', { authenticated: true })
+}

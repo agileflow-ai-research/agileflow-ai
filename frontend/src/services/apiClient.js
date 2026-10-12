@@ -1,6 +1,25 @@
 import { getAccessToken } from './tokenStorage.js'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+let unauthorizedHandler = null
+
+export function setUnauthorizedHandler(handler) {
+  unauthorizedHandler = typeof handler === 'function' ? handler : null
+
+  return () => {
+    if (unauthorizedHandler === handler) {
+      unauthorizedHandler = null
+    }
+  }
+}
+
+function notifyUnauthorized(error) {
+  try {
+    unauthorizedHandler?.(error)
+  } catch {
+    // Session cleanup must not replace the original API error.
+  }
+}
 
 export class ApiError extends Error {
   constructor({ status, message, errors, workflow_stage, next_action, cause }) {
@@ -77,11 +96,15 @@ export async function request(
 
   const payload = await parseResponse(response)
   if (!response.ok || payload?.success === false) {
-    throw createApiError(
+    const error = createApiError(
       response.status,
       payload,
       response.statusText || 'The request failed',
     )
+    if (authenticated && response.status === 401) {
+      notifyUnauthorized(error)
+    }
+    throw error
   }
 
   return {

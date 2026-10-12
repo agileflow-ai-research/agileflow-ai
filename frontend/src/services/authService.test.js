@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from './apiClient.js'
-import { login, register } from './authService.js'
+import { getCurrentUser, login, register } from './authService.js'
 
 vi.mock('./apiClient.js', () => ({
   apiClient: {
+    get: vi.fn(),
     post: vi.fn(),
   },
 }))
@@ -47,6 +48,17 @@ describe('authService', () => {
       '/auth/login',
       payload,
       { authenticated: false },
+    )
+  })
+
+  it('gets the current user through the authenticated auth endpoint', async () => {
+    const response = { status: 200, data: { user_id: 'USR-001' } }
+    apiClient.get.mockResolvedValue(response)
+
+    await expect(getCurrentUser()).resolves.toBe(response)
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/auth/me',
+      { authenticated: true },
     )
   })
 })

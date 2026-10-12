@@ -6,12 +6,10 @@ import FormError from '../components/feedback/FormError.jsx'
 import Button from '../components/ui/Button.jsx'
 import Input from '../components/ui/Input.jsx'
 import PasswordInput from '../components/ui/PasswordInput.jsx'
+import { getSafeReturnPath } from '../features/auth/returnTo.js'
+import { useAuth } from '../features/auth/useAuth.js'
 import AuthLayout from '../layouts/AuthLayout.jsx'
 import { login } from '../services/authService.js'
-import {
-  removeAccessToken,
-  setAccessToken,
-} from '../services/tokenStorage.js'
 
 const initialForm = { email: '', password: '' }
 const genericLoginError = "We couldn't sign you in right now. Please try again."
@@ -44,7 +42,9 @@ function mapFieldErrors(errors) {
 function LoginPage() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { establishSession } = useAuth()
   const successMessage = location.state?.registrationSuccess
+  const returnPath = getSafeReturnPath(location.state?.from)
   const [form, setForm] = useState(initialForm)
   const [fieldErrors, setFieldErrors] = useState({})
   const [submissionError, setSubmissionError] = useState('')
@@ -71,30 +71,12 @@ function LoginPage() {
     if (Object.keys(validationErrors).length > 0) return
 
     setIsSubmitting(true)
+    let response
     try {
-      const response = await login({
+      response = await login({
         email: form.email.trim(),
         password: form.password,
       })
-      const accessToken = response?.data?.access_token
-      if (typeof accessToken !== 'string' || !accessToken.trim()) {
-        setSubmissionError(genericLoginError)
-        return
-      }
-
-      try {
-        setAccessToken(accessToken.trim())
-      } catch {
-        try {
-          removeAccessToken()
-        } catch {
-          // The same unavailable storage may also prevent cleanup.
-        }
-        setSubmissionError(genericLoginError)
-        return
-      }
-
-      navigate('/projects', { replace: true })
     } catch (error) {
       if (error?.status === 401) {
         setSubmissionError('Invalid email or password.')
@@ -106,6 +88,22 @@ function LoginPage() {
           setSubmissionError(genericLoginError)
         }
       }
+      setIsSubmitting(false)
+      return
+    }
+
+    const accessToken = response?.data?.access_token
+    if (typeof accessToken !== 'string' || !accessToken.trim()) {
+      setSubmissionError(genericLoginError)
+      setIsSubmitting(false)
+      return
+    }
+
+    try {
+      await establishSession(accessToken)
+      navigate(returnPath, { replace: true })
+    } catch {
+      setSubmissionError(genericLoginError)
     } finally {
       setIsSubmitting(false)
     }
@@ -178,6 +176,7 @@ function LoginPage() {
           <Link
             className="font-semibold text-brand-primary transition-colors hover:text-brand-hover"
             to="/register"
+            state={{ from: location.state?.from }}
           >
             Create account
           </Link>

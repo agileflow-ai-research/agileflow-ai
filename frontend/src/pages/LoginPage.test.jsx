@@ -4,19 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import { login } from '../services/authService.js'
-import {
-  removeAccessToken,
-  setAccessToken,
-} from '../services/tokenStorage.js'
 import LoginPage from './LoginPage.jsx'
+
+const establishSession = vi.fn()
 
 vi.mock('../services/authService.js', () => ({
   login: vi.fn(),
 }))
 
-vi.mock('../services/tokenStorage.js', () => ({
-  removeAccessToken: vi.fn(),
-  setAccessToken: vi.fn(),
+vi.mock('../features/auth/useAuth.js', () => ({
+  useAuth: () => ({ establishSession }),
 }))
 
 function renderLogin(initialEntry = '/login') {
@@ -26,6 +23,7 @@ function renderLogin(initialEntry = '/login') {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<h1>Create your account</h1>} />
         <Route path="/projects" element={<h1>Projects destination</h1>} />
+        <Route path="/projects/:projectId" element={<h1>Project destination</h1>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -45,6 +43,7 @@ async function completeForm(user, values = {}) {
 describe('LoginPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    establishSession.mockResolvedValue({ user_id: 'USR-001' })
   })
 
   it('renders the login fields, action, and runtime illustration', () => {
@@ -132,7 +131,7 @@ describe('LoginPage', () => {
     })
   })
 
-  it('stores only the access token and navigates to projects', async () => {
+  it('establishes the session with only the access token and navigates to projects', async () => {
     const user = userEvent.setup()
     login.mockResolvedValue({
       data: { access_token: 'jwt-token', token_type: 'bearer' },
@@ -143,9 +142,23 @@ describe('LoginPage', () => {
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
 
     expect(await screen.findByRole('heading', { name: 'Projects destination' })).toBeInTheDocument()
-    expect(setAccessToken).toHaveBeenCalledOnce()
-    expect(setAccessToken).toHaveBeenCalledWith('jwt-token')
-    expect(setAccessToken).not.toHaveBeenCalledWith('bearer')
+    expect(establishSession).toHaveBeenCalledOnce()
+    expect(establishSession).toHaveBeenCalledWith('jwt-token')
+    expect(establishSession).not.toHaveBeenCalledWith('bearer')
+  })
+
+  it('returns to the intended protected route after a verified login', async () => {
+    const user = userEvent.setup()
+    login.mockResolvedValue({ data: { access_token: 'jwt-token' } })
+    renderLogin({
+      pathname: '/login',
+      state: { from: { pathname: '/projects/PRJ-001', search: '', hash: '' } },
+    })
+    await completeForm(user)
+
+    await user.click(screen.getByRole('button', { name: 'Sign in' }))
+
+    expect(await screen.findByRole('heading', { name: 'Project destination' })).toBeInTheDocument()
   })
 
   it('shows safe invalid-credentials feedback for a 401 response', async () => {
@@ -209,16 +222,14 @@ describe('LoginPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       "We couldn't sign you in right now. Please try again.",
     )
-    expect(setAccessToken).not.toHaveBeenCalled()
+    expect(establishSession).not.toHaveBeenCalled()
     expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
   })
 
-  it('cleans up and does not navigate when token storage fails', async () => {
+  it('shows safe feedback and does not navigate when session establishment fails', async () => {
     const user = userEvent.setup()
     login.mockResolvedValue({ data: { access_token: 'jwt-token' } })
-    setAccessToken.mockImplementation(() => {
-      throw new Error('Storage unavailable')
-    })
+    establishSession.mockRejectedValue(new Error('Session verification failed'))
     renderLogin()
     await completeForm(user)
 
@@ -227,7 +238,7 @@ describe('LoginPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       "We couldn't sign you in right now. Please try again.",
     )
-    expect(removeAccessToken).toHaveBeenCalledOnce()
+    expect(establishSession).toHaveBeenCalledWith('jwt-token')
     expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
   })
 

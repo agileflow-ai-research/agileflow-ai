@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import signupIllustration from '../assets/auth/signup-illustration.png'
 import FormError from '../components/feedback/FormError.jsx'
@@ -40,6 +40,7 @@ function mapFieldErrors(errors) {
 }
 
 function RegisterPage() {
+  const location = useLocation()
   const navigate = useNavigate()
   const [form, setForm] = useState(initialForm)
   const [fieldErrors, setFieldErrors] = useState({})
@@ -78,6 +79,7 @@ function RegisterPage() {
         state: {
           registrationSuccess:
             'Account created successfully. Sign in to continue.',
+          from: location.state?.from,
         },
       })
     } catch (error) {
@@ -165,6 +167,7 @@ function RegisterPage() {
           <Link
             className="font-semibold text-brand-primary transition-colors hover:text-brand-hover"
             to="/login"
+            state={{ from: location.state?.from }}
           >
             Sign in
           </Link>

@@ -1,7 +1,24 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { Outlet } from 'react-router-dom'
+import { describe, expect, it, vi } from 'vitest'
 
 import AppRouter from './AppRouter.jsx'
+
+vi.mock('../features/auth/AuthProvider.jsx', () => ({
+  default: ({ children }) => children,
+}))
+
+vi.mock('../features/auth/ProtectedRoute.jsx', () => ({
+  default: () => <Outlet />,
+}))
+
+vi.mock('../features/auth/PublicOnlyRoute.jsx', () => ({
+  default: () => <Outlet />,
+}))
+
+vi.mock('../features/auth/useAuth.js', () => ({
+  useAuth: () => ({ establishSession: vi.fn() }),
+}))
 
 describe('AppRouter F1.2 route regression', () => {
   it.each([
