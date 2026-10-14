@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import AgentWorkspaceShell from '../components/agents/AgentWorkspaceShell.jsx'
 import RequirementsWorkspace from '../components/agents/RequirementsWorkspace.jsx'
 import DesignPlanningWorkspace from '../components/agents/DesignPlanningWorkspace.jsx'
+import TestingValidationWorkspace from '../components/agents/TestingValidationWorkspace.jsx'
 import RunDetail from '../components/agents/RunDetail.jsx'
 import RunHistory from '../components/agents/RunHistory.jsx'
 import ErrorState from '../components/feedback/ErrorState.jsx'
@@ -164,8 +165,8 @@ function AgentProjectOverviewPage() {
       </Card>
 
       <AgentWorkspaceShell
-        title={project.agent_type === 'REQUIREMENTS' ? 'Requirement Gathering and Analysis' : project.agent_type === 'DESIGN_PLANNING' ? 'Project Management and Design' : 'Agent workspace'}
-        description={project.status === 'ARCHIVED' ? 'This project is archived. Reactivate it before specialist execution becomes available.' : project.agent_type === 'REQUIREMENTS' ? 'Provide a text requirement source, choose outputs, review, and run Agent 1.' : project.agent_type === 'DESIGN_PLANNING' ? 'Provide specifications and planning constraints, choose outputs, review, and run Agent 2.' : 'This shared workspace is ready for the specialist phase.'}
+        title={project.agent_type === 'REQUIREMENTS' ? 'Requirement Gathering and Analysis' : project.agent_type === 'DESIGN_PLANNING' ? 'Project Management and Design' : project.agent_type === 'TESTING_VALIDATION' ? 'Testing, Validation and Security' : 'Agent workspace'}
+        description={project.status === 'ARCHIVED' ? 'This project is archived. Reactivate it before specialist execution becomes available.' : project.agent_type === 'REQUIREMENTS' ? 'Provide a text requirement source, choose outputs, review, and run Agent 1.' : project.agent_type === 'DESIGN_PLANNING' ? 'Provide specifications and planning constraints, choose outputs, review, and run Agent 2.' : project.agent_type === 'TESTING_VALIDATION' ? 'Choose Test Case Generation or Testing & Validation before providing mode-specific inputs.' : 'This shared workspace is ready for the specialist phase.'}
       >
         {project.status === 'ARCHIVED' ? (
           <p className="text-sm text-content-secondary">Agent-specific input and execution controls are unavailable while this project is archived.</p>
@@ -173,6 +174,8 @@ function AgentProjectOverviewPage() {
           <RequirementsWorkspace project={project} onRunCompleted={handleRunCompleted} />
         ) : project.agent_type === 'DESIGN_PLANNING' ? (
           <DesignPlanningWorkspace project={project} onRunCompleted={handleRunCompleted} />
+        ) : project.agent_type === 'TESTING_VALIDATION' ? (
+          <TestingValidationWorkspace project={project} onRunCompleted={handleRunCompleted} />
         ) : (
           <p className="text-sm text-content-secondary">Agent-specific input and execution controls will appear here.</p>
         )}
