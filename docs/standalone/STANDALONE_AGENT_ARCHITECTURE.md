@@ -278,6 +278,21 @@ After S0 and common S1/S2 foundations:
 
 Members consume the shared foundation and do not redefine it. Changes to a frozen shared or cross-member contract require team agreement.
 
+The implemented specialist source layout is feature-oriented:
+
+| Responsibility | Backend | Frontend |
+|---|---|---|
+| Shared project/run lifecycle | `backend/app/modules/standalone/` | shared project service and generic components under `frontend/src/services/` and `frontend/src/components/agents/` |
+| Standalone Agent 1 | `backend/app/modules/agents/requirements/` | `frontend/src/features/agents/requirements/` |
+| Standalone Agent 2 | `backend/app/modules/agents/design_planning/` | `frontend/src/features/agents/designPlanning/` |
+| Standalone Agent 4 | `backend/app/modules/agents/testing_validation/` | `frontend/src/features/agents/testingValidation/` |
+
+`backend/app/modules/requirements/` remains the integrated requirement artifact,
+H1 publication, and Shared Knowledge Base domain; it is not the standalone Agent 1
+engine. `backend/app/modules/agents/implementation/` is reserved for future Agent 3
+work and is intentionally absent. The dependency direction is specialist packages to
+the shared standalone foundation, never the reverse.
+
 ## 15. Progress Presentation 1 Target — October 23
 
 The intended milestone is:
@@ -286,7 +301,7 @@ The intended milestone is:
 - standalone foundation: implemented;
 - Agent 1: working standalone MVP;
 - Agent 2: working standalone MVP;
-- Agent 3: working standalone runnable-code MVP;
+- Agent 3: reserved for future implementation; no backend or frontend specialist package exists;
 - Agent 4 `TEST_GENERATION`: working standalone MVP;
 - Agent 4 `VALIDATION`: working standalone MVP; and
 - full integrated multi-agent workflow: shared infrastructure established, with full specialist integration continuing after Progress Presentation 1.

@@ -11,13 +11,13 @@ from app.common.model_provider import (
     UnavailableModelProvider,
 )
 from app.main import app
-from app.modules.agent1.engine import Agent1Engine, _selected_schema, find_exact_duplicates
-from app.modules.agent1.schemas import (
+from app.modules.agents.requirements.engine import Agent1Engine, _selected_schema, find_exact_duplicates
+from app.modules.agents.requirements.schemas import (
     Agent1InputContext,
     QualityFindingCategory,
     RequirementOutputCode,
 )
-from app.modules.agent1.router import get_agent1_engine
+from app.modules.agents.requirements.router import get_agent1_engine
 from app.modules.standalone.router import (
     get_agent_project_repository,
     get_agent_run_repository,

@@ -4,14 +4,14 @@ import pytest
 
 from app.main import app
 from app.modules.standalone.router import get_agent_project_repository, get_agent_run_repository
-from app.modules.testing.engine import Agent4Engine
-from app.modules.testing.executor import (
+from app.modules.agents.testing_validation.engine import Agent4Engine
+from app.modules.agents.testing_validation.executor import (
     ToolExecutionError,
     ValidationCommandResult,
     ValidationExecutionResult,
 )
-from app.modules.testing.router import get_agent4_engine
-from app.modules.testing.schemas import Agent4InputContext
+from app.modules.agents.testing_validation.router import get_agent4_engine
+from app.modules.agents.testing_validation.schemas import Agent4InputContext
 from test_standalone_foundation import FakeAgentProjectRepository, FakeAgentRunRepository
 
 

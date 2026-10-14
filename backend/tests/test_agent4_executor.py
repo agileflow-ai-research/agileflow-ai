@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app.modules.testing.executor import (
+from app.modules.agents.testing_validation.executor import (
     DEFAULT_SANDBOX_LIMITS,
     CommandPolicyError,
     SandboxedValidationExecutor,

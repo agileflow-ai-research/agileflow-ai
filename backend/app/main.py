@@ -11,13 +11,13 @@ from app.modules.auth.dependencies import (
 )
 from app.modules.auth.router import router as auth_router
 from app.modules.approvals.router import router as approvals_router
-from app.modules.agent1.router import router as agent1_router
-from app.modules.agent2.router import router as agent2_router
+from app.modules.agents.design_planning.router import router as agent2_router
+from app.modules.agents.requirements.router import router as agent1_router
+from app.modules.agents.testing_validation.router import router as testing_validation_router
 from app.modules.orchestrator.router import router as orchestrator_router
 from app.modules.projects.router import router as projects_router
 from app.modules.requirements.router import router as client_inputs_router
 from app.modules.standalone.router import router as standalone_router
-from app.modules.testing.router import router as testing_validation_router
 
 
 app = FastAPI(
