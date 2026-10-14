@@ -1,5 +1,3 @@
-from typing import Any
-
 from app.common.model_provider import ModelProviderError
 from app.common.status import AgentRunMode, AgentType
 from app.modules.agents.requirements.engine import Agent1Engine, StructuredOutputInvalidError
@@ -52,13 +50,17 @@ class Agent1Service:
             current_user.user_id, agent_project_id, run.run_id
         )
         try:
-            outputs = self._engine.execute(context, request.selected_outputs)
-            warnings = self._warnings_for(outputs, selected)
+            execution = self._engine.execute_with_metadata(
+                context, request.selected_outputs
+            )
+            warnings = self._warnings_for(
+                execution.clarification_recommended, selected
+            )
             run = self._standalone.complete_run(
                 current_user.user_id,
                 agent_project_id,
                 run.run_id,
-                outputs,
+                execution.outputs,
                 warnings,
             )
         except StructuredOutputInvalidError as exc:
@@ -109,16 +111,21 @@ class Agent1Service:
 
     @staticmethod
     def _warnings_for(
-        outputs: dict[str, Any], selected: list[str]
+        clarification_recommended: bool, selected: list[str]
     ) -> list[AgentRunMessage]:
-        supplemental = sorted(set(outputs) - set(selected))
-        if not supplemental:
+        if (
+            not clarification_recommended
+            or "CLARIFICATION_QUESTIONS" in selected
+        ):
             return []
         return [
             AgentRunMessage(
                 code="CLARIFICATION_REQUIRED",
-                message="Quality issues required supplemental clarification evidence",
-                details={"supplemental_outputs": supplemental},
+                message=(
+                    "Requirement quality issues suggest clarification; rerun with "
+                    "CLARIFICATION_QUESTIONS selected for structured questions"
+                ),
+                details={"recommended_output": "CLARIFICATION_QUESTIONS"},
             )
         ]
 
