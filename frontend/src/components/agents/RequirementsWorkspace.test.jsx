@@ -64,4 +64,26 @@ describe('RequirementsWorkspace', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Select at least one output')
     expect(runRequirementsAgent).not.toHaveBeenCalled()
   })
+
+  it('shows persisted structured failure feedback and reports the failed run', async () => {
+    const user = userEvent.setup()
+    const onRunCompleted = vi.fn()
+    runRequirementsAgent.mockResolvedValue({
+      data: {
+        run_id: 'RUN-002', status: 'FAILED', outputs: {}, warnings: [],
+        errors: [{ code: 'MODEL_EXECUTION_FAILED', message: 'The configured model provider could not generate the requested outputs' }],
+      },
+    })
+    render(<RequirementsWorkspace project={project} onRunCompleted={onRunCompleted} />)
+    await user.type(screen.getByLabelText(/requirement text/i), 'A requirement')
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    await user.click(screen.getByRole('checkbox', { name: 'SRS' }))
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    await user.click(screen.getByRole('button', { name: 'Run Agent' }))
+
+    expect(await screen.findByRole('heading', { name: 'Requirements run failed' })).toBeInTheDocument()
+    expect(screen.getByText(/MODEL_EXECUTION_FAILED/)).toBeInTheDocument()
+    expect(screen.getByText(/did not produce a validated output artifact/i)).toBeInTheDocument()
+    expect(onRunCompleted).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'RUN-002', status: 'FAILED' }))
+  })
 })

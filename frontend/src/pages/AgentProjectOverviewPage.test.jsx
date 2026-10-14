@@ -139,4 +139,28 @@ describe('AgentProjectOverviewPage', () => {
       text: 'Members need book search.', selected_outputs: ['FUNCTIONAL_REQUIREMENTS'],
     })
   })
+
+  it('reloads and renders persisted Agent 1 output_manifest content', async () => {
+    const user = userEvent.setup()
+    const requirementRun = {
+      run_id: 'RUN-201', agent_type: 'REQUIREMENTS', status: 'COMPLETED', run_mode: 'DEFAULT',
+      selected_outputs: ['USER_STORIES'], created_at: '2026-10-14T12:00:00Z',
+      started_at: '2026-10-14T12:00:01Z', completed_at: '2026-10-14T12:00:02Z',
+    }
+    getAgentProjectById.mockResolvedValue({ data: { ...project, agent_type: 'REQUIREMENTS', name: 'Clinic Booking' } })
+    getAgentProjectRuns.mockResolvedValue({ data: [requirementRun] })
+    getAgentProjectRun.mockResolvedValue({ data: {
+      ...requirementRun, warnings: [], errors: [],
+      output_manifest: { USER_STORIES: [{ id: 'US-001', actor: 'patient', goal: 'book a dental appointment', benefit: 'I avoid telephone booking', source_refs: ['TEXT-001'], requirement_refs: [] }] },
+    } })
+
+    renderOverview()
+    await screen.findByText('RUN-201')
+    await user.click(screen.getByRole('button', { name: 'View details for run RUN-201' }))
+
+    expect(await screen.findByRole('heading', { name: 'Persisted requirements outputs' })).toBeInTheDocument()
+    expect(screen.getByText((_, node) => node.tagName === 'P' && node.textContent.includes('I want book a dental appointment'))).toBeInTheDocument()
+    expect(screen.getByText((_, node) => node.tagName === 'P' && node.textContent.includes('so that I avoid telephone booking'))).toBeInTheDocument()
+    expect(screen.queryByText(/"actor"/)).not.toBeInTheDocument()
+  })
 })

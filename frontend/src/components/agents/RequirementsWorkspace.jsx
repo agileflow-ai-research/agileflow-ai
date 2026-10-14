@@ -2,10 +2,9 @@ import { useState } from 'react'
 
 import { runRequirementsAgent } from '../../services/requirementsAgentService.js'
 import AgentInputWizard from './AgentInputWizard.jsx'
-import ArtifactViewer from './ArtifactViewer.jsx'
 import OutputSelector from './OutputSelector.jsx'
 import ProcessingState from './ProcessingState.jsx'
-import ResultsWorkspace from './ResultsWorkspace.jsx'
+import RequirementsResults from './RequirementsResults.jsx'
 import RunReview from './RunReview.jsx'
 import Button from '../ui/Button.jsx'
 import Textarea from '../ui/Textarea.jsx'
@@ -27,8 +26,6 @@ const outputOptions = [
   ['SRS', 'SRS', 'A structured Software Requirements Specification.'],
 ].map(([value, label, description]) => ({ value, label, description }))
 
-const labels = Object.fromEntries(outputOptions.map(({ value, label }) => [value, label]))
-
 const initialInput = {
   text: '',
   background_context: '',
@@ -36,27 +33,6 @@ const initialInput = {
   known_constraints: '',
   existing_requirements: '',
   additional_notes: '',
-}
-
-function OutputContent({ value }) {
-  if (Array.isArray(value)) {
-    return (
-      <div className="space-y-3">
-        {value.map((item, index) => (
-          <div key={item?.id ?? index} className="rounded-control border border-default bg-canvas p-3">
-            <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-content-secondary">
-              {JSON.stringify(item, null, 2)}
-            </pre>
-          </div>
-        ))}
-      </div>
-    )
-  }
-  return (
-    <pre className="overflow-x-auto whitespace-pre-wrap rounded-control bg-canvas p-3 text-xs text-content-secondary">
-      {JSON.stringify(value, null, 2)}
-    </pre>
-  )
 }
 
 function RequirementsWorkspace({ project, onRunCompleted }) {
@@ -119,20 +95,11 @@ function RequirementsWorkspace({ project, onRunCompleted }) {
   }
 
   if (result) {
-    const sections = Object.entries(result.outputs ?? {}).map(([code, value]) => ({
-      id: code,
-      title: labels[code] ?? code,
-      content: (
-        <ArtifactViewer heading={labels[code] ?? code} metadata={code}>
-          <OutputContent value={value} />
-        </ArtifactViewer>
-      ),
-    }))
     return (
       <div className="space-y-5">
-        <ResultsWorkspace
+        <RequirementsResults
           title={result.status === 'COMPLETED' ? 'Requirements results' : 'Requirements run failed'}
-          sections={sections}
+          outputs={result.outputs}
           warnings={(result.warnings ?? []).map((item) => item.message)}
           errors={(result.errors ?? []).map((item) => `${item.code}: ${item.message}`)}
           actions={<Button variant="outline" onClick={() => { setResult(null); setRunState('idle'); setStep(0) }}>Start another run</Button>}

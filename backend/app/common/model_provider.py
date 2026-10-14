@@ -14,6 +14,10 @@ class ModelProviderConfigurationError(ModelProviderError):
     """No usable provider configuration is available."""
 
 
+class ModelStructuredOutputError(ModelProviderError):
+    """The provider responded, but its generated content was not JSON."""
+
+
 class StructuredModelProvider(Protocol):
     """Vendor-neutral interface reusable by every specialist engine."""
 
@@ -92,18 +96,22 @@ class OpenAICompatibleProvider:
             )
             response.raise_for_status()
             body = response.json()
-            content = body["choices"][0]["message"]["content"]
-            result = json.loads(content)
-        except (
-            httpx.HTTPError,
-            KeyError,
-            IndexError,
-            TypeError,
-            json.JSONDecodeError,
-        ) as exc:
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
             raise ModelProviderError("Structured model generation failed") from exc
+        try:
+            content = body["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ModelProviderError("Structured model generation failed") from exc
+        try:
+            result = json.loads(content)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ModelStructuredOutputError(
+                "Model content was not valid structured JSON"
+            ) from exc
         if not isinstance(result, dict):
-            raise ModelProviderError("Structured model response was not an object")
+            raise ModelStructuredOutputError(
+                "Structured model response was not an object"
+            )
         return result
 
 

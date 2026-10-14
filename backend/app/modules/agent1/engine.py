@@ -5,7 +5,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create_model
 
-from app.common.model_provider import StructuredModelProvider
+from app.common.model_provider import (
+    ModelStructuredOutputError,
+    StructuredModelProvider,
+)
 from app.modules.agent1.schemas import (
     AcceptanceCriterion,
     Agent1InputContext,
@@ -42,7 +45,15 @@ Generate only domain requirements content grounded in the supplied sources. Neve
 run IDs, owners, timestamps, lifecycle status, or claims unsupported by the input. Use source IDs for
 traceability. Flag ambiguity, missing information, conflicts, semantic duplicates, and inconsistencies
 with exactly the allowed quality categories. Keep assumptions and unresolved issues visible. Return only
-JSON conforming to the supplied schema, with exactly the requested top-level output keys."""
+JSON conforming to the supplied schema, with exactly the requested top-level output keys.
+
+Identifier rules: use FR-001, NFR-001, US-001, AC-001, PER-001, QF-001, and CQ-001 style identifiers.
+Never use AGP-, RUN-, PRJ-, USR-, APP-, or EVT- identifiers. Every source_refs value must be an input
+source ID. When requirements and user stories are requested together, populate each story's
+requirement_refs with generated FR/NFR IDs. Acceptance criteria related_ids must reference generated
+FR/NFR/US IDs when those artifacts are requested together; otherwise link to the relevant source ID.
+Quality findings and clarification questions may reference only supplied sources or generated artifacts.
+Do not repeat equivalent items. Optional unknown values must be null rather than invented."""
 
 
 def _selected_schema(selected: list[RequirementOutputCode]) -> dict[str, Any]:
@@ -103,21 +114,17 @@ class Agent1Engine:
     ) -> dict[str, Any]:
         requested = list(selected_outputs)
         duplicates = find_exact_duplicates(context)
-        if (
-            RequirementOutputCode.QUALITY_FINDINGS in requested
-            and RequirementOutputCode.CLARIFICATION_QUESTIONS not in requested
-        ):
-            requested.append(RequirementOutputCode.CLARIFICATION_QUESTIONS)
-        if duplicates and RequirementOutputCode.QUALITY_FINDINGS not in requested:
-            requested.append(RequirementOutputCode.QUALITY_FINDINGS)
-        if duplicates and RequirementOutputCode.CLARIFICATION_QUESTIONS not in requested:
-            requested.append(RequirementOutputCode.CLARIFICATION_QUESTIONS)
 
-        raw = self._provider.generate_structured(
-            system_prompt=SYSTEM_PROMPT,
-            user_prompt=self._build_user_prompt(context, requested, duplicates),
-            json_schema=_selected_schema(requested),
-        )
+        try:
+            raw = self._provider.generate_structured(
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=self._build_user_prompt(context, requested, duplicates),
+                json_schema=_selected_schema(requested),
+            )
+        except ModelStructuredOutputError as exc:
+            raise StructuredOutputInvalidError(
+                "Model response was not valid structured JSON"
+            ) from exc
         if set(raw) != {code.value for code in requested}:
             raise StructuredOutputInvalidError(
                 "Model output keys did not match requested outputs"
@@ -150,7 +157,9 @@ class Agent1Engine:
 
         self._validate_nonblank_strings(validated)
         self._validate_references(context, validated)
+        self._validate_unique_artifacts(validated)
         self._merge_deterministic_findings(validated, duplicates)
+        self._merge_required_clarifications(validated, duplicates)
         return validated
 
     @staticmethod
@@ -175,14 +184,24 @@ class Agent1Engine:
         outputs: dict[str, Any],
     ) -> None:
         valid_source_refs = {source.source_id for source in context.sources}
-        valid_item_refs = set(valid_source_refs)
-        for value in outputs.values():
-            if isinstance(value, list):
-                valid_item_refs.update(
-                    item["id"]
-                    for item in value
-                    if isinstance(item, dict) and isinstance(item.get("id"), str)
-                )
+        requirement_refs = {
+            item["id"]
+            for code in (
+                RequirementOutputCode.FUNCTIONAL_REQUIREMENTS.value,
+                RequirementOutputCode.NON_FUNCTIONAL_REQUIREMENTS.value,
+            )
+            for item in outputs.get(code, [])
+        }
+        story_refs = {
+            item["id"]
+            for item in outputs.get(RequirementOutputCode.USER_STORIES.value, [])
+        }
+        criterion_refs = {
+            item["id"]
+            for item in outputs.get(
+                RequirementOutputCode.ACCEPTANCE_CRITERIA.value, []
+            )
+        }
         for code in (
             RequirementOutputCode.FUNCTIONAL_REQUIREMENTS.value,
             RequirementOutputCode.NON_FUNCTIONAL_REQUIREMENTS.value,
@@ -193,13 +212,43 @@ class Agent1Engine:
                     raise StructuredOutputInvalidError(
                         f"{code} contains an invalid source reference"
                     )
+        stories = outputs.get(RequirementOutputCode.USER_STORIES.value, [])
+        for item in stories:
+            linked = set(item["requirement_refs"])
+            if not linked.issubset(requirement_refs):
+                raise StructuredOutputInvalidError(
+                    "USER_STORIES contains an invalid requirement reference"
+                )
+            if requirement_refs and not linked:
+                raise StructuredOutputInvalidError(
+                    "USER_STORIES must link to generated requirements"
+                )
+
+        criteria_allowed = valid_source_refs | requirement_refs | story_refs
+        for item in outputs.get(
+            RequirementOutputCode.ACCEPTANCE_CRITERIA.value, []
+        ):
+            linked = set(item["related_ids"])
+            if not linked.issubset(criteria_allowed):
+                raise StructuredOutputInvalidError(
+                    "ACCEPTANCE_CRITERIA contains an invalid reference"
+                )
+            if (requirement_refs or story_refs) and not linked.intersection(
+                requirement_refs | story_refs
+            ):
+                raise StructuredOutputInvalidError(
+                    "ACCEPTANCE_CRITERIA must link to a generated requirement or story"
+                )
+
+        evidence_refs = (
+            valid_source_refs | requirement_refs | story_refs | criterion_refs
+        )
         for code, field in (
-            (RequirementOutputCode.ACCEPTANCE_CRITERIA.value, "related_ids"),
             (RequirementOutputCode.QUALITY_FINDINGS.value, "affected_refs"),
             (RequirementOutputCode.CLARIFICATION_QUESTIONS.value, "related_refs"),
         ):
             for item in outputs.get(code, []):
-                if not set(item[field]).issubset(valid_item_refs):
+                if not set(item[field]).issubset(evidence_refs):
                     raise StructuredOutputInvalidError(
                         f"{code} contains an invalid reference"
                     )
@@ -209,6 +258,12 @@ class Agent1Engine:
         if isinstance(value, str) and not value.strip():
             raise StructuredOutputInvalidError(
                 "Model output contains an empty mandatory string"
+            )
+        if isinstance(value, str) and re.search(
+            r"\b(?:AGP|RUN|USR|PRJ|APP|EVT)-\d{3,}\b", value
+        ):
+            raise StructuredOutputInvalidError(
+                "Model output contains backend-owned system metadata"
             )
         if isinstance(value, dict):
             for nested in value.values():
@@ -224,7 +279,9 @@ class Agent1Engine:
     ) -> None:
         if not duplicates:
             return
-        findings = outputs.setdefault(RequirementOutputCode.QUALITY_FINDINGS.value, [])
+        findings = outputs.get(RequirementOutputCode.QUALITY_FINDINGS.value)
+        if findings is None:
+            return
         existing = {
             (item["category"], item["explanation"].casefold()) for item in findings
         }
@@ -241,3 +298,89 @@ class Agent1Engine:
                         "suggested_clarification": "Confirm whether the repeated statement is intentional.",
                     }
                 )
+
+    @staticmethod
+    def _validate_unique_artifacts(outputs: dict[str, Any]) -> None:
+        identifiers: list[str] = []
+        requirement_statements: list[str] = []
+        for code, value in outputs.items():
+            if not isinstance(value, list):
+                continue
+            identifiers.extend(
+                item["id"] for item in value if isinstance(item, dict) and "id" in item
+            )
+            if code in {
+                RequirementOutputCode.FUNCTIONAL_REQUIREMENTS.value,
+                RequirementOutputCode.NON_FUNCTIONAL_REQUIREMENTS.value,
+            }:
+                requirement_statements.extend(
+                    _canonical_statement(item["statement"]) for item in value
+                )
+        if len(identifiers) != len(set(identifiers)):
+            raise StructuredOutputInvalidError(
+                "Model output contains duplicate artifact identifiers"
+            )
+        if len(requirement_statements) != len(set(requirement_statements)):
+            raise StructuredOutputInvalidError(
+                "Model output contains duplicate requirement statements"
+            )
+
+    @staticmethod
+    def _merge_required_clarifications(
+        outputs: dict[str, Any],
+        duplicates: list[str],
+    ) -> None:
+        questions = outputs.get(
+            RequirementOutputCode.CLARIFICATION_QUESTIONS.value
+        )
+        supplemental = questions is None
+        if supplemental:
+            questions = []
+
+        candidates: list[tuple[str, str, list[str], str]] = []
+        for index, statement in enumerate(duplicates, start=1):
+            candidates.append(
+                (
+                    f"CQ-DUP-{index:03d}",
+                    "Is the repeated requirement intentional, or should it be consolidated?",
+                    ["TEXT-001"],
+                    f"The statement appears more than once: {statement}",
+                )
+            )
+        for finding in outputs.get(
+            RequirementOutputCode.QUALITY_FINDINGS.value, []
+        ):
+            suggestion = finding.get("suggested_clarification")
+            if suggestion:
+                candidates.append(
+                    (
+                        f"CQ-QF-{finding['id'].removeprefix('QF-')}",
+                        suggestion,
+                        finding["affected_refs"],
+                        finding["explanation"],
+                    )
+                )
+        if not candidates:
+            return
+
+        existing = {
+            _canonical_statement(question["question"]) for question in questions
+        }
+        existing_ids = {question["id"] for question in questions}
+        for identifier, question, refs, reason in candidates:
+            if (
+                identifier not in existing_ids
+                and _canonical_statement(question) not in existing
+            ):
+                questions.append(
+                    {
+                        "id": identifier,
+                        "question": question,
+                        "reason": reason,
+                        "related_refs": refs,
+                    }
+                )
+                existing_ids.add(identifier)
+                existing.add(_canonical_statement(question))
+        if supplemental and questions:
+            outputs[RequirementOutputCode.CLARIFICATION_QUESTIONS.value] = questions

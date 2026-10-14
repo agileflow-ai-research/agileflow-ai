@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -37,8 +37,8 @@ def _strip_optional(value: str | None) -> str | None:
 class RequirementSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_id: str
-    source_type: str = "TEXT"
+    source_id: str = Field(pattern=r"^TEXT-\d{3,}$")
+    source_type: Literal["TEXT"] = "TEXT"
     content: str
 
 
@@ -97,7 +97,7 @@ class Agent1InputContext(BaseModel):
 
 class FunctionalRequirement(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str
+    id: str = Field(pattern=r"^FR-\d{3,}$")
     statement: str
     source_refs: list[str] = Field(min_length=1)
     rationale: str | None = None
@@ -105,7 +105,7 @@ class FunctionalRequirement(BaseModel):
 
 class NonFunctionalRequirement(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str
+    id: str = Field(pattern=r"^NFR-\d{3,}$")
     category: str
     statement: str
     measure: str | None = None
@@ -114,16 +114,17 @@ class NonFunctionalRequirement(BaseModel):
 
 class UserStory(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str
+    id: str = Field(pattern=r"^US-\d{3,}$")
     actor: str
     goal: str
     benefit: str
     source_refs: list[str] = Field(min_length=1)
+    requirement_refs: list[str]
 
 
 class AcceptanceCriterion(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str
+    id: str = Field(pattern=r"^AC-\d{3,}$")
     related_ids: list[str] = Field(min_length=1)
     given: str
     when: str
@@ -132,7 +133,7 @@ class AcceptanceCriterion(BaseModel):
 
 class Persona(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str
+    id: str = Field(pattern=r"^PER-\d{3,}$")
     role: str
     goals: list[str] = Field(min_length=1)
     pain_points: list[str]
@@ -141,7 +142,7 @@ class Persona(BaseModel):
 
 class QualityFinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str
+    id: str = Field(pattern=r"^QF-(?:\d{3,}|DUP-\d{3,})$")
     category: QualityFindingCategory
     affected_refs: list[str]
     explanation: str
@@ -150,7 +151,9 @@ class QualityFinding(BaseModel):
 
 class ClarificationQuestion(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str
+    id: str = Field(
+        pattern=r"^CQ-(?:\d{3,}|DUP-\d{3,}|QF-(?:\d{3,}|DUP-\d{3,}))$"
+    )
     question: str
     reason: str
     related_refs: list[str]
