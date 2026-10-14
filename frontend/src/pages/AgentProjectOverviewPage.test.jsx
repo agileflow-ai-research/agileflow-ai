@@ -58,8 +58,8 @@ describe('AgentProjectOverviewPage', () => {
     })
     expect(screen.getByText('RUN-004')).toBeInTheDocument()
     expect(screen.getByText('SECURITY_REPORT')).toBeInTheDocument()
-    expect(screen.getByText('Agent-specific input and execution controls will appear here.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /start run|execute agent|generate outputs/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Test Case Generation/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Testing & Validation/ })).toBeInTheDocument()
   })
 
   it('shows a truthful empty run history', async () => {

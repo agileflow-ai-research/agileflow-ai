@@ -17,6 +17,7 @@ from app.modules.orchestrator.router import router as orchestrator_router
 from app.modules.projects.router import router as projects_router
 from app.modules.requirements.router import router as client_inputs_router
 from app.modules.standalone.router import router as standalone_router
+from app.modules.testing.router import router as testing_validation_router
 
 
 app = FastAPI(
@@ -107,6 +108,7 @@ app.include_router(approvals_router, prefix=settings.api_v1_prefix)
 app.include_router(standalone_router, prefix=settings.api_v1_prefix)
 app.include_router(agent1_router, prefix=settings.api_v1_prefix)
 app.include_router(agent2_router, prefix=settings.api_v1_prefix)
+app.include_router(testing_validation_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health")
