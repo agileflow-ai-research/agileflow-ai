@@ -126,7 +126,7 @@ On a successful handoff, only the Orchestrator updates `Project.current_stage` a
 
 The readiness `artifact_version` records the specialist approval-package version as handoff evidence. O3.5 does not cross-validate it against `Approval.artifact_version` and does not create a package collection. Gate entry means the evidence package is ready for human review, not that every technical check passed: persisted implementation failures and validation findings may be reviewed at H4 or H5. Correction routing remains planned. End-to-end traceability remains an architectural and final-completion requirement, but no link-count or gate-entry completeness predicate is introduced by O3.5.
 
-O3.5 consumption and validation are implemented. The actual specialist agents do not yet emit these readiness events; that integration remains part of each specialist implementation.
+O3.5 consumption and validation are implemented. SKB-4 now provides internal Agent 1/H1 publication and canonical readiness-event emission without adding a public publication route; Agent 2-4 emitters remain part of their future specialist implementations.
 
 ## Requirement Gathering and Analysis Routes
 
@@ -134,10 +134,12 @@ O3.5 consumption and validation are implemented. The actual specialist agents do
 |---|---|---|---|---|---|---|---|
 | POST | `/api/v1/projects/{project_id}/inputs` | Submit a client input | Requirement Gathering and Analysis Agent | ClientInput creation request | ClientInput | Input to H1 artifacts; does not advance workflow | Implemented |
 | GET | `/api/v1/projects/{project_id}/inputs` | List submitted input sources | Requirement Gathering and Analysis Agent | Path parameter | Project-scoped ClientInput list without MongoDB `_id` | Supports H1 review | Implemented |
-| POST | `/api/v1/projects/{project_id}/requirements/process` | Generate structured requirements | Requirement Gathering and Analysis Agent | Input references/body not formally defined | Requirement, UserStory, AcceptanceCriteria | Produces H1 package | Planned |
-| GET | `/api/v1/projects/{project_id}/requirements` | Get requirements, stories, and acceptance criteria | Requirement Gathering and Analysis Agent | Path parameter | Requirement, UserStory, AcceptanceCriteria | Reviewed at H1 | Planned |
+| POST | `/api/v1/projects/{project_id}/requirements/process` | Generate a complete versioned H1 snapshot | Requirement Gathering and Analysis Agent | Input references/body not formally defined | Requirement, UserStory, AcceptanceCriteria, QualityFinding, Persona, SrsDocument | Produces H1 package | Planned |
+| GET | `/api/v1/projects/{project_id}/requirements` | Get the typed Agent 1 artifact snapshot | Requirement Gathering and Analysis Agent | Internal structured/versioned retrieval is implemented; the future public query contract remains undefined | Requirement, UserStory, AcceptanceCriteria, QualityFinding, Persona, SrsDocument | Reviewed at H1 | Planned |
 | POST | `/api/v1/projects/{project_id}/requirements/clarifications` | Add clarification questions or human feedback | Requirement Gathering and Analysis Agent | Not formally defined | Not formally defined | Supports H1 correction loop | Planned |
 | POST | `/api/v1/projects/{project_id}/approvals/h1` | Record requirement decision | Requirement Gathering and Analysis Agent / Orchestrator | O2 Approval request | Approval | H1 | Implemented |
+
+The internal SKB supports typed, project-scoped, versioned Agent 1 retrieval, including Approval-authoritative approved H1 snapshots. This does not expose a public Requirements route or a generic `/knowledge-base` or `/artifacts` API; the public query contract remains deferred until separately approved.
 
 ### ClientInput Request and Response Contract
 
@@ -232,7 +234,9 @@ These routes belong to the pre-code phase of the single Testing, Validation and 
 | POST | `/api/v1/projects/{project_id}/traceability/rebuild` | Rebuild links from current artifacts | Reports / Traceability | Body not formally defined | TraceabilityLink list/matrix | Must preserve approved versions | Planned |
 | GET | `/api/v1/projects/{project_id}/reports/final` | Get final report summary | Reports / Traceability | Path parameter | Final report schema not formally defined | Final output after H5 approval | Planned |
 | GET | `/api/v1/projects/{project_id}/reports/export` | Export reports later | Reports / Traceability | Export query/body not formally defined | PDF/DOCX/JSON mentioned as later possibilities; exact contract not defined | Final evidence | Planned |
-| GET | `/api/v1/projects/{project_id}/artifacts` | List Shared Knowledge Base artifacts | Reports / Traceability / Foundation | Path parameter | Cross-artifact response not formally defined | Review/evidence support | Planned |
+| GET | `/api/v1/projects/{project_id}/artifacts` | Possible future cross-artifact view | Reports / Traceability / Foundation | Path parameter | Cross-artifact response not formally defined | Not part of the SKB foundation | Deferred |
+
+The SKB foundation follows **INTERNAL SERVICE FIRST**. Agents call typed internal services, while human-facing workspaces use specialist APIs. No generic `/knowledge-base` or `/artifacts` endpoint is approved for immediate implementation; the deferred row above requires a later concrete use case and response contract before implementation.
 
 ## Approval Behavior
 

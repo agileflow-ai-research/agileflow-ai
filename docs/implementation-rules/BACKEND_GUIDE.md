@@ -27,22 +27,23 @@ backend/
 │   ├── modules/
 │   │   ├── auth/               # registration, login, JWT, and /auth/me
 │   │   ├── projects/           # Project CRUD module
-│   │   ├── approvals/          # package placeholder
-│   │   ├── orchestrator/       # first transition only
-│   │   ├── requirements/       # ClientInput foundation only
+│   │   ├── approvals/          # H1-H5 Approval persistence and effective lookup
+│   │   ├── orchestrator/       # deterministic transitions, readiness, and events
+│   │   ├── requirements/       # ClientInput, Agent 1 artifacts, H1 snapshots/publication
+│   │   ├── shared_knowledge/   # read-only approved/structured retrieval facade
 │   │   ├── design/             # package placeholder
 │   │   ├── testing/            # package placeholder
 │   │   ├── implementation/     # package placeholder
-│   │   └── reports/            # package placeholder
+│   │   └── reports/            # immutable Agent 1 traceability persistence/query
 │   └── schemas/                # shared domain schemas
-├── tests/                       # 240-test backend suite
+├── tests/                       # 408-test backend suite
 ├── .env.example
 └── requirements.txt
 ```
 
-Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable `get_current_user` authentication, centralized Project ownership authorization, owner-scoped Project CRUD and ClientInput access, the centralized Orchestrator transition/prerequisite policy and stage ownership metadata, workflow snapshot/event-history endpoints, all 11 canonical forward transitions, O2 H1-H5 Approval persistence with append-only history/effective lookup, O3 effective-APPROVE transitions, O3.5 specialist-handoff consumption/validation and gate-entry `STAGE_CHANGED` evidence, WorkflowEvent persistence, and backend tests.
+Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable authentication/Project ownership authorization, Project CRUD and ClientInput access, Agent 1 typed/versioned snapshot persistence, internal Agent 1 traceability persistence, internal H1 publication and readiness emission, the centralized Orchestrator policy, workflow snapshot/event-history endpoints, all 11 canonical forward transitions, O2 H1-H5 Approval persistence, O3 effective-APPROVE transitions, O3.5 specialist-handoff validation and gate-entry `STAGE_CHANGED` evidence, WorkflowEvent persistence, and backend tests.
 
-Not implemented: Project sharing/collaboration, specialist-agent processing/intelligence and readiness-event emission, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, retry loops, traceability persistence/generation, reports, frontend, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
+Not implemented: Project sharing/collaboration, specialist-agent processing/intelligence, Agent 2-4 readiness emission and artifact adapters, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, retry loops, traceability traversal/matrix generation, reports, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
 
 ## Approved Backend Stack
 
@@ -127,6 +128,12 @@ app/modules/<module_name>/
 
 The direction is `router → service → repository → database`. Services may call the Orchestrator through an approved interface but must not duplicate global transition rules.
 
+### Shared Knowledge Base Internal Boundary
+
+The Shared Knowledge Base is an internal service/facade over the existing MongoDB artifact collections, not another database, vector store, RAG system, or LLM memory. SKB-5 implements it at `app/modules/shared_knowledge/` for typed Agent 1 reads. It coordinates project-scoped retrieval through collection-specific repositories owned by `requirements` and Reports/Traceability plus the Approval read boundary; it does not implement a dynamic repository that accepts arbitrary collection names. Future `design`, `testing`, and `implementation` adapters extend this pattern.
+
+The foundation follows **INTERNAL SERVICE FIRST**. Do not add public `/knowledge-base` or generic `/artifacts` routes during SKB implementation. Human-facing workspaces continue to use specialist APIs. Traceability remains a separate shared service responsibility under `app/modules/reports/`; the SKB may consume its queries but does not own final matrix/report generation.
+
 The shared authentication and ownership boundary is:
 
 ```text
@@ -177,6 +184,18 @@ JWT Bearer registration, login, token validation, and `/auth/me` are implemented
 
 Follow [DATA_SCHEMAS.md](../schemas/DATA_SCHEMAS.md). Important artifacts carry project/artifact identifiers, type, title, status, approval gate, creator, timestamps, version, and traceability references. Do not duplicate Project, Requirement, TestCase, Approval, or traceability models.
 
+For Agent 1, the `requirements` collection stores Requirement, UserStory, AcceptanceCriteria, QualityFinding, Persona, and SrsDocument documents distinguished by `artifact_type`. Each schema inherits BaseArtifact and uses the ID mapping in `DATA_SCHEMAS.md`. The stable stored identity is `(project_id, artifact_id, version)`, and each H1 version is a complete immutable snapshot. Do not overwrite historical versions or create an `artifact_packages` collection.
+
+The SKB-2 requirements repository returns concrete Pydantic artifact types and excludes MongoDB `_id`. Its internal snapshot service validates the full package before writing, allocates missing IDs with the established max-scan approach, shares one `REQ` sequence across all four REQ-family artifact types, and preserves caller-supplied IDs for later versions. Reads and identity checks are project-scoped. Ordered `insert_many` is used without requiring MongoDB transactions; max-scan allocation races and partial writes after an infrastructure failure remain documented prototype limitations.
+
+Effective Approval records, not `ArtifactStatus.APPROVED`, are the source of approval truth. SKB-5 reuses `ApprovalRepository.get_effective_approval`, requires `APPROVE`, and selects the exact H1 package version in `Approval.artifact_version`; a newer draft never supersedes that selection. Missing referenced snapshots fail as consistency errors. `traceability_links` is the authoritative graph; `BaseArtifact.traceability_refs` is optional denormalized cache metadata. ClientInput has no public artifact ID and is not a TraceabilityLink endpoint; raw-input provenance is recorded in `Requirement.source_reference`.
+
+SKB-3 implements immutable conceptual-identity links for persisted Agent 1 artifacts under `app/modules/reports/`. It validates same-project endpoint existence, stable artifact types across versions, and the approved directed relation/type combinations before creation. Exact logical duplicates return the existing link; incoming, outgoing, exact-edge, trace-ID, and project listings remain project-scoped and typed. TraceabilityLink has no version fields: package-specific consumers intersect conceptual links with membership in a selected artifact version, as SKB-5 does for its approved-H1 link view. SKB-3 itself has no update/delete operations, public routes, graph traversal, package publication, or approval-selection logic. The max-scan TRACE allocator and application-level idempotency retain concurrent-writer race limitations.
+
+SKB-4 publishes an already-persisted H1 snapshot through an internal Requirements service. It validates project/stage, schema-valid snapshot membership and statuses, at least one Requirement, required UserStory/AcceptanceCriteria/QualityFinding/SrsDocument traceability within the selected version, then changes only selected `IN_PROGRESS` artifacts to `WAITING_FOR_APPROVAL`. After that succeeds it appends or reuses the exact O3.5 `ARTIFACT_GENERATED` marker through the existing Orchestrator repository and EVT allocator. Publication never changes Project stage or creates an Approval; existing next-step remains the sole gate-entry path. Status and event writes are not transactional, so retry logic supports a waiting package whose marker write failed. Concurrent publishers can still race between the application-level marker check, max-scan EVT allocation, and event insert; SKB-4 adds no transaction, counter, or unique-index infrastructure.
+
+SKB-5 adds a read-only `SharedKnowledgeService`. Exact-version and latest-version artifact lookups are deliberately distinct; latest is never treated as approved. Structured lists support only project, Agent 1 type, version, and status filters. Approved H1 retrieval returns typed artifacts even when their lifecycle status remains `WAITING_FOR_APPROVAL`, because human Approval is authoritative. One-hop incoming/outgoing queries delegate to Reports/Traceability, and an approved-snapshot link view intersects both conceptual endpoints with exact package membership. H2-H5 approved adapters, graph traversal, public SKB routes, and semantic/vector retrieval remain unimplemented. Downstream agents must consume approved upstream context through `get_approved_h1_snapshot(project_id)` rather than a latest-artifact query.
+
 Preserve the ID families `USR`, `PRJ`, `REQ`, `US`, `AC`, `DES`, `API`, `DB`, `TASK`, `TEST`, `CODE`, `BUG`, `SEC`, `TRACE`, `EVT`, and `APP` as documented. `USR-###` identifies a user. Project creation accepts required `name` and `domain` plus optional `description`, defaulting an omitted description to an empty string. Both `Project.created_by` and `Project.owner_user_id` are assigned server-side from the authenticated user's `user_id` and cannot be client-controlled or patched. The required research trace is:
 
 ```text
@@ -200,7 +219,7 @@ The Orchestrator alone enforces:
 - append-only workflow event evidence;
 - final completion only after H5 approval and validation evidence.
 
-Every major action should create/update the relevant artifacts, traceability links, and workflow events when those features are implemented.
+Every major action should create/update the relevant artifacts, append idempotent immutable traceability links, and append workflow events when those features are implemented.
 
 ### Implemented O3.5 Specialist Handoff Consumption/Validation Contract
 

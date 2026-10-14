@@ -21,18 +21,20 @@ This map translates the approved architecture into implementation ownership and 
 | Official name | Requirement Gathering and Analysis Agent |
 | Owner | N A Illangasinghe — IT23391536 |
 | Branch | `feature/agent-requirements` |
-| Backend area | `backend/app/modules/requirements/` (ClientInput foundation implemented) |
+| Backend area | `backend/app/modules/requirements/` (ClientInput and SKB-2 artifact persistence foundations implemented) |
 | Frontend area | Planned `frontend/src/pages/requirements/` and requirement service/components using shared UI |
 | Primary inputs | Project/client idea; text, document/link/audio/video metadata; interview responses; clarification and human feedback |
 | Responsibilities | Structure SRS/FR/NFR, requirements, stories, acceptance criteria; detect ambiguity/missing/conflicting/duplicate information; preserve source references; prepare H1 package |
-| Outputs | Requirement package, quality findings, `REQ`, `US`, and `AC` identifiers, H1 readiness |
+| Outputs | Complete versioned H1 snapshot containing Requirement, UserStory, AcceptanceCriteria, QualityFinding, Persona, and SrsDocument artifacts; `REQ`, `US`, and `AC` identifiers; traceability links; H1 readiness |
 | Approval gate | H1 — Requirement Approval |
 | Collections used | `projects`, `client_inputs`, `requirements`, `traceability_links`; approval/events are coordinated through shared Orchestrator functionality |
 | IDs consumed | `PRJ-###`, source/input references where defined |
 | IDs produced | `REQ-###`, `US-###`, `AC-###`, relevant `TRACE-###` |
 | Dependencies | Project foundation, shared schemas/IDs, Shared Knowledge Base, Orchestrator, H1 UI/API, common response/error utilities |
 | Must not do | Generate design/code/final validation; advance global workflow; rename common fields; own another agent's module |
-| Current status | ClientInput request/response validation, authenticated owner-scoped persistence access, and POST/GET APIs are implemented. Requirement processing, extraction, quality/ambiguity/missing-information analysis, clarification, structured requirements, user stories, acceptance criteria, H1 preparation, and UI remain planned |
+| Current status | ClientInput request/response validation and APIs are implemented. SKB-1 defines Agent 1 contracts; SKB-2 implements typed/versioned snapshot persistence; SKB-3 implements persisted pairwise traceability; SKB-4 implements H1 publication/readiness; and SKB-5 implements internal exact approved-H1 and structured typed retrieval. Processing/intelligence, public artifact/publication APIs, correction flows, Agent 2-4 SKB adapters, and UI remain planned |
+
+Agent 1 publishes future H1 output in this order: generate and validate the complete snapshot; persist every artifact document for the package version; persist immutable pairwise traceability links; mark package artifacts `WAITING_FOR_APPROVAL`; append one final `ARTIFACT_GENERATED` readiness event; then return control to the Orchestrator. The readiness event must never precede artifact persistence. This sequence does not let Agent 1 mutate the global workflow stage.
 
 ## 2. Project Management and Design Agent
 
@@ -112,13 +114,13 @@ This map translates the approved architecture into implementation ownership and 
 | IDs produced | `EVT-###`, approved `APP-###`, and relevant `TRACE-###` where orchestration creates links |
 | Dependencies | All four agents, Shared Knowledge Base, canonical stages/decisions, approval UI, report completion checks |
 | Must not do | Perform agent domain work, skip/auto-approve gates, hide failures, exceed retry limits, overwrite approved versions, allow agent-controlled global transitions |
-| Current status | The centralized transition policy and stage ownership metadata, authenticated owner-scoped workflow snapshot/event-history endpoints, next-step, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, O2 H1-H5 Approval persistence, O3 effective-APPROVE transitions, and O3.5 specialist handoff consumption/validation for all five approval-gate entries are implemented. Specialist readiness-event emission, O4 REJECT/REQUEST_CHANGES routing, O6 HOLD/release behavior, failure routing, retries, escalation, correction loops, and UI remain planned |
+| Current status | The centralized transition policy and stage ownership metadata, authenticated owner-scoped workflow snapshot/event-history endpoints, next-step, `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS`, O2 H1-H5 Approval persistence, O3 effective-APPROVE transitions, and O3.5 specialist handoff consumption/validation for all five approval-gate entries are implemented. Agent 1 now emits its H1 marker through SKB-4; Agent 2-4 marker emission, O4 REJECT/REQUEST_CHANGES routing, O6 HOLD/release behavior, failure routing, retries, escalation, correction loops, and UI remain planned |
 
 ### Orchestrator Phase Boundaries
 
 - **O2 — implemented:** authenticate and authorize the Project owner, validate the matching H1-H5 waiting stage, append an immutable Approval, identify the newest gate decision as effective, and append exactly one `APPROVAL_DECISION` event without changing `Project.current_stage`.
 - **O3 — implemented:** consume the newest/effective matching-gate `APPROVE`, verify its `next_stage` against policy, execute the canonical forward Project transition through next-step, and create exactly one `STAGE_CHANGED`.
-- **O3.5 — implemented for consumption/validation:** next-step and workflow snapshot use a final project-scoped `ARTIFACT_GENERATED` readiness marker plus the approved minimum collection evidence. Only the Orchestrator enters H1-H5 waiting stages and creates the single `STAGE_CHANGED`; entry creates no Approval. Actual marker emission remains with future specialist implementations.
+- **O3.5 — implemented for consumption/validation:** next-step and workflow snapshot use a final project-scoped `ARTIFACT_GENERATED` readiness marker plus the approved minimum collection evidence. Only the Orchestrator enters H1-H5 waiting stages and creates the single `STAGE_CHANGED`; entry creates no Approval. SKB-4 implements idempotent Agent 1/H1 marker emission without changing the predicate; other specialist emitters remain planned.
 - **O4 — planned:** implement REJECT routing and REQUEST_CHANGES correction routing.
 - **O6 — planned:** persist richer `ON_HOLD` runtime state and implement authorized release/resume behavior.
 
@@ -130,18 +132,22 @@ These phases preserve four research agents. Project ownership remains the O2 aut
 |---|---|
 | Official name | Shared Knowledge Base |
 | Owner | Shared/foundation infrastructure |
-| Branch | Foundation work on `feature/project-foundation`; coordinated changes with component/orchestrator/report branches |
-| Backend area | `backend/app/database/mongodb.py`, `backend/app/database/collections.py`, future module repositories and approved schemas |
+| Branch | `feature/shared-knowledge-base` |
+| Backend area | `backend/app/database/mongodb.py`, `backend/app/database/collections.py`, approved shared schemas, internal facade at `backend/app/modules/shared_knowledge/`, and collection-specific module repositories |
 | Frontend area | No direct database access; planned pages consume backend services only |
 | Primary inputs | Structured, versioned artifacts and workflow records from all components |
-| Responsibilities | Provide one MongoDB-backed source of truth and canonical collections; support persistence and cross-component retrieval through repositories |
+| Responsibilities | Act as an internal architectural/service layer over the existing MongoDB collections; coordinate typed, project-scoped, version-aware and approval-aware retrieval across collection-specific repositories |
 | Outputs | Stored users, projects, inputs, artifacts, logs, results, findings, approvals, links, and events |
 | Approval gate | Stores decisions/artifact versions; does not decide approvals |
 | Collections used | All 15 canonical collections are defined in code, including `users` |
 | IDs consumed/produced | Stores all canonical IDs; ID generation responsibility is shared utility/component-specific and not database-client logic |
 | Dependencies | Environment settings, PyMongo, approved schemas/repositories, security/secret handling |
-| Must not do | Contain agent queries/business logic in the client module, create duplicate clients/collections, decide workflow, expose credentials |
-| Current status | Foundation implemented: one settings-driven client, database accessor, ping/close helper, 15 collection constants, tests, repository-backed User, Project, ClientInput, and WorkflowEvent persistence, and authenticated Project ownership for current Project-scoped APIs |
+| Must not do | Become a second database, generic dynamic MongoDB repository, vector store, RAG/LLM memory, workflow authority, approval authority, final traceability-report generator, or public `/knowledge-base` API |
+| Current status | Foundation implemented, including the SKB-5 internal read-only facade for Agent 1: typed/project-scoped structured reads, exact effective-Approval-authorized H1 snapshots, one-hop traceability delegation, and approved-package link intersection. Requirements and Reports/Traceability retain repository ownership. H2-H5 artifact adapters and public SKB APIs are not implemented |
+
+Collection-specific repositories remain owned by `requirements`, `design`, `testing`, and `implementation`. The implemented `backend/app/modules/shared_knowledge/` facade coordinates the current Requirements, Approval, and Reports/Traceability read abstractions rather than selecting arbitrary collections dynamically. Human-facing workspaces use specialist APIs; generic public `/knowledge-base` or `/artifacts` routes are not part of the SKB foundation. Downstream agents should request an approved upstream snapshot, not the latest draft.
+
+Structured retrieval by project, artifact type/ID, gate, status, version, producer, and traceability relationship is sufficient for the immediate foundation. RAG and semantic/vector retrieval are future enhancements only; no embeddings, chunking, vector index, vector database, or additional persistence technology is approved. The Central SDLC Orchestrator remains deterministic for stages, approvals, readiness, and completion; no LLM is required for those controls.
 
 ## Shared Authentication and Project Ownership Foundation
 
@@ -156,18 +162,18 @@ One user may own multiple independent projects. All project-scoped components co
 | Official name | Reports / Traceability |
 | Owner | Shared/group-level |
 | Branch | `feature/reports-traceability` |
-| Backend area | `backend/app/modules/reports/` exists as placeholder; no separate traceability package currently exists |
+| Backend area | `backend/app/modules/reports/` contains the SKB-3 internal Agent 1 traceability repository/service; report generation remains planned |
 | Frontend area | Planned `frontend/src/pages/reports/` plus traceability/report components; planned traceability route/view |
 | Primary inputs | Approved artifacts, workflow events, approvals, logs, test results, bugs, security findings, traceability links |
-| Responsibilities | Build traceability matrix, final evidence/report summaries, artifact inventory, and later approved exports |
+| Responsibilities | Own authoritative immutable pairwise traceability persistence/query behavior, build the final traceability matrix, final evidence/report summaries, artifact inventory, and later approved exports |
 | Outputs | Requirement-to-report matrix, final report package, export artifacts where later defined |
 | Approval gate | Final package follows H5 approval; reports do not replace H5 |
-| Collections used | Reads all relevant collections; writes/updates `traceability_links` as approved. No canonical `reports` MongoDB collection exists |
+| Collections used | Reads all relevant collections; appends and queries immutable `traceability_links` as approved. No canonical `reports` MongoDB collection exists |
 | IDs consumed | All canonical artifact IDs and `EVT-###` |
 | IDs produced | `TRACE-###`; no report ID family is formally defined |
 | Dependencies | All four agents, Orchestrator, Shared Knowledge Base, local `/storage/reports`, canonical API/data contracts |
 | Must not do | Invent a `reports` collection/ID, mark incomplete artifacts as validated, alter source artifacts, expose private data, bypass H5 |
-| Current status | Reports module package and storage directory placeholders only; no report/traceability logic, routes, schemas, persistence, export, or UI implemented |
+| Current status | SKB-3 implements internal immutable pairwise persistence in `traceability_links`, `TRACE-###` max-scan allocation, exact-edge idempotency, same-project endpoint/type/relation validation, and typed project/incoming/outgoing/exact retrieval for Agent 1 artifacts. Public routes, version-specific views, multi-hop traversal, matrix/report generation, Agent 2-4 adapters, exports, and UI remain planned |
 
 ## Shared Approval and Traceability Ownership
 
