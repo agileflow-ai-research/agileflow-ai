@@ -44,7 +44,7 @@ backend/
 
 Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 17 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable authentication/ownership authorization, integrated Project CRUD and ClientInput access, the isolated standalone AgentProject/AgentRun foundation, Agent 1 typed/versioned snapshot persistence, internal Agent 1 traceability persistence, internal H1 publication and readiness emission, the centralized Orchestrator policy, workflow snapshot/event-history endpoints, all 11 canonical forward transitions, O2 H1-H5 Approval persistence, O3 effective-APPROVE transitions, O3.5 specialist-handoff validation and gate-entry `STAGE_CHANGED` evidence, WorkflowEvent persistence, and backend tests.
 
-Not implemented: Project sharing/collaboration, specialist-agent processing/intelligence, Agent 2-4 readiness emission and artifact adapters, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, retry loops, traceability traversal/matrix generation, reports, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
+Not implemented: Project sharing/collaboration, integrated Agent 2-4 readiness emission and artifact adapters, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, retry loops, traceability traversal/matrix generation, reports, RAG, external Jira/GitHub integrations, or enterprise security-scanner integration. Standalone specialist intelligence and Agent 4's bounded local Docker executor are separate from those integrated-workflow gaps. The implemented modules preserve `router` → `service` → `repository` → database layering.
 
 ## Approved Backend Stack
 
@@ -146,7 +146,7 @@ that location at `/workspace`, disables networking, pulls no images at runtime, 
 with a numeric non-root UID/GID, uses a read-only container root, drops all
 capabilities, applies
 `no-new-privileges`, and enforces the centrally declared limits in
-`app/modules/testing/executor.py`: 1 CPU, 512 MiB memory, 128 PIDs, 64 MiB temporary
+`app/modules/agents/testing_validation/executor.py`: 1 CPU, 512 MiB memory, 128 PIDs, 64 MiB temporary
 storage, and 30 seconds per command.
 
 Supported profiles are `PYTHON_PYTEST` and `NODE_NPM_TEST`. Their executable and
@@ -165,6 +165,25 @@ validated using POSIX and Windows rules, resolved beneath the temporary root, ch
 for symlink/reparse-point escape, and written with bounded size/count and exclusive
 no-follow creation where supported. Containers are force-removed after success,
 failure, or timeout.
+
+### Standalone specialist package boundary
+
+Standalone specialist intelligence is grouped under `app/modules/agents/` and depends
+on the shared project/run lifecycle in `app/modules/standalone/`:
+
+- `app/modules/agents/requirements/` is standalone Agent 1 generation and execution.
+- `app/modules/agents/design_planning/` is standalone Agent 2 generation, deterministic
+  validation/planning/assignment, and execution.
+- `app/modules/agents/testing_validation/` is standalone Agent 4 generation and secure
+  validation execution.
+- `app/modules/agents/implementation/` is reserved for future Agent 3 work and does not
+  exist yet.
+
+The existing `app/modules/requirements/` package has a different responsibility: it
+owns integrated requirement artifacts, H1 publication, and Shared Knowledge Base
+access. It is not the standalone Agent 1 engine. Shared `standalone` code must not
+depend on a specialist package, and specialist provider SDK/configuration remains in
+`app/common/model_provider.py`.
 
 ### Shared Knowledge Base Internal Boundary
 

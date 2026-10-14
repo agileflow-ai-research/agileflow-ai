@@ -9,13 +9,13 @@ import {
   getAgentProjectRuns,
   updateAgentProject,
 } from '../services/agentProjectService.js'
-import { runRequirementsAgent } from '../services/requirementsAgentService.js'
+import { runRequirementsAgent } from '../features/agents/requirements/requirementsAgentService.js'
 import AgentProjectOverviewPage from './AgentProjectOverviewPage.jsx'
 
 vi.mock('../services/agentProjectService.js', () => ({
   getAgentProjectById: vi.fn(), getAgentProjectRuns: vi.fn(), getAgentProjectRun: vi.fn(), updateAgentProject: vi.fn(),
 }))
-vi.mock('../services/requirementsAgentService.js', () => ({ runRequirementsAgent: vi.fn() }))
+vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({ runRequirementsAgent: vi.fn() }))
 
 const project = {
   agent_project_id: 'AGP-001', agent_type: 'TESTING_VALIDATION', name: 'Quality Gate', domain: 'Fintech',

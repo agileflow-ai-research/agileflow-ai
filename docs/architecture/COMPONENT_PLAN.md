@@ -21,7 +21,7 @@ This map translates the approved architecture into implementation ownership and 
 | Official name | Requirement Gathering and Analysis Agent |
 | Owner | N A Illangasinghe — IT23391536 |
 | Branch | `feature/agent-requirements` |
-| Backend area | `backend/app/modules/requirements/` (ClientInput and SKB-2 artifact persistence foundations implemented) |
+| Backend area | Integrated artifact/H1/SKB domain: `backend/app/modules/requirements/`; standalone Agent 1 intelligence: `backend/app/modules/agents/requirements/` |
 | Frontend area | Planned `frontend/src/pages/requirements/` and requirement service/components using shared UI |
 | Primary inputs | Project/client idea; text, document/link/audio/video metadata; interview responses; clarification and human feedback |
 | Responsibilities | Structure SRS/FR/NFR, requirements, stories, acceptance criteria; detect ambiguity/missing/conflicting/duplicate information; preserve source references; prepare H1 package |
@@ -43,7 +43,7 @@ Agent 1 publishes future H1 output in this order: generate and validate the comp
 | Official name | Project Management and Design Agent |
 | Owner | Kulunu Kasthuri Arachchi — IT23375628 |
 | Branch | `feature/agent-design-planning` |
-| Backend area | `backend/app/modules/design/` (package placeholder exists) |
+| Backend area | Standalone implementation: `backend/app/modules/agents/design_planning/`; integrated Agent 2 artifact persistence remains planned |
 | Frontend area | Planned `frontend/src/pages/design/` and design service/components using shared UI |
 | Primary inputs | H1-approved requirements, stories, acceptance criteria, quality/context information |
 | Responsibilities | Produce backlog/sprint planning, UML, API, DB, UI-flow and wireframe artifacts; Jira-ready/mock items; requirement-to-design mappings; prepare H2 package |
@@ -54,7 +54,7 @@ Agent 1 publishes future H1 output in this order: generate and validate the comp
 | IDs produced | `DES-###`, `API-###`, `DB-###`, `TASK-###`, relevant `TRACE-###` |
 | Dependencies | H1 approval, requirement artifacts, shared schemas, Orchestrator, Shared Knowledge Base, shared UI/services |
 | Must not do | Extract requirements, generate implementation, execute tests, decide global transitions, create alternate schemas/routes |
-| Current status | Module placeholder only; no design logic, routes, schemas, repository, service, Jira integration, persistence, or UI implemented |
+| Current status | Standalone Agent 2 is implemented under the semantic specialist package. Integrated design-artifact persistence, H2 publication, and SKB adapter remain planned |
 
 ## 3. Implementation and Git Automation Agent
 
@@ -83,7 +83,7 @@ Agent 1 publishes future H1 output in this order: generate and validate the comp
 | Official name | Testing, Validation and Security Agent |
 | Owner | R A K Hansika — IT23140998 |
 | Branch | `feature/agent-testing-validation` |
-| Backend area | `backend/app/modules/testing/` (package placeholder exists) |
+| Backend area | Standalone implementation: `backend/app/modules/agents/testing_validation/`; integrated Agent 4 persistence/readiness adapters remain planned |
 | Frontend area | Planned `frontend/src/pages/testing/` with pre-code and validation views plus one testing service area |
 | Primary inputs | Pre-code: H2-approved requirements/designs. Post-code: H4-approved implementation and execution evidence |
 | Responsibilities | Pre-code test/security specifications, skeleton metadata, and mappings; post-code test execution/simulation, regression, bug reports, security findings, validation evidence, correction verification |
@@ -94,7 +94,7 @@ Agent 1 publishes future H1 output in this order: generate and validate the comp
 | IDs produced | `TEST-###`, `BUG-###`, `SEC-###`, relevant `TRACE-###` |
 | Dependencies | H2/H4 approvals, approved artifacts, Orchestrator correction loops, Design/Implementation correction owners, reports/traceability |
 | Must not do | Become a fifth agent, generate implementation code as its owned function, silently fix/hide findings, bypass H3/H5, advance global state |
-| Current status | Module placeholder only; no pre/post-code logic, execution, scanners, routes, schemas, persistence, or UI implemented |
+| Current status | Standalone Agent 4 is implemented with separate test-generation and Docker-sandboxed validation modes. Integrated H3/H5 artifact persistence and readiness emission remain planned |
 
 ## 5. Central SDLC Orchestrator
 

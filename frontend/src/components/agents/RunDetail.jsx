@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 
 import ArtifactViewer from './ArtifactViewer.jsx'
-import RequirementsResults from './RequirementsResults.jsx'
-import DesignPlanningResults from './DesignPlanningResults.jsx'
-import TestingValidationResults from './TestingValidationResults.jsx'
+import RequirementsResults from '../../features/agents/requirements/RequirementsResults.jsx'
+import DesignPlanningResults from '../../features/agents/designPlanning/DesignPlanningResults.jsx'
+import TestingValidationResults from '../../features/agents/testingValidation/TestingValidationResults.jsx'
 import ErrorState from '../feedback/ErrorState.jsx'
 import LoadingState from '../feedback/LoadingState.jsx'
 import Button from '../ui/Button.jsx'
