@@ -27,13 +27,14 @@ backend/
 │   ├── modules/
 │   │   ├── auth/               # registration, login, JWT, and /auth/me
 │   │   ├── projects/           # Project CRUD module
-│   │   ├── approvals/          # package placeholder
-│   │   ├── orchestrator/       # first transition only
-│   │   ├── requirements/       # ClientInput foundation only
+│   │   ├── approvals/          # H1-H5 Approval persistence and effective lookup
+│   │   ├── orchestrator/       # deterministic transitions, readiness, and events
+│   │   ├── requirements/       # ClientInput, Agent 1 artifacts, H1 snapshots/publication
+│   │   ├── shared_knowledge/   # read-only approved/structured retrieval facade
 │   │   ├── design/             # package placeholder
 │   │   ├── testing/            # package placeholder
 │   │   ├── implementation/     # package placeholder
-│   │   └── reports/            # package placeholder
+│   │   └── reports/            # immutable Agent 1 traceability persistence/query
 │   └── schemas/                # shared domain schemas
 ├── tests/                       # 408-test backend suite
 ├── .env.example

@@ -188,15 +188,15 @@ Exhausted automatic retries set runtime control state to `HUMAN_REVIEW_REQUIRED`
 
 ## Shared Knowledge Base Interaction
 
-The Orchestrator verifies stage output before progression and updates:
+The Orchestrator verifies stage output before progression, owns workflow-stage mutation, and records workflow events. Domain persistence remains with the responsible components:
 
-- `projects` on creation and every stage transition;
-- `requirements`, `design_artifacts`, `backlog_items`, `test_cases`, and `implementation_artifacts` after generation/revision and relevant approval;
-- `execution_logs` during implementation, validation, and retries;
-- `test_results`, `security_findings`, and `bug_reports` when evidence/findings arise;
-- `approvals` for every H1-H5 decision;
-- `traceability_links` at artifact creation/correction/final reporting;
-- `workflow_events` for every Orchestrator action.
+- specialist/domain modules write their own artifacts, logs, results, and findings; for H1, the Requirements module owns `requirements` persistence and publication;
+- Reports/Traceability owns `traceability_links` persistence and queries;
+- the Approval subsystem owns append-only `approvals` decisions and effective-decision lookup;
+- the Orchestrator owns `projects` workflow-stage changes, readiness evaluation, deterministic transitions, and `workflow_events`;
+- the read-only Shared Knowledge Base facade coordinates structured retrieval across those domain-owned repositories.
+
+The overall system exposes these records through the Shared Knowledge Base architecture, but the Orchestrator does not directly persist specialist artifacts or traceability links.
 
 The specialized workflow source omits `client_inputs` in its update table, but File 06 defines it as the canonical collection for input sources.
 

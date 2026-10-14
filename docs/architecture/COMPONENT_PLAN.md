@@ -132,7 +132,7 @@ These phases preserve four research agents. Project ownership remains the O2 aut
 |---|---|
 | Official name | Shared Knowledge Base |
 | Owner | Shared/foundation infrastructure |
-| Branch | Foundation work on `feature/project-foundation`; coordinated changes with component/orchestrator/report branches |
+| Branch | `feature/shared-knowledge-base` |
 | Backend area | `backend/app/database/mongodb.py`, `backend/app/database/collections.py`, approved shared schemas, internal facade at `backend/app/modules/shared_knowledge/`, and collection-specific module repositories |
 | Frontend area | No direct database access; planned pages consume backend services only |
 | Primary inputs | Structured, versioned artifacts and workflow records from all components |

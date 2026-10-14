@@ -135,9 +135,11 @@ O3.5 consumption and validation are implemented. SKB-4 now provides internal Age
 | POST | `/api/v1/projects/{project_id}/inputs` | Submit a client input | Requirement Gathering and Analysis Agent | ClientInput creation request | ClientInput | Input to H1 artifacts; does not advance workflow | Implemented |
 | GET | `/api/v1/projects/{project_id}/inputs` | List submitted input sources | Requirement Gathering and Analysis Agent | Path parameter | Project-scoped ClientInput list without MongoDB `_id` | Supports H1 review | Implemented |
 | POST | `/api/v1/projects/{project_id}/requirements/process` | Generate a complete versioned H1 snapshot | Requirement Gathering and Analysis Agent | Input references/body not formally defined | Requirement, UserStory, AcceptanceCriteria, QualityFinding, Persona, SrsDocument | Produces H1 package | Planned |
-| GET | `/api/v1/projects/{project_id}/requirements` | Get the typed Agent 1 artifact snapshot | Requirement Gathering and Analysis Agent | Path parameter; version selection contract remains for SKB-2 | Requirement, UserStory, AcceptanceCriteria, QualityFinding, Persona, SrsDocument | Reviewed at H1 | Planned |
+| GET | `/api/v1/projects/{project_id}/requirements` | Get the typed Agent 1 artifact snapshot | Requirement Gathering and Analysis Agent | Internal structured/versioned retrieval is implemented; the future public query contract remains undefined | Requirement, UserStory, AcceptanceCriteria, QualityFinding, Persona, SrsDocument | Reviewed at H1 | Planned |
 | POST | `/api/v1/projects/{project_id}/requirements/clarifications` | Add clarification questions or human feedback | Requirement Gathering and Analysis Agent | Not formally defined | Not formally defined | Supports H1 correction loop | Planned |
 | POST | `/api/v1/projects/{project_id}/approvals/h1` | Record requirement decision | Requirement Gathering and Analysis Agent / Orchestrator | O2 Approval request | Approval | H1 | Implemented |
+
+The internal SKB supports typed, project-scoped, versioned Agent 1 retrieval, including Approval-authoritative approved H1 snapshots. This does not expose a public Requirements route or a generic `/knowledge-base` or `/artifacts` API; the public query contract remains deferred until separately approved.
 
 ### ClientInput Request and Response Contract
 
