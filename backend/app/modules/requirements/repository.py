@@ -273,6 +273,31 @@ class RequirementsArtifactRepository:
                 "Could not list Agent 1 artifacts by type"
             ) from exc
 
+    def list_artifacts(
+        self,
+        project_id: str,
+        artifact_type: Agent1ArtifactType | None = None,
+        version: int | None = None,
+        status: ArtifactStatus | None = None,
+    ) -> list[Agent1ArtifactModel]:
+        """Return typed project artifacts using deterministic structured filters."""
+        query: dict[str, Any] = {"project_id": project_id}
+        if artifact_type is not None:
+            query["artifact_type"] = artifact_type.value
+        if version is not None:
+            query["version"] = version
+        if status is not None:
+            query["status"] = status.value
+        try:
+            documents = self._requirements.find(query, {"_id": 0}).sort(
+                [("version", 1), ("artifact_id", 1)]
+            )
+            return [self._deserialize(document) for document in documents]
+        except PyMongoError as exc:
+            raise RequirementsArtifactRepositoryError(
+                "Could not list Agent 1 artifacts"
+            ) from exc
+
     def get_latest_artifact_version(
         self, project_id: str, artifact_id: str
     ) -> Agent1ArtifactModel | None:

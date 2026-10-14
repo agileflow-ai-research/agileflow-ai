@@ -156,7 +156,7 @@ The readiness event's positive `artifact_version` represents the specialist appr
 
 Agent 1 H1 publication is implemented internally for the complete `requirements` snapshot selected by `(project_id, approval_gate = H1, version)`. It validates the already-persisted snapshot and required selected-version traceability, sets only the selected package artifacts to `WAITING_FOR_APPROVAL`, appends or reuses exactly one final `ARTIFACT_GENERATED` readiness marker, and returns control. The marker is emitted only after status publication. This does not change O3.5: artifact status and traceability completeness remain outside its readiness predicates, and only next-step mutates Project stage.
 
-Human Approval remains authoritative. Future approved H1 retrieval resolves the effective `(project_id, H1)` Approval, requires `APPROVE`, and retrieves the exact snapshot matching its `artifact_version`. An artifact's `APPROVED` status alone does not authorize downstream consumption, and Approval submission does not mutate artifacts in the SKB-1 phase.
+Human Approval remains authoritative. SKB-5 approved H1 retrieval resolves the effective `(project_id, H1)` Approval through the existing Approval lookup, requires `APPROVE`, and retrieves the exact snapshot matching its `artifact_version`. An artifact's `APPROVED` status alone does not authorize downstream consumption, and retrieval does not mutate artifacts, Approval history, events, or Project stage.
 
 The Orchestrator-side evaluator, snapshot availability, and next-step transitions are implemented. Agent 1/H1 readiness-event emission is implemented by SKB-4; Agent 2-4 emission remains planned.
 

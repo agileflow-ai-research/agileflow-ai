@@ -32,7 +32,7 @@ This map translates the approved architecture into implementation ownership and 
 | IDs produced | `REQ-###`, `US-###`, `AC-###`, relevant `TRACE-###` |
 | Dependencies | Project foundation, shared schemas/IDs, Shared Knowledge Base, Orchestrator, H1 UI/API, common response/error utilities |
 | Must not do | Generate design/code/final validation; advance global workflow; rename common fields; own another agent's module |
-| Current status | ClientInput request/response validation and APIs are implemented. SKB-1 defines Agent 1 contracts; SKB-2 implements typed/versioned snapshot persistence; SKB-3 implements persisted pairwise traceability; and SKB-4 implements internal H1 publication, selected-version traceability checks, `WAITING_FOR_APPROVAL`, and canonical readiness-event emission. Processing/intelligence, approved retrieval, public artifact/publication APIs, correction flows, cross-agent SKB facade, and UI remain planned |
+| Current status | ClientInput request/response validation and APIs are implemented. SKB-1 defines Agent 1 contracts; SKB-2 implements typed/versioned snapshot persistence; SKB-3 implements persisted pairwise traceability; SKB-4 implements H1 publication/readiness; and SKB-5 implements internal exact approved-H1 and structured typed retrieval. Processing/intelligence, public artifact/publication APIs, correction flows, Agent 2-4 SKB adapters, and UI remain planned |
 
 Agent 1 publishes future H1 output in this order: generate and validate the complete snapshot; persist every artifact document for the package version; persist immutable pairwise traceability links; mark package artifacts `WAITING_FOR_APPROVAL`; append one final `ARTIFACT_GENERATED` readiness event; then return control to the Orchestrator. The readiness event must never precede artifact persistence. This sequence does not let Agent 1 mutate the global workflow stage.
 
@@ -133,7 +133,7 @@ These phases preserve four research agents. Project ownership remains the O2 aut
 | Official name | Shared Knowledge Base |
 | Owner | Shared/foundation infrastructure |
 | Branch | Foundation work on `feature/project-foundation`; coordinated changes with component/orchestrator/report branches |
-| Backend area | `backend/app/database/mongodb.py`, `backend/app/database/collections.py`, approved shared schemas, future internal facade at `backend/app/modules/shared_knowledge/`, and collection-specific module repositories |
+| Backend area | `backend/app/database/mongodb.py`, `backend/app/database/collections.py`, approved shared schemas, internal facade at `backend/app/modules/shared_knowledge/`, and collection-specific module repositories |
 | Frontend area | No direct database access; planned pages consume backend services only |
 | Primary inputs | Structured, versioned artifacts and workflow records from all components |
 | Responsibilities | Act as an internal architectural/service layer over the existing MongoDB collections; coordinate typed, project-scoped, version-aware and approval-aware retrieval across collection-specific repositories |
@@ -143,9 +143,9 @@ These phases preserve four research agents. Project ownership remains the O2 aut
 | IDs consumed/produced | Stores all canonical IDs; ID generation responsibility is shared utility/component-specific and not database-client logic |
 | Dependencies | Environment settings, PyMongo, approved schemas/repositories, security/secret handling |
 | Must not do | Become a second database, generic dynamic MongoDB repository, vector store, RAG/LLM memory, workflow authority, approval authority, final traceability-report generator, or public `/knowledge-base` API |
-| Current status | Foundation implemented: one settings-driven client, database accessor, ping/close helper, 15 collection constants, shared artifact contracts, tests, repository-backed User, Project, ClientInput, and WorkflowEvent persistence, and authenticated Project ownership for current Project-scoped APIs. The future internal facade and specialist repositories are not implemented |
+| Current status | Foundation implemented, including the SKB-5 internal read-only facade for Agent 1: typed/project-scoped structured reads, exact effective-Approval-authorized H1 snapshots, one-hop traceability delegation, and approved-package link intersection. Requirements and Reports/Traceability retain repository ownership. H2-H5 artifact adapters and public SKB APIs are not implemented |
 
-Collection-specific repositories remain owned by `requirements`, `design`, `testing`, and `implementation`. The future `backend/app/modules/shared_knowledge/` facade coordinates those typed repositories rather than selecting arbitrary collections dynamically. Human-facing workspaces use specialist APIs; generic public `/knowledge-base` or `/artifacts` routes are not part of the SKB foundation.
+Collection-specific repositories remain owned by `requirements`, `design`, `testing`, and `implementation`. The implemented `backend/app/modules/shared_knowledge/` facade coordinates the current Requirements, Approval, and Reports/Traceability read abstractions rather than selecting arbitrary collections dynamically. Human-facing workspaces use specialist APIs; generic public `/knowledge-base` or `/artifacts` routes are not part of the SKB foundation. Downstream agents should request an approved upstream snapshot, not the latest draft.
 
 Structured retrieval by project, artifact type/ID, gate, status, version, producer, and traceability relationship is sufficient for the immediate foundation. RAG and semantic/vector retrieval are future enhancements only; no embeddings, chunking, vector index, vector database, or additional persistence technology is approved. The Central SDLC Orchestrator remains deterministic for stages, approvals, readiness, and completion; no LLM is required for those controls.
 
