@@ -31,6 +31,7 @@ function OutputSelector({ options, selectedValues, onChange, label = 'Select out
                 className="mt-1 h-4 w-4 accent-brand"
                 checked={isSelected}
                 disabled={option.disabled}
+                aria-label={option.label}
                 aria-describedby={descriptionId}
                 onChange={() => toggle(option.value)}
               />

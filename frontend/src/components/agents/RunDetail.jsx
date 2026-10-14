@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import ArtifactViewer from './ArtifactViewer.jsx'
+import RequirementsResults from './RequirementsResults.jsx'
 import ErrorState from '../feedback/ErrorState.jsx'
 import LoadingState from '../feedback/LoadingState.jsx'
 import Button from '../ui/Button.jsx'
@@ -108,15 +109,19 @@ function RunDetail({ agentProjectId, runId, onClose }) {
       <RunMessageList title="Warnings" messages={run.warnings} tone="warning" />
       <RunMessageList title="Errors" messages={run.errors} tone="danger" />
 
-      <ArtifactViewer heading="Output manifest" metadata="Persisted manifest metadata">
-        {Object.keys(manifest).length > 0 ? (
-          <pre className="overflow-x-auto whitespace-pre-wrap rounded-control bg-canvas p-3 text-xs">
-            {JSON.stringify(manifest, null, 2)}
-          </pre>
-        ) : (
-          <p>No output manifest entries recorded.</p>
-        )}
-      </ArtifactViewer>
+      {run.agent_type === 'REQUIREMENTS' ? (
+        <RequirementsResults outputs={manifest} title="Persisted requirements outputs" />
+      ) : (
+        <ArtifactViewer heading="Output manifest" metadata="Persisted manifest metadata">
+          {Object.keys(manifest).length > 0 ? (
+            <pre className="overflow-x-auto whitespace-pre-wrap rounded-control bg-canvas p-3 text-xs">
+              {JSON.stringify(manifest, null, 2)}
+            </pre>
+          ) : (
+            <p>No output manifest entries recorded.</p>
+          )}
+        </ArtifactViewer>
+      )}
     </section>
   )
 }
