@@ -16,7 +16,7 @@ This is the canonical complete workflow contract. Most of the workflow remains p
 - **Approval persistence:** O2 validates matching waiting stages, appends immutable Approval history, exposes effective/latest repository lookup, and creates exactly one `APPROVAL_DECISION` event without changing Project stage.
 - **Approval transitions:** O3 uses the newest project/gate decision; only canonical `APPROVE` permits next-step, which creates exactly one `STAGE_CHANGED` event.
 - **Specialist handoffs:** O3.5 consumes and validates a final `ARTIFACT_GENERATED` marker plus minimum persisted evidence and executes all five specialist-to-gate transitions when ready.
-- **Still planned:** specialist-agent readiness-event emission, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, bounded retries, human-review escalation, and correction loops.
+- **Still planned:** Agent 2-4 specialist readiness-event emission, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, bounded retries, human-review escalation, and correction loops. Agent 1 H1 emission is implemented internally by SKB-4.
 
 This foundation does not execute the Requirement Gathering and Analysis Agent and does not represent a complete Orchestrator implementation.
 
@@ -154,11 +154,11 @@ A successful handoff updates `current_stage` and `updated_at` and creates exactl
 
 The readiness event's positive `artifact_version` represents the specialist approval-package version. O3.5 records it without cross-validating O2 Approval versions and without creating a package collection. Traceability remains an architectural, reviewer, and final-completion requirement, but O3.5 introduces no machine-checkable gate-entry threshold.
 
-For future Agent 1 publication, the H1 package is the complete `requirements` snapshot selected by `(project_id, approval_gate = H1, version)`. Agent 1 must generate and validate the complete snapshot, persist its versioned artifact documents, persist its traceability links, set the package artifacts to `WAITING_FOR_APPROVAL`, append exactly one final `ARTIFACT_GENERATED` readiness marker, and return control. The marker must be emitted only after persistence completes. This publication contract does not change O3.5: artifact status and traceability completeness remain outside its readiness predicates.
+Agent 1 H1 publication is implemented internally for the complete `requirements` snapshot selected by `(project_id, approval_gate = H1, version)`. It validates the already-persisted snapshot and required selected-version traceability, sets only the selected package artifacts to `WAITING_FOR_APPROVAL`, appends or reuses exactly one final `ARTIFACT_GENERATED` readiness marker, and returns control. The marker is emitted only after status publication. This does not change O3.5: artifact status and traceability completeness remain outside its readiness predicates, and only next-step mutates Project stage.
 
 Human Approval remains authoritative. Future approved H1 retrieval resolves the effective `(project_id, H1)` Approval, requires `APPROVE`, and retrieves the exact snapshot matching its `artifact_version`. An artifact's `APPROVED` status alone does not authorize downstream consumption, and Approval submission does not mutate artifacts in the SKB-1 phase.
 
-The Orchestrator-side evaluator, snapshot availability, and next-step transitions are implemented. Actual readiness-event emission by specialist agents remains planned.
+The Orchestrator-side evaluator, snapshot availability, and next-step transitions are implemented. Agent 1/H1 readiness-event emission is implemented by SKB-4; Agent 2-4 emission remains planned.
 
 ## Failure Routing and Correction Loops
 

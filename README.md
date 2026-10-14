@@ -171,6 +171,7 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | Shared enums, domain schemas, ID conventions, and API response models | Implemented |
 | SKB-1/SKB-2 Agent 1 artifact foundation | Implemented: six typed `requirements` discriminator models, canonical `REQ`/`US`/`AC` allocation, immutable versioned repository access, and internal complete-H1-snapshot persistence; no processing/public artifact API, publication/readiness event, or approved retrieval |
 | SKB-3 traceability persistence foundation | Implemented internally under Reports/Traceability: `TRACE-###` allocation, immutable/idempotent Agent 1 links, endpoint/type/relation validation, and project-scoped typed queries; no public route, graph traversal, or matrix UI |
+| SKB-4 H1 package publication | Implemented internally: selected-version snapshot/traceability validation, `IN_PROGRESS` → `WAITING_FOR_APPROVAL`, idempotent canonical `ARTIFACT_GENERATED` emission, and unchanged O3.5/next-step handoff; no public publication route or Approval decision |
 | Project CRUD APIs and persistence | Implemented |
 | ClientInput APIs and persistence foundation | Implemented; requirement processing remains planned |
 | Orchestrator core policy, workflow snapshot, and event history | Implemented; snapshots evaluate ClientInput, specialist-handoff, and effective-Approval prerequisites |
@@ -178,10 +179,10 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | H1-H5 Approval persistence | Implemented with authenticated ownership, `APP-###`, append-only history, effective/latest lookup, and one `APPROVAL_DECISION` event per decision; no stage transition |
 | Approval-driven Orchestrator transitions | Implemented for H1-H5 waiting stages when the effective decision is APPROVE; each creates one `STAGE_CHANGED` event |
 | Specialist handoff readiness | O3.5 consumption/validation is implemented for all five specialist-stage → approval-gate transitions using a valid `ARTIFACT_GENERATED` marker plus minimum project-scoped evidence; actual specialist emission remains planned |
-| Backend test suite | Implemented; 361 tests passing in the current verified suite |
+| Backend test suite | Implemented; 390 tests passing in the current verified suite |
 | Frontend application | F1.2 foundation through F1.10 implemented, including Create Project, initial TEXT ClientInput integration, and dynamic read-only Project Overview using Project/workflow/event APIs |
-| Agent intelligence, specialist readiness-event emission, O4 correction routing, O6 HOLD/release behavior, and remaining workflow behavior | Planned |
-| Remaining Agent 2/3/4 artifact persistence/traceability adapters, cross-agent SKB facade, approved retrieval, package publication, traceability traversal/matrix, reports, and integrations | Planned |
+| Agent intelligence, Agent 2/3/4 readiness-event emission, O4 correction routing, O6 HOLD/release behavior, and remaining workflow behavior | Planned |
+| Remaining Agent 2/3/4 artifact persistence/traceability adapters, cross-agent SKB facade, approved retrieval, traceability traversal/matrix, reports, and integrations | Planned |
 | User persistence, `USR-###`, Argon2 hashing, and registration API | Implemented |
 | Login, JWT issuance/validation, and `/auth/me` | Implemented |
 | Project ownership and project-scoped authorization | Implemented for Project CRUD, ClientInput, current Orchestrator endpoints, and H1-H5 Approval submission |

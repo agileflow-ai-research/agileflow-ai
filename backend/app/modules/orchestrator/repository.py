@@ -140,6 +140,17 @@ class OrchestratorRepository:
                 "Could not inspect specialist readiness events"
             ) from exc
 
+    def create_workflow_event(self, event: WorkflowEvent) -> WorkflowEvent:
+        """Append one validated event without changing Project workflow state."""
+        document = event.model_dump(mode="python")
+        try:
+            self._workflow_events.insert_one(document.copy())
+        except PyMongoError as exc:
+            raise OrchestratorRepositoryError(
+                "Could not persist workflow event"
+            ) from exc
+        return WorkflowEvent.model_validate(self._public_document(document))
+
     def missing_project_evidence(
         self,
         project_id: str,

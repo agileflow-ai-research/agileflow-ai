@@ -89,7 +89,7 @@ class SpecialistHandoffEvaluation:
     detail: str | None = None
 
 
-def _matching_readiness_event(
+def matching_readiness_event(
     document: dict[str, object],
     project_id: str,
     rule: SpecialistHandoffRule,
@@ -135,7 +135,7 @@ def evaluate_specialist_handoff(
     valid_events = [
         event
         for document in repository.list_artifact_generated_events(project_id)
-        if (event := _matching_readiness_event(document, project_id, rule))
+        if (event := matching_readiness_event(document, project_id, rule))
         is not None
     ]
     readiness_event = (

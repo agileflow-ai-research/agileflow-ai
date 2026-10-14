@@ -126,7 +126,7 @@ On a successful handoff, only the Orchestrator updates `Project.current_stage` a
 
 The readiness `artifact_version` records the specialist approval-package version as handoff evidence. O3.5 does not cross-validate it against `Approval.artifact_version` and does not create a package collection. Gate entry means the evidence package is ready for human review, not that every technical check passed: persisted implementation failures and validation findings may be reviewed at H4 or H5. Correction routing remains planned. End-to-end traceability remains an architectural and final-completion requirement, but no link-count or gate-entry completeness predicate is introduced by O3.5.
 
-O3.5 consumption and validation are implemented. The actual specialist agents do not yet emit these readiness events; that integration remains part of each specialist implementation.
+O3.5 consumption and validation are implemented. SKB-4 now provides internal Agent 1/H1 publication and canonical readiness-event emission without adding a public publication route; Agent 2-4 emitters remain part of their future specialist implementations.
 
 ## Requirement Gathering and Analysis Routes
 

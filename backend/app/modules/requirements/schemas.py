@@ -25,6 +25,7 @@ from app.schemas.requirements import (
     SrsDocument,
     UserStory,
 )
+from app.schemas.workflow import WorkflowEvent
 
 
 class ClientInputType(str, Enum):
@@ -209,6 +210,24 @@ class H1SnapshotResult(BaseModel):
     project_id: str
     version: int = Field(ge=1)
     artifacts: list[Agent1ArtifactModel]
+
+    @field_validator("project_id")
+    @classmethod
+    def validate_project_id(cls, value: str) -> str:
+        return validate_id(value, "PRJ")
+
+
+class H1PublicationResult(BaseModel):
+    """Typed internal result for a published logical H1 package."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    gate_id: Literal[ApprovalGate.H1]
+    artifact_version: int = Field(ge=1)
+    artifact_count: int = Field(ge=1)
+    status: Literal[ArtifactStatus.WAITING_FOR_APPROVAL]
+    readiness_event: WorkflowEvent
 
     @field_validator("project_id")
     @classmethod

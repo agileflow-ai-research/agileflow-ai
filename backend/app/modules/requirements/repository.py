@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from pydantic import ValidationError
@@ -5,7 +6,7 @@ from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
 from app.common.id_generator import validate_id
-from app.common.status import ApprovalGate
+from app.common.status import ApprovalGate, ArtifactStatus
 from app.database.collections import CLIENT_INPUTS, PROJECTS, REQUIREMENTS
 from app.database.mongodb import get_database
 from app.modules.requirements.schemas import Agent1ArtifactModel, ClientInputResponse
@@ -300,4 +301,32 @@ class RequirementsArtifactRepository:
         except PyMongoError as exc:
             raise RequirementsArtifactRepositoryError(
                 "Could not list Agent 1 artifact versions"
+            ) from exc
+
+    def publish_h1_snapshot_status(
+        self,
+        project_id: str,
+        version: int,
+        updated_at: datetime,
+    ) -> list[Agent1ArtifactModel]:
+        """Move only one persisted H1 snapshot from in-progress to review."""
+        try:
+            self._requirements.update_many(
+                {
+                    "project_id": project_id,
+                    "approval_gate": ApprovalGate.H1.value,
+                    "version": version,
+                    "status": ArtifactStatus.IN_PROGRESS.value,
+                },
+                {
+                    "$set": {
+                        "status": ArtifactStatus.WAITING_FOR_APPROVAL.value,
+                        "updated_at": updated_at,
+                    }
+                },
+            )
+            return self.list_h1_snapshot(project_id, version)
+        except PyMongoError as exc:
+            raise RequirementsArtifactRepositoryError(
+                "Could not publish H1 artifact status"
             ) from exc
