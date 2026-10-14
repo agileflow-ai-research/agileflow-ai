@@ -1,0 +1,7 @@
+FROM python:3.12.7-slim-bookworm
+
+RUN python -m pip install --no-cache-dir pytest==8.3.5 pytest-cov==6.0.0
+
+USER 65532:65532
+WORKDIR /workspace
+

@@ -5,7 +5,8 @@ from app.common.status import AgentRunMode, AgentType
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.standalone.schemas import AgentProject, AgentRun, AgentRunMessage
 from app.modules.standalone.service import StandaloneService
-from app.modules.testing.engine import Agent4Engine, StructuredOutputInvalidError, ToolExecutionError
+from app.modules.testing.engine import Agent4Engine, StructuredOutputInvalidError
+from app.modules.testing.executor import ToolExecutionError
 from app.modules.testing.schemas import Agent4InputContext, Agent4RunRequest, Agent4RunResult
 
 
@@ -101,7 +102,7 @@ class Agent4Service:
         if test_report and test_report.get("status") == "SKIPPED":
             warnings.append(AgentRunMessage(
                 code="TEST_EXECUTION_SKIPPED",
-                message="No test/run command was supplied, so no tests were executed",
+                message="No executable validation profile was selected, so no project code was executed",
             ))
         security = outputs.get("SECURITY_FINDINGS")
         if security and security.get("executed"):

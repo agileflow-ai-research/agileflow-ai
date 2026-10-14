@@ -6,6 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.common.status import AgentRunMode, AgentRunStatus, AgentType
 from app.modules.standalone.schemas import AgentRunMessage
+from app.modules.testing.executor import (
+    CommandPolicyError,
+    ValidationProfile,
+    resolve_validation_profile,
+)
 
 
 class TestGenerationOutputCode(StrEnum):
@@ -53,6 +58,7 @@ class Agent4RunRequest(BaseModel):
     technology_stack: str | None = None
     source_code_or_project: str | dict[str, str] | None = None
     test_cases: str | None = None
+    validation_profile: ValidationProfile | None = None
     build_command: str | None = None
     run_command: str | None = None
     environment_information: str | None = None
@@ -100,6 +106,7 @@ class Agent4RunRequest(BaseModel):
                 )
             allowed = {item.value for item in TestGenerationOutputCode}
             forbidden_fields = (self.source_code_or_project, self.test_cases, self.build_command, self.run_command, self.environment_information)
+            forbidden_fields += (self.validation_profile,)
             if any(value is not None for value in forbidden_fields):
                 raise ValueError("VALIDATION-only inputs are not accepted in TEST_GENERATION mode")
         else:
@@ -117,6 +124,12 @@ class Agent4RunRequest(BaseModel):
                 )
             if "ACCEPTANCE_CRITERIA_VALIDATION" in self.selected_outputs and not self.acceptance_criteria:
                 raise ValueError("acceptance_criteria is required for ACCEPTANCE_CRITERIA_VALIDATION")
+            try:
+                resolve_validation_profile(
+                    self.validation_profile, self.build_command, self.run_command
+                )
+            except CommandPolicyError as exc:
+                raise ValueError(str(exc)) from exc
 
         invalid = sorted(set(self.selected_outputs) - allowed)
         if invalid:

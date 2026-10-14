@@ -4,7 +4,12 @@ import pytest
 
 from app.main import app
 from app.modules.standalone.router import get_agent_project_repository, get_agent_run_repository
-from app.modules.testing.engine import Agent4Engine, CommandEvidence
+from app.modules.testing.engine import Agent4Engine
+from app.modules.testing.executor import (
+    ToolExecutionError,
+    ValidationCommandResult,
+    ValidationExecutionResult,
+)
 from app.modules.testing.router import get_agent4_engine
 from app.modules.testing.schemas import Agent4InputContext
 from test_standalone_foundation import FakeAgentProjectRepository, FakeAgentRunRepository
@@ -29,16 +34,43 @@ class FixedProvider:
         return deepcopy(self.response)
 
 
-class FixedRunner:
+def command_result(status="PASSED", exit_code=0, stdout="2 passed", stderr=""):
+    return ValidationCommandResult(
+        command=["python", "-m", "pytest"],
+        tool="PYTHON_PYTEST",
+        exit_code=exit_code,
+        execution_status=status,
+        stdout=stdout,
+        stderr=stderr,
+        evidence_metadata={"executor": "DOCKER", "network": "NONE"},
+    )
+
+
+class FixedExecutor:
     def __init__(self, evidence=None):
-        self.evidence = evidence or CommandEvidence(
-            ["python", "-m", "pytest"], "python", 0, "PASSED", "2 passed", ""
-        )
+        self.evidence = evidence or command_result()
         self.calls = []
 
-    def run(self, command, source):
-        self.calls.append((command, source))
-        return self.evidence
+    def execute(self, request):
+        self.calls.append(request)
+        skipped = ValidationCommandResult(
+            command=[], tool="NONE", exit_code=None, execution_status="SKIPPED",
+            stdout="", stderr="", reason="No validation profile was selected",
+        )
+        tests = self.evidence if request.profile else skipped
+        return ValidationExecutionResult(
+            build=skipped, tests=tests,
+            sandbox={"executor": "DOCKER", "network": "NONE", "profile": request.profile},
+        )
+
+
+class FailingExecutor:
+    def __init__(self, message="Secure validation sandbox is unavailable"):
+        self.message = message
+
+    def execute(self, request):
+        del request
+        raise ToolExecutionError(self.message)
 
 
 @pytest.fixture
@@ -46,7 +78,7 @@ def agent4_context(authentication_context):
     projects = FakeAgentProjectRepository()
     runs = FakeAgentRunRepository()
     provider = FixedProvider({"UNIT_TEST_CASES": [TEST_CASE]})
-    runner = FixedRunner()
+    runner = FixedExecutor()
     app.dependency_overrides[get_agent_project_repository] = lambda: projects
     app.dependency_overrides[get_agent_run_repository] = lambda: runs
     app.dependency_overrides[get_agent4_engine] = lambda: Agent4Engine(provider, runner)
@@ -100,6 +132,9 @@ def test_test_generation_uses_separate_mode_and_shared_lifecycle(agent4_context)
     {"run_mode": "VALIDATION", "source_code_or_project": "print('ok')", "selected_outputs": ["UNIT_TEST_CASES"]},
     {"run_mode": "VALIDATION", "source_code_or_project": "print('ok')", "SRS": "generation input", "selected_outputs": ["CODE_QUALITY_REPORT"]},
     {"run_mode": "VALIDATION", "source_code_or_project": "print('ok')", "selected_outputs": ["ACCEPTANCE_CRITERIA_VALIDATION"]},
+    {"run_mode": "VALIDATION", "source_code_or_project": "print('ok')", "run_command": "python -c print('unsafe')", "selected_outputs": ["TEST_EXECUTION_REPORT"]},
+    {"run_mode": "VALIDATION", "source_code_or_project": "print('ok')", "run_command": "npx arbitrary-package", "selected_outputs": ["TEST_EXECUTION_REPORT"]},
+    {"run_mode": "VALIDATION", "source_code_or_project": "print('ok')", "validation_profile": "PYTHON_PYTEST", "run_command": "python -m pytest -k injected", "selected_outputs": ["TEST_EXECUTION_REPORT"]},
     {"run_mode": "VALIDATION", "source_code_or_project": "print('ok')", "selected_outputs": []},
 ])
 def test_invalid_mode_context_and_output_combinations_create_no_run(agent4_context, payload):
@@ -179,8 +214,9 @@ def test_traceability_is_local_result_mapping(agent4_context):
 
 def test_validation_returns_real_tool_evidence_and_structured_failure(agent4_context):
     authentication, _, _, _, runner = agent4_context
-    runner.evidence = CommandEvidence(
-        ["python", "-m", "pytest"], "python", 1, "FAILED", "1 failed", "AssertionError: expected 201"
+    runner.evidence = command_result(
+        status="FAILED", exit_code=1, stdout="1 failed",
+        stderr="AssertionError: expected 201",
     )
     client = authentication.client()
     project = create_project(client)
@@ -193,8 +229,8 @@ def test_validation_returns_real_tool_evidence_and_structured_failure(agent4_con
     assert result["status"] == "COMPLETED"
     report = result["outputs"]["TEST_EXECUTION_REPORT"]
     assert report["status"] == "FAILED"
-    assert report["evidence"]["evidence_type"] == "ACTUAL_TOOL_EXECUTION"
-    assert result["outputs"]["BUG_REPORTS"][0]["evidence_type"] == "ACTUAL_TOOL_EXECUTION"
+    assert report["evidence"]["evidence_type"] == "ACTUAL_SANDBOX_EXECUTION"
+    assert result["outputs"]["BUG_REPORTS"][0]["evidence_type"] == "ACTUAL_SANDBOX_EXECUTION"
     assert result["outputs"]["FINAL_VALIDATION_REPORT"]["readiness"] == "NOT_READY"
 
 
@@ -210,7 +246,8 @@ def test_validation_never_fabricates_coverage_or_test_execution(agent4_context):
     assert result["outputs"]["COVERAGE_REPORT"]["status"] == "NOT_MEASURED"
     assert result["outputs"]["COVERAGE_REPORT"]["metrics"] == {}
     assert result["outputs"]["FINAL_VALIDATION_REPORT"]["evidence_summary"]["tests_executed"] is False
-    assert runner.calls == []
+    assert len(runner.calls) == 1
+    assert runner.calls[0].profile is None
 
 
 def test_static_security_findings_are_scanner_evidence_not_ai_speculation(agent4_context):
@@ -232,5 +269,28 @@ def test_engine_modes_are_explicit_and_cannot_be_merged():
         project_name="Quality", domain="Finance", run_mode="VALIDATION",
         inputs={"source_code_or_project": "print('ok')"},
     )
-    result = Agent4Engine(FixedProvider({}), FixedRunner()).execute(context, ["COVERAGE_REPORT"])
+    result = Agent4Engine(FixedProvider({}), FixedExecutor()).execute(context, ["COVERAGE_REPORT"])
     assert result["COVERAGE_REPORT"]["status"] == "NOT_MEASURED"
+
+
+@pytest.mark.parametrize(
+    "executor",
+    [
+        FailingExecutor(),
+        FailingExecutor("Secure validation exceeded the execution time limit"),
+    ],
+)
+def test_executor_failure_and_timeout_fail_the_persisted_run(agent4_context, executor):
+    authentication, _, runs, provider, _ = agent4_context
+    app.dependency_overrides[get_agent4_engine] = lambda: Agent4Engine(provider, executor)
+    client = authentication.client()
+    project = create_project(client)
+    result = client.post(endpoint(project["agent_project_id"]), json={
+        "run_mode": "VALIDATION",
+        "source_code_or_project": {"test_app.py": "def test_ok(): assert True"},
+        "validation_profile": "PYTHON_PYTEST",
+        "selected_outputs": ["TEST_EXECUTION_REPORT"],
+    }).json()["data"]
+    assert result["status"] == "FAILED"
+    assert result["errors"][0]["code"] == "TOOL_EXECUTION_FAILED"
+    assert runs.documents[result["run_id"]]["status"] == "FAILED"

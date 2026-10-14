@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import { runTestingValidationAgent } from '../../services/testingValidationAgentService.js'
 import Button from '../ui/Button.jsx'
+import Select from '../ui/Select.jsx'
 import Textarea from '../ui/Textarea.jsx'
 import AgentInputWizard from './AgentInputWizard.jsx'
 import OutputSelector from './OutputSelector.jsx'
@@ -47,8 +48,13 @@ const generationFields = [
 const validationFields = [
   ['source_code_or_project', 'Source Code or Project'], ['requirements', 'Requirements'],
   ['acceptance_criteria', 'Acceptance Criteria'], ['test_cases', 'Test Cases'],
-  ['technology_stack', 'Technology Stack'], ['build_command', 'Build Command'],
-  ['run_command', 'Test / Run Command'], ['environment_information', 'Environment Information'],
+  ['technology_stack', 'Technology Stack'], ['environment_information', 'Environment Information'],
+]
+
+const validationProfileOptions = [
+  { value: '', label: 'Static analysis only (no code execution)' },
+  { value: 'PYTHON_PYTEST', label: 'Python / pytest sandbox' },
+  { value: 'NODE_NPM_TEST', label: 'Node / npm test sandbox' },
 ]
 
 function emptyInput(fields) {
@@ -66,7 +72,10 @@ function TestingValidationWorkspace({ project, onRunCompleted }) {
 
   function chooseMode(nextMode) {
     setMode(nextMode)
-    setInput(emptyInput(nextMode === 'TEST_GENERATION' ? generationFields : validationFields))
+    setInput({
+      ...emptyInput(nextMode === 'TEST_GENERATION' ? generationFields : validationFields),
+      ...(nextMode === 'VALIDATION' ? { validation_profile: '' } : {}),
+    })
     setSelectedOutputs([])
     setStep(0)
     setError('')
@@ -137,7 +146,7 @@ function TestingValidationWorkspace({ project, onRunCompleted }) {
   const fields = mode === 'TEST_GENERATION' ? generationFields : validationFields
   const options = mode === 'TEST_GENERATION' ? generationOutputs : validationOutputs
   const inputFields = step === 0 ? fields : []
-  const reviewSections = Object.entries(input).filter(([, value]) => value.trim()).map(([name, value]) => ({ id: name, title: fields.find(([field]) => field === name)?.[1] ?? name, content: value }))
+  const reviewSections = Object.entries(input).filter(([, value]) => value.trim()).map(([name, value]) => ({ id: name, title: name === 'validation_profile' ? 'Validation Profile' : fields.find(([field]) => field === name)?.[1] ?? name, content: value }))
   const steps = [{ id: 'inputs', label: mode === 'TEST_GENERATION' ? 'Test Context' : 'Validation Source' }, { id: 'outputs', label: 'Select Outputs' }, { id: 'review', label: 'Review' }, { id: 'run', label: 'Run' }]
 
   return (
@@ -145,7 +154,7 @@ function TestingValidationWorkspace({ project, onRunCompleted }) {
       <div className="flex flex-wrap items-center justify-between gap-3"><p className="font-semibold text-content-primary">Mode: {modePresentation[mode].label}</p><Button variant="ghost" size="small" onClick={() => setMode(null)}>Change mode</Button></div>
       {error && <p role="alert" className="text-sm text-state-danger">{error}</p>}
       <AgentInputWizard steps={steps} currentStep={step} onBack={step > 0 ? () => setStep((current) => current - 1) : () => setMode(null)} onNext={step < 2 ? next : execute} nextLabel={step === 2 ? 'Run Agent' : 'Next'}>
-        {step === 0 && <div className="grid gap-5 sm:grid-cols-2">{inputFields.map(([name, label], index) => <Textarea key={name} label={label} rows={index === 0 ? 8 : 4} value={input[name] ?? ''} onChange={(event) => updateField(name, event.target.value)} helperText={name === 'existing_source_code' ? 'Executable test code also requires a technology stack. Generated code is not execution evidence.' : name === 'run_command' ? 'Only supported shell-free tool commands are executed in a temporary workspace.' : undefined} />)}</div>}
+        {step === 0 && <div className="grid gap-5 sm:grid-cols-2">{mode === 'VALIDATION' && <Select label="Validation profile" placeholder="" value={input.validation_profile ?? ''} options={validationProfileOptions} onChange={(event) => updateField('validation_profile', event.target.value)} helperText="Executable validation uses fixed commands in a network-disabled Docker sandbox. No profile runs static analysis only." />}{inputFields.map(([name, label], index) => <Textarea key={name} label={label} rows={index === 0 ? 8 : 4} value={input[name] ?? ''} onChange={(event) => updateField(name, event.target.value)} helperText={name === 'existing_source_code' ? 'Executable test code also requires a technology stack. Generated code is not execution evidence.' : undefined} />)}</div>}
         {step === 1 && <OutputSelector options={options} selectedValues={selectedOutputs} onChange={(values) => { setSelectedOutputs(values); setError('') }} />}
         {step === 2 && <RunReview project={project} mode={modePresentation[mode]} selectedOutputs={selectedOutputs} sections={reviewSections} />}
       </AgentInputWizard>

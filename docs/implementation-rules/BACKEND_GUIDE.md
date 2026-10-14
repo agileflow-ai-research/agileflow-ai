@@ -129,6 +129,43 @@ app/modules/<module_name>/
 
 The direction is `router → service → repository → database`. Services may call the Orchestrator through an approved interface but must not duplicate global transition rules.
 
+### Agent 4 validation executor boundary
+
+Agent 4 executable validation uses:
+
+```text
+Agent4Engine
+  -> ValidationExecutor
+  -> SandboxedValidationExecutor
+  -> bounded local Docker container
+```
+
+`Agent4Engine` does not invoke raw host commands. A temporary directory is not a
+sandbox; it is only the staging and cleanup location. The Docker executor mounts only
+that location at `/workspace`, disables networking, pulls no images at runtime, runs
+with a numeric non-root UID/GID, uses a read-only container root, drops all
+capabilities, applies
+`no-new-privileges`, and enforces the centrally declared limits in
+`app/modules/testing/executor.py`: 1 CPU, 512 MiB memory, 128 PIDs, 64 MiB temporary
+storage, and 30 seconds per command.
+
+Supported profiles are `PYTHON_PYTEST` and `NODE_NPM_TEST`. Their executable and
+arguments are server-owned templates. User-supplied executable names or additional
+arguments are prohibited. Runtime network/dependency resolution is prohibited; local
+images are built explicitly by an operator when dependencies are available:
+
+```powershell
+docker build -f docker/agent4/Dockerfile.python-pytest -t agileflow/agent4-python-pytest:1.0 .
+docker build -f docker/agent4/Dockerfile.node-npm-test -t agileflow/agent4-node-test:1.0 .
+```
+
+Docker, daemon, or image unavailability fails executable validation with
+`TOOL_EXECUTION_FAILED`; there is no host-execution fallback. Project paths are
+validated using POSIX and Windows rules, resolved beneath the temporary root, checked
+for symlink/reparse-point escape, and written with bounded size/count and exclusive
+no-follow creation where supported. Containers are force-removed after success,
+failure, or timeout.
+
 ### Shared Knowledge Base Internal Boundary
 
 The Shared Knowledge Base is an internal service/facade over the existing MongoDB artifact collections, not another database, vector store, RAG system, or LLM memory. SKB-5 implements it at `app/modules/shared_knowledge/` for typed Agent 1 reads. It coordinates project-scoped retrieval through collection-specific repositories owned by `requirements` and Reports/Traceability plus the Approval read boundary; it does not implement a dynamic repository that accepts arbitrary collection names. Future `design`, `testing`, and `implementation` adapters extend this pattern.

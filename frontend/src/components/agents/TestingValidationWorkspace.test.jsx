@@ -62,7 +62,7 @@ describe('TestingValidationWorkspace', () => {
       run_id: 'RUN-402', status: 'COMPLETED', run_mode: 'VALIDATION', warnings: [], errors: [],
       outputs: { TEST_EXECUTION_REPORT: {
         status: 'FAILED', environment: 'Controlled temporary workspace',
-        evidence: { evidence_type: 'ACTUAL_TOOL_EXECUTION', command: ['python', '-m', 'pytest'], exit_code: 1 },
+        evidence: { evidence_type: 'ACTUAL_SANDBOX_EXECUTION', command: ['python', '-m', 'pytest'], exit_code: 1 },
         failures: [{ id: 'BUG-001' }], test_cases_supplied: true,
       } },
     } })
@@ -71,7 +71,7 @@ describe('TestingValidationWorkspace', () => {
     expect(screen.getByLabelText('Source Code or Project')).toBeInTheDocument()
     expect(screen.queryByLabelText('Existing Source Code')).not.toBeInTheDocument()
     await user.type(screen.getByLabelText('Source Code or Project'), 'def transfer(): return False')
-    await user.type(screen.getByLabelText('Test / Run Command'), 'python -m pytest')
+    await user.selectOptions(screen.getByLabelText('Validation profile'), 'PYTHON_PYTEST')
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(screen.getByRole('checkbox', { name: 'Test Execution Report' })).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: 'Unit Test Cases' })).not.toBeInTheDocument()
@@ -80,10 +80,10 @@ describe('TestingValidationWorkspace', () => {
     await user.click(screen.getByRole('button', { name: 'Run Agent' }))
     expect(runTestingValidationAgent).toHaveBeenCalledWith('AGP-004', {
       run_mode: 'VALIDATION', source_code_or_project: 'def transfer(): return False',
-      run_command: 'python -m pytest', selected_outputs: ['TEST_EXECUTION_REPORT'],
+      validation_profile: 'PYTHON_PYTEST', selected_outputs: ['TEST_EXECUTION_REPORT'],
     })
     expect(await screen.findByRole('heading', { name: 'Testing and validation evidence' })).toBeInTheDocument()
-    expect(screen.getByText(/ACTUAL_TOOL_EXECUTION/)).toBeInTheDocument()
+    expect(screen.getByText(/ACTUAL_SANDBOX_EXECUTION/)).toBeInTheDocument()
   })
 
   it('validates each mode without leaking the other mode requirements', async () => {
