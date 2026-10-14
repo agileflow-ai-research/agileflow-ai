@@ -154,6 +154,10 @@ A successful handoff updates `current_stage` and `updated_at` and creates exactl
 
 The readiness event's positive `artifact_version` represents the specialist approval-package version. O3.5 records it without cross-validating O2 Approval versions and without creating a package collection. Traceability remains an architectural, reviewer, and final-completion requirement, but O3.5 introduces no machine-checkable gate-entry threshold.
 
+For future Agent 1 publication, the H1 package is the complete `requirements` snapshot selected by `(project_id, approval_gate = H1, version)`. Agent 1 must generate and validate the complete snapshot, persist its versioned artifact documents, persist its traceability links, set the package artifacts to `WAITING_FOR_APPROVAL`, append exactly one final `ARTIFACT_GENERATED` readiness marker, and return control. The marker must be emitted only after persistence completes. This publication contract does not change O3.5: artifact status and traceability completeness remain outside its readiness predicates.
+
+Human Approval remains authoritative. Future approved H1 retrieval resolves the effective `(project_id, H1)` Approval, requires `APPROVE`, and retrieves the exact snapshot matching its `artifact_version`. An artifact's `APPROVED` status alone does not authorize downstream consumption, and Approval submission does not mutate artifacts in the SKB-1 phase.
+
 The Orchestrator-side evaluator, snapshot availability, and next-step transitions are implemented. Actual readiness-event emission by specialist agents remains planned.
 
 ## Failure Routing and Correction Loops

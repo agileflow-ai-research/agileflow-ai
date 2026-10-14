@@ -127,6 +127,12 @@ app/modules/<module_name>/
 
 The direction is `router → service → repository → database`. Services may call the Orchestrator through an approved interface but must not duplicate global transition rules.
 
+### Shared Knowledge Base Internal Boundary
+
+The Shared Knowledge Base is an internal service/facade over the existing MongoDB artifact collections, not another database, vector store, RAG system, or LLM memory. Its future placement is `app/modules/shared_knowledge/`. It coordinates typed, project-scoped retrieval across collection-specific repositories owned by `requirements`, `design`, `testing`, and `implementation`; it must not implement one dynamic repository that accepts arbitrary collection names.
+
+The foundation follows **INTERNAL SERVICE FIRST**. Do not add public `/knowledge-base` or generic `/artifacts` routes during SKB implementation. Human-facing workspaces continue to use specialist APIs. Traceability remains a separate shared service responsibility under `app/modules/reports/`; the SKB may consume its queries but does not own final matrix/report generation.
+
 The shared authentication and ownership boundary is:
 
 ```text
@@ -177,6 +183,10 @@ JWT Bearer registration, login, token validation, and `/auth/me` are implemented
 
 Follow [DATA_SCHEMAS.md](../schemas/DATA_SCHEMAS.md). Important artifacts carry project/artifact identifiers, type, title, status, approval gate, creator, timestamps, version, and traceability references. Do not duplicate Project, Requirement, TestCase, Approval, or traceability models.
 
+For Agent 1, the `requirements` collection stores Requirement, UserStory, AcceptanceCriteria, QualityFinding, Persona, and SrsDocument documents distinguished by `artifact_type`. Each schema inherits BaseArtifact and uses the ID mapping in `DATA_SCHEMAS.md`. The stable stored identity is `(project_id, artifact_id, version)`, and each H1 version is a complete immutable snapshot. Do not overwrite historical versions or create an `artifact_packages` collection.
+
+Effective Approval records, not `ArtifactStatus.APPROVED`, are the source of approval truth. Future approved retrieval must resolve the effective gate Approval and select its exact package version. `traceability_links` is the authoritative graph; `BaseArtifact.traceability_refs` is optional denormalized cache metadata. ClientInput has no public artifact ID and is not a TraceabilityLink endpoint; raw-input provenance is recorded in `Requirement.source_reference`.
+
 Preserve the ID families `USR`, `PRJ`, `REQ`, `US`, `AC`, `DES`, `API`, `DB`, `TASK`, `TEST`, `CODE`, `BUG`, `SEC`, `TRACE`, `EVT`, and `APP` as documented. `USR-###` identifies a user. Project creation accepts required `name` and `domain` plus optional `description`, defaulting an omitted description to an empty string. Both `Project.created_by` and `Project.owner_user_id` are assigned server-side from the authenticated user's `user_id` and cannot be client-controlled or patched. The required research trace is:
 
 ```text
@@ -200,7 +210,7 @@ The Orchestrator alone enforces:
 - append-only workflow event evidence;
 - final completion only after H5 approval and validation evidence.
 
-Every major action should create/update the relevant artifacts, traceability links, and workflow events when those features are implemented.
+Every major action should create/update the relevant artifacts, append idempotent immutable traceability links, and append workflow events when those features are implemented.
 
 ### Implemented O3.5 Specialist Handoff Consumption/Validation Contract
 

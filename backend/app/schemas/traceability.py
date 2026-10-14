@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.id_generator import validate_id
+from app.common.traceability import TraceabilityRelationType
 
 
 class TraceabilityLink(BaseModel):
@@ -14,7 +15,7 @@ class TraceabilityLink(BaseModel):
     source_artifact_type: str
     target_artifact_id: str = Field(min_length=1)
     target_artifact_type: str
-    relation_type: str
+    relation_type: TraceabilityRelationType
     created_at: datetime
 
     @field_validator("trace_id")

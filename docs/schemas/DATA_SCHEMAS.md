@@ -4,23 +4,24 @@ Project ID: **J26-SE-358**
 Primary authority: **File 06 — API and Data Schema Plan**  
 Workflow/approval authority: **File 12 — Orchestrator Workflow and Approval Rules**
 
-This document is the shared data-contract baseline. The current repository implements shared enums and foundation ID helpers; Pydantic models for User, Project, Approval, WorkflowEvent, TraceabilityLink, BaseArtifact, and the API response envelope; module request/response models for registration, login, access tokens, `/auth/me`, and ClientInput; and authenticated Project ownership for current Project-scoped APIs. Fields below remain authoritative; do not create alternate names or infer missing fields.
+This document is the shared data-contract baseline. The current repository implements shared enums and foundation ID helpers; Pydantic models for User, Project, Approval, WorkflowEvent, TraceabilityLink, BaseArtifact, the six Agent 1 artifact types, and the API response envelope; module request/response models for registration, login, access tokens, `/auth/me`, and ClientInput; and authenticated Project ownership for current Project-scoped APIs. Fields below remain authoritative; do not create alternate names or infer missing fields.
 
 ## Current Schema Implementation Status
 
-- **Implemented schemas and helpers:** User, Project, Approval, WorkflowEvent, pairwise TraceabilityLink, BaseArtifact, API success/error response models, registration and ClientInput request/response models, shared enums, and ID-format/generation helpers including `USR-###`.
+- **Implemented schemas and helpers:** User, Project, Approval, WorkflowEvent, pairwise TraceabilityLink, BaseArtifact, Requirement, UserStory, AcceptanceCriteria, QualityFinding, Persona, SrsDocument, API success/error response models, registration and ClientInput request/response models, shared enums, and ID-format/generation helpers including `USR-###`.
 - **Implemented O2 foundation:** Approval request validation, authenticated H1-H5 POST APIs, append-only persistence, `APP-###` allocation, effective/latest repository lookup, and `APPROVAL_DECISION` event generation are implemented without Project stage mutation.
 - **Implemented:** O3.5 specialist handoff consumption/validation uses an existing `ARTIFACT_GENERATED` WorkflowEvent plus minimum project-scoped persisted evidence; it adds no schema, collection, EventType, or Project readiness field. Actual specialist emission remains planned.
 - **Schema only:** TraceabilityLink has a shared pairwise schema, but traceability persistence and generation are not implemented.
 - **ClientInput foundation only:** request validation, project-scoped persistence, and response serialization are implemented; requirement extraction, analysis, generation, and clarification behavior remain planned.
 - **Implemented:** login/JWT DTOs and `/auth/me` safe public responses.
 - **Implemented:** Project includes validated `owner_user_id`; current Project, ClientInput, and Orchestrator APIs enforce authenticated ownership.
+- **Contract closure only:** Agent 1 artifact schemas and initial traceability relation values are implemented, but their repositories, services, routes, ID allocation, persistence, generation, and readiness-event emission remain planned.
 - Other planned domain artifacts and their persistence are not implied to be implemented by their definitions in this document.
 
 ## Contract Rules
 
 - Use one `project_id` across all artifacts.
-- Important artifacts use a human-readable artifact ID, version, status, creator, timestamps, and traceability references.
+- Important artifacts use a human-readable artifact ID, positive package version, status, creator, timestamps, and optional denormalized traceability references.
 - Producers write to the Shared Knowledge Base; consumers read the approved/versioned artifacts they need.
 - Exact field requiredness is not generally classified by File 06. Unless a section explicitly says **required**, listed fields are contract fields whose validation requirement must be confirmed when the Pydantic model is approved.
 - No optional fields are formally designated in File 06's schema examples.
@@ -82,10 +83,20 @@ File 11 requires every important artifact to carry:
 | `created_by_agent` | Producing official component |
 | `created_at` | Creation timestamp |
 | `updated_at` | Last-update timestamp |
-| `version` | Artifact version; approved versions must not be overwritten |
-| `traceability_refs` | Related `TRACE-###` identifiers |
+| `version` | Positive approval-package snapshot version; historical versions are separate documents and must not be overwritten |
+| `traceability_refs` | Optional denormalized/cache list of related `TRACE-###` identifiers; never the authoritative trace graph |
 
-These common fields are a cross-artifact requirement. BaseArtifact implements the shared foundation; composition with each future agent-specific File 06 model remains planned.
+These common fields are a cross-artifact requirement. BaseArtifact implements the shared foundation and requires `version >= 1`, nonblank `artifact_type`, `title`, and `created_by_agent`, and `updated_at >= created_at`. `traceability_refs` defaults to an empty list. The authoritative relationship representation is the `traceability_links` collection.
+
+### Stable Artifact Identity and Complete Snapshots
+
+`artifact_id` is the stable conceptual identity of an artifact. The canonical stored identity is `(project_id, artifact_id, version)`. A revision keeps the same `artifact_id` and persists a new MongoDB document with a higher package version. Approved historical versions are never updated in place.
+
+For each approval gate, `version` identifies a complete human-review snapshot. Every artifact retained in a newer snapshot is persisted again with the same `artifact_id` and the new version; changed artifacts use their existing ID and new version; new artifacts receive a new ID at the current version; removed artifacts are absent from the newer snapshot.
+
+No `artifact_packages` collection exists. A package is identified logically by `(project_id, gate_id, artifact_version)`. For H1, that tuple selects all `requirements` documents with the same `project_id`, `approval_gate = H1`, and `version = artifact_version`.
+
+For the Agent 1 foundation, package artifacts move from `IN_PROGRESS` to `WAITING_FOR_APPROVAL` only after the complete snapshot is persisted and ready for H1 review. `APPROVED` may later be materialized for presentation or query efficiency, but Approval records remain authoritative. Artifact status is not an O3.5 readiness predicate.
 
 ## Separate Domain Enumerations
 
@@ -239,22 +250,24 @@ The `PROJECT_CREATED` → `REQUIREMENTS_IN_PROGRESS` Orchestrator transition req
 - **Purpose:** functional/non-functional requirement with provenance and quality findings.
 - **Producer:** Requirement Gathering and Analysis Agent.
 - **Consumers:** Design, Testing, Implementation, Orchestrator, Reports/Traceability.
-- **ID:** `requirement_id` using `REQ-###`.
-- **Contract fields:** `requirement_id`, `project_id`, `title`, `description`, `type`, `priority`, `source_reference`, `quality_flags`, `status`.
+- **Artifact discriminator:** `REQUIREMENT`.
+- **ID:** inherited `artifact_id` using `REQ-###`.
+- **Contract fields beyond BaseArtifact:** `requirement_kind`, `statement`, optional `rationale`, optional `priority`, `source_reference`, and `quality_flags`.
 - **Relationships:** source client input; related stories and acceptance criteria; downstream design/test/code/finding links.
 - **Traceability:** starts the principal end-to-end traceability chain.
 - **Lifecycle:** draft/revised through H1, then approved/versioned for downstream use.
 
-Source examples include `FUNCTIONAL`, `HIGH`, `AMBIGUOUS`, and `MISSING_DETAIL`, but complete enums for type, priority, and quality flags are not formally defined.
+`requirement_kind` is exactly `FUNCTIONAL` or `NON_FUNCTIONAL`. Priority and quality-flag vocabularies remain intentionally open for the prototype.
 
 ## UserStory
 
 - **Purpose:** express a requirement as role, goal, and benefit.
 - **Producer:** Requirement Gathering and Analysis Agent.
 - **Consumers:** Design, Testing, Implementation, Traceability.
-- **ID:** `story_id` using `US-###`.
-- **Contract fields:** `story_id`, `project_id`, `requirement_id`, `role`, `goal`, `benefit`, `priority`.
-- **Relationships:** belongs to one project and links to a requirement; acceptance criteria may reference it.
+- **Artifact discriminator:** `USER_STORY`.
+- **ID:** inherited `artifact_id` using `US-###`.
+- **Contract fields beyond BaseArtifact:** `actor`, `goal`, `benefit`, `story_text`.
+- **Relationships:** requirement and acceptance-criterion relationships are authoritative pairwise TraceabilityLinks rather than duplicated foreign-key fields.
 - **Traceability:** connects requirement intent to backlog, tests, and implementation.
 - **Lifecycle/status:** no UserStory-specific lifecycle field is defined; common artifact behavior applies when adopted.
 
@@ -263,11 +276,52 @@ Source examples include `FUNCTIONAL`, `HIGH`, `AMBIGUOUS`, and `MISSING_DETAIL`,
 - **Purpose:** define verifiable Given/When/Then behavior.
 - **Producer:** Requirement Gathering and Analysis Agent.
 - **Consumers:** Design and Testing primarily; Implementation and Traceability also consume it.
-- **ID:** `criteria_id` using `AC-###`.
-- **Contract fields:** `criteria_id`, `project_id`, `requirement_id`, `story_id`, `given`, `when`, `then`.
-- **Relationships:** belongs to a requirement and user story; drives tests.
+- **Artifact discriminator:** `ACCEPTANCE_CRITERION`.
+- **ID:** inherited `artifact_id` using `AC-###`.
+- **Contract fields beyond BaseArtifact:** `criterion`.
+- **Relationships:** user-story and requirement relationships are authoritative pairwise TraceabilityLinks; the criterion may contain Given/When/Then text without duplicating story linkage.
 - **Traceability:** links approved intent to `TEST-###` evidence.
 - **Lifecycle/status:** no criteria-specific status is defined; H1 controls the package.
+
+## QualityFinding
+
+- **Purpose:** record an Agent 1 quality issue without creating another collection.
+- **Artifact discriminator:** `QUALITY_FINDING`.
+- **ID:** inherited `artifact_id` using `REQ-###`.
+- **Contract fields beyond BaseArtifact:** `finding_type`, `description`, optional `suggested_clarification`, `affected_artifact_ids`.
+- **Finding types:** `AMBIGUITY`, `MISSING_INFORMATION`, `CONFLICT`, `DUPLICATE`, `INCONSISTENCY`.
+- **Relationships:** `affected_artifact_ids` supports review presentation; authoritative graph relationships use `IDENTIFIES_ISSUE_IN` TraceabilityLinks.
+
+## Persona
+
+- **Purpose:** capture a non-sensitive prototype user archetype for requirement context.
+- **Artifact discriminator:** `PERSONA`.
+- **ID:** inherited `artifact_id` using `REQ-###`.
+- **Contract fields beyond BaseArtifact:** `name`, `role`, `goals`, `pain_points`, `context`.
+- **Boundary:** do not model sensitive demographics or real-person identity data.
+
+## SrsDocument
+
+- **Purpose:** structured H1 SRS/index artifact that organizes a review package without copying every artifact body.
+- **Artifact discriminator:** `SRS_DOCUMENT`.
+- **ID:** inherited `artifact_id` using `REQ-###`.
+- **Contract fields beyond BaseArtifact:** `overview`, `scope`, `assumptions`, `constraints`, `requirement_ids`, `user_story_ids`, `acceptance_criteria_ids`, `persona_ids`, `quality_finding_ids`.
+- **Relationships:** reference lists organize the exact H1 snapshot; pairwise TraceabilityLinks remain authoritative for traversal.
+
+### Requirements Collection Discriminator and ID Mapping
+
+The single `requirements` collection stores six concrete Agent 1 document types selected by `artifact_type`:
+
+| `artifact_type` | ID prefix |
+|---|---|
+| `REQUIREMENT` | `REQ-###` |
+| `USER_STORY` | `US-###` |
+| `ACCEPTANCE_CRITERION` | `AC-###` |
+| `QUALITY_FINDING` | `REQ-###` |
+| `PERSONA` | `REQ-###` |
+| `SRS_DOCUMENT` | `REQ-###` |
+
+No `PERSONA`, `SRS`, `QF`, or `INPUT` ID family and no separate Agent 1 artifact collection is approved.
 
 ## DesignArtifact
 
@@ -358,6 +412,8 @@ Source-supported `module_type` values are `BACKEND`, `FRONTEND`, `CONFIG`, and `
 
 For O2, `artifact_version` is supplied by the reviewer/client and represents the positive integer version of the artifact or artifact package reviewed at the gate. O2 does not validate it against, update, or lock component-specific artifact collections and does not define multi-artifact version matching. Artifact-lock enforcement remains planned with the relevant artifact pipelines.
 
+For H1, the reviewed package is identified logically by `(project_id, H1, artifact_version)`. The effective H1 Approval is the sole approval authority: the package is approved only when its effective decision is `APPROVE` and the Approval version equals the requested package version. Future approved retrieval must first resolve that effective Approval and then select the exact matching H1 snapshot. `ArtifactStatus.APPROVED` alone never establishes approval truth, and O2 does not mutate artifact status.
+
 `next_stage` is server-derived. An `APPROVE` records the canonical forward stage for the gate: H1 → `DESIGN_IN_PROGRESS`, H2 → `TEST_PLANNING_IN_PROGRESS`, H3 → `IMPLEMENTATION_IN_PROGRESS`, H4 → `VALIDATION_IN_PROGRESS`, and H5 → `COMPLETED`. `REJECT`, `REQUEST_CHANGES`, and `HOLD` record the current matching `Hx_WAITING_APPROVAL` stage. O2 persists the decision but does not mutate `Project.current_stage`.
 
 File 06 historically mentions `artifact_type`, but it is not part of the active approved O2 Approval schema. `reviewer_user_id` is also not approved. File 06's legacy `gate`, `reviewer_comment`, `reviewed_by`, and `reviewed_at` names remain superseded by `gate_id`, `comment`, reviewer name/role, and `timestamp`.
@@ -374,9 +430,15 @@ The O2 API, persistence, effective/latest lookup, and event behavior are impleme
 - **ID:** `trace_id` using `TRACE-###`.
 - **Approved pairwise fields:** `trace_id`, `project_id`, `source_artifact_id`, `source_artifact_type`, `target_artifact_id`, `target_artifact_type`, `relation_type`, `created_at`.
 - **Relationships:** Requirement → Design → Backlog → Test → Code → Bug/Security Finding → Validation → Report/Correction.
-- **Lifecycle:** created and updated at artifact creation, correction, validation, and report generation.
+- **Lifecycle:** append immutable links at artifact creation, correction, validation, and report generation; exact duplicate creation is idempotent.
 
-The approved implementation decision uses pairwise TraceabilityLink records. The aggregate representation described in File 06 is not the current storage model, and implementations must not create a competing aggregate model.
+The approved implementation decision uses immutable pairwise TraceabilityLink records. The aggregate representation described in File 06 is not the current storage model, and implementations must not create a competing aggregate model. `traceability_links` is authoritative; `BaseArtifact.traceability_refs` is optional cache metadata and correctness must not depend on it being complete.
+
+The initial Agent 1 `relation_type` vocabulary is `DERIVED_FROM`, `REFINES`, `ACCEPTANCE_CRITERION_FOR`, `IDENTIFIES_ISSUE_IN`, and `RELATED_TO`. Direction is source artifact to target artifact. Examples include UserStory `REFINES` Requirement, AcceptanceCriteria `ACCEPTANCE_CRITERION_FOR` UserStory, QualityFinding `IDENTIFIES_ISSUE_IN` Requirement, and SrsDocument `DERIVED_FROM` its indexed artifacts.
+
+A logical edge is uniquely identified by `(project_id, source_artifact_id, target_artifact_id, relation_type)`. Exact duplicate creation must be idempotent. No update/delete API is required for the initial foundation.
+
+ClientInput has no public artifact ID and is not a TraceabilityLink endpoint. Raw-input provenance begins in `Requirement.source_reference`; pairwise traceability begins with canonical artifacts.
 
 ## WorkflowEvent
 
@@ -393,7 +455,7 @@ Whether `target_component`, `stage_before`, or `stage_after` may be absent for n
 
 ## Schemas Mentioned but Not Formally Defined
 
-The sources mention RequirementQualityIssue, ApiSpec, DbSchema, GitMetadata, ExecutionLog, TestResult, ValidationReport, final reports, and export payloads, but do not provide complete field contracts. Their fields must be approved before implementation rather than inferred here.
+The sources mention ApiSpec, DbSchema, GitMetadata, ExecutionLog, TestResult, ValidationReport, final reports, and export payloads, but do not provide complete field contracts. Their fields must be approved before implementation rather than inferred here.
 
 ## Canonical MongoDB Collections
 
@@ -402,7 +464,7 @@ The sources mention RequirementQualityIssue, ApiSpec, DbSchema, GitMetadata, Exe
 | `users` | Authentication identities and internal Argon2 password hashes |
 | `projects` | Project metadata and current workflow state |
 | `client_inputs` | Project-owned text/document/audio/video/live-interview content and metadata |
-| `requirements` | Requirements, stories, acceptance criteria, quality findings |
+| `requirements` | Requirements, user stories, acceptance criteria, quality findings, personas, and SRS index documents, discriminated by `artifact_type` |
 | `design_artifacts` | UML/API/DB/UI/wireframe artifacts |
 | `backlog_items` | Epics, stories, tasks, subtasks, bugs/sprint items |
 | `test_cases` | Pre-code and executable test specifications |

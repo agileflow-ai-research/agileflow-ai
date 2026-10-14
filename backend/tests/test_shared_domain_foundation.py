@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from app.common.id_generator import generate_id
 from app.common.response import ErrorDetail, ErrorResponse, SuccessResponse
+from app.common.traceability import TraceabilityRelationType
 from app.common.status import (
     ApprovalDecision,
     ApprovalGate,
@@ -13,10 +14,19 @@ from app.common.status import (
     WorkflowStage,
 )
 from app.schemas import (
+    AcceptanceCriteria,
+    Agent1ArtifactType,
     Approval,
     BaseArtifact,
+    Persona,
     Project,
+    QualityFinding,
+    QualityFindingType,
+    Requirement,
+    RequirementKind,
+    SrsDocument,
     TraceabilityLink,
+    UserStory,
     WorkflowEvent,
 )
 
@@ -80,6 +90,16 @@ def test_event_type_values_are_limited_to_documented_types() -> None:
         "FAILURE_ROUTED",
         "RETRY_ATTEMPT",
         "STAGE_CHANGED",
+    ]
+
+
+def test_agent1_traceability_relation_values() -> None:
+    assert enum_values(TraceabilityRelationType) == [
+        "DERIVED_FROM",
+        "REFINES",
+        "ACCEPTANCE_CRITERION_FOR",
+        "IDENTIFIES_ISSUE_IN",
+        "RELATED_TO",
     ]
 
 
@@ -274,7 +294,7 @@ def test_traceability_link_valid_pairwise_link() -> None:
         source_artifact_type="REQUIREMENT",
         target_artifact_id="TEST-001",
         target_artifact_type="TEST_CASE",
-        relation_type="validated_by",
+        relation_type=TraceabilityRelationType.RELATED_TO,
         created_at=NOW,
     )
 
@@ -301,7 +321,7 @@ def test_traceability_link_rejects_identical_source_and_target() -> None:
             source_artifact_type="REQUIREMENT",
             target_artifact_id="REQ-001",
             target_artifact_type="REQUIREMENT",
-            relation_type="related_to",
+            relation_type=TraceabilityRelationType.RELATED_TO,
             created_at=NOW,
         )
 
@@ -323,6 +343,245 @@ def test_base_artifact_validates_common_contract() -> None:
 
     assert artifact.version == 1
     assert artifact.traceability_refs == ["TRACE-001"]
+
+
+@pytest.mark.parametrize("version", [0, -1])
+def test_base_artifact_requires_positive_version(version: int) -> None:
+    with pytest.raises(ValidationError):
+        BaseArtifact(
+            project_id="PRJ-001",
+            artifact_id="REQ-001",
+            artifact_type="REQUIREMENT",
+            title="Manage books",
+            status=ArtifactStatus.IN_PROGRESS,
+            approval_gate=ApprovalGate.H1,
+            created_by_agent="Requirement Gathering and Analysis Agent",
+            created_at=NOW,
+            updated_at=NOW,
+            version=version,
+        )
+
+
+@pytest.mark.parametrize("field", ["artifact_type", "title", "created_by_agent"])
+def test_base_artifact_rejects_blank_required_metadata(field: str) -> None:
+    values = {
+        "project_id": "PRJ-001",
+        "artifact_id": "REQ-001",
+        "artifact_type": "REQUIREMENT",
+        "title": "Manage books",
+        "status": ArtifactStatus.IN_PROGRESS,
+        "approval_gate": ApprovalGate.H1,
+        "created_by_agent": "Requirement Gathering and Analysis Agent",
+        "created_at": NOW,
+        "updated_at": NOW,
+        "version": 1,
+    }
+    values[field] = "   "
+
+    with pytest.raises(ValidationError, match="must not be blank"):
+        BaseArtifact(**values)
+
+
+def test_base_artifact_rejects_reverse_timestamp_order() -> None:
+    with pytest.raises(ValidationError, match="updated_at"):
+        BaseArtifact(
+            project_id="PRJ-001",
+            artifact_id="REQ-001",
+            artifact_type="REQUIREMENT",
+            title="Manage books",
+            status=ArtifactStatus.IN_PROGRESS,
+            approval_gate=ApprovalGate.H1,
+            created_by_agent="Requirement Gathering and Analysis Agent",
+            created_at=NOW,
+            updated_at=datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc),
+            version=1,
+        )
+
+
+def agent1_metadata(artifact_id: str, artifact_type: str) -> dict[str, object]:
+    return {
+        "project_id": "PRJ-001",
+        "artifact_id": artifact_id,
+        "artifact_type": artifact_type,
+        "title": "Agent 1 artifact",
+        "status": ArtifactStatus.WAITING_FOR_APPROVAL,
+        "approval_gate": ApprovalGate.H1,
+        "created_by_agent": "Requirement Gathering and Analysis Agent",
+        "created_at": NOW,
+        "updated_at": NOW,
+        "version": 3,
+    }
+
+
+@pytest.mark.parametrize("requirement_kind", list(RequirementKind))
+def test_requirement_schema_and_kind(requirement_kind: RequirementKind) -> None:
+    artifact = Requirement(
+        **agent1_metadata("REQ-001", "REQUIREMENT"),
+        requirement_kind=requirement_kind,
+        statement="The system shall manage books.",
+        source_reference="Client interview paragraph 2",
+        quality_flags=["CLEAR"],
+    )
+
+    assert artifact.artifact_type is Agent1ArtifactType.REQUIREMENT
+    assert artifact.requirement_kind is requirement_kind
+    assert artifact.traceability_refs == []
+
+
+def test_user_story_schema() -> None:
+    artifact = UserStory(
+        **agent1_metadata("US-001", "USER_STORY"),
+        actor="Librarian",
+        goal="manage books",
+        benefit="the catalogue remains current",
+        story_text="As a librarian, I want to manage books.",
+    )
+
+    assert artifact.artifact_id == "US-001"
+
+
+def test_acceptance_criteria_schema() -> None:
+    artifact = AcceptanceCriteria(
+        **agent1_metadata("AC-001", "ACCEPTANCE_CRITERION"),
+        criterion="Given a valid book, it is added to the catalogue.",
+    )
+
+    assert artifact.artifact_id == "AC-001"
+
+
+@pytest.mark.parametrize("finding_type", list(QualityFindingType))
+def test_quality_finding_schema_and_type(
+    finding_type: QualityFindingType,
+) -> None:
+    artifact = QualityFinding(
+        **agent1_metadata("REQ-010", "QUALITY_FINDING"),
+        finding_type=finding_type,
+        description="The retention period is unclear.",
+        affected_artifact_ids=["REQ-001"],
+    )
+
+    assert artifact.finding_type is finding_type
+
+
+def test_persona_schema() -> None:
+    artifact = Persona(
+        **agent1_metadata("REQ-011", "PERSONA"),
+        name="Library staff member",
+        role="Librarian",
+        goals=["Maintain an accurate catalogue"],
+        pain_points=["Duplicate manual entry"],
+        context="Uses the system during daily circulation work.",
+    )
+
+    assert artifact.artifact_type is Agent1ArtifactType.PERSONA
+
+
+def test_srs_document_schema_and_reference_lists() -> None:
+    artifact = SrsDocument(
+        **agent1_metadata("REQ-012", "SRS_DOCUMENT"),
+        overview="Library management requirements package.",
+        scope="Catalogue and circulation workflows.",
+        assumptions=["Authenticated staff operate the system."],
+        constraints=["Prototype deployment."],
+        requirement_ids=["REQ-001"],
+        user_story_ids=["US-001"],
+        acceptance_criteria_ids=["AC-001"],
+        persona_ids=["REQ-011"],
+        quality_finding_ids=["REQ-010"],
+    )
+
+    assert artifact.version == 3
+    assert artifact.user_story_ids == ["US-001"]
+
+
+@pytest.mark.parametrize(
+    "schema,artifact_id,artifact_type,fields",
+    [
+        (
+            Requirement,
+            "US-001",
+            "REQUIREMENT",
+            {
+                "requirement_kind": "FUNCTIONAL",
+                "statement": "Statement",
+                "source_reference": "Source",
+            },
+        ),
+        (
+            UserStory,
+            "REQ-001",
+            "USER_STORY",
+            {
+                "actor": "Actor",
+                "goal": "Goal",
+                "benefit": "Benefit",
+                "story_text": "Story",
+            },
+        ),
+        (
+            AcceptanceCriteria,
+            "REQ-001",
+            "ACCEPTANCE_CRITERION",
+            {"criterion": "Criterion"},
+        ),
+        (
+            QualityFinding,
+            "US-001",
+            "QUALITY_FINDING",
+            {"finding_type": "AMBIGUITY", "description": "Description"},
+        ),
+        (
+            Persona,
+            "AC-001",
+            "PERSONA",
+            {"name": "Name", "role": "Role", "context": "Context"},
+        ),
+        (
+            SrsDocument,
+            "US-001",
+            "SRS_DOCUMENT",
+            {"overview": "Overview", "scope": "Scope"},
+        ),
+    ],
+)
+def test_agent1_artifact_id_prefix_mapping(
+    schema, artifact_id: str, artifact_type: str, fields: dict[str, object]
+) -> None:
+    with pytest.raises(ValidationError):
+        schema(**agent1_metadata(artifact_id, artifact_type), **fields)
+
+
+def test_agent1_discriminator_and_extra_fields_are_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Requirement(
+            **agent1_metadata("REQ-001", "PERSONA"),
+            requirement_kind="FUNCTIONAL",
+            statement="Statement",
+            source_reference="Source",
+        )
+
+    with pytest.raises(ValidationError):
+        Requirement(
+            **agent1_metadata("REQ-001", "REQUIREMENT"),
+            requirement_kind="FUNCTIONAL",
+            statement="Statement",
+            source_reference="Source",
+            unsupported_field=True,
+        )
+
+
+def test_traceability_relation_type_is_restricted() -> None:
+    with pytest.raises(ValidationError):
+        TraceabilityLink(
+            trace_id="TRACE-001",
+            project_id="PRJ-001",
+            source_artifact_id="US-001",
+            source_artifact_type="USER_STORY",
+            target_artifact_id="REQ-001",
+            target_artifact_type="REQUIREMENT",
+            relation_type="UNKNOWN_RELATION",
+            created_at=NOW,
+        )
 
 
 def test_response_envelope_defaults_are_safe() -> None:
