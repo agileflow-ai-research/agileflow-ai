@@ -286,3 +286,18 @@ class RequirementsArtifactRepository:
                 "Could not retrieve latest Agent 1 artifact version"
             ) from exc
         return self._deserialize(document) if document is not None else None
+
+    def list_artifact_versions(
+        self, project_id: str, artifact_id: str
+    ) -> list[Agent1ArtifactModel]:
+        """Return all stored versions of one stable project artifact identity."""
+        try:
+            documents = self._requirements.find(
+                {"project_id": project_id, "artifact_id": artifact_id},
+                {"_id": 0},
+            ).sort([("version", 1)])
+            return [self._deserialize(document) for document in documents]
+        except PyMongoError as exc:
+            raise RequirementsArtifactRepositoryError(
+                "Could not list Agent 1 artifact versions"
+            ) from exc

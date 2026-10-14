@@ -162,7 +162,7 @@ One user may own multiple independent projects. All project-scoped components co
 | Official name | Reports / Traceability |
 | Owner | Shared/group-level |
 | Branch | `feature/reports-traceability` |
-| Backend area | `backend/app/modules/reports/` exists as the future shared traceability service/report responsibility; no traceability repository or service is implemented yet |
+| Backend area | `backend/app/modules/reports/` contains the SKB-3 internal Agent 1 traceability repository/service; report generation remains planned |
 | Frontend area | Planned `frontend/src/pages/reports/` plus traceability/report components; planned traceability route/view |
 | Primary inputs | Approved artifacts, workflow events, approvals, logs, test results, bugs, security findings, traceability links |
 | Responsibilities | Own authoritative immutable pairwise traceability persistence/query behavior, build the final traceability matrix, final evidence/report summaries, artifact inventory, and later approved exports |
@@ -173,7 +173,7 @@ One user may own multiple independent projects. All project-scoped components co
 | IDs produced | `TRACE-###`; no report ID family is formally defined |
 | Dependencies | All four agents, Orchestrator, Shared Knowledge Base, local `/storage/reports`, canonical API/data contracts |
 | Must not do | Invent a `reports` collection/ID, mark incomplete artifacts as validated, alter source artifacts, expose private data, bypass H5 |
-| Current status | Reports module package and storage directory placeholders only. The pairwise schema and initial Agent 1 relation vocabulary are implemented, but no report/traceability repository, service, routes, persistence, export, or UI exists |
+| Current status | SKB-3 implements internal immutable pairwise persistence in `traceability_links`, `TRACE-###` max-scan allocation, exact-edge idempotency, same-project endpoint/type/relation validation, and typed project/incoming/outgoing/exact retrieval for Agent 1 artifacts. Public routes, version-specific views, multi-hop traversal, matrix/report generation, Agent 2-4 adapters, exports, and UI remain planned |
 
 ## Shared Approval and Traceability Ownership
 

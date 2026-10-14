@@ -11,7 +11,7 @@ This document is the shared data-contract baseline. The current repository imple
 - **Implemented schemas and helpers:** User, Project, Approval, WorkflowEvent, pairwise TraceabilityLink, BaseArtifact, Requirement, UserStory, AcceptanceCriteria, QualityFinding, Persona, SrsDocument, API success/error response models, registration and ClientInput request/response models, shared enums, and ID-format/generation helpers including `USR-###`.
 - **Implemented O2 foundation:** Approval request validation, authenticated H1-H5 POST APIs, append-only persistence, `APP-###` allocation, effective/latest repository lookup, and `APPROVAL_DECISION` event generation are implemented without Project stage mutation.
 - **Implemented:** O3.5 specialist handoff consumption/validation uses an existing `ARTIFACT_GENERATED` WorkflowEvent plus minimum project-scoped persisted evidence; it adds no schema, collection, EventType, or Project readiness field. Actual specialist emission remains planned.
-- **Schema only:** TraceabilityLink has a shared pairwise schema, but traceability persistence and generation are not implemented.
+- **Implemented SKB-3 persistence foundation:** TraceabilityLink has immutable, project-scoped repository/service persistence for canonical Agent 1 artifacts, `TRACE-###` allocation, exact-edge idempotency, endpoint/type/relation validation, and incoming/outgoing/exact/project retrieval. Public routes, multi-hop traversal, matrix generation, and Agent 2-4 adapters remain planned.
 - **ClientInput foundation only:** request validation, project-scoped persistence, and response serialization are implemented; requirement extraction, analysis, generation, and clarification behavior remain planned.
 - **Implemented:** login/JWT DTOs and `/auth/me` safe public responses.
 - **Implemented:** Project includes validated `owner_user_id`; current Project, ClientInput, and Orchestrator APIs enforce authenticated ownership.
@@ -441,6 +441,10 @@ The approved implementation decision uses immutable pairwise TraceabilityLink re
 The initial Agent 1 `relation_type` vocabulary is `DERIVED_FROM`, `REFINES`, `ACCEPTANCE_CRITERION_FOR`, `IDENTIFIES_ISSUE_IN`, and `RELATED_TO`. Direction is source artifact to target artifact. Examples include UserStory `REFINES` Requirement, AcceptanceCriteria `ACCEPTANCE_CRITERION_FOR` UserStory, QualityFinding `IDENTIFIES_ISSUE_IN` Requirement, and SrsDocument `DERIVED_FROM` its indexed artifacts.
 
 A logical edge is uniquely identified by `(project_id, source_artifact_id, target_artifact_id, relation_type)`. Exact duplicate creation must be idempotent. No update/delete API is required for the initial foundation.
+
+SKB-3 stores links between stable conceptual artifact identities, not historical artifact versions. A link to `REQ-001` applies to the conceptual identity represented by `REQ-001` across its stored versions; TraceabilityLink deliberately has no source/target version fields. A future version-specific view must intersect conceptual links with artifact membership in the selected package version.
+
+Before creation, both endpoints must exist in the requested project, their caller-supplied types must match every persisted version of each stable identity, and the relation must satisfy the approved Agent 1 direction/type rules. Exact duplicate requests return the existing link. `TRACE-###` uses the established collection max-scan allocator, so allocation and application-level duplicate checks can race under truly concurrent writers; no counter collection, unique-index contract, or transaction infrastructure is introduced in SKB-3.
 
 ClientInput has no public artifact ID and is not a TraceabilityLink endpoint. Raw-input provenance begins in `Requirement.source_reference`; pairwise traceability begins with canonical artifacts.
 
