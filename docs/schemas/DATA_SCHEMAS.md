@@ -4,7 +4,7 @@ Project ID: **J26-SE-358**
 Primary authority: **File 06 — API and Data Schema Plan**  
 Workflow/approval authority: **File 12 — Orchestrator Workflow and Approval Rules**
 
-This document is the shared data-contract baseline. The current repository implements shared enums and foundation ID helpers; Pydantic models for User, Project, Approval, WorkflowEvent, TraceabilityLink, BaseArtifact, the six Agent 1 artifact types, and the API response envelope; module request/response models for registration, login, access tokens, `/auth/me`, and ClientInput; and authenticated Project ownership for current Project-scoped APIs. Fields below remain authoritative; do not create alternate names or infer missing fields.
+This document is the shared data-contract baseline. The current repository implements shared enums and foundation ID helpers; Pydantic models for User, Project, Approval, WorkflowEvent, TraceabilityLink, BaseArtifact, the six Agent 1 artifact types, and the API response envelope; module request/response models for registration, login, access tokens, `/auth/me`, ClientInput, and internal H1 snapshot persistence; typed Agent 1 repository/service persistence; and authenticated Project ownership for current Project-scoped APIs. Fields below remain authoritative; do not create alternate names or infer missing fields.
 
 ## Current Schema Implementation Status
 
@@ -15,7 +15,7 @@ This document is the shared data-contract baseline. The current repository imple
 - **ClientInput foundation only:** request validation, project-scoped persistence, and response serialization are implemented; requirement extraction, analysis, generation, and clarification behavior remain planned.
 - **Implemented:** login/JWT DTOs and `/auth/me` safe public responses.
 - **Implemented:** Project includes validated `owner_user_id`; current Project, ClientInput, and Orchestrator APIs enforce authenticated ownership.
-- **Contract closure only:** Agent 1 artifact schemas and initial traceability relation values are implemented, but their repositories, services, routes, ID allocation, persistence, generation, and readiness-event emission remain planned.
+- **Implemented SKB-2 persistence foundation:** Agent 1 has typed, project-scoped repository reads/writes in `requirements`, collection-wide `REQ`/`US`/`AC` max-scan allocation, immutable historical versions, and an internal service that validates and persists complete H1 snapshots. Processing/generation, public artifact routes, publication/status transition, readiness-event emission, approved retrieval, and traceability persistence remain planned.
 - Other planned domain artifacts and their persistence are not implied to be implemented by their definitions in this document.
 
 ## Contract Rules
@@ -97,6 +97,10 @@ For each approval gate, `version` identifies a complete human-review snapshot. E
 No `artifact_packages` collection exists. A package is identified logically by `(project_id, gate_id, artifact_version)`. For H1, that tuple selects all `requirements` documents with the same `project_id`, `approval_gate = H1`, and `version = artifact_version`.
 
 For the Agent 1 foundation, package artifacts move from `IN_PROGRESS` to `WAITING_FOR_APPROVAL` only after the complete snapshot is persisted and ready for H1 review. `APPROVED` may later be materialized for presentation or query efficiency, but Approval records remain authoritative. Artifact status is not an O3.5 readiness predicate.
+
+SKB-2 persists pre-publication H1 snapshots without changing the caller-supplied valid status; `IN_PROGRESS` is the expected pre-review state. Before writing, the internal service validates the complete snapshot, allocates missing public IDs, and rejects duplicate or already-stored `(project_id, artifact_id, version)` identities. Existing conceptual artifacts retain their supplied `artifact_id` in later versions. The `REQ` sequence is shared by Requirement, QualityFinding, Persona, and SrsDocument; UserStory and AcceptanceCriteria use independent `US` and `AC` sequences. MongoDB `_id` remains internal.
+
+The prototype uses the existing max-scan allocator and ordered multi-document inserts, without MongoDB transactions or a counter/package collection. Concurrent allocation can race, and an infrastructure/write failure during `insert_many` can leave a partial snapshot; publication/readiness must not occur after such a failure. Adding transaction or replica-set requirements is outside SKB-2.
 
 ## Separate Domain Enumerations
 

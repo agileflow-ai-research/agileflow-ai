@@ -169,7 +169,7 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | Shared PyMongo client, configured database accessor, ping, close | Implemented |
 | Fifteen centralized MongoDB collection constants, including `users` | Implemented |
 | Shared enums, domain schemas, ID conventions, and API response models | Implemented |
-| SKB-1 Agent 1 artifact contracts | Implemented at schema/documentation level: six `requirements` discriminator types, stable versioned identity, complete H1 snapshots, and initial traceability relations; no artifact persistence/service/API |
+| SKB-1/SKB-2 Agent 1 artifact foundation | Implemented: six typed `requirements` discriminator models, canonical `REQ`/`US`/`AC` allocation, immutable versioned repository access, and internal complete-H1-snapshot persistence; no processing/public artifact API, publication/readiness event, approved retrieval, or traceability persistence |
 | Project CRUD APIs and persistence | Implemented |
 | ClientInput APIs and persistence foundation | Implemented; requirement processing remains planned |
 | Orchestrator core policy, workflow snapshot, and event history | Implemented; snapshots evaluate ClientInput, specialist-handoff, and effective-Approval prerequisites |
@@ -177,10 +177,10 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | H1-H5 Approval persistence | Implemented with authenticated ownership, `APP-###`, append-only history, effective/latest lookup, and one `APPROVAL_DECISION` event per decision; no stage transition |
 | Approval-driven Orchestrator transitions | Implemented for H1-H5 waiting stages when the effective decision is APPROVE; each creates one `STAGE_CHANGED` event |
 | Specialist handoff readiness | O3.5 consumption/validation is implemented for all five specialist-stage → approval-gate transitions using a valid `ARTIFACT_GENERATED` marker plus minimum project-scoped evidence; actual specialist emission remains planned |
-| Backend test suite | Implemented; 286 tests passing in the current verified suite |
+| Backend test suite | Implemented; 331 tests passing in the current verified suite |
 | Frontend application | F1.2 foundation through F1.10 implemented, including Create Project, initial TEXT ClientInput integration, and dynamic read-only Project Overview using Project/workflow/event APIs |
 | Agent intelligence, specialist readiness-event emission, O4 correction routing, O6 HOLD/release behavior, and remaining workflow behavior | Planned |
-| Remaining artifact persistence, SKB internal retrieval facade, traceability persistence/query behavior, reports, and integrations | Planned |
+| Remaining Agent 2/3/4 artifact persistence, cross-agent SKB facade, approved retrieval, traceability persistence/query behavior, reports, and integrations | Planned |
 | User persistence, `USR-###`, Argon2 hashing, and registration API | Implemented |
 | Login, JWT issuance/validation, and `/auth/me` | Implemented |
 | Project ownership and project-scoped authorization | Implemented for Project CRUD, ClientInput, current Orchestrator endpoints, and H1-H5 Approval submission |

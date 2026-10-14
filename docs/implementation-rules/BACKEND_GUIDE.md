@@ -35,14 +35,14 @@ backend/
 │   │   ├── implementation/     # package placeholder
 │   │   └── reports/            # package placeholder
 │   └── schemas/                # shared domain schemas
-├── tests/                       # 240-test backend suite
+├── tests/                       # 331-test backend suite
 ├── .env.example
 └── requirements.txt
 ```
 
-Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable `get_current_user` authentication, centralized Project ownership authorization, owner-scoped Project CRUD and ClientInput access, the centralized Orchestrator transition/prerequisite policy and stage ownership metadata, workflow snapshot/event-history endpoints, all 11 canonical forward transitions, O2 H1-H5 Approval persistence with append-only history/effective lookup, O3 effective-APPROVE transitions, O3.5 specialist-handoff consumption/validation and gate-entry `STAGE_CHANGED` evidence, WorkflowEvent persistence, and backend tests.
+Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable `get_current_user` authentication, centralized Project ownership authorization, owner-scoped Project CRUD and ClientInput access, Agent 1 typed/versioned `requirements` persistence and internal complete-H1-snapshot storage, the centralized Orchestrator transition/prerequisite policy and stage ownership metadata, workflow snapshot/event-history endpoints, all 11 canonical forward transitions, O2 H1-H5 Approval persistence with append-only history/effective lookup, O3 effective-APPROVE transitions, O3.5 specialist-handoff consumption/validation and gate-entry `STAGE_CHANGED` evidence, WorkflowEvent persistence, and backend tests.
 
-Not implemented: Project sharing/collaboration, specialist-agent processing/intelligence and readiness-event emission, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, retry loops, traceability persistence/generation, reports, frontend, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
+Not implemented: Project sharing/collaboration, specialist-agent processing/intelligence and readiness-event emission, H1 publication/status transition, approved-artifact retrieval, the cross-agent SKB facade, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, retry loops, traceability persistence/generation, reports, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
 
 ## Approved Backend Stack
 
@@ -184,6 +184,8 @@ JWT Bearer registration, login, token validation, and `/auth/me` are implemented
 Follow [DATA_SCHEMAS.md](../schemas/DATA_SCHEMAS.md). Important artifacts carry project/artifact identifiers, type, title, status, approval gate, creator, timestamps, version, and traceability references. Do not duplicate Project, Requirement, TestCase, Approval, or traceability models.
 
 For Agent 1, the `requirements` collection stores Requirement, UserStory, AcceptanceCriteria, QualityFinding, Persona, and SrsDocument documents distinguished by `artifact_type`. Each schema inherits BaseArtifact and uses the ID mapping in `DATA_SCHEMAS.md`. The stable stored identity is `(project_id, artifact_id, version)`, and each H1 version is a complete immutable snapshot. Do not overwrite historical versions or create an `artifact_packages` collection.
+
+The SKB-2 requirements repository returns concrete Pydantic artifact types and excludes MongoDB `_id`. Its internal snapshot service validates the full package before writing, allocates missing IDs with the established max-scan approach, shares one `REQ` sequence across all four REQ-family artifact types, and preserves caller-supplied IDs for later versions. Reads and identity checks are project-scoped. Ordered `insert_many` is used without requiring MongoDB transactions; max-scan allocation races and partial writes after an infrastructure failure remain documented prototype limitations.
 
 Effective Approval records, not `ArtifactStatus.APPROVED`, are the source of approval truth. Future approved retrieval must resolve the effective gate Approval and select its exact package version. `traceability_links` is the authoritative graph; `BaseArtifact.traceability_refs` is optional denormalized cache metadata. ClientInput has no public artifact ID and is not a TraceabilityLink endpoint; raw-input provenance is recorded in `Requirement.source_reference`.
 

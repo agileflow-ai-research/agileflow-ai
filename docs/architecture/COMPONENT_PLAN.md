@@ -21,7 +21,7 @@ This map translates the approved architecture into implementation ownership and 
 | Official name | Requirement Gathering and Analysis Agent |
 | Owner | N A Illangasinghe — IT23391536 |
 | Branch | `feature/agent-requirements` |
-| Backend area | `backend/app/modules/requirements/` (ClientInput foundation implemented) |
+| Backend area | `backend/app/modules/requirements/` (ClientInput and SKB-2 artifact persistence foundations implemented) |
 | Frontend area | Planned `frontend/src/pages/requirements/` and requirement service/components using shared UI |
 | Primary inputs | Project/client idea; text, document/link/audio/video metadata; interview responses; clarification and human feedback |
 | Responsibilities | Structure SRS/FR/NFR, requirements, stories, acceptance criteria; detect ambiguity/missing/conflicting/duplicate information; preserve source references; prepare H1 package |
@@ -32,7 +32,7 @@ This map translates the approved architecture into implementation ownership and 
 | IDs produced | `REQ-###`, `US-###`, `AC-###`, relevant `TRACE-###` |
 | Dependencies | Project foundation, shared schemas/IDs, Shared Knowledge Base, Orchestrator, H1 UI/API, common response/error utilities |
 | Must not do | Generate design/code/final validation; advance global workflow; rename common fields; own another agent's module |
-| Current status | ClientInput request/response validation, authenticated owner-scoped persistence access, and POST/GET APIs are implemented. SKB-1 formalizes the six Agent 1 artifact schemas, discriminator/ID mapping, complete H1 snapshot semantics, and initial traceability vocabulary. Artifact repositories, persistence, processing, readiness-event emission, and UI remain planned |
+| Current status | ClientInput request/response validation, authenticated owner-scoped persistence access, and POST/GET APIs are implemented. SKB-1 formalizes the six Agent 1 artifact schemas and initial traceability vocabulary. SKB-2 implements typed project-scoped `requirements` repository access, shared-family public-ID allocation, immutable version history, and internal complete-H1-snapshot persistence. Processing, traceability persistence, publication/status transition, readiness-event emission, approved retrieval, public artifact APIs, cross-agent SKB facade, and UI remain planned |
 
 Agent 1 publishes future H1 output in this order: generate and validate the complete snapshot; persist every artifact document for the package version; persist immutable pairwise traceability links; mark package artifacts `WAITING_FOR_APPROVAL`; append one final `ARTIFACT_GENERATED` readiness event; then return control to the Orchestrator. The readiness event must never precede artifact persistence. This sequence does not let Agent 1 mutate the global workflow stage.
 
