@@ -528,20 +528,21 @@ def test_missing_provider_configuration_is_a_safe_persisted_failure(
     assert runs.documents[result["run_id"]]["status"].value == "FAILED"
 
 
-def test_quality_issue_adds_only_required_supplemental_clarification():
+def test_quality_findings_do_not_add_unselected_clarification_artifact():
     quality = deepcopy(ALL_OUTPUTS["QUALITY_FINDINGS"])
     quality[0]["affected_refs"] = ["TEXT-001"]
-    outputs = Agent1Engine(
+    execution = Agent1Engine(
         FixedProvider({"QUALITY_FINDINGS": quality})
-    ).execute(CLINIC_CONTEXT, [RequirementOutputCode.QUALITY_FINDINGS])
+    ).execute_with_metadata(
+        CLINIC_CONTEXT, [RequirementOutputCode.QUALITY_FINDINGS]
+    )
 
-    assert set(outputs) == {"QUALITY_FINDINGS", "CLARIFICATION_QUESTIONS"}
-    assert outputs["CLARIFICATION_QUESTIONS"][0]["related_refs"] == [
-        "TEXT-001"
-    ]
+    assert set(execution.outputs) == {"QUALITY_FINDINGS"}
+    assert "CLARIFICATION_QUESTIONS" not in execution.outputs
+    assert execution.clarification_recommended is True
 
 
-def test_exact_duplicate_adds_clarification_without_unselected_quality_output():
+def test_exact_duplicate_recommends_but_does_not_add_unselected_clarification():
     duplicate_context = Agent1InputContext(
         project_name=CLINIC_CONTEXT.project_name,
         domain=CLINIC_CONTEXT.domain,
@@ -553,18 +554,103 @@ def test_exact_duplicate_adds_clarification_without_unselected_quality_output():
             }
         ],
     )
-    outputs = Agent1Engine(
+    execution = Agent1Engine(
         FixedProvider({"FUNCTIONAL_REQUIREMENTS": VALID_FUNCTIONAL})
-    ).execute(
+    ).execute_with_metadata(
         duplicate_context,
         [RequirementOutputCode.FUNCTIONAL_REQUIREMENTS],
     )
 
-    assert set(outputs) == {
-        "FUNCTIONAL_REQUIREMENTS",
-        "CLARIFICATION_QUESTIONS",
+    assert set(execution.outputs) == {"FUNCTIONAL_REQUIREMENTS"}
+    assert "CLARIFICATION_QUESTIONS" not in execution.outputs
+    assert "QUALITY_FINDINGS" not in execution.outputs
+    assert execution.clarification_recommended is True
+
+
+def test_selected_clarification_questions_are_returned_and_validated():
+    outputs = Agent1Engine(
+        FixedProvider({
+            "CLARIFICATION_QUESTIONS": [
+                {
+                    **ALL_OUTPUTS["CLARIFICATION_QUESTIONS"][0],
+                    "related_refs": ["TEXT-001"],
+                }
+            ]
+        })
+    ).execute(
+        CLINIC_CONTEXT,
+        [RequirementOutputCode.CLARIFICATION_QUESTIONS],
+    )
+
+    assert set(outputs) == {"CLARIFICATION_QUESTIONS"}
+    assert outputs["CLARIFICATION_QUESTIONS"][0]["id"] == "CQ-001"
+
+
+def test_provider_extra_unselected_clarification_is_filtered():
+    response = {
+        "FUNCTIONAL_REQUIREMENTS": VALID_FUNCTIONAL,
+        "CLARIFICATION_QUESTIONS": [
+            {
+                **ALL_OUTPUTS["CLARIFICATION_QUESTIONS"][0],
+                "related_refs": ["TEXT-001"],
+            }
+        ],
     }
-    assert "QUALITY_FINDINGS" not in outputs
+    execution = Agent1Engine(FixedProvider(response)).execute_with_metadata(
+        CLINIC_CONTEXT,
+        [RequirementOutputCode.FUNCTIONAL_REQUIREMENTS],
+    )
+
+    assert set(execution.outputs) == {"FUNCTIONAL_REQUIREMENTS"}
+    assert execution.clarification_recommended is True
+
+
+def test_engine_does_not_mutate_selected_outputs():
+    selected = [RequirementOutputCode.FUNCTIONAL_REQUIREMENTS]
+    original = list(selected)
+
+    Agent1Engine(
+        FixedProvider({"FUNCTIONAL_REQUIREMENTS": VALID_FUNCTIONAL})
+    ).execute(CLINIC_CONTEXT, selected)
+
+    assert selected == original
+
+
+def test_advisable_unselected_clarification_completes_with_warning(
+    agent1_context,
+):
+    authentication, _, runs, provider = agent1_context
+    client = authentication.client()
+    project = create_project(client)
+    provider.response = {
+        "FUNCTIONAL_REQUIREMENTS": VALID_FUNCTIONAL,
+        "CLARIFICATION_QUESTIONS": [
+            {
+                **ALL_OUTPUTS["CLARIFICATION_QUESTIONS"][0],
+                "related_refs": ["TEXT-001"],
+            }
+        ],
+    }
+
+    result = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
+        json=run_payload(),
+    ).json()["data"]
+
+    assert result["status"] == "COMPLETED"
+    assert result["selected_outputs"] == ["FUNCTIONAL_REQUIREMENTS"]
+    assert set(result["outputs"]) == {"FUNCTIONAL_REQUIREMENTS"}
+    assert result["warnings"] == [
+        {
+            "code": "CLARIFICATION_REQUIRED",
+            "message": (
+                "Requirement quality issues suggest clarification; rerun with "
+                "CLARIFICATION_QUESTIONS selected for structured questions"
+            ),
+            "details": {"recommended_output": "CLARIFICATION_QUESTIONS"},
+        }
+    ]
+    assert runs.documents[result["run_id"]]["status"].value == "COMPLETED"
 
 
 class StubResponse:
