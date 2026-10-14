@@ -39,4 +39,19 @@ describe('RequirementsResults', () => {
     expect(screen.queryByText('User Stories')).not.toBeInTheDocument()
     expect(screen.queryByText('Software Requirements Specification')).not.toBeInTheDocument()
   })
+
+  it('renders clarification advice as a warning without a clarification artifact', () => {
+    render(
+      <RequirementsResults
+        outputs={{ FUNCTIONAL_REQUIREMENTS: outputs.FUNCTIONAL_REQUIREMENTS }}
+        warnings={[
+          'Requirement quality issues suggest clarification; rerun with CLARIFICATION_QUESTIONS selected for structured questions',
+        ]}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Warnings' })).toBeInTheDocument()
+    expect(screen.getByText(/rerun with CLARIFICATION_QUESTIONS selected/i)).toBeInTheDocument()
+    expect(screen.queryByText('Clarification Questions')).not.toBeInTheDocument()
+  })
 })

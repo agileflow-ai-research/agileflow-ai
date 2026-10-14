@@ -1,6 +1,7 @@
 import json
 import re
 from collections import Counter
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, TypeAdapter, ValidationError, create_model
@@ -26,6 +27,12 @@ from app.modules.agents.requirements.schemas import (
 
 class StructuredOutputInvalidError(ValueError):
     """Model output did not conform to the selected Agent 1 contract."""
+
+
+@dataclass(frozen=True)
+class Agent1Execution:
+    outputs: dict[str, Any]
+    clarification_recommended: bool
 
 
 OUTPUT_MODELS: dict[RequirementOutputCode, type[BaseModel] | Any] = {
@@ -112,7 +119,15 @@ class Agent1Engine:
         context: Agent1InputContext,
         selected_outputs: list[RequirementOutputCode],
     ) -> dict[str, Any]:
+        return self.execute_with_metadata(context, selected_outputs).outputs
+
+    def execute_with_metadata(
+        self,
+        context: Agent1InputContext,
+        selected_outputs: list[RequirementOutputCode],
+    ) -> Agent1Execution:
         requested = list(selected_outputs)
+        requested_keys = {code.value for code in requested}
         duplicates = find_exact_duplicates(context)
 
         try:
@@ -125,10 +140,17 @@ class Agent1Engine:
             raise StructuredOutputInvalidError(
                 "Model response was not valid structured JSON"
             ) from exc
-        if set(raw) != {code.value for code in requested}:
+        if not requested_keys.issubset(raw):
             raise StructuredOutputInvalidError(
-                "Model output keys did not match requested outputs"
+                "Model output did not contain every requested output"
             )
+        clarification_key = RequirementOutputCode.CLARIFICATION_QUESTIONS.value
+        unselected_clarifications = (
+            raw.get(clarification_key, [])
+            if clarification_key not in requested_keys
+            else []
+        )
+        raw = {key: value for key, value in raw.items() if key in requested_keys}
 
         validated: dict[str, Any] = {}
         try:
@@ -160,7 +182,21 @@ class Agent1Engine:
         self._validate_unique_artifacts(validated)
         self._merge_deterministic_findings(validated, duplicates)
         self._merge_required_clarifications(validated, duplicates)
-        return validated
+        if not set(validated).issubset(requested_keys):
+            raise StructuredOutputInvalidError(
+                "Final output contained an unselected artifact"
+            )
+        clarification_recommended = bool(
+            unselected_clarifications
+            or duplicates
+            or any(
+                finding.get("suggested_clarification")
+                for finding in validated.get(
+                    RequirementOutputCode.QUALITY_FINDINGS.value, []
+                )
+            )
+        )
+        return Agent1Execution(validated, clarification_recommended)
 
     @staticmethod
     def _build_user_prompt(
@@ -333,9 +369,8 @@ class Agent1Engine:
         questions = outputs.get(
             RequirementOutputCode.CLARIFICATION_QUESTIONS.value
         )
-        supplemental = questions is None
-        if supplemental:
-            questions = []
+        if questions is None:
+            return
 
         candidates: list[tuple[str, str, list[str], str]] = []
         for index, statement in enumerate(duplicates, start=1):
@@ -382,5 +417,3 @@ class Agent1Engine:
                 )
                 existing_ids.add(identifier)
                 existing.add(_canonical_statement(question))
-        if supplemental and questions:
-            outputs[RequirementOutputCode.CLARIFICATION_QUESTIONS.value] = questions
