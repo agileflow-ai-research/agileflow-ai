@@ -19,6 +19,8 @@ EXPECTED_COLLECTIONS = {
     "APPROVALS": "approvals",
     "TRACEABILITY_LINKS": "traceability_links",
     "WORKFLOW_EVENTS": "workflow_events",
+    "AGENT_PROJECTS": "agent_projects",
+    "AGENT_RUNS": "agent_runs",
 }
 
 

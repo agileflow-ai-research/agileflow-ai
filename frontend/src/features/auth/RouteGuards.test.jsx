@@ -24,6 +24,10 @@ function TestRoutes({ initialPath }) {
             <Route path="/projects" element={<h1>Projects page</h1>} />
             <Route path="/projects/new" element={<h1>Create project page</h1>} />
             <Route path="/projects/:projectId" element={<h1>Project overview page</h1>} />
+            <Route path="/agents" element={<h1>AI Agents page</h1>} />
+            <Route path="/agents/:agentSlug" element={<h1>Agent projects page</h1>} />
+            <Route path="/agents/:agentSlug/new" element={<h1>Create agent project page</h1>} />
+            <Route path="/agent-projects/:agentProjectId" element={<h1>Agent project overview page</h1>} />
           </Route>
         </Route>
       </Routes>
@@ -41,7 +45,15 @@ describe('authentication route guards', () => {
     }
   })
 
-  it.each(['/projects', '/projects/new', '/projects/PRJ-001'])(
+  it.each([
+    '/projects',
+    '/projects/new',
+    '/projects/PRJ-001',
+    '/agents',
+    '/agents/requirements',
+    '/agents/requirements/new',
+    '/agent-projects/AGP-001',
+  ])(
     'redirects unauthenticated access to %s into login',
     (path) => {
       render(<TestRoutes initialPath={path} />)

@@ -26,6 +26,8 @@ function renderLayout(path = '/projects') {
         <Route element={<AppLayout />}>
           <Route path="/projects" element={<h1>Protected projects</h1>} />
           <Route path="/projects/new" element={<h1>Create project</h1>} />
+          <Route path="/agents" element={<h1>AI agents</h1>} />
+          <Route path="/agent-projects/:agentProjectId" element={<h1>Agent project</h1>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -44,9 +46,17 @@ describe('AppLayout', () => {
     const projectsLink = screen.getByRole('link', { name: 'Projects' })
     expect(projectsLink).toHaveAttribute('href', '/projects')
     expect(projectsLink).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'AI Agents' })).toHaveAttribute('href', '/agents')
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
     expect(screen.getByText('ada@example.com')).toBeInTheDocument()
     expect(screen.queryByText(/reviewer|administrator|role/i)).not.toBeInTheDocument()
+  })
+
+  it('marks AI Agents active for standalone project workspaces without changing Projects', () => {
+    renderLayout('/agent-projects/AGP-001')
+
+    expect(screen.getByRole('link', { name: 'AI Agents' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('link', { name: 'Projects' })).not.toHaveAttribute('aria-current')
   })
 
   it('uses AuthContext logout from the visible logout control', async () => {
