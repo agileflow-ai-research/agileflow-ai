@@ -5,7 +5,7 @@ Primary authorities: **File 09 — Frontend Implementation and Centralized Theme
 
 ## Current Status
 
-The F1.2 frontend foundation through F1.10 are implemented with React, Vite, Tailwind CSS, React Router, centralized CSS design tokens, reusable public/application layouts, a native-fetch `apiClient`, session-token storage, `/auth/me` bootstrap, protected routes, accessible shared components, authenticated Project listing/creation, initial TEXT ClientInput persistence, and a dynamic read-only Project Overview. Project creation and the first ClientInput are separate backend writes; if the second write fails, recovery retries only ClientInput persistence for the existing Project. Because `POST /projects` has no idempotency-key contract, the frontend cannot resolve a network failure where persistence occurred but the response was lost. Project Overview uses authenticated Project detail, workflow snapshot, and workflow-event reads. It does not hardcode the H1 example shown in the Figma reference. Specialist artifacts, approval actions/history, and explicit workflow advancement remain later phases.
+The F1.2 frontend foundation through F1.10 and the S2 shared standalone-agent frontend foundation are implemented with React, Vite, Tailwind CSS, React Router, centralized CSS design tokens, reusable public/application layouts, a native-fetch `apiClient`, session-token storage, `/auth/me` bootstrap, and protected routes. Integrated Project listing/creation and read-only Project Overview remain intact. S2 adds an Agent Hub, type-filtered standalone project lists, common creation and overview, archive/reactivate, real run history/detail, and reusable specialist extension shells. Standalone specialist inputs/execution, generated outputs, upload, and export remain later phases.
 
 Frontend component tests use Vitest, Testing Library, `jest-dom`, `user-event`, and jsdom. Run them with `npm test -- --run` from `frontend/`.
 
@@ -181,6 +181,10 @@ UI labels use official component names rather than only “Agent 1” through �
 | Projects | `/projects` | Foundation |
 | Create Project | `/projects/new` | Project creation and initial TEXT ClientInput implemented through F1.9 |
 | Project Overview | `/projects/:projectId` | Dynamic Project, workflow snapshot, and workflow-event reads implemented through F1.10 |
+| Agent Hub | `/agents` | S2 shared standalone foundation |
+| Agent Project List | `/agents/:agentSlug` | S2; accepts only the four frozen agent slugs and filters the S1 API by `agent_type` |
+| Create Agent Project | `/agents/:agentSlug/new` | S2; derives `agent_type` from the frozen route mapping |
+| Agent Project Overview | `/agent-projects/:agentProjectId` | S2 project/status workspace, run history, and persisted run detail |
 | Project Workflow | `/projects/:projectId/workflow` | Foundation/Orchestrator |
 | Requirement Gathering and Analysis | `/projects/:projectId/requirements` | Requirement component |
 | Project Management and Design | `/projects/:projectId/design` | Design component |

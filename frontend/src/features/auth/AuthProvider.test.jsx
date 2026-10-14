@@ -73,7 +73,9 @@ describe('AuthProvider', () => {
     getAccessToken.mockReturnValue(null)
     renderProvider()
 
-    expect(await screen.findByTestId('status')).toHaveTextContent('unauthenticated')
+    await waitFor(() => {
+      expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated')
+    })
     expect(getCurrentUser).not.toHaveBeenCalled()
     expect(screen.getByTestId('user')).toHaveTextContent('no-user')
   })

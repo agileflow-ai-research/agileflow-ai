@@ -6,7 +6,7 @@ Contract version: **v1.0 — frozen for Progress Presentation 1**
 
 ## 1. Scope
 
-This document freezes the common standalone user journey, reusable frontend surface, and API paths. S1 implements the six common backend project/run operations below. The pages/components and four specialist execution endpoints remain unimplemented.
+This document freezes the common standalone user journey, reusable frontend surface, and API paths. S1 implements the six common backend project/run operations below. S2 implements the shared pages and presentation components described below; the four specialist execution endpoints and specialist content remain unimplemented.
 
 Agent-specific forms and result content plug into the shared shell. Members must not recreate the shell independently.
 
@@ -59,9 +59,22 @@ Agent 4's card remains one specialist agent. Its project/run flow must present `
 | `ResultsWorkspace` | Provides the common result shell and delegates output rendering to agent-specific content. |
 | `RunHistory` | Lists immutable runs and allows opening a historical snapshot/result. |
 | `ArtifactViewer` | Renders structured text, diagrams, reports, code, or referenced artifacts as appropriate. |
-| `DownloadExportControls` | Supports future copy/download/export operations according to output capability. |
+| `DownloadExportControls` | Future scope; S2 exposes no visible export control or export behavior. |
 
 All common screens must account for loading, empty, error, access-denied/not-found, and archived states as relevant. Accessibility and responsive behavior follow the project frontend guide when implemented.
+
+### S2 implementation status
+
+The authenticated shared shell is implemented at:
+
+- `/agents` â€” Agent Hub;
+- `/agents/requirements`, `/agents/design-planning`, `/agents/implementation`, and `/agents/testing-validation` â€” type-filtered project lists;
+- `/agents/{agentSlug}/new` â€” common project creation with `agent_type` derived from the route; and
+- `/agent-projects/{agentProjectId}` â€” project overview, archive/reactivate action, run history, and on-demand run detail.
+
+S2 also implements `AgentWorkspaceShell`, `AgentInputWizard`, `OutputSelector`, `RunReview`, `ProcessingState`, `ResultsWorkspace`, `RunHistory`, `RunDetail`, and a lightweight `ArtifactViewer`. The workspace slot is intentionally non-operational until the specialist phases. Agent 4 mode labels for `DEFAULT`, `TEST_GENERATION`, and `VALIDATION` are centralized for future specialist use; S2 does not add Agent 4 inputs or execution.
+
+There is no specialist execution, file upload, generated output, simulated processing, or export/download behavior in S2. Project and run data shown on routed pages comes only from the implemented S1 APIs. The result and artifact components provide presentation/action slots only and do not claim that manifest metadata contains specialist result bodies.
 
 ## 5. Input and Output UI Rules
 

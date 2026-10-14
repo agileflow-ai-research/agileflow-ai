@@ -4,7 +4,11 @@ import AuthProvider from '../features/auth/AuthProvider.jsx'
 import ProtectedRoute from '../features/auth/ProtectedRoute.jsx'
 import PublicOnlyRoute from '../features/auth/PublicOnlyRoute.jsx'
 import AppLayout from '../layouts/AppLayout.jsx'
+import AgentHubPage from '../pages/AgentHubPage.jsx'
+import AgentProjectListPage from '../pages/AgentProjectListPage.jsx'
+import AgentProjectOverviewPage from '../pages/AgentProjectOverviewPage.jsx'
 import CreateProjectPage from '../pages/CreateProjectPage.jsx'
+import CreateAgentProjectPage from '../pages/CreateAgentProjectPage.jsx'
 import LoginPage from '../pages/LoginPage.jsx'
 import ProjectOverviewPage from '../pages/ProjectOverviewPage.jsx'
 import ProjectsPage from '../pages/ProjectsPage.jsx'
@@ -25,6 +29,10 @@ function AppRouter() {
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/projects/new" element={<CreateProjectPage />} />
               <Route path="/projects/:projectId" element={<ProjectOverviewPage />} />
+              <Route path="/agents" element={<AgentHubPage />} />
+              <Route path="/agents/:agentSlug/new" element={<CreateAgentProjectPage />} />
+              <Route path="/agents/:agentSlug" element={<AgentProjectListPage />} />
+              <Route path="/agent-projects/:agentProjectId" element={<AgentProjectOverviewPage />} />
             </Route>
           </Route>
 

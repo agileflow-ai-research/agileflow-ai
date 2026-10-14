@@ -16,6 +16,12 @@ These documents are contracts, not implementation. The planned schemas, collecti
 
 S1 implements the shared backend project/run foundation described by these contracts: the `agent_projects` and `agent_runs` collections, `AGP-###` and `RUN-###` allocation, strict common schemas, authenticated owner-scoped project APIs and run reads, internal run creation, and guarded run lifecycle transitions. It does not implement specialist execution endpoints, agent intelligence, providers, queues, or standalone/integrated transfer.
 
+## S2 Frontend Foundation Status
+
+S2 implements the authenticated shared standalone frontend shell alongside the existing integrated Project Mode UI. It includes the Agent Hub, all four type-filtered project-list routes, common project creation, project overview, archive/reactivate presentation, real run history/detail reads, centralized agent/status/mode labels, and reusable wizard, output-selection, review, processing, result, workspace, and artifact-viewer shells.
+
+The S2 workspace is deliberately a truthful extension point. It has no Agent 1â€“4 specialist inputs, execution endpoint, LLM/provider integration, generated result, fake project/run data, file upload, or export implementation. Agent 4's two specialist mode labels are prepared only at the presentation layer. Existing `/projects` routes and Integrated Multi-Agent Project Mode behavior remain unchanged.
+
 ## Contract Index
 
 1. [Standalone Agent Architecture](STANDALONE_AGENT_ARCHITECTURE.md) — mode boundaries, common execution layers, engine reuse, provider abstraction, research boundary, ownership split, and milestone target.

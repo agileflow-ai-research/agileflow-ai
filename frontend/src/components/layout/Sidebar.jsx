@@ -19,6 +19,10 @@ function SidebarContent({ onNavigate, user, onLogout, showBrand = true }) {
   const location = useLocation()
   const projectsActive =
     location.pathname === '/projects' || location.pathname.startsWith('/projects/')
+  const agentsActive =
+    location.pathname === '/agents' ||
+    location.pathname.startsWith('/agents/') ||
+    location.pathname.startsWith('/agent-projects/')
 
   return (
     <>
@@ -40,6 +44,19 @@ function SidebarContent({ onNavigate, user, onLogout, showBrand = true }) {
           )}
         >
           Projects
+        </Link>
+        <Link
+          to="/agents"
+          onClick={onNavigate}
+          aria-current={agentsActive ? 'page' : undefined}
+          className={cn(
+            'mt-1 flex min-h-11 items-center rounded-button px-4 py-2.5 text-sm font-semibold transition-colors',
+            agentsActive
+              ? 'bg-brand-soft text-content-primary'
+              : 'text-content-secondary hover:bg-elevated hover:text-content-primary',
+          )}
+        >
+          AI Agents
         </Link>
       </nav>
 
