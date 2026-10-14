@@ -6,7 +6,7 @@ Contract version: **v1.0 — frozen for Progress Presentation 1**
 
 ## 1. Scope
 
-This document freezes the planned common standalone user journey, reusable frontend surface, and API paths. It does not implement pages, components, routes, schemas, or services.
+This document freezes the common standalone user journey, reusable frontend surface, and API paths. S1 implements the six common backend project/run operations below. The pages/components and four specialist execution endpoints remain unimplemented.
 
 Agent-specific forms and result content plug into the shared shell. Members must not recreate the shell independently.
 
@@ -72,9 +72,9 @@ All common screens must account for loading, empty, error, access-denied/not-fou
 - Mandatory technical evidence may appear in results even when it was not selectable. Agent 3's `BUILD_RESULT`, `EXECUTION_RESULT`, and `EXECUTION_LOGS` are the canonical example.
 - Historical run views use that run's `input_snapshot` and selections, not the project's latest editable configuration.
 
-## 6. Planned Common Project and Run APIs
+## 6. Common Project and Run APIs
 
-These `/api/v1` routes are planned contracts only:
+These `/api/v1` routes are implemented by S1:
 
 | Method and path | Planned purpose |
 |---|---|
@@ -85,7 +85,7 @@ These `/api/v1` routes are planned contracts only:
 | `GET /api/v1/agent-projects/{agent_project_id}/runs` | Retrieve that owned project's run history. |
 | `GET /api/v1/agent-projects/{agent_project_id}/runs/{run_id}` | Retrieve one matching historical run/result. |
 
-No DELETE/archive endpoint, restore endpoint, upload endpoint, export endpoint, cancellation endpoint, or streaming endpoint is frozen in S0.
+No DELETE, dedicated archive/restore, upload, export, cancellation, or streaming endpoint is implemented. Archive/reactivate uses project PATCH with `status`; run creation and lifecycle changes remain internal service operations.
 
 ## 7. Planned Agent Execution APIs
 
@@ -96,7 +96,9 @@ No DELETE/archive endpoint, restore endpoint, upload endpoint, export endpoint, 
 | Agent 3 — Implementation and Git Automation Agent | `POST /api/v1/agents/implementation/{agent_project_id}/run` | `DEFAULT` |
 | Agent 4 — Testing, Validation and Security Agent | `POST /api/v1/agents/testing-validation/{agent_project_id}/run` | `TEST_GENERATION` or `VALIDATION` |
 
-The request conceptually supplies the agent/mode-specific inputs and `selected_outputs`. The server validates them, records an input snapshot, creates a `RUN-###`, and returns or makes available the common `AgentRunResult` envelope. Exact request bodies, synchronous/asynchronous transport, polling, and HTTP status/error envelope mappings remain S1/S2 decisions.
+The future request conceptually supplies the agent/mode-specific inputs and `selected_outputs`. The server will validate them, record an input snapshot, create a `RUN-###`, and return or make available the common `AgentRunResult` envelope. S1 exposes none of these four specialist execution endpoints.
+
+Common project and run lists are unpaginated in S1 and ordered newest-first. Project listing optionally filters by `agent_type` and `status`. Pagination and specialist execution transport remain later scalability/implementation decisions.
 
 ## 8. Authentication, Ownership, and Type Matching
 
@@ -131,4 +133,4 @@ S0 does not freeze which output supports which format, server-side export routes
 
 ## 11. Standalone Boundary
 
-The planned API family manages standalone `AGP-###` and `RUN-###` resources. It must not invoke H1–H5, create integrated Approval records, advance global Project stages, or automatically persist output into the integrated Shared Knowledge Base. A future explicit import/export workflow is outside this v1.0 contract.
+The common API family manages standalone `AGP-###` and `RUN-###` resources. It must not invoke H1–H5, create integrated Approval records, advance global Project stages, or automatically persist output into the integrated Shared Knowledge Base. A future explicit import/export workflow is outside this v1.0 contract.

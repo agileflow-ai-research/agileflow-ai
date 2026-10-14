@@ -18,7 +18,7 @@ backend/
 │   │   └── errors.py           # placeholder
 │   ├── database/
 │   │   ├── mongodb.py          # shared client/database/ping/close helpers
-│   │   └── collections.py      # 15 canonical collection constants
+│   │   └── collections.py      # 17 canonical collection constants
 │   ├── common/
 │   │   ├── response.py         # shared response models
 │   │   ├── status.py           # shared enums
@@ -30,18 +30,19 @@ backend/
 │   │   ├── approvals/          # H1-H5 Approval persistence and effective lookup
 │   │   ├── orchestrator/       # deterministic transitions, readiness, and events
 │   │   ├── requirements/       # ClientInput, Agent 1 artifacts, H1 snapshots/publication
+│   │   ├── standalone/         # owner-scoped AgentProject/AgentRun foundation
 │   │   ├── shared_knowledge/   # read-only approved/structured retrieval facade
 │   │   ├── design/             # package placeholder
 │   │   ├── testing/            # package placeholder
 │   │   ├── implementation/     # package placeholder
 │   │   └── reports/            # immutable Agent 1 traceability persistence/query
 │   └── schemas/                # shared domain schemas
-├── tests/                       # 408-test backend suite
+├── tests/                       # 456-test backend suite
 ├── .env.example
 └── requirements.txt
 ```
 
-Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 15 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable authentication/Project ownership authorization, Project CRUD and ClientInput access, Agent 1 typed/versioned snapshot persistence, internal Agent 1 traceability persistence, internal H1 publication and readiness emission, the centralized Orchestrator policy, workflow snapshot/event-history endpoints, all 11 canonical forward transitions, O2 H1-H5 Approval persistence, O3 effective-APPROVE transitions, O3.5 specialist-handoff validation and gate-entry `STAGE_CHANGED` evidence, WorkflowEvent persistence, and backend tests.
+Implemented: FastAPI application, CORS setting, `GET /health`, automatic `/docs`, environment loading, one PyMongo client, database access/ping/close helpers, 17 collection constants, shared enums/schemas/response and ID helpers, User persistence and registration with Argon2 hashing, JWT login and validation, `/auth/me`, reusable authentication/ownership authorization, integrated Project CRUD and ClientInput access, the isolated standalone AgentProject/AgentRun foundation, Agent 1 typed/versioned snapshot persistence, internal Agent 1 traceability persistence, internal H1 publication and readiness emission, the centralized Orchestrator policy, workflow snapshot/event-history endpoints, all 11 canonical forward transitions, O2 H1-H5 Approval persistence, O3 effective-APPROVE transitions, O3.5 specialist-handoff validation and gate-entry `STAGE_CHANGED` evidence, WorkflowEvent persistence, and backend tests.
 
 Not implemented: Project sharing/collaboration, specialist-agent processing/intelligence, Agent 2-4 readiness emission and artifact adapters, O4 REJECT/REQUEST_CHANGES routing, O6 full HOLD/release behavior, failure routing, retry loops, traceability traversal/matrix generation, reports, LLM/RAG, or external Jira, GitHub, Docker, and security-scanner integrations. The implemented modules preserve `router` → `service` → `repository` → database layering.
 

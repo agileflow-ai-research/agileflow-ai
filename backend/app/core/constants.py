@@ -15,6 +15,8 @@ ID_PREFIXES = (
     "TRACE",
     "EVT",
     "APP",
+    "AGP",
+    "RUN",
 )
 
 APPROVED_ID_PREFIXES = frozenset(ID_PREFIXES)

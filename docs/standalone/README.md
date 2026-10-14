@@ -12,6 +12,10 @@ Standalone Agent Mode supplements, and does not replace or redesign, Integrated 
 
 These documents are contracts, not implementation. The planned schemas, collections, APIs, screens, providers, and exports described here are not created by S0.
 
+## S1 Backend Foundation Status
+
+S1 implements the shared backend project/run foundation described by these contracts: the `agent_projects` and `agent_runs` collections, `AGP-###` and `RUN-###` allocation, strict common schemas, authenticated owner-scoped project APIs and run reads, internal run creation, and guarded run lifecycle transitions. It does not implement specialist execution endpoints, agent intelligence, providers, queues, or standalone/integrated transfer.
+
 ## Contract Index
 
 1. [Standalone Agent Architecture](STANDALONE_AGENT_ARCHITECTURE.md) — mode boundaries, common execution layers, engine reuse, provider abstraction, research boundary, ownership split, and milestone target.

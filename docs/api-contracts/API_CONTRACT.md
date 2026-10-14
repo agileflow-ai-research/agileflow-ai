@@ -58,7 +58,7 @@ Schema names and supported fields are defined in [DATA_SCHEMAS.md](../schemas/DA
 
 ## Current Implementation Status
 
-The implemented HTTP surface currently consists of `GET /health`, the three Authentication routes, the four Project routes, the two ClientInput routes, the three Orchestrator routes, and the five H1-H5 Approval POST routes listed below. FastAPI also supplies `/docs` automatically. Registration, login, JWT issuance/validation, `/auth/me`, and authenticated Project ownership for every currently implemented Project-scoped route are implemented; every other unimplemented route remains **Planned / later sprint**.
+The implemented HTTP surface currently consists of `GET /health`, the three Authentication routes, the four integrated Project routes, the six standalone AgentProject/AgentRun routes, the two ClientInput routes, the three Orchestrator routes, and the five H1-H5 Approval POST routes listed below. FastAPI also supplies `/docs` automatically. Registration, login, JWT issuance/validation, `/auth/me`, and authenticated ownership for every currently implemented integrated or standalone route are implemented; every other unimplemented route remains **Planned / later sprint**.
 
 ## Authentication Routes
 
@@ -88,6 +88,21 @@ No logout route, refresh token, token-revocation store, session database, OAuth/
 | PATCH | `/api/v1/projects/{project_id}` | Update basic project metadata | Core/Foundation | Project update body: not formally defined | Project | No direct gate transition | Implemented |
 
 All four Project routes require Bearer authentication. Project creation accepts required `name` and `domain` plus optional `description`; an omitted description is persisted as an empty string. The server sets both `created_by` and `owner_user_id` from the authenticated user's `user_id`. Clients cannot supply or patch either identity field or any other server-controlled Project field. Project creation does not create a ClientInput or advance workflow. Project listing returns only projects owned by the authenticated user. Project detail and update require ownership. Missing, ownerless legacy, and non-owned Projects use the same HTTP 404 response.
+
+### Standalone Agent Project and Run Foundation
+
+These routes manage isolated `AGP-###` workspaces and read `RUN-###` history. They do not create integrated Projects or artifacts and do not call the Orchestrator, Approval service, or Shared Knowledge Base artifact services.
+
+| Method | Canonical route | Purpose | Input | Output | Status |
+|---|---|---|---|---|---|
+| POST | `/api/v1/agent-projects` | Create an owned standalone workspace | `agent_type`, `name`, `domain`, optional `description` | AgentProject | Implemented |
+| GET | `/api/v1/agent-projects` | List the current user's workspaces newest-first | Optional `agent_type`, `status`; no pagination in S1 | AgentProject list | Implemented |
+| GET | `/api/v1/agent-projects/{agent_project_id}` | Get one owned standalone workspace | `AGP-###` path parameter | AgentProject | Implemented |
+| PATCH | `/api/v1/agent-projects/{agent_project_id}` | Update metadata or archive/reactivate | Any subset of `name`, `description`, `domain`, `status` | AgentProject | Implemented |
+| GET | `/api/v1/agent-projects/{agent_project_id}/runs` | List the owned workspace's runs newest-first | `AGP-###` path parameter; no pagination in S1 | AgentRun list | Implemented |
+| GET | `/api/v1/agent-projects/{agent_project_id}/runs/{run_id}` | Get the exact owned project/run pair | `AGP-###` and `RUN-###` path parameters | AgentRun | Implemented |
+
+All six operations require Bearer authentication and use safe owner-scoped not-found behavior. There is no DELETE project route, public POST/PATCH/DELETE run route, or specialist `/api/v1/agents/.../run` route in S1. Run creation and the `QUEUED → RUNNING → COMPLETED|FAILED` lifecycle are internal service operations for future specialist execution services. `QUEUED` does not imply that a background queue exists.
 
 ## Workflow and Orchestrator Routes
 

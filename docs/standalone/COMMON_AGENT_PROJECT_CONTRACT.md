@@ -6,7 +6,7 @@ Contract version: **v1.0 — frozen for Progress Presentation 1**
 
 ## 1. Scope
 
-This document freezes the conceptual standalone workspace and execution records shared by all four specialist agents. It plans two collections—`agent_projects` and `agent_runs`—but does not implement collections, schemas, indexes, or persistence.
+This document freezes the standalone workspace and execution records shared by all four specialist agents. S1 implements its two collections—`agent_projects` and `agent_runs`—and the common schemas, repositories, services, and read/project APIs without adding indexes or another persistence collection.
 
 No separate project or run collection is allowed per agent.
 
@@ -51,7 +51,7 @@ Agents 1–3 use `DEFAULT`. Agent 4 uses `TEST_GENERATION` or `VALIDATION`; Agen
 
 ## 3. `AgentProject` Conceptual Schema
 
-The planned `agent_projects` record has exactly these common fields:
+The implemented `agent_projects` record has exactly these common fields:
 
 | Field | Contract semantics |
 |---|---|
@@ -69,7 +69,7 @@ Agent-specific current input/configuration persistence is an S1/S2 design decisi
 
 ## 4. `AgentRun` Conceptual Schema
 
-The planned `agent_runs` record has exactly these common fields:
+The implemented `agent_runs` record has exactly these common fields:
 
 | Field | Contract semantics |
 |---|---|
@@ -221,4 +221,20 @@ The envelope supports a reusable frontend processing state, run history, result 
 
 ## 15. Intentionally Open Implementation Decisions
 
-S1/S2 must decide concrete schema types/constraints, indexes, pagination, sorting, archival rules, execution idempotency, queue behavior, current-input persistence, nested manifest/error shapes, artifact/file storage, retention, export generation, provider configuration, and operational observability. Those decisions must preserve this contract's names, enums, isolation, ownership, immutability, and reusable-engine rules.
+Later work must decide execution idempotency, current-input persistence beyond immutable run snapshots, artifact/file storage, retention, export generation, provider configuration, and operational observability. Those decisions must preserve this contract's names, enums, isolation, ownership, immutability, and reusable-engine rules.
+
+## 16. S1 Concrete Implementation Decisions
+
+- IDs and ownership fields are validated strings; enums use the exact string values frozen above.
+- `name` and `domain` are required nonblank strings; `description` is a string defaulting to `""`.
+- Timestamps are UTC-aware `datetime` values with lifecycle/order validation.
+- `selected_outputs` is a non-empty `list[str]`; each item must be nonblank.
+- `input_snapshot` and `output_manifest` are JSON-serializable dictionaries. `output_manifest` defaults to `{}`.
+- `warnings` and `errors` are lists of `AgentRunMessage`, whose fields are nonblank `code`, nonblank `message`, and optional JSON-serializable `details`.
+- Project PATCH allows only `name`, `description`, `domain`, and `status`. There is no delete API. `ARCHIVED` projects remain readable and may be reactivated through PATCH, but the internal run-creation guard accepts only `ACTIVE` projects.
+- Run creation is internal; it derives ownership and `agent_type` from the owned project. No generic POST/PATCH/DELETE run API exists.
+- Lifecycle updates allow only `QUEUED → RUNNING` and `RUNNING → COMPLETED|FAILED`. A failed run requires at least one structured error.
+- Project and run lists are deterministic newest-first and initially unpaginated. Project listing supports optional `agent_type` and `status` filters.
+- `QUEUED` is a persisted lifecycle state only; S1 adds no worker or queue infrastructure.
+- No indexes or migration framework are added in S1 because the repository has no existing centralized index-management convention. Query indexes remain a scalability decision.
+- `AGP` and `RUN` use the existing collection max-scan allocator. As with existing prototype allocators, concurrent writers can race because S1 adds no counter collection, unique-index contract, or transaction.

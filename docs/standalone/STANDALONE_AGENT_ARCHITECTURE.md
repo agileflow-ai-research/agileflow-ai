@@ -156,12 +156,12 @@ Every standalone project and run carries `owner_user_id`. Authenticated users ma
 
 ## 7. Planned Common Storage
 
-Two shared collections are planned but are not implemented in S0:
+Two shared collections were planned by S0 and are implemented by S1:
 
 - `agent_projects`
 - `agent_runs`
 
-There is one common project collection and one common run collection, not separate collections per specialist agent. Their planned semantics are frozen in [COMMON_AGENT_PROJECT_CONTRACT.md](COMMON_AGENT_PROJECT_CONTRACT.md). Concrete indexes, large-artifact persistence, upload storage, retention, and repository implementation belong to S1/S2.
+There is one common project collection and one common run collection, not separate collections per specialist agent. Their semantics are frozen in [COMMON_AGENT_PROJECT_CONTRACT.md](COMMON_AGENT_PROJECT_CONTRACT.md). S1 implements shared persistence without a third standalone collection. Indexes, large-artifact persistence, upload storage, and retention remain later decisions.
 
 These collections are the standalone workspace boundary. They do not replace or rename the integrated Project or Shared Knowledge Base collections.
 

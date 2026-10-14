@@ -4,7 +4,7 @@ Project ID: **J26-SE-358**
 Primary authority: **File 06 — API and Data Schema Plan**  
 Workflow/approval authority: **File 12 — Orchestrator Workflow and Approval Rules**
 
-This document is the shared data-contract baseline. The current repository implements shared enums and foundation ID helpers; Pydantic models for User, Project, Approval, WorkflowEvent, TraceabilityLink, BaseArtifact, the six Agent 1 artifact types, and the API response envelope; module request/response models for registration, login, access tokens, `/auth/me`, ClientInput, and internal H1 snapshot persistence; typed Agent 1 repository/service persistence; and authenticated Project ownership for current Project-scoped APIs. Fields below remain authoritative; do not create alternate names or infer missing fields.
+This document is the shared data-contract baseline. The current repository implements shared enums and foundation ID helpers; Pydantic models for User, Project, standalone AgentProject/AgentRun, Approval, WorkflowEvent, TraceabilityLink, BaseArtifact, the six Agent 1 artifact types, and the API response envelope; module request/response models for registration, login, access tokens, `/auth/me`, ClientInput, standalone projects, and internal H1 snapshot persistence; typed persistence foundations; and authenticated ownership for current integrated and standalone APIs. Fields below remain authoritative; do not create alternate names or infer missing fields.
 
 ## Current Schema Implementation Status
 
@@ -18,6 +18,7 @@ This document is the shared data-contract baseline. The current repository imple
 - **Implemented:** login/JWT DTOs and `/auth/me` safe public responses.
 - **Implemented:** Project includes validated `owner_user_id`; current Project, ClientInput, and Orchestrator APIs enforce authenticated ownership.
 - **Implemented SKB-2 persistence foundation:** Agent 1 has typed, project-scoped repository reads/writes in `requirements`, collection-wide `REQ`/`US`/`AC` max-scan allocation, immutable historical versions, and an internal service that validates and persists complete H1 snapshots. Processing/generation and public artifact routes remain planned; SKB-3 through SKB-5 now provide traceability persistence, H1 publication, and approved internal retrieval.
+- **Implemented S1 standalone foundation:** owner-scoped AgentProject create/list/read/update without delete, AgentRun history reads, internal immutable run creation/lifecycle operations, `AGP-###`/`RUN-###`, and the isolated `agent_projects`/`agent_runs` collections are implemented. No specialist execution endpoint, AI behavior, queue, Approval, WorkflowEvent, Orchestrator transition, or Shared Knowledge Base artifact write is part of S1.
 - Other planned domain artifacts and their persistence are not implied to be implemented by their definitions in this document.
 
 ## Contract Rules
@@ -49,6 +50,8 @@ This document is the shared data-contract baseline. The current repository imple
 | Workflow event | `EVT-###` |
 | Approval | `APP-###` |
 | User | `USR-###` |
+| Standalone agent project | `AGP-###` |
+| Standalone agent run | `RUN-###` |
 
 The approved shared convention uses `APP-###` for Approval identifiers, consistent with File 06's `APP-001` example.
 
@@ -220,6 +223,37 @@ File 06's sample `REQUIREMENT_GATHERING` stage is superseded by File 12's canoni
 `owner_user_id` is server-controlled, uses `USR-###`, is assigned from the authenticated user during project creation, and cannot be supplied or changed by a client. A user may own multiple projects; no cross-user sharing is approved.
 
 The Project create request requires client-provided `name` and `domain` and accepts optional `description`. When omitted, `description` is persisted as an empty string; it is not derived from ClientInput. The server derives both `created_by` and `owner_user_id` from the authenticated user's `user_id`, so they are equal for a normally created Project. Clients cannot supply `created_by`, `owner_user_id`, `project_id`, `current_stage`, `status`, `created_at`, or `updated_at` during creation, and neither identity field is mutable through the Project metadata PATCH API.
+
+## Standalone AgentProject
+
+- **Purpose:** an owner-scoped workspace for one independently used specialist agent.
+- **Collection:** `agent_projects`.
+- **ID:** `agent_project_id` using `AGP-###`; server-generated.
+- **Fields:** `agent_project_id`, `owner_user_id`, `agent_type`, `name`, `description`, `domain`, `status`, `created_at`, `updated_at`.
+- **AgentType:** exactly `REQUIREMENTS`, `DESIGN_PLANNING`, `IMPLEMENTATION`, or `TESTING_VALIDATION`.
+- **Status:** exactly `ACTIVE` or `ARCHIVED`; unrelated to integrated WorkflowStage and ArtifactStatus.
+- **Validation:** `name` and `domain` are required nonblank strings; `description` defaults to `""`; timestamps are UTC-aware and `created_at <= updated_at`.
+- **Ownership:** `owner_user_id` is derived from the authenticated `USR-###` identity and cannot be supplied or changed by a client.
+- **Mutability:** only `name`, `description`, `domain`, and `status` may be patched. `agent_type` and identity/creation fields are immutable.
+- **Lifecycle:** archive uses `status = ARCHIVED`; archived workspaces remain readable and retain runs, may be reactivated, and cannot create new runs while archived.
+
+Standalone AgentProject is not integrated Project. It has no workflow stage, approval gate, handoff field, H1-H5 behavior, Orchestrator transition, or automatic Shared Knowledge Base publication.
+
+## Standalone AgentRun
+
+- **Purpose:** immutable execution request/snapshot plus controlled execution-state metadata for one AgentProject.
+- **Collection:** `agent_runs`.
+- **ID:** `run_id` using `RUN-###`; server-generated.
+- **Fields:** `run_id`, `agent_project_id`, `owner_user_id`, `agent_type`, `run_mode`, `selected_outputs`, `input_snapshot`, `status`, `output_manifest`, `warnings`, `errors`, `created_at`, `started_at`, `completed_at`.
+- **RunMode:** exactly `DEFAULT`, `TEST_GENERATION`, or `VALIDATION`. Agents 1-3 use only `DEFAULT`; `TESTING_VALIDATION` uses only `TEST_GENERATION` or `VALIDATION`.
+- **Status:** exactly `QUEUED`, `RUNNING`, `COMPLETED`, or `FAILED`.
+- **Structures:** `selected_outputs` is a non-empty list of nonblank strings; snapshots/manifests are JSON-serializable dictionaries; warnings/errors are `AgentRunMessage` lists. An AgentRunMessage has nonblank `code`, nonblank `message`, and optional JSON-serializable `details`.
+- **Creation:** internal services load the owned active AgentProject, derive `owner_user_id` and `agent_type`, validate mode compatibility, allocate `RUN-###`, snapshot inputs, and persist `QUEUED` state. No generic public run-create route exists.
+- **Lifecycle:** only `QUEUED → RUNNING` and `RUNNING → COMPLETED|FAILED` are allowed. Running sets `started_at`; terminal states set `completed_at`; failed runs require at least one structured error.
+- **Immutability:** lifecycle updates cannot modify run/project/owner identity, agent type, mode, selections, input snapshot, or creation time.
+- **Authorization:** reads require the owner, parent `AGP-###`, and `RUN-###`; a run ID alone is never an authorization boundary.
+
+`QUEUED` does not imply a background worker. S1 adds no queue infrastructure. Lists are newest-first and unpaginated. ID allocation uses collection max-scan and retains the known concurrent-writer race of the prototype strategy; no counter collection or index/migration framework is added.
 
 ## Multi-Project Isolation
 
@@ -488,8 +522,10 @@ The sources mention ApiSpec, DbSchema, GitMetadata, ExecutionLog, TestResult, Va
 | `approvals` | H1-H5 decisions and comments |
 | `traceability_links` | Artifact relationships |
 | `workflow_events` | Orchestrator audit timeline |
+| `agent_projects` | Owner-scoped standalone specialist workspaces |
+| `agent_runs` | Immutable standalone run snapshots and lifecycle/result metadata |
 
-These are the 15 canonical collections. Do not introduce alternate user collection names such as `user_details`, `accounts`, or `auth_users`. MongoDB is the Shared Knowledge Base for structured project artifacts and workflow information.
+These are the 17 canonical collections. The two standalone collections are isolated workspace/run storage and do not become integrated Project artifact collections. Do not introduce alternate user collection names such as `user_details`, `accounts`, or `auth_users`. MongoDB remains the shared database client; S1 does not write standalone data to integrated Shared Knowledge Base artifact collections.
 
 ## Contract Resolution Notes
 

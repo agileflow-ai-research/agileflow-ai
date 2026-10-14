@@ -155,6 +155,7 @@ Use local or placeholder values in documentation and examples. Never add passwor
 | [FRONTEND_GUIDE.md](docs/implementation-rules/FRONTEND_GUIDE.md) | Frontend structure, tokens, components, and routes |
 | [BACKEND_GUIDE.md](docs/implementation-rules/BACKEND_GUIDE.md) | Backend layers, database foundation, and testing rules |
 | [COMPONENT_PLAN.md](docs/architecture/COMPONENT_PLAN.md) | Implementation-facing component boundaries |
+| [Standalone Agent Contracts](docs/standalone/README.md) | Frozen standalone architecture, shared project/run contract, UI/API plan, and four specialist input/output contracts |
 
 Approved source documents are retained under `docs/source/` and must not be edited as implementation documentation.
 
@@ -167,20 +168,21 @@ Approved source documents are retained under `docs/source/` and must not be edit
 | FastAPI Swagger UI at `/docs` | Available through FastAPI |
 | Environment-based settings | Implemented |
 | Shared PyMongo client, configured database accessor, ping, close | Implemented |
-| Fifteen centralized MongoDB collection constants, including `users` | Implemented |
+| Seventeen centralized MongoDB collection constants, including isolated `agent_projects` and `agent_runs` | Implemented |
 | Shared enums, domain schemas, ID conventions, and API response models | Implemented |
 | SKB-1/SKB-2 Agent 1 artifact foundation | Implemented: six typed `requirements` discriminator models, canonical `REQ`/`US`/`AC` allocation, immutable versioned repository access, and internal complete-H1-snapshot persistence; no processing or public artifact API |
 | SKB-3 traceability persistence foundation | Implemented internally under Reports/Traceability: `TRACE-###` allocation, immutable/idempotent Agent 1 links, endpoint/type/relation validation, and project-scoped typed queries; no public route, graph traversal, or matrix UI |
 | SKB-4 H1 package publication | Implemented internally: selected-version snapshot/traceability validation, `IN_PROGRESS` → `WAITING_FOR_APPROVAL`, idempotent canonical `ARTIFACT_GENERATED` emission, and unchanged O3.5/next-step handoff; no public publication route or Approval decision |
 | SKB-5 internal Shared Knowledge Base facade | Implemented: effective-Approval-authoritative exact H1 snapshot retrieval, typed/project-scoped structured artifact reads, and delegated one-hop traceability reads; no public SKB route or cross-agent adapters |
 | Project CRUD APIs and persistence | Implemented |
+| Shared standalone backend foundation | Implemented: authenticated owner-scoped AgentProject create/list/get/update, archive/reactivate, AgentRun history reads, internal immutable run creation/lifecycle, `AGP-###`/`RUN-###`, and no specialist execution endpoint or background queue |
 | ClientInput APIs and persistence foundation | Implemented; requirement processing remains planned |
 | Orchestrator core policy, workflow snapshot, and event history | Implemented; snapshots evaluate ClientInput, specialist-handoff, and effective-Approval prerequisites |
 | Orchestrator forward transitions and WorkflowEvent persistence | Implemented for all 11 canonical forward transitions, subject to their configured prerequisites |
 | H1-H5 Approval persistence | Implemented with authenticated ownership, `APP-###`, append-only history, effective/latest lookup, and one `APPROVAL_DECISION` event per decision; no stage transition |
 | Approval-driven Orchestrator transitions | Implemented for H1-H5 waiting stages when the effective decision is APPROVE; each creates one `STAGE_CHANGED` event |
 | Specialist handoff readiness | O3.5 consumption/validation is implemented for all five specialist-stage → approval-gate transitions using a valid `ARTIFACT_GENERATED` marker plus minimum project-scoped evidence; Agent 1/H1 emission is implemented and Agent 2-4 emission remains planned |
-| Backend test suite | Implemented; 408 tests passing in the current verified suite |
+| Backend test suite | Implemented; 456 tests passing in the current verified suite |
 | Frontend application | F1.2 foundation through F1.10 implemented, including Create Project, initial TEXT ClientInput integration, and dynamic read-only Project Overview using Project/workflow/event APIs |
 | Agent intelligence, Agent 2/3/4 readiness-event emission, O4 correction routing, O6 HOLD/release behavior, and remaining workflow behavior | Planned |
 | Remaining Agent 2/3/4 artifact persistence/traceability/SKB adapters, traceability traversal/matrix, reports, and integrations | Planned |

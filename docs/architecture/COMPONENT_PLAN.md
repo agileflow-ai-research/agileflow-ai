@@ -139,7 +139,7 @@ These phases preserve four research agents. Project ownership remains the O2 aut
 | Responsibilities | Act as an internal architectural/service layer over the existing MongoDB collections; coordinate typed, project-scoped, version-aware and approval-aware retrieval across collection-specific repositories |
 | Outputs | Stored users, projects, inputs, artifacts, logs, results, findings, approvals, links, and events |
 | Approval gate | Stores decisions/artifact versions; does not decide approvals |
-| Collections used | All 15 canonical collections are defined in code, including `users` |
+| Collections used | All 17 canonical database collection constants are defined in code: 15 integrated Shared Knowledge Base collections plus isolated standalone `agent_projects` and `agent_runs` |
 | IDs consumed/produced | Stores all canonical IDs; ID generation responsibility is shared utility/component-specific and not database-client logic |
 | Dependencies | Environment settings, PyMongo, approved schemas/repositories, security/secret handling |
 | Must not do | Become a second database, generic dynamic MongoDB repository, vector store, RAG/LLM memory, workflow authority, approval authority, final traceability-report generator, or public `/knowledge-base` API |

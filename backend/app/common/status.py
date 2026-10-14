@@ -50,3 +50,28 @@ class EventType(str, Enum):
     FAILURE_ROUTED = "FAILURE_ROUTED"
     RETRY_ATTEMPT = "RETRY_ATTEMPT"
     STAGE_CHANGED = "STAGE_CHANGED"
+
+
+class AgentType(str, Enum):
+    REQUIREMENTS = "REQUIREMENTS"
+    DESIGN_PLANNING = "DESIGN_PLANNING"
+    IMPLEMENTATION = "IMPLEMENTATION"
+    TESTING_VALIDATION = "TESTING_VALIDATION"
+
+
+class AgentProjectStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    ARCHIVED = "ARCHIVED"
+
+
+class AgentRunStatus(str, Enum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class AgentRunMode(str, Enum):
+    DEFAULT = "DEFAULT"
+    TEST_GENERATION = "TEST_GENERATION"
+    VALIDATION = "VALIDATION"
