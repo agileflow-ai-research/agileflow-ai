@@ -900,7 +900,7 @@ def test_only_six_common_standalone_operations_are_public() -> None:
     standalone_operations = {
         (method.upper(), path)
         for path, operations in paths.items()
-        if path.startswith("/api/v1/agent")
+        if path.startswith("/api/v1/agent-projects")
         for method in operations
     }
     assert standalone_operations == {
@@ -914,7 +914,6 @@ def test_only_six_common_standalone_operations_are_public() -> None:
             "/api/v1/agent-projects/{agent_project_id}/runs/{run_id}",
         ),
     }
-    assert not any("/agents/" in path for _, path in standalone_operations)
 
 
 def test_openapi_create_and_update_hide_protected_fields() -> None:

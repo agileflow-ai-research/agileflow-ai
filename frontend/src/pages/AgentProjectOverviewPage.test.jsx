@@ -9,11 +9,13 @@ import {
   getAgentProjectRuns,
   updateAgentProject,
 } from '../services/agentProjectService.js'
+import { runRequirementsAgent } from '../services/requirementsAgentService.js'
 import AgentProjectOverviewPage from './AgentProjectOverviewPage.jsx'
 
 vi.mock('../services/agentProjectService.js', () => ({
   getAgentProjectById: vi.fn(), getAgentProjectRuns: vi.fn(), getAgentProjectRun: vi.fn(), updateAgentProject: vi.fn(),
 }))
+vi.mock('../services/requirementsAgentService.js', () => ({ runRequirementsAgent: vi.fn() }))
 
 const project = {
   agent_project_id: 'AGP-001', agent_type: 'TESTING_VALIDATION', name: 'Quality Gate', domain: 'Fintech',
@@ -113,5 +115,28 @@ describe('AgentProjectOverviewPage', () => {
     renderOverview()
     expect(await screen.findByRole('alert')).toHaveTextContent('Agent project not found')
     await waitFor(() => expect(getAgentProjectRuns).toHaveBeenCalled())
+  })
+
+  it('runs Agent 1 through the backend service and adds the returned run to history', async () => {
+    const user = userEvent.setup()
+    getAgentProjectById.mockResolvedValue({ data: { ...project, agent_type: 'REQUIREMENTS', name: 'BookEase' } })
+    getAgentProjectRuns.mockResolvedValue({ data: [] })
+    runRequirementsAgent.mockResolvedValue({ data: {
+      run_id: 'RUN-101', status: 'COMPLETED', run_mode: 'DEFAULT', selected_outputs: ['FUNCTIONAL_REQUIREMENTS'],
+      created_at: '2026-10-14T12:00:00Z', started_at: '2026-10-14T12:00:01Z', completed_at: '2026-10-14T12:00:02Z',
+      outputs: { FUNCTIONAL_REQUIREMENTS: [{ id: 'FR-001', statement: 'Search books', source_refs: ['TEXT-001'] }] },
+      warnings: [], errors: [],
+    } })
+    renderOverview()
+    await screen.findByRole('heading', { level: 1, name: 'BookEase' })
+    await user.type(screen.getByLabelText(/requirement text/i), 'Members need book search.')
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Functional Requirements' }))
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    await user.click(screen.getByRole('button', { name: 'Run Agent' }))
+    expect(await screen.findByText('RUN-101')).toBeInTheDocument()
+    expect(runRequirementsAgent).toHaveBeenCalledWith('AGP-001', {
+      text: 'Members need book search.', selected_outputs: ['FUNCTIONAL_REQUIREMENTS'],
+    })
   })
 })

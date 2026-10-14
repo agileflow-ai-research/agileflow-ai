@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import AgentWorkspaceShell from '../components/agents/AgentWorkspaceShell.jsx'
+import RequirementsWorkspace from '../components/agents/RequirementsWorkspace.jsx'
 import RunDetail from '../components/agents/RunDetail.jsx'
 import RunHistory from '../components/agents/RunHistory.jsx'
 import ErrorState from '../components/feedback/ErrorState.jsx'
@@ -97,6 +98,13 @@ function AgentProjectOverviewPage() {
     }
   }
 
+  const handleRunCompleted = useCallback((completedRun) => {
+    setRuns((current) => [
+      completedRun,
+      ...current.filter((run) => run.run_id !== completedRun.run_id),
+    ])
+  }, [])
+
   if (loadStatus !== 'success') {
     const content = loadStatus === 'loading' ? (
       <LoadingState message="Loading agent project" size="page" />
@@ -155,13 +163,16 @@ function AgentProjectOverviewPage() {
       </Card>
 
       <AgentWorkspaceShell
-        description={project.status === 'ARCHIVED' ? 'This project is archived. Reactivate it before specialist execution becomes available.' : 'This shared workspace is ready for the specialist phase.'}
+        title={project.agent_type === 'REQUIREMENTS' ? 'Requirement Gathering and Analysis' : 'Agent workspace'}
+        description={project.status === 'ARCHIVED' ? 'This project is archived. Reactivate it before specialist execution becomes available.' : project.agent_type === 'REQUIREMENTS' ? 'Provide a text requirement source, choose outputs, review, and run Agent 1.' : 'This shared workspace is ready for the specialist phase.'}
       >
-        <p className="text-sm text-content-secondary">
-          {project.status === 'ARCHIVED'
-            ? 'Agent-specific input and execution controls are unavailable while this project is archived.'
-            : 'Agent-specific input and execution controls will appear here.'}
-        </p>
+        {project.status === 'ARCHIVED' ? (
+          <p className="text-sm text-content-secondary">Agent-specific input and execution controls are unavailable while this project is archived.</p>
+        ) : project.agent_type === 'REQUIREMENTS' ? (
+          <RequirementsWorkspace project={project} onRunCompleted={handleRunCompleted} />
+        ) : (
+          <p className="text-sm text-content-secondary">Agent-specific input and execution controls will appear here.</p>
+        )}
       </AgentWorkspaceShell>
 
       <section aria-label="Run History" className="space-y-4">

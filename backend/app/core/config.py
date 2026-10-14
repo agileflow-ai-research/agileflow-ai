@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     jwt_secret_key: str | None = None
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
+    model_provider: str = "openai_compatible"
+    model_api_key: str | None = None
+    model_name: str = "gpt-4.1-mini"
+    model_base_url: str = "https://api.openai.com/v1"
+    model_timeout_seconds: float = 60.0
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",
