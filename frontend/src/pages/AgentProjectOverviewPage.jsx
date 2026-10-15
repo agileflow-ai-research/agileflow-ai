@@ -164,7 +164,7 @@ function AgentProjectOverviewPage() {
       </Card>
 
       <AgentWorkspaceShell
-        title={project.agent_type === 'REQUIREMENTS' ? 'Requirement Gathering and Analysis' : project.agent_type === 'DESIGN_PLANNING' ? 'Project Management and Design' : 'Agent workspace'}
+        title={project.agent_type === 'REQUIREMENTS' ? 'Requirement Gathering and Analysis' : project.agent_type === 'DESIGN_PLANNING' ? 'Standalone Design & Planning' : 'Agent workspace'}
         description={project.status === 'ARCHIVED' ? 'This project is archived. Reactivate it before specialist execution becomes available.' : project.agent_type === 'REQUIREMENTS' ? 'Provide a text requirement source, choose outputs, review, and run Agent 1.' : project.agent_type === 'DESIGN_PLANNING' ? 'Provide specifications and planning constraints, choose outputs, review, and run Agent 2.' : 'This shared workspace is ready for the specialist phase.'}
       >
         {project.status === 'ARCHIVED' ? (
