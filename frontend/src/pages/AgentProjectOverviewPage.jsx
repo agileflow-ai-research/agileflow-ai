@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import AgentWorkspaceShell from '../components/agents/AgentWorkspaceShell.jsx'
 import RequirementsWorkspace from '../components/agents/RequirementsWorkspace.jsx'
-import DesignPlanningWorkspace from '../components/agents/DesignPlanningWorkspace.jsx'
+import DesignPlanningWorkspace from '../components/agents/agent-2/DesignPlanningWorkspace.jsx'
 import RunDetail from '../components/agents/RunDetail.jsx'
 import RunHistory from '../components/agents/RunHistory.jsx'
 import ErrorState from '../components/feedback/ErrorState.jsx'

@@ -1,7 +1,7 @@
-import Button from '../ui/Button.jsx'
-import { downloadJiraPlan } from '../../services/jiraPlanExport.js'
-import ArtifactViewer from './ArtifactViewer.jsx'
-import ResultsWorkspace from './ResultsWorkspace.jsx'
+import Button from '../../ui/Button.jsx'
+import { downloadJiraPlan } from '../../../services/jiraPlanExport.js'
+import ArtifactViewer from '../ArtifactViewer.jsx'
+import ResultsWorkspace from '../ResultsWorkspace.jsx'
 
 const outputLabels = {
   SYSTEM_ARCHITECTURE: 'System Architecture',

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import ArtifactViewer from './ArtifactViewer.jsx'
 import RequirementsResults from './RequirementsResults.jsx'
-import DesignPlanningResults from './DesignPlanningResults.jsx'
+import DesignPlanningResults from './agent-2/DesignPlanningResults.jsx'
 import ErrorState from '../feedback/ErrorState.jsx'
 import LoadingState from '../feedback/LoadingState.jsx'
 import Button from '../ui/Button.jsx'

@@ -2,11 +2,11 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getAgentProjectRun } from '../../services/agentProjectService.js'
+import { getAgentProjectRun } from '../../../services/agentProjectService.js'
 import DesignPlanningResults from './DesignPlanningResults.jsx'
-import RunDetail from './RunDetail.jsx'
+import RunDetail from '../RunDetail.jsx'
 
-vi.mock('../../services/agentProjectService.js', () => ({ getAgentProjectRun: vi.fn() }))
+vi.mock('../../../services/agentProjectService.js', () => ({ getAgentProjectRun: vi.fn() }))
 
 const jiraPlan = {
   epics: [{ id: 'EPIC-001', title: 'Booking', outcome: 'Guests can book', priority: 'HIGH', source_refs: ['SPEC-001'] }],

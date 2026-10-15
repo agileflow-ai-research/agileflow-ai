@@ -2,10 +2,10 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runDesignPlanningAgent } from '../../services/designPlanningAgentService.js'
+import { runDesignPlanningAgent } from '../../../services/designPlanningAgentService.js'
 import DesignPlanningWorkspace from './DesignPlanningWorkspace.jsx'
 
-vi.mock('../../services/designPlanningAgentService.js', () => ({
+vi.mock('../../../services/designPlanningAgentService.js', () => ({
   runDesignPlanningAgent: vi.fn(),
 }))
 
