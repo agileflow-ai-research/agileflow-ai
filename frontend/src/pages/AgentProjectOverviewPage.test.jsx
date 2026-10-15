@@ -68,6 +68,23 @@ describe('AgentProjectOverviewPage', () => {
     expect(await screen.findByText('No runs yet.')).toBeInTheDocument()
   })
 
+  it('mounts the Agent 3 workspace for an IMPLEMENTATION project', async () => {
+    getAgentProjectById.mockResolvedValue({ data: {
+      ...project,
+      agent_type: 'IMPLEMENTATION',
+      name: 'Delivery Portal',
+      domain: 'Logistics',
+    } })
+    getAgentProjectRuns.mockResolvedValue({ data: [] })
+
+    renderOverview()
+
+    expect(await screen.findByRole('heading', { level: 2, name: 'Implementation and Git Automation' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Implementation Inputs' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect GitHub' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
+  })
+
   it('archives after confirmation and reactivates archived projects', async () => {
     const user = userEvent.setup()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
