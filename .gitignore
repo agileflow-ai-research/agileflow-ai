@@ -22,3 +22,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local staged specialist inputs
+backend/storage/standalone/implementation/

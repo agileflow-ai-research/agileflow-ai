@@ -1,0 +1,22 @@
+import { apiClient } from '../../../services/apiClient.js'
+
+export function uploadImplementationInputFile(agentProjectId, input) {
+  const formData = new FormData()
+  formData.append('source_type', input.source_type)
+  formData.append('artifact_type', input.artifact_type)
+  if (input.label?.trim()) formData.append('label', input.label.trim())
+  formData.append('file', input.file)
+
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files`,
+    formData,
+    { authenticated: true },
+  )
+}
+
+export function deleteImplementationInputFile(agentProjectId, uploadId) {
+  return apiClient.delete(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}`,
+    { authenticated: true },
+  )
+}

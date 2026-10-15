@@ -1,5 +1,9 @@
 import { useState } from 'react'
 
+import {
+  deleteImplementationInputFile,
+  uploadImplementationInputFile,
+} from './implementationAgentService.js'
 import AgentInputWizard from '../../../components/agents/AgentInputWizard.jsx'
 import OutputSelector from '../../../components/agents/OutputSelector.jsx'
 import RunReview from '../../../components/agents/RunReview.jsx'
@@ -8,6 +12,9 @@ import Card from '../../../components/ui/Card.jsx'
 import Input from '../../../components/ui/Input.jsx'
 import Select from '../../../components/ui/Select.jsx'
 import Textarea from '../../../components/ui/Textarea.jsx'
+
+const DOCUMENT_ACCEPT = '.pdf,.docx,.txt,.md,.json,.yaml,.yml'
+const IMAGE_ACCEPT = '.png,.jpg,.jpeg,.webp'
 
 const artifactOptions = [
   { value: '__requirements', label: 'Requirements', disabled: true },
@@ -41,8 +48,8 @@ const artifactOptions = [
 
 const sourceOptions = [
   { value: 'TEXT', label: 'Text' },
-  { value: 'DOCUMENT', label: 'Document — coming next', disabled: true },
-  { value: 'IMAGE', label: 'Image — coming next', disabled: true },
+  { value: 'DOCUMENT', label: 'Document' },
+  { value: 'IMAGE', label: 'Image' },
 ]
 
 const outputOptions = [
@@ -68,11 +75,32 @@ function emptyInput() {
     artifact_type: 'FUNCTIONAL_REQUIREMENTS',
     content: '',
     label: '',
+    file: null,
+    selectedFile: null,
+    status: 'idle',
+    error: '',
   }
 }
 
 function artifactLabel(value) {
   return artifactOptions.find((option) => option.value === value)?.label ?? value
+}
+
+function formatBytes(value) {
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function requestInput(item) {
+  const base = {
+    source_type: item.source_type,
+    artifact_type: item.artifact_type,
+    ...(item.label.trim() ? { label: item.label.trim() } : {}),
+  }
+  return item.source_type === 'TEXT'
+    ? { ...base, content: item.content.trim() }
+    : { ...base, file: item.file }
 }
 
 function ImplementationWorkspace({ project }) {
@@ -81,16 +109,72 @@ function ImplementationWorkspace({ project }) {
   const [selectedOutputs, setSelectedOutputs] = useState([])
   const [errors, setErrors] = useState({})
 
-  function updateInput(index, field, value) {
+  function updateInput(index, changes) {
     setInputs((current) => current.map((item, itemIndex) => (
-      itemIndex === index ? { ...item, [field]: value } : item
+      itemIndex === index
+        ? {
+            ...item,
+            ...changes,
+            error: Object.hasOwn(changes, 'error') ? changes.error : '',
+          }
+        : item
     )))
     setErrors((current) => ({ ...current, inputs: '' }))
   }
 
-  function removeInput(index) {
-    setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
-    setErrors((current) => ({ ...current, inputs: '' }))
+  function changeSource(index, sourceType) {
+    const current = inputs[index]
+    if (current.file) return
+    updateInput(index, {
+      source_type: sourceType,
+      content: '',
+      selectedFile: null,
+    })
+  }
+
+  async function uploadFile(index) {
+    const item = inputs[index]
+    if (!item.selectedFile) {
+      updateInput(index, { error: 'Choose a file before attaching it.' })
+      return
+    }
+    updateInput(index, { status: 'uploading' })
+    try {
+      const response = await uploadImplementationInputFile(project.agent_project_id, {
+        source_type: item.source_type,
+        artifact_type: item.artifact_type,
+        label: item.label,
+        file: item.selectedFile,
+      })
+      if (!response?.data?.upload_id) throw new Error('Invalid upload response')
+      updateInput(index, {
+        file: response.data,
+        selectedFile: null,
+        status: 'uploaded',
+      })
+    } catch (error) {
+      const message = error?.errors?.[0]?.message || error?.message || 'The file could not be uploaded.'
+      updateInput(index, { status: 'idle', error: message })
+    }
+  }
+
+  async function removeInput(index) {
+    const item = inputs[index]
+    if (!item.file) {
+      setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
+      return
+    }
+    updateInput(index, { status: 'deleting' })
+    try {
+      await deleteImplementationInputFile(
+        project.agent_project_id,
+        item.file.upload_id,
+      )
+      setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
+    } catch (error) {
+      const message = error?.errors?.[0]?.message || error?.message || 'The uploaded file could not be removed.'
+      updateInput(index, { status: 'uploaded', error: message })
+    }
   }
 
   function next() {
@@ -99,15 +183,15 @@ function ImplementationWorkspace({ project }) {
         setErrors({ inputs: 'Add at least one implementation input.' })
         return
       }
-      if (inputs.some((item) => !item.content.trim())) {
-        setErrors({ inputs: 'Enter content for every implementation input.' })
+      const invalid = inputs.some((item) => (
+        item.status === 'uploading'
+        || item.status === 'deleting'
+        || (item.source_type === 'TEXT' ? !item.content.trim() : !item.file)
+      ))
+      if (invalid) {
+        setErrors({ inputs: 'Enter text or attach a file for every implementation input.' })
         return
       }
-      setInputs((current) => current.map((item) => ({
-        ...item,
-        content: item.content.trim(),
-        label: item.label.trim(),
-      })))
     }
     if (step === 1 && selectedOutputs.length === 0) {
       setErrors({ outputs: 'Select at least one output.' })
@@ -117,14 +201,29 @@ function ImplementationWorkspace({ project }) {
     setStep((current) => Math.min(current + 1, 2))
   }
 
+  const workspaceBusy = inputs.some((item) => (
+    item.status === 'uploading' || item.status === 'deleting'
+  ))
+  const workspaceRequest = {
+    inputs: inputs.map(requestInput),
+    selected_outputs: selectedOutputs,
+  }
   const reviewInputs = (
     <ol className="space-y-3">
-      {inputs.map((item, index) => (
-        <li key={`${item.artifact_type}-${index}`}>
+      {workspaceRequest.inputs.map((item, index) => (
+        <li key={`${item.source_type}-${item.file?.upload_id ?? index}`}>
           <p className="font-medium text-content-primary">
             {item.label || `Input ${index + 1}`}: {artifactLabel(item.artifact_type)}
           </p>
-          <p className="mt-1 whitespace-pre-wrap">{item.content}</p>
+          {item.source_type === 'TEXT' ? (
+            <p className="mt-1 whitespace-pre-wrap">{item.content}</p>
+          ) : item.file ? (
+            <p className="mt-1">
+              Uploaded / Attached — {item.file.original_filename} · {item.file.mime_type} · {formatBytes(item.file.size_bytes)}
+            </p>
+          ) : (
+            <p className="mt-1">No file attached.</p>
+          )}
         </li>
       ))}
     </ol>
@@ -146,21 +245,62 @@ function ImplementationWorkspace({ project }) {
               <p className="mt-1 text-sm text-content-secondary">Add the requirements, designs, plans, and pre-code tests that describe what Agent 3 will eventually implement.</p>
             </div>
             {errors.inputs && <p role="alert" className="text-sm text-state-danger">{errors.inputs}</p>}
-            {inputs.map((item, index) => (
-              <Card key={index} variant="elevated" className="space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="font-semibold text-content-primary">Input {index + 1}</h4>
-                  <Button variant="ghost" size="small" onClick={() => removeInput(index)}>Remove Input</Button>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Select label="Artifact Type" required value={item.artifact_type} options={artifactOptions} onChange={(event) => updateInput(index, 'artifact_type', event.target.value)} />
-                  <Select label="Input Source" required value={item.source_type} options={sourceOptions} onChange={(event) => updateInput(index, 'source_type', event.target.value)} helperText="File upload support will be added in the next implementation step." />
-                </div>
-                <Input label="Label (optional)" value={item.label} onChange={(event) => updateInput(index, 'label', event.target.value)} />
-                <Textarea label="Content" required rows={6} value={item.content} onChange={(event) => updateInput(index, 'content', event.target.value)} />
-              </Card>
-            ))}
-            <Button variant="outline" onClick={() => setInputs((current) => [...current, emptyInput()])}>Add Input</Button>
+            {inputs.map((item, index) => {
+              const hasUpload = Boolean(item.file)
+              const isBusy = item.status === 'uploading' || item.status === 'deleting'
+              return (
+                <Card key={index} variant="elevated" className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className="font-semibold text-content-primary">Input {index + 1}</h4>
+                    <Button
+                      variant="ghost"
+                      size="small"
+                      loading={item.status === 'deleting'}
+                      loadingLabel="Removing uploaded input"
+                      disabled={workspaceBusy}
+                      onClick={() => removeInput(index)}
+                    >
+                      Remove Input
+                    </Button>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Select label="Artifact Type" required disabled={hasUpload || isBusy} value={item.artifact_type} options={artifactOptions} onChange={(event) => updateInput(index, { artifact_type: event.target.value })} />
+                    <Select label="Input Source" required disabled={hasUpload || isBusy} value={item.source_type} options={sourceOptions} onChange={(event) => changeSource(index, event.target.value)} helperText={hasUpload ? 'Remove this uploaded input before changing its source or artifact type.' : 'TEXT is entered directly. DOCUMENT and IMAGE files are staged securely on the server.'} />
+                  </div>
+                  <Input label="Label (optional)" disabled={hasUpload || isBusy} value={item.label} onChange={(event) => updateInput(index, { label: event.target.value })} />
+                  {item.source_type === 'TEXT' ? (
+                    <Textarea label="Content" required rows={6} value={item.content} onChange={(event) => updateInput(index, { content: event.target.value })} />
+                  ) : hasUpload ? (
+                    <div className="rounded-control border border-default bg-surface p-4" aria-label={`Uploaded ${item.source_type.toLowerCase()}`}>
+                      <p className="font-semibold text-content-primary">{item.file.original_filename}</p>
+                      <p className="mt-1 text-sm text-content-secondary">{item.file.mime_type} · {formatBytes(item.file.size_bytes)}</p>
+                      <p className="mt-2 text-sm text-state-success">Uploaded / Attached</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <Input
+                        label={`${item.source_type === 'DOCUMENT' ? 'Document' : 'Image'} file`}
+                        type="file"
+                        required
+                        accept={item.source_type === 'DOCUMENT' ? DOCUMENT_ACCEPT : IMAGE_ACCEPT}
+                        disabled={isBusy}
+                        onChange={(event) => updateInput(index, { selectedFile: event.target.files?.[0] ?? null })}
+                      />
+                      <Button
+                        variant="outline"
+                        loading={item.status === 'uploading'}
+                        loadingLabel="Uploading file"
+                        onClick={() => uploadFile(index)}
+                      >
+                        Attach File
+                      </Button>
+                    </div>
+                  )}
+                  {item.error && <p role="alert" className="text-sm text-state-danger">{item.error}</p>}
+                </Card>
+              )
+            })}
+            <Button variant="outline" disabled={workspaceBusy} onClick={() => setInputs((current) => [...current, emptyInput()])}>Add Input</Button>
           </section>
         )}
 
@@ -182,7 +322,7 @@ function ImplementationWorkspace({ project }) {
         {step === 2 && (
           <RunReview
             project={project}
-            selectedOutputs={selectedOutputs}
+            selectedOutputs={workspaceRequest.selected_outputs}
             sections={[
               { id: 'inputs', title: 'Implementation inputs', content: reviewInputs },
               { id: 'github', title: 'GitHub status', content: 'Not connected — integration is not available in Step 1A.' },

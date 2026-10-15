@@ -1,4 +1,6 @@
+from datetime import datetime
 from enum import StrEnum
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -11,24 +13,20 @@ class ImplementationInputSourceType(StrEnum):
 
 class ImplementationArtifactType(StrEnum):
     SRS = "SRS"
-
     FUNCTIONAL_REQUIREMENTS = "FUNCTIONAL_REQUIREMENTS"
     NON_FUNCTIONAL_REQUIREMENTS = "NON_FUNCTIONAL_REQUIREMENTS"
     USER_STORIES = "USER_STORIES"
     ACCEPTANCE_CRITERIA = "ACCEPTANCE_CRITERIA"
-
     SYSTEM_ARCHITECTURE = "SYSTEM_ARCHITECTURE"
     UML_DIAGRAMS = "UML_DIAGRAMS"
     DATABASE_SCHEMA = "DATABASE_SCHEMA"
     API_SPECIFICATION = "API_SPECIFICATION"
     UI_WIREFRAMES = "UI_WIREFRAMES"
     UI_FLOW = "UI_FLOW"
-
     IMPLEMENTATION_TASKS = "IMPLEMENTATION_TASKS"
     PRODUCT_BACKLOG = "PRODUCT_BACKLOG"
     TECHNICAL_CONSTRAINTS = "TECHNICAL_CONSTRAINTS"
     TECHNOLOGY_STACK = "TECHNOLOGY_STACK"
-
     UNIT_TEST_CASES = "UNIT_TEST_CASES"
     API_TEST_CASES = "API_TEST_CASES"
     INTEGRATION_TEST_CASES = "INTEGRATION_TEST_CASES"
@@ -50,13 +48,48 @@ class ImplementationOutputCode(StrEnum):
     GIT_SUMMARY = "GIT_SUMMARY"
 
 
-class ImplementationInput(BaseModel):
+class UploadedFileMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source_type: ImplementationInputSourceType
+    upload_id: str = Field(pattern=r"^A3UP-[0-9a-f]{32}$")
+    source_type: Literal[
+        ImplementationInputSourceType.DOCUMENT,
+        ImplementationInputSourceType.IMAGE,
+    ]
     artifact_type: ImplementationArtifactType
+    label: str | None = Field(default=None, max_length=200)
+    original_filename: str = Field(min_length=1, max_length=255)
+    mime_type: str = Field(min_length=1)
+    extension: str = Field(pattern=r"^\.[a-z0-9]+$")
+    size_bytes: int = Field(gt=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    created_at: datetime
+
+    @field_validator("label")
+    @classmethod
+    def normalize_label(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
+class _ImplementationInputBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_type: ImplementationArtifactType
+    label: str | None = Field(default=None, max_length=200)
+
+    @field_validator("label")
+    @classmethod
+    def normalize_label(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
+class TextImplementationInput(_ImplementationInputBase):
+    source_type: Literal[ImplementationInputSourceType.TEXT]
     content: str
-    label: str | None = None
 
     @field_validator("content")
     @classmethod
@@ -66,20 +99,39 @@ class ImplementationInput(BaseModel):
             raise ValueError("content must be non-empty")
         return normalized
 
-    @field_validator("label")
-    @classmethod
-    def normalize_label(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        return value.strip() or None
+
+class DocumentImplementationInput(_ImplementationInputBase):
+    source_type: Literal[ImplementationInputSourceType.DOCUMENT]
+    file: UploadedFileMetadata
 
     @model_validator(mode="after")
-    def require_supported_source(self) -> "ImplementationInput":
-        if self.source_type is not ImplementationInputSourceType.TEXT:
-            raise ValueError(
-                "only TEXT inputs are supported in Step 1A; document and image uploads are not available"
-            )
+    def validate_file_reference(self) -> "DocumentImplementationInput":
+        if self.file.source_type is not ImplementationInputSourceType.DOCUMENT:
+            raise ValueError("DOCUMENT input requires DOCUMENT upload metadata")
+        if self.file.artifact_type is not self.artifact_type:
+            raise ValueError("artifact_type must match the uploaded file metadata")
         return self
+
+
+class ImageImplementationInput(_ImplementationInputBase):
+    source_type: Literal[ImplementationInputSourceType.IMAGE]
+    file: UploadedFileMetadata
+
+    @model_validator(mode="after")
+    def validate_file_reference(self) -> "ImageImplementationInput":
+        if self.file.source_type is not ImplementationInputSourceType.IMAGE:
+            raise ValueError("IMAGE input requires IMAGE upload metadata")
+        if self.file.artifact_type is not self.artifact_type:
+            raise ValueError("artifact_type must match the uploaded file metadata")
+        return self
+
+
+ImplementationInput = Annotated[
+    TextImplementationInput
+    | DocumentImplementationInput
+    | ImageImplementationInput,
+    Field(discriminator="source_type"),
+]
 
 
 class Agent3WorkspaceRequest(BaseModel):
@@ -98,8 +150,6 @@ class Agent3WorkspaceRequest(BaseModel):
         return values
 
 
-# Agent-number aliases keep the public schema vocabulary easy to discover while
-# the implementation-prefixed names remain consistent with the feature package.
 Agent3InputSourceFormat = ImplementationInputSourceType
 Agent3ArtifactType = ImplementationArtifactType
 Agent3OutputCode = ImplementationOutputCode

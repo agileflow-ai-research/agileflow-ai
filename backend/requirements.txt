@@ -2,6 +2,7 @@ argon2-cffi==25.1.0
 fastapi==0.143.0
 httpx==0.28.1
 pydantic-settings==2.15.0
+python-multipart==0.0.20
 pymongo==4.18.2
 PyJWT==2.15.1
 pytest==9.1.1

@@ -169,4 +169,20 @@ describe('apiClient response contract', () => {
       errors: [],
     })
   })
+
+  it('passes FormData through without forcing a content type or JSON encoding', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ success: true, message: 'Uploaded', data: {} }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const { request } = await import('./apiClient.js')
+    const body = new FormData()
+    body.append('source_type', 'DOCUMENT')
+
+    await request('/uploads', { method: 'POST', body })
+
+    const options = fetchMock.mock.calls[0][1]
+    expect(options.body).toBe(body)
+    expect(options.headers.has('Content-Type')).toBe(false)
+  })
 })
