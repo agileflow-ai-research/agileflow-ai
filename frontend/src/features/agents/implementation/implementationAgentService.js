@@ -20,3 +20,18 @@ export function deleteImplementationInputFile(agentProjectId, uploadId) {
     { authenticated: true },
   )
 }
+
+export function connectGitHub(agentProjectId) {
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/github/connect`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getGitHubConnection(agentProjectId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/github/connection`,
+    { authenticated: true },
+  )
+}

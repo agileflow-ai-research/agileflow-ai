@@ -21,6 +21,7 @@ EXPECTED_COLLECTIONS = {
     "WORKFLOW_EVENTS": "workflow_events",
     "AGENT_PROJECTS": "agent_projects",
     "AGENT_RUNS": "agent_runs",
+    "GITHUB_CONNECTIONS": "github_connections",
 }
 
 

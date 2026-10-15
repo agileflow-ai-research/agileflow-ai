@@ -250,12 +250,13 @@ def test_upload_routes_require_authentication(upload_context):
     ).status_code == 401
 
 
-def test_openapi_exposes_only_upload_and_delete_for_agent3():
+def test_openapi_exposes_upload_and_delete_input_file_routes():
     paths = app.openapi()["paths"]
     agent3 = {
         (method.upper(), path)
         for path, operations in paths.items()
         if path.startswith("/api/v1/agents/implementation")
+        and "/input-files" in path
         for method in operations
     }
     assert agent3 == {

@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
+  connectGitHub,
   deleteImplementationInputFile,
+  getGitHubConnection,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
+import { navigateToGitHub } from './githubNavigation.js'
 import AgentInputWizard from '../../../components/agents/AgentInputWizard.jsx'
 import OutputSelector from '../../../components/agents/OutputSelector.jsx'
 import RunReview from '../../../components/agents/RunReview.jsx'
@@ -108,6 +111,48 @@ function ImplementationWorkspace({ project }) {
   const [inputs, setInputs] = useState([emptyInput()])
   const [selectedOutputs, setSelectedOutputs] = useState([])
   const [errors, setErrors] = useState({})
+  const [githubState, setGitHubState] = useState({
+    status: 'loading', connection: null, notice: '', error: '',
+  })
+
+  useEffect(() => {
+    let active = true
+    const query = new URLSearchParams(window.location.search)
+    const callbackStatus = query.get('github')
+    if (callbackStatus === 'error') {
+      setGitHubState((current) => ({
+        ...current,
+        error: 'GitHub account connection was not completed.',
+      }))
+    }
+    getGitHubConnection(project.agent_project_id)
+      .then((response) => {
+        if (!active) return
+        const connection = response?.data
+        if (!connection || typeof connection.connected !== 'boolean') {
+          throw new Error('Invalid GitHub connection response')
+        }
+        setGitHubState((current) => ({
+          status: connection.connected ? 'connected' : 'disconnected',
+          connection: connection.connected ? connection : null,
+          notice: callbackStatus === 'connected' && connection.connected
+            ? 'GitHub account connected successfully.'
+            : '',
+          error: callbackStatus === 'connected' && !connection.connected
+            ? 'GitHub returned to AgileFlow, but no verified connection was found.'
+            : current.error,
+        }))
+      })
+      .catch((error) => {
+        if (!active || error?.status === 401) return
+        setGitHubState((current) => ({
+          ...current,
+          status: 'error',
+          error: current.error || error?.errors?.[0]?.message || error?.message || 'GitHub connection status could not be loaded.',
+        }))
+      })
+    return () => { active = false }
+  }, [project.agent_project_id])
 
   function updateInput(index, changes) {
     setInputs((current) => current.map((item, itemIndex) => (
@@ -177,6 +222,26 @@ function ImplementationWorkspace({ project }) {
     }
   }
 
+  async function handleGitHubConnect() {
+    setGitHubState((current) => ({
+      ...current, status: 'connecting', error: '', notice: '',
+    }))
+    try {
+      const response = await connectGitHub(project.agent_project_id)
+      if (!response?.data?.installation_url) {
+        throw new Error('Invalid GitHub connection response')
+      }
+      navigateToGitHub(response.data.installation_url)
+    } catch (error) {
+      if (error?.status === 401) return
+      setGitHubState((current) => ({
+        ...current,
+        status: current.connection ? 'connected' : 'disconnected',
+        error: error?.errors?.[0]?.message || error?.message || 'GitHub connection could not be started.',
+      }))
+    }
+  }
+
   function next() {
     if (step === 0) {
       if (inputs.length === 0) {
@@ -228,6 +293,9 @@ function ImplementationWorkspace({ project }) {
       ))}
     </ol>
   )
+  const githubReview = githubState.connection?.connected
+    ? `Connected as @${githubState.connection.github_login} (Personal). Repository: Not created yet.`
+    : 'Not connected. No repository has been created.'
 
   return (
     <div className="space-y-5">
@@ -325,7 +393,7 @@ function ImplementationWorkspace({ project }) {
             selectedOutputs={workspaceRequest.selected_outputs}
             sections={[
               { id: 'inputs', title: 'Implementation inputs', content: reviewInputs },
-              { id: 'github', title: 'GitHub status', content: 'Not connected — integration is not available in Step 1A.' },
+              { id: 'github', title: 'GitHub status', content: githubReview },
             ]}
           />
         )}
@@ -333,11 +401,35 @@ function ImplementationWorkspace({ project }) {
 
       <Card aria-labelledby="github-integration-title">
         <h3 id="github-integration-title" className="text-card-heading font-semibold text-content-primary">GitHub Integration</h3>
-        <p className="mt-2 text-sm text-content-secondary">Connect your GitHub account and create a new repository for the generated project.</p>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Button disabled>Connect GitHub</Button>
-          <p className="text-helper-copy text-content-muted">GitHub account connection will be enabled in the next implementation step.</p>
-        </div>
+        {githubState.notice && <p role="status" className="mt-3 text-sm text-state-success">{githubState.notice}</p>}
+        {githubState.error && <p role="alert" className="mt-3 text-sm text-state-danger">{githubState.error}</p>}
+        {githubState.status === 'connected' ? (
+          <div className="mt-4 flex flex-wrap items-start gap-4">
+            {githubState.connection.avatar_url && (
+              <img className="h-12 w-12 rounded-full" src={githubState.connection.avatar_url} alt={`@${githubState.connection.github_login} GitHub avatar`} />
+            )}
+            <dl className="grid gap-2 text-sm">
+              <div><dt className="inline font-medium text-content-primary">Status: </dt><dd className="inline text-state-success">Connected</dd></div>
+              <div><dt className="inline font-medium text-content-primary">Account: </dt><dd className="inline text-content-secondary">@{githubState.connection.github_login}</dd></div>
+              <div><dt className="inline font-medium text-content-primary">Account type: </dt><dd className="inline text-content-secondary">Personal</dd></div>
+              <div><dt className="inline font-medium text-content-primary">Repository: </dt><dd className="inline text-content-secondary">Not created yet</dd></div>
+            </dl>
+          </div>
+        ) : (
+          <>
+            <p className="mt-2 text-sm text-content-secondary">Connect your GitHub account so Agent 3 can create a new repository.</p>
+            <div className="mt-4">
+              <Button
+                loading={githubState.status === 'connecting'}
+                loadingLabel="Starting GitHub connection"
+                disabled={githubState.status === 'loading'}
+                onClick={handleGitHubConnect}
+              >
+                Connect GitHub
+              </Button>
+            </div>
+          </>
+        )}
       </Card>
     </div>
   )

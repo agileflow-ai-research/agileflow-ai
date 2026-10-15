@@ -15,6 +15,21 @@ class WrongAgentProjectTypeError(ValueError):
     pass
 
 
+def require_implementation_project(
+    standalone_service: StandaloneService,
+    agent_project_id: str,
+    current_user: UserPublicResponse,
+):
+    project = standalone_service.require_active_project(
+        current_user.user_id, agent_project_id
+    )
+    if project.agent_type is not AgentType.IMPLEMENTATION:
+        raise WrongAgentProjectTypeError(
+            "Agent project must have agent_type IMPLEMENTATION"
+        )
+    return project
+
+
 class ImplementationInputService:
     def __init__(
         self,
@@ -33,8 +48,8 @@ class ImplementationInputService:
         label: str | None,
         upload: UploadFile,
     ) -> UploadedFileMetadata:
-        project = self._require_implementation_project(
-            agent_project_id, current_user
+        project = require_implementation_project(
+            self._standalone, agent_project_id, current_user
         )
         if source_type is ImplementationInputSourceType.TEXT:
             raise ValueError("TEXT inputs do not use the file upload endpoint")
@@ -54,25 +69,11 @@ class ImplementationInputService:
         upload_id: str,
         current_user: UserPublicResponse,
     ) -> None:
-        project = self._require_implementation_project(
-            agent_project_id, current_user
+        project = require_implementation_project(
+            self._standalone, agent_project_id, current_user
         )
         self._storage.delete(
             agent_project_id=project.agent_project_id,
             owner_user_id=current_user.user_id,
             upload_id=upload_id,
         )
-
-    def _require_implementation_project(
-        self,
-        agent_project_id: str,
-        current_user: UserPublicResponse,
-    ):
-        project = self._standalone.require_active_project(
-            current_user.user_id, agent_project_id
-        )
-        if project.agent_type is not AgentType.IMPLEMENTATION:
-            raise WrongAgentProjectTypeError(
-                "Agent project must have agent_type IMPLEMENTATION"
-            )
-        return project

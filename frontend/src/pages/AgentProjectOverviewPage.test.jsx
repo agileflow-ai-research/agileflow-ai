@@ -10,12 +10,19 @@ import {
   updateAgentProject,
 } from '../services/agentProjectService.js'
 import { runRequirementsAgent } from '../features/agents/requirements/requirementsAgentService.js'
+import { getGitHubConnection } from '../features/agents/implementation/implementationAgentService.js'
 import AgentProjectOverviewPage from './AgentProjectOverviewPage.jsx'
 
 vi.mock('../services/agentProjectService.js', () => ({
   getAgentProjectById: vi.fn(), getAgentProjectRuns: vi.fn(), getAgentProjectRun: vi.fn(), updateAgentProject: vi.fn(),
 }))
 vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({ runRequirementsAgent: vi.fn() }))
+vi.mock('../features/agents/implementation/implementationAgentService.js', () => ({
+  uploadImplementationInputFile: vi.fn(),
+  deleteImplementationInputFile: vi.fn(),
+  connectGitHub: vi.fn(),
+  getGitHubConnection: vi.fn(),
+}))
 
 const project = {
   agent_project_id: 'AGP-001', agent_type: 'TESTING_VALIDATION', name: 'Quality Gate', domain: 'Fintech',
@@ -45,6 +52,7 @@ describe('AgentProjectOverviewPage', () => {
     vi.clearAllMocks()
     getAgentProjectById.mockResolvedValue({ data: project })
     getAgentProjectRuns.mockResolvedValue({ data: runs })
+    getGitHubConnection.mockResolvedValue({ data: { connected: false } })
   })
 
   it('loads the AGP project and real run history with all shared presentations', async () => {
@@ -81,7 +89,7 @@ describe('AgentProjectOverviewPage', () => {
 
     expect(await screen.findByRole('heading', { level: 2, name: 'Implementation and Git Automation' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Implementation Inputs' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Connect GitHub' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: 'Connect GitHub' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
   })
 

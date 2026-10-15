@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '../../../services/apiClient.js'
 import {
+  connectGitHub,
   deleteImplementationInputFile,
+  getGitHubConnection,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 
 vi.mock('../../../services/apiClient.js', () => ({
-  apiClient: { post: vi.fn(), delete: vi.fn() },
+  apiClient: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
 }))
 
 describe('implementationAgentService', () => {
@@ -34,6 +36,20 @@ describe('implementationAgentService', () => {
     deleteImplementationInputFile('AGP-003', 'A3UP-abc')
     expect(apiClient.delete).toHaveBeenCalledWith(
       '/agents/implementation/AGP-003/input-files/A3UP-abc',
+      { authenticated: true },
+    )
+  })
+
+  it('uses backend-only GitHub connect and status endpoints', () => {
+    connectGitHub('AGP-003')
+    getGitHubConnection('AGP-003')
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/github/connect',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/github/connection',
       { authenticated: true },
     )
   })

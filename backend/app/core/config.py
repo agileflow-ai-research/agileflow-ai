@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     agent3_upload_root: Path = (
         BACKEND_DIR / "storage" / "standalone" / "implementation"
     )
+    github_app_id: str | None = None
+    github_app_client_id: str | None = None
+    github_app_client_secret: str | None = None
+    github_app_slug: str | None = None
+    github_app_setup_callback_url: str | None = None
+    github_app_oauth_callback_url: str | None = None
+    github_web_base_url: str = "https://github.com"
+    github_api_base_url: str = "https://api.github.com"
+    frontend_base_url: str = "http://localhost:5173"
+    github_http_timeout_seconds: float = 10.0
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",

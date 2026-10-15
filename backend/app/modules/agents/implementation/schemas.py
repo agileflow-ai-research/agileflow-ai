@@ -150,6 +150,56 @@ class Agent3WorkspaceRequest(BaseModel):
         return values
 
 
+class GitHubConnectResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    installation_url: str = Field(min_length=1)
+    expires_at: datetime
+
+
+class GitHubConnection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    owner_id: str = Field(pattern=r"^USR-\d{3,}$")
+    provider: Literal["GITHUB"] = "GITHUB"
+    github_user_id: int = Field(gt=0)
+    github_login: str = Field(min_length=1)
+    github_avatar_url: str | None = None
+    installation_id: int = Field(gt=0)
+    installation_account_id: int = Field(gt=0)
+    installation_account_login: str = Field(min_length=1)
+    installation_account_type: Literal["User"]
+    status: Literal["CONNECTED"] = "CONNECTED"
+    connected_at: datetime
+    updated_at: datetime
+
+
+class GitHubConnectionStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    connected: bool
+    github_user_id: int | None = None
+    github_login: str | None = None
+    avatar_url: str | None = None
+    installation_id: int | None = None
+    account_type: Literal["User"] | None = None
+
+    @model_validator(mode="after")
+    def validate_connected_fields(self) -> "GitHubConnectionStatus":
+        required_details = (
+            self.github_user_id,
+            self.github_login,
+            self.installation_id,
+            self.account_type,
+        )
+        all_details = (*required_details, self.avatar_url)
+        if self.connected and any(value is None for value in required_details):
+            raise ValueError("connected GitHub status requires account metadata")
+        if not self.connected and any(value is not None for value in all_details):
+            raise ValueError("disconnected GitHub status cannot contain account metadata")
+        return self
+
+
 Agent3InputSourceFormat = ImplementationInputSourceType
 Agent3ArtifactType = ImplementationArtifactType
 Agent3OutputCode = ImplementationOutputCode

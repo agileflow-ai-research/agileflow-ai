@@ -3,15 +3,21 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  connectGitHub,
   deleteImplementationInputFile,
+  getGitHubConnection,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
+import { navigateToGitHub } from './githubNavigation.js'
 import ImplementationWorkspace from './ImplementationWorkspace.jsx'
 
 vi.mock('./implementationAgentService.js', () => ({
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
+  connectGitHub: vi.fn(),
+  getGitHubConnection: vi.fn(),
 }))
+vi.mock('./githubNavigation.js', () => ({ navigateToGitHub: vi.fn() }))
 
 const project = {
   agent_project_id: 'AGP-003', agent_type: 'IMPLEMENTATION',
@@ -54,7 +60,11 @@ async function attachFile(user, sourceType, file, responseMetadata) {
 }
 
 describe('ImplementationWorkspace', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
+    getGitHubConnection.mockResolvedValue({ data: { connected: false } })
+  })
 
   it('preserves TEXT input, exact outputs, review, and no execution behavior', async () => {
     const user = userEvent.setup()
@@ -184,13 +194,76 @@ describe('ImplementationWorkspace', () => {
     expect(screen.getByLabelText(/Input Source/)).toBeDisabled()
   })
 
-  it('validates incomplete inputs and keeps GitHub disabled', async () => {
+  it('validates incomplete inputs and offers real GitHub connection', async () => {
     const user = userEvent.setup()
     render(<ImplementationWorkspace project={project} />)
     await chooseSource(user, 'IMAGE')
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(screen.getByRole('alert')).toHaveTextContent('attach a file')
-    expect(screen.getByRole('button', { name: 'Connect GitHub' })).toBeDisabled()
-    expect(screen.getByText(/GitHub account connection will be enabled/i)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Connect GitHub' })).toBeEnabled()
+  })
+
+  it('starts GitHub connection through the backend and redirects to its URL', async () => {
+    const user = userEvent.setup()
+    connectGitHub.mockResolvedValue({
+      data: { installation_url: 'https://github.com/apps/agileflow/installations/new?state=safe' },
+    })
+    render(<ImplementationWorkspace project={project} />)
+    await user.click(await screen.findByRole('button', { name: 'Connect GitHub' }))
+    expect(connectGitHub).toHaveBeenCalledWith('AGP-003')
+    expect(navigateToGitHub).toHaveBeenCalledWith(
+      'https://github.com/apps/agileflow/installations/new?state=safe',
+    )
+  })
+
+  it('shows a verified personal connection without repository controls', async () => {
+    getGitHubConnection.mockResolvedValue({ data: {
+      connected: true,
+      github_user_id: 123,
+      github_login: 'octocat',
+      avatar_url: 'https://avatars.example/octocat.png',
+      installation_id: 456,
+      account_type: 'User',
+    } })
+    render(<ImplementationWorkspace project={project} />)
+    expect(await screen.findByText('Connected')).toBeInTheDocument()
+    expect(screen.getByText('@octocat')).toBeInTheDocument()
+    expect(screen.getByText('Personal')).toBeInTheDocument()
+    expect(screen.getByText('Not created yet')).toBeInTheDocument()
+    expect(screen.queryByText(/existing repositor/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /create repository/i })).not.toBeInTheDocument()
+  })
+
+  it('trusts backend status, not the connected callback query alone', async () => {
+    window.history.replaceState({}, '', '/agent-projects/AGP-003?github=connected')
+    render(<ImplementationWorkspace project={project} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('no verified connection')
+    expect(screen.queryByText('GitHub account connected successfully.')).not.toBeInTheDocument()
+  })
+
+  it('shows callback success only with verified status and handles callback errors', async () => {
+    getGitHubConnection.mockResolvedValue({ data: {
+      connected: true, github_user_id: 123, github_login: 'octocat',
+      avatar_url: null, installation_id: 456, account_type: 'User',
+    } })
+    window.history.replaceState({}, '', '/agent-projects/AGP-003?github=connected')
+    const view = render(<ImplementationWorkspace project={project} />)
+    expect(await screen.findByRole('status')).toHaveTextContent('connected successfully')
+    view.unmount()
+
+    getGitHubConnection.mockResolvedValue({ data: { connected: false } })
+    window.history.replaceState({}, '', '/agent-projects/AGP-003?github=error&reason=authorization_failed')
+    render(<ImplementationWorkspace project={project} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('was not completed')
+  })
+
+  it('reports backend connection status failures without claiming connection', async () => {
+    getGitHubConnection.mockRejectedValue({
+      errors: [{ message: 'GitHub connection storage is unavailable' }],
+    })
+    render(<ImplementationWorkspace project={project} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('storage is unavailable')
+    expect(screen.queryByText('Connected')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Connect GitHub' })).toBeEnabled()
   })
 })
