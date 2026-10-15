@@ -8,7 +8,16 @@ import Textarea from '../ui/Textarea.jsx'
 import { cn } from '../../utils/cn.js'
 import AgentInputWizard from './AgentInputWizard.jsx'
 import DesignPlanningResults from './DesignPlanningResults.jsx'
-import ProcessingState from './ProcessingState.jsx'
+
+const pipelineStages = [
+  'Input validation',
+  'Normalization',
+  'Agent2Engine',
+  'Structured generation',
+  'Consistency validation',
+  'Correction',
+  'Persist results',
+]
 
 const steps = [
   {
@@ -35,7 +44,12 @@ const steps = [
     title: 'Review Before Run',
     subtitle: 'Human-in-the-loop checkpoint before execution',
   },
-  { id: 'run', label: 'Run', title: 'Run Agent', subtitle: 'Execution' },
+  {
+    id: 'run',
+    label: 'Run',
+    title: 'Agent 2 is Processing',
+    subtitle: 'Agent 2 execution in progress',
+  },
 ]
 
 const outputGroups = [
@@ -233,6 +247,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
   }
 
   async function execute() {
+    if (runState === 'running') return
     if (!specificationFields.some((field) => input[field]?.trim())) {
       setErrors({
         specification:
@@ -275,18 +290,22 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
     }
   }
 
-  if (runState === 'running') {
-    return <ProcessingState status="RUNNING" title="Generating design and plan" description="Agent 2 is generating and validating the selected structured outputs." />
-  }
-
   if (result) {
     return (
       <DesignPlanningResults
-        title={result.status === 'COMPLETED' ? 'Design and planning results' : 'Design and planning run failed'}
+        title={result.status === 'COMPLETED' ? 'Agent 2 Results' : 'Design and planning run failed'}
+        subtitle="Generated design and planning artifacts"
+        status={result.status}
+        result={result}
         outputs={result.outputs}
         warnings={(result.warnings ?? []).map((item) => item.message)}
         errors={(result.errors ?? []).map((item) => `${item.code}: ${item.message}`)}
-        actions={<Button variant="outline" onClick={() => { setResult(null); setRunState('idle'); setStep(0) }}>Start another run</Button>}
+        project={project}
+        onStartAnotherRun={() => {
+          setResult(null)
+          setRunState('idle')
+          setStep(0)
+        }}
       />
     )
   }
@@ -364,6 +383,11 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
               Ready to run
             </span>
           )}
+          {step === 4 && (
+            <span className="inline-flex items-center rounded-control border border-[#b45309] bg-[#78350f]/60 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#fbbf24]">
+              RUNNING
+            </span>
+          )}
         </div>
       </div>
 
@@ -435,14 +459,22 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                 variant="outline"
                 type="button"
                 onClick={() => setStep(2)}
+                disabled={runState === 'running'}
                 className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
               >
                 Edit inputs
               </Button>
-              <Button variant="primary" type="button" onClick={execute}>
+              <Button
+                variant="primary"
+                type="button"
+                onClick={execute}
+                disabled={runState === 'running'}
+              >
                 Run Agent 2
               </Button>
             </div>
+          ) : step === 4 ? (
+            <div aria-hidden="true" />
           ) : undefined
         }
       >
@@ -904,6 +936,88 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
               </h3>
               <p className="text-sm text-content-secondary">
                 You can go back and correct inputs or output selection. This standalone flow does not invoke integrated H2 approval.
+              </p>
+            </Card>
+          </div>
+        )}
+        {step === 4 && (
+          <div className="space-y-6">
+            {/* Execution pipeline card */}
+            <Card className="border-default bg-[#150c2a] p-5 space-y-3">
+              <div>
+                <h3 className="text-card-heading font-semibold text-content-primary">
+                  Execution pipeline
+                </h3>
+                <p className="mt-1 text-sm text-content-muted">
+                  Provider generation is combined with deterministic checks.
+                </p>
+              </div>
+              <div
+                className="flex flex-wrap items-center gap-2 pt-1"
+                aria-label="Execution pipeline stages"
+              >
+                {pipelineStages.map((stage) => (
+                  <span
+                    key={stage}
+                    className="inline-flex items-center gap-1.5 rounded-control border border-[#3c2463] bg-[#211438] px-3 py-1.5 text-xs font-medium text-content-primary"
+                  >
+                    <span className="h-1.5 w-1.5 rounded-full bg-brand" aria-hidden="true" />
+                    {stage}
+                  </span>
+                ))}
+              </div>
+            </Card>
+
+            {/* Current activity and Run evidence cards */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card className="border-default bg-[#150c2a] p-5 space-y-2">
+                <h3 className="text-card-heading font-semibold text-content-primary">
+                  Current activity
+                </h3>
+                <p className="text-sm text-content-secondary">
+                  Generating and validating the selected Agent 2 outputs.
+                </p>
+                <ul className="mt-2 space-y-1 text-xs text-content-muted">
+                  <li>• Evaluating consistency across {selectedOutputs.length} selected artifact{selectedOutputs.length === 1 ? '' : 's'}.</li>
+                  <li>• Deterministic verification in progress.</li>
+                </ul>
+              </Card>
+
+              <Card className="border-default bg-[#150c2a] p-5 space-y-2">
+                <h3 className="text-card-heading font-semibold text-content-primary">
+                  Run evidence
+                </h3>
+                <p className="text-sm text-content-secondary">
+                  Safe machine-readable state only.
+                </p>
+                <ul className="mt-2 space-y-1 text-xs text-content-muted" aria-label="Run evidence details">
+                  <li>
+                    • Run status: <span className="font-semibold text-[#fbbf24]">RUNNING</span>
+                  </li>
+                  <li>
+                    • Project: {project?.name || 'Project'}
+                    {project?.domain ? ` · ${project.domain}` : ''}
+                  </li>
+                  <li>
+                    • Selected outputs ({selectedOutputs.length}): {selectedOutputs.join(', ')}
+                  </li>
+                  {Number(input.development_team_count) > 0 && (
+                    <li>• Development team count: {input.development_team_count}</li>
+                  )}
+                  {Number(input.sprint_duration) > 0 && (
+                    <li>• Sprint duration: {input.sprint_duration} days</li>
+                  )}
+                </ul>
+              </Card>
+            </div>
+
+            {/* Safety note card */}
+            <Card className="border border-[#1e3a8a]/60 bg-[#0c1836]/70 p-4 space-y-1">
+              <p className="text-sm font-medium text-[#93c5fd]">
+                Deterministic user-input errors are rejected before model execution and do not consume correction attempts.
+              </p>
+              <p className="text-xs text-[#60a5fa]/80">
+                Generated-output correction is bounded by the existing engine policy. No internal prompts, chain-of-thought, or provider secrets are exposed.
               </p>
             </Card>
           </div>

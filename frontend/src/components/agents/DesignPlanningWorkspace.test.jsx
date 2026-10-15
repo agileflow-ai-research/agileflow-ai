@@ -173,8 +173,8 @@ describe('DesignPlanningWorkspace', () => {
       preferred_technology_stack: 'React and FastAPI',
       selected_outputs: ['EPICS'],
     })
-    expect(await screen.findByRole('heading', { name: 'Design and planning results' })).toBeInTheDocument()
-    expect(screen.getByText('Booking')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /Agent 2 Results|Design and planning results/i })).toBeInTheDocument()
+    expect(screen.getByText(/Booking/)).toBeInTheDocument()
     expect(screen.queryByText('System Architecture')).not.toBeInTheDocument()
     expect(onRunCompleted).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'RUN-002' }))
   })
@@ -622,5 +622,268 @@ describe('DesignPlanningWorkspace', () => {
     expect(screen.getByText('A positive sprint duration is required for sprint planning.')).toBeInTheDocument()
     expect(runDesignPlanningAgent).not.toHaveBeenCalled()
   })
+
+  it('renders Screen S2-05 with Step 5 active, RUNNING status, pipeline stages, activity, run evidence, and safety note while execution is pending', async () => {
+    const user = userEvent.setup()
+    let resolveRun
+    runDesignPlanningAgent.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRun = resolve
+        }),
+    )
+
+    render(<DesignPlanningWorkspace project={project} />)
+
+    // S2-01
+    await user.type(screen.getByLabelText('Requirements'), 'Production-grade reservation system.')
+    await user.click(screen.getByRole('button', { name: 'Continue to planning' }))
+
+    // S2-02
+    await user.type(screen.getByLabelText('Development team count'), '3')
+    await user.click(screen.getByRole('button', { name: 'Continue to outputs' }))
+
+    // S2-03
+    await user.click(screen.getByRole('checkbox', { name: 'System Architecture' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Epics' }))
+    await user.click(screen.getByRole('button', { name: 'Review selection' }))
+
+    // S2-04 -> click Run Agent 2
+    await user.click(screen.getByRole('button', { name: 'Run Agent 2' }))
+
+    // Step 5 is active
+    const wizardList = screen.getByRole('list', { name: /agent input steps/i })
+    expect(within(wizardList).getByText('Run').closest('li')).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 is Processing' })).toBeInTheDocument()
+    expect(screen.getByText('Step 5 of 5 · Agent 2 execution in progress')).toBeInTheDocument()
+    expect(screen.getAllByText('RUNNING').length).toBe(2)
+
+    // Execution pipeline card with all 7 stages
+    expect(screen.getByRole('heading', { name: 'Execution pipeline' })).toBeInTheDocument()
+    expect(screen.getByText('Provider generation is combined with deterministic checks.')).toBeInTheDocument()
+    const pipeline = screen.getByLabelText('Execution pipeline stages')
+    const stages = [
+      'Input validation',
+      'Normalization',
+      'Agent2Engine',
+      'Structured generation',
+      'Consistency validation',
+      'Correction',
+      'Persist results',
+    ]
+    stages.forEach((stage) => {
+      expect(within(pipeline).getByText(stage)).toBeInTheDocument()
+    })
+
+    // Current activity card
+    expect(screen.getByRole('heading', { name: 'Current activity' })).toBeInTheDocument()
+    expect(screen.getByText('Generating and validating the selected Agent 2 outputs.')).toBeInTheDocument()
+
+    // Run evidence card
+    expect(screen.getByRole('heading', { name: 'Run evidence' })).toBeInTheDocument()
+    const evidence = screen.getByLabelText('Run evidence details')
+    expect(within(evidence).getByText(/Run status:/)).toBeInTheDocument()
+    expect(within(evidence).getByText('RUNNING')).toBeInTheDocument()
+    expect(within(evidence).getByText(/BookEase · Hospitality/)).toBeInTheDocument()
+    expect(within(evidence).getByText(/Selected outputs \(2\): SYSTEM_ARCHITECTURE, EPICS/)).toBeInTheDocument()
+    expect(within(evidence).getByText(/Development team count: 3/)).toBeInTheDocument()
+
+    // Safety note card
+    expect(
+      screen.getByText('Deterministic user-input errors are rejected before model execution and do not consume correction attempts.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/Generated-output correction is bounded by the existing engine policy/),
+    ).toBeInTheDocument()
+
+    // No navigation buttons during processing
+    expect(screen.queryByRole('button', { name: /edit inputs|back/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /run agent/i })).not.toBeInTheDocument()
+
+    // API called exactly once with exact payload
+    expect(runDesignPlanningAgent).toHaveBeenCalledTimes(1)
+    expect(runDesignPlanningAgent).toHaveBeenCalledWith('AGP-002', {
+      requirements: 'Production-grade reservation system.',
+      development_team_count: 3,
+      selected_outputs: ['SYSTEM_ARCHITECTURE', 'EPICS'],
+    })
+
+    // Complete the pending Promise
+    resolveRun({
+      data: {
+        run_id: 'RUN-777',
+        status: 'COMPLETED',
+        warnings: [],
+        errors: [],
+        outputs: {
+          EPICS: [{ id: 'EPIC-001', title: 'Booking', outcome: 'Guests can book', priority: 'HIGH', source_refs: ['SPEC-001'] }],
+        },
+      },
+    })
+
+    // Transitions to results screen
+    expect(await screen.findByRole('heading', { name: /Agent 2 Results|Design and planning results/i })).toBeInTheDocument()
+    expect(screen.queryByText('Agent 2 is Processing')).not.toBeInTheDocument()
+  })
+
+  it('failed response exits processing state and displays safe error message on Step 4', async () => {
+    const user = userEvent.setup()
+    runDesignPlanningAgent.mockRejectedValue(new Error('Backend processing timeout'))
+
+    render(<DesignPlanningWorkspace project={project} />)
+
+    // S2-01
+    await user.type(screen.getByLabelText('Requirements'), 'Spec for failure test.')
+    await user.click(screen.getByRole('button', { name: 'Continue to planning' }))
+
+    // S2-02
+    await user.click(screen.getByRole('button', { name: 'Continue to outputs' }))
+
+    // S2-03
+    await user.click(screen.getByRole('checkbox', { name: 'Epics' }))
+    await user.click(screen.getByRole('button', { name: 'Review selection' }))
+
+    // S2-04 -> Run Agent 2
+    await user.click(screen.getByRole('button', { name: 'Run Agent 2' }))
+
+    // Returns to Step 4 on error and displays error alert
+    const wizardList = screen.getByRole('list', { name: /agent input steps/i })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Backend processing timeout')
+    expect(within(wizardList).getByText('Review').closest('li')).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByRole('button', { name: 'Run Agent 2' })).toBeEnabled()
+  })
+
+  it('renders Screen S2-06 Results Overview after successful API call with COMPLETED status, dynamic metrics, truthful summaries, and no fabricated values', async () => {
+    const user = userEvent.setup()
+    runDesignPlanningAgent.mockResolvedValue({
+      data: {
+        run_id: 'RUN-999',
+        status: 'COMPLETED',
+        warnings: [{ code: 'CAPACITY_NOTE', message: 'Calculated using baseline velocity' }],
+        errors: [],
+        outputs: {
+          SYSTEM_ARCHITECTURE: {
+            components: [
+              { id: 'CMP-01', name: 'Web', source_refs: ['SPEC-01'] },
+              { id: 'CMP-02', name: 'API', source_refs: ['SPEC-01'] },
+            ],
+          },
+          EPICS: [{ id: 'EPIC-01', title: 'Onboarding', source_refs: ['SPEC-01'] }],
+          USER_STORIES: [{ id: 'STORY-01', epic_id: 'EPIC-01', source_refs: ['SPEC-01'] }],
+        },
+      },
+    })
+
+    render(<DesignPlanningWorkspace project={project} />)
+
+    // S2-01
+    await user.type(screen.getByLabelText('Requirements'), 'System spec for results overview.')
+    await user.click(screen.getByRole('button', { name: 'Continue to planning' }))
+
+    // S2-02
+    await user.click(screen.getByRole('button', { name: 'Continue to outputs' }))
+
+    // S2-03
+    await user.click(screen.getByRole('checkbox', { name: 'System Architecture' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Epics' }))
+    await user.click(screen.getByRole('checkbox', { name: 'User Stories' }))
+    await user.click(screen.getByRole('button', { name: 'Review selection' }))
+
+    // S2-04 -> Run Agent 2
+    await user.click(screen.getByRole('button', { name: 'Run Agent 2' }))
+
+    // S2-06 renders
+    expect(await screen.findByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+    expect(screen.getByText('Generated design and planning artifacts')).toBeInTheDocument()
+    expect(screen.getByText('COMPLETED')).toBeInTheDocument()
+
+    // Summary metrics derived dynamically from real response
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(within(metrics).getByText('Outputs generated')).toBeInTheDocument()
+    expect(within(metrics).getByText('3')).toBeInTheDocument()
+    expect(within(metrics).getByText('Validation')).toBeInTheDocument()
+    expect(within(metrics).getByText('Passed')).toBeInTheDocument()
+    expect(within(metrics).getByText('Correction attempts')).toBeInTheDocument()
+    expect(within(metrics).getByText('Not available')).toBeInTheDocument() // Not fabricated
+    expect(within(metrics).getByText('Traceability')).toBeInTheDocument()
+    expect(within(metrics).getByText('Available')).toBeInTheDocument()
+
+    // Result package cards summarize only returned outputs
+    expect(screen.getByRole('heading', { name: 'Design package' })).toBeInTheDocument()
+    expect(screen.getByText(/System architecture · 2 components/)).toBeInTheDocument()
+    expect(screen.queryByText(/Database schema/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Wireframes/)).not.toBeInTheDocument()
+
+    expect(screen.getByRole('heading', { name: 'Planning package' })).toBeInTheDocument()
+    expect(screen.getByText(/1 epic · 1 story/)).toBeInTheDocument()
+    expect(screen.queryByText(/Sprint plan/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Task assignments/)).not.toBeInTheDocument()
+
+    // Validation evidence & truthful warnings
+    expect(screen.getByRole('heading', { name: 'Validation & traceability evidence' })).toBeInTheDocument()
+    expect(screen.getByText('Structural validation passed')).toBeInTheDocument()
+    expect(screen.getByText('Cross-artifact references valid')).toBeInTheDocument()
+    expect(screen.getByText(/Calculated using baseline velocity/)).toBeInTheDocument()
+
+    // Traceability chain derived from real objects
+    expect(screen.getByText(/Example trace: SPEC-01 → EPIC-01 → STORY-01/)).toBeInTheDocument()
+
+    // Actions
+    expect(screen.getByRole('button', { name: 'View design artifacts' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'View planning hierarchy' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Open run history' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Start another run' })).toBeEnabled()
+
+    // API was called only once
+    expect(runDesignPlanningAgent).toHaveBeenCalledTimes(1)
+  })
+
+  it('Start another run resets to Step 0 (Specification) and preserves draft inputs without re-calling the API', async () => {
+    const user = userEvent.setup()
+    runDesignPlanningAgent.mockResolvedValue({
+      data: {
+        run_id: 'RUN-1000',
+        status: 'COMPLETED',
+        warnings: [],
+        errors: [],
+        outputs: {
+          EPICS: [{ id: 'EPIC-01', title: 'Reservation' }],
+        },
+      },
+    })
+
+    render(<DesignPlanningWorkspace project={project} />)
+
+    // S2-01
+    await user.type(screen.getByLabelText('Requirements'), 'High-level hotel reservation spec.')
+    await user.click(screen.getByRole('button', { name: 'Continue to planning' }))
+
+    // S2-02
+    await user.click(screen.getByRole('button', { name: 'Continue to outputs' }))
+
+    // S2-03
+    await user.click(screen.getByRole('checkbox', { name: 'Epics' }))
+    await user.click(screen.getByRole('button', { name: 'Review selection' }))
+
+    // S2-04
+    await user.click(screen.getByRole('button', { name: 'Run Agent 2' }))
+
+    // S2-06
+    expect(await screen.findByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+    expect(runDesignPlanningAgent).toHaveBeenCalledTimes(1)
+
+    // Click Start another run
+    await user.click(screen.getByRole('button', { name: 'Start another run' }))
+
+    // Resets to Step 0 (Specification)
+    const wizardList = screen.getByRole('list', { name: /agent input steps/i })
+    expect(within(wizardList).getByText('Specification').closest('li')).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByLabelText('Requirements')).toHaveValue('High-level hotel reservation spec.')
+    expect(screen.getByText('Draft input')).toBeInTheDocument()
+
+    // API was NOT re-called
+    expect(runDesignPlanningAgent).toHaveBeenCalledTimes(1)
+  })
 })
+
 
