@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     github_app_slug: str | None = None
     github_app_setup_callback_url: str | None = None
     github_app_oauth_callback_url: str | None = None
+    github_app_private_key_path: Path | None = None
     github_web_base_url: str = "https://github.com"
     github_api_base_url: str = "https://api.github.com"
     frontend_base_url: str = "http://localhost:5173"

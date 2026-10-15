@@ -35,3 +35,18 @@ export function getGitHubConnection(agentProjectId) {
     { authenticated: true },
   )
 }
+
+export function getGitHubRepository(agentProjectId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/github/repository`,
+    { authenticated: true },
+  )
+}
+
+export function createGitHubRepository(agentProjectId, request) {
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/github/repository`,
+    request,
+    { authenticated: true },
+  )
+}

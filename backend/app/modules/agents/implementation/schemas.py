@@ -200,6 +200,131 @@ class GitHubConnectionStatus(BaseModel):
         return self
 
 
+class GitHubRepositoryVisibility(StrEnum):
+    PUBLIC = "PUBLIC"
+    PRIVATE = "PRIVATE"
+
+
+class GitHubRepositoryCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=350)
+    visibility: GitHubRepositoryVisibility
+
+    @field_validator("name")
+    @classmethod
+    def validate_repository_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("repository name is required")
+        if normalized in {".", ".."}:
+            raise ValueError("repository name cannot be a path segment")
+        if any(character.isspace() or ord(character) < 32 for character in normalized):
+            raise ValueError("repository name cannot contain whitespace or control characters")
+        if any(character in normalized for character in ("/", "\\")):
+            raise ValueError("repository name only is required, not an owner or path")
+        if "://" in normalized or normalized.lower().startswith("github.com"):
+            raise ValueError("repository name cannot be a URL")
+        if not all(
+            character.isascii()
+            and (character.isalnum() or character in {"-", "_", "."})
+            for character in normalized
+        ):
+            raise ValueError(
+                "repository name may contain only letters, numbers, hyphens, underscores, and periods"
+            )
+        return normalized
+
+    @field_validator("description")
+    @classmethod
+    def normalize_description(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
+class GitHubRepositoryBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    agent_project_id: str = Field(pattern=r"^AGP-\d{3,}$")
+    owner_id: str = Field(pattern=r"^USR-\d{3,}$")
+    github_connection_owner_id: str = Field(pattern=r"^USR-\d{3,}$")
+    repository_id: int = Field(gt=0)
+    repository_owner: str = Field(min_length=1)
+    repository_name: str = Field(min_length=1, max_length=100)
+    repository_full_name: str = Field(min_length=3)
+    repository_html_url: str = Field(pattern=r"^https?://")
+    visibility: GitHubRepositoryVisibility
+    private: bool
+    default_branch: str | None = None
+    is_empty: Literal[True] = True
+    created_at: datetime
+    updated_at: datetime
+
+    @model_validator(mode="after")
+    def validate_visibility(self) -> "GitHubRepositoryBinding":
+        if self.private is not (self.visibility is GitHubRepositoryVisibility.PRIVATE):
+            raise ValueError("repository visibility and private flag must agree")
+        if self.github_connection_owner_id != self.owner_id:
+            raise ValueError("repository binding must use the project owner's connection")
+        return self
+
+
+class GitHubRepositoryStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    created: bool
+    repository_id: int | None = None
+    owner: str | None = None
+    name: str | None = None
+    full_name: str | None = None
+    html_url: str | None = None
+    visibility: GitHubRepositoryVisibility | None = None
+    private: bool | None = None
+    default_branch: str | None = None
+    is_empty: bool | None = None
+    created_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_created_fields(self) -> "GitHubRepositoryStatus":
+        required = (
+            self.repository_id,
+            self.owner,
+            self.name,
+            self.full_name,
+            self.html_url,
+            self.visibility,
+            self.private,
+            self.is_empty,
+            self.created_at,
+        )
+        details = (*required, self.default_branch)
+        if self.created and any(value is None for value in required):
+            raise ValueError("created repository status requires repository metadata")
+        if not self.created and any(value is not None for value in details):
+            raise ValueError("uncreated repository status cannot contain metadata")
+        return self
+
+    @classmethod
+    def from_binding(
+        cls, binding: GitHubRepositoryBinding
+    ) -> "GitHubRepositoryStatus":
+        return cls(
+            created=True,
+            repository_id=binding.repository_id,
+            owner=binding.repository_owner,
+            name=binding.repository_name,
+            full_name=binding.repository_full_name,
+            html_url=binding.repository_html_url,
+            visibility=binding.visibility,
+            private=binding.private,
+            default_branch=binding.default_branch,
+            is_empty=binding.is_empty,
+            created_at=binding.created_at,
+        )
+
+
 Agent3InputSourceFormat = ImplementationInputSourceType
 Agent3ArtifactType = ImplementationArtifactType
 Agent3OutputCode = ImplementationOutputCode

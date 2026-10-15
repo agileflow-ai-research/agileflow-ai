@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 
 import {
   connectGitHub,
+  createGitHubRepository,
   deleteImplementationInputFile,
   getGitHubConnection,
+  getGitHubRepository,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 import { navigateToGitHub } from './githubNavigation.js'
@@ -95,6 +97,19 @@ function formatBytes(value) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function repositoryNameError(value) {
+  const name = value.trim()
+  if (!name) return 'Repository name is required.'
+  if (name.length > 100) return 'Repository name must be 100 characters or fewer.'
+  if (name === '.' || name === '..') return 'Enter a repository name, not a path segment.'
+  if ([...name].some((character) => (
+    /\s/u.test(character) || character.charCodeAt(0) < 32 || character === '/' || character === '\\'
+  ))) return 'Repository name cannot contain whitespace, control characters, or path separators.'
+  if (name.includes('://') || name.toLowerCase().startsWith('github.com')) return 'Enter a repository name, not a URL.'
+  if (!/^[A-Za-z0-9._-]+$/u.test(name)) return 'Use only letters, numbers, periods, hyphens, and underscores.'
+  return ''
+}
+
 function requestInput(item) {
   const base = {
     source_type: item.source_type,
@@ -114,6 +129,12 @@ function ImplementationWorkspace({ project }) {
   const [githubState, setGitHubState] = useState({
     status: 'loading', connection: null, notice: '', error: '',
   })
+  const [repositoryState, setRepositoryState] = useState({
+    status: 'idle', repository: null, error: '',
+  })
+  const [repositoryForm, setRepositoryForm] = useState({
+    name: '', description: '', visibility: 'PRIVATE',
+  })
 
   useEffect(() => {
     let active = true
@@ -125,8 +146,9 @@ function ImplementationWorkspace({ project }) {
         error: 'GitHub account connection was not completed.',
       }))
     }
-    getGitHubConnection(project.agent_project_id)
-      .then((response) => {
+    async function loadGitHubState() {
+      try {
+        const response = await getGitHubConnection(project.agent_project_id)
         if (!active) return
         const connection = response?.data
         if (!connection || typeof connection.connected !== 'boolean') {
@@ -142,15 +164,41 @@ function ImplementationWorkspace({ project }) {
             ? 'GitHub returned to AgileFlow, but no verified connection was found.'
             : current.error,
         }))
-      })
-      .catch((error) => {
+        if (!connection.connected) {
+          setRepositoryState({ status: 'idle', repository: null, error: '' })
+          return
+        }
+        setRepositoryState({ status: 'loading', repository: null, error: '' })
+        try {
+          const repositoryResponse = await getGitHubRepository(project.agent_project_id)
+          if (!active) return
+          const repository = repositoryResponse?.data
+          if (!repository || typeof repository.created !== 'boolean') {
+            throw new Error('Invalid GitHub repository response')
+          }
+          setRepositoryState({
+            status: repository.created ? 'created' : 'ready',
+            repository: repository.created ? repository : null,
+            error: '',
+          })
+        } catch (error) {
+          if (!active || error?.status === 401) return
+          setRepositoryState({
+            status: 'error',
+            repository: null,
+            error: error?.errors?.[0]?.message || error?.message || 'GitHub repository status could not be loaded.',
+          })
+        }
+      } catch (error) {
         if (!active || error?.status === 401) return
         setGitHubState((current) => ({
           ...current,
           status: 'error',
           error: current.error || error?.errors?.[0]?.message || error?.message || 'GitHub connection status could not be loaded.',
         }))
-      })
+      }
+    }
+    loadGitHubState()
     return () => { active = false }
   }, [project.agent_project_id])
 
@@ -242,6 +290,31 @@ function ImplementationWorkspace({ project }) {
     }
   }
 
+  async function handleRepositoryCreate() {
+    const validationError = repositoryNameError(repositoryForm.name)
+    if (validationError) {
+      setRepositoryState((current) => ({ ...current, error: validationError }))
+      return
+    }
+    setRepositoryState((current) => ({ ...current, status: 'creating', error: '' }))
+    try {
+      const response = await createGitHubRepository(project.agent_project_id, {
+        name: repositoryForm.name.trim(),
+        description: repositoryForm.description.trim() || null,
+        visibility: repositoryForm.visibility,
+      })
+      if (!response?.data?.created) throw new Error('Invalid GitHub repository response')
+      setRepositoryState({ status: 'created', repository: response.data, error: '' })
+    } catch (error) {
+      const partialRepository = error?.data?.repository
+      setRepositoryState({
+        status: partialRepository?.created ? 'error' : 'ready',
+        repository: null,
+        error: error?.errors?.[0]?.message || error?.message || 'The GitHub repository could not be created.',
+      })
+    }
+  }
+
   function next() {
     if (step === 0) {
       if (inputs.length === 0) {
@@ -293,9 +366,18 @@ function ImplementationWorkspace({ project }) {
       ))}
     </ol>
   )
-  const githubReview = githubState.connection?.connected
-    ? `Connected as @${githubState.connection.github_login} (Personal). Repository: Not created yet.`
-    : 'Not connected. No repository has been created.'
+  const githubReview = githubState.connection?.connected ? (
+    <div className="space-y-1">
+      <p>GitHub status: Connected as @{githubState.connection.github_login} (Personal)</p>
+      {repositoryState.repository ? (
+        <>
+          <p>Repository: {repositoryState.repository.full_name}</p>
+          <p>Visibility: {repositoryState.repository.visibility === 'PRIVATE' ? 'Private' : 'Public'}</p>
+          <p>Repository state: Empty</p>
+        </>
+      ) : <p>Repository: Not created yet</p>}
+    </div>
+  ) : 'Not connected. No repository has been created.'
 
   return (
     <div className="space-y-5">
@@ -404,16 +486,76 @@ function ImplementationWorkspace({ project }) {
         {githubState.notice && <p role="status" className="mt-3 text-sm text-state-success">{githubState.notice}</p>}
         {githubState.error && <p role="alert" className="mt-3 text-sm text-state-danger">{githubState.error}</p>}
         {githubState.status === 'connected' ? (
-          <div className="mt-4 flex flex-wrap items-start gap-4">
-            {githubState.connection.avatar_url && (
-              <img className="h-12 w-12 rounded-full" src={githubState.connection.avatar_url} alt={`@${githubState.connection.github_login} GitHub avatar`} />
-            )}
-            <dl className="grid gap-2 text-sm">
-              <div><dt className="inline font-medium text-content-primary">Status: </dt><dd className="inline text-state-success">Connected</dd></div>
-              <div><dt className="inline font-medium text-content-primary">Account: </dt><dd className="inline text-content-secondary">@{githubState.connection.github_login}</dd></div>
-              <div><dt className="inline font-medium text-content-primary">Account type: </dt><dd className="inline text-content-secondary">Personal</dd></div>
-              <div><dt className="inline font-medium text-content-primary">Repository: </dt><dd className="inline text-content-secondary">Not created yet</dd></div>
-            </dl>
+          <div className="mt-4 space-y-5">
+            <div className="flex flex-wrap items-start gap-4">
+              {githubState.connection.avatar_url && (
+                <img className="h-12 w-12 rounded-full" src={githubState.connection.avatar_url} alt={`@${githubState.connection.github_login} GitHub avatar`} />
+              )}
+              <dl className="grid gap-2 text-sm">
+                <div><dt className="inline font-medium text-content-primary">Status: </dt><dd className="inline text-state-success">Connected</dd></div>
+                <div><dt className="inline font-medium text-content-primary">Account: </dt><dd className="inline text-content-secondary">@{githubState.connection.github_login}</dd></div>
+                <div><dt className="inline font-medium text-content-primary">Account type: </dt><dd className="inline text-content-secondary">Personal</dd></div>
+              </dl>
+            </div>
+
+            {repositoryState.error && <p role="alert" className="text-sm text-state-danger">{repositoryState.error}</p>}
+            {repositoryState.status === 'loading' && <p role="status" className="text-sm text-content-secondary">Loading repository status...</p>}
+            {repositoryState.status === 'ready' || repositoryState.status === 'creating' ? (
+              <section aria-labelledby="repository-setup-title" className="space-y-4 border-t border-default pt-5">
+                <div>
+                  <h4 id="repository-setup-title" className="font-semibold text-content-primary">Repository Setup</h4>
+                  <p className="mt-1 text-sm text-content-secondary">Create one new, empty repository in your connected personal GitHub account.</p>
+                </div>
+                <Input
+                  label="Repository Name"
+                  required
+                  value={repositoryForm.name}
+                  disabled={repositoryState.status === 'creating'}
+                  onChange={(event) => {
+                    setRepositoryForm((current) => ({ ...current, name: event.target.value }))
+                    setRepositoryState((current) => ({ ...current, error: '' }))
+                  }}
+                />
+                <Textarea
+                  label="Description"
+                  rows={3}
+                  value={repositoryForm.description}
+                  disabled={repositoryState.status === 'creating'}
+                  onChange={(event) => setRepositoryForm((current) => ({ ...current, description: event.target.value }))}
+                />
+                <Select
+                  label="Visibility"
+                  required
+                  value={repositoryForm.visibility}
+                  disabled={repositoryState.status === 'creating'}
+                  options={[
+                    { value: 'PRIVATE', label: 'Private' },
+                    { value: 'PUBLIC', label: 'Public' },
+                  ]}
+                  onChange={(event) => setRepositoryForm((current) => ({ ...current, visibility: event.target.value }))}
+                />
+                <Button
+                  loading={repositoryState.status === 'creating'}
+                  loadingLabel="Creating repository"
+                  onClick={handleRepositoryCreate}
+                >
+                  Create Repository
+                </Button>
+              </section>
+            ) : null}
+            {repositoryState.status === 'created' && repositoryState.repository ? (
+              <section aria-labelledby="created-repository-title" className="space-y-3 border-t border-default pt-5">
+                <h4 id="created-repository-title" className="font-semibold text-content-primary">Repository</h4>
+                <p className="text-state-success">Created</p>
+                <p className="font-semibold text-content-primary">{repositoryState.repository.full_name}</p>
+                <dl className="grid gap-2 text-sm">
+                  <div><dt className="inline font-medium text-content-primary">Visibility: </dt><dd className="inline text-content-secondary">{repositoryState.repository.visibility === 'PRIVATE' ? 'Private' : 'Public'}</dd></div>
+                  <div><dt className="inline font-medium text-content-primary">Repository state: </dt><dd className="inline text-content-secondary">Empty</dd></div>
+                  <div><dt className="inline font-medium text-content-primary">Branch structure: </dt><dd className="inline text-content-secondary">Not created yet</dd></div>
+                </dl>
+                <a className="inline-flex text-sm font-semibold text-accent hover:underline" href={repositoryState.repository.html_url} target="_blank" rel="noreferrer">Open on GitHub</a>
+              </section>
+            ) : null}
           </div>
         ) : (
           <>

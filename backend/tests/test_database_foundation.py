@@ -22,6 +22,7 @@ EXPECTED_COLLECTIONS = {
     "AGENT_PROJECTS": "agent_projects",
     "AGENT_RUNS": "agent_runs",
     "GITHUB_CONNECTIONS": "github_connections",
+    "GITHUB_REPOSITORY_BINDINGS": "github_repository_bindings",
 }
 
 

@@ -140,6 +140,29 @@ describe('apiClient response contract', () => {
     })
   })
 
+  it('preserves safe reconciliation data from an API error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            success: false,
+            message: 'Repository created but binding failed',
+            errors: [{ field: 'repository', message: 'Reconciliation required' }],
+            data: { repository: { created: true, full_name: 'octocat/quickbook' } },
+          },
+          { status: 502, statusText: 'Bad Gateway' },
+        ),
+      ),
+    )
+    const { request } = await import('./apiClient.js')
+
+    await expect(request('/repository')).rejects.toMatchObject({
+      status: 502,
+      data: { repository: { created: true, full_name: 'octocat/quickbook' } },
+    })
+  })
+
   it('wraps a network failure in a safe status-zero ApiError', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
     const { ApiError, request } = await import('./apiClient.js')

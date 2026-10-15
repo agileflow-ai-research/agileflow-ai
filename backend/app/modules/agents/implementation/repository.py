@@ -3,14 +3,30 @@ from typing import Any
 
 from pymongo import ReturnDocument
 from pymongo.database import Database
-from pymongo.errors import PyMongoError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
-from app.database.collections import GITHUB_CONNECTIONS
+from app.database.collections import (
+    GITHUB_CONNECTIONS,
+    GITHUB_REPOSITORY_BINDINGS,
+)
 from app.database.mongodb import get_database
-from app.modules.agents.implementation.schemas import GitHubConnection
+from app.modules.agents.implementation.schemas import (
+    GitHubConnection,
+    GitHubRepositoryBinding,
+)
 
 
 class GitHubConnectionRepositoryError(RuntimeError):
+    pass
+
+
+class GitHubRepositoryBindingRepositoryError(RuntimeError):
+    pass
+
+
+class GitHubRepositoryBindingConflictError(
+    GitHubRepositoryBindingRepositoryError
+):
     pass
 
 
@@ -57,3 +73,41 @@ class GitHubConnectionRepository:
                 "Could not persist GitHub connection"
             ) from exc
         return _public(persisted or document)
+
+
+class GitHubRepositoryBindingRepository:
+    def __init__(
+        self,
+        database: Database[dict[str, Any]] | None = None,
+    ) -> None:
+        configured_database = database if database is not None else get_database()
+        self._collection = configured_database[GITHUB_REPOSITORY_BINDINGS]
+
+    def find_by_project(
+        self, agent_project_id: str, owner_id: str
+    ) -> dict[str, Any] | None:
+        try:
+            document = self._collection.find_one(
+                {"agent_project_id": agent_project_id, "owner_id": owner_id},
+                {"_id": 0},
+            )
+        except PyMongoError as exc:
+            raise GitHubRepositoryBindingRepositoryError(
+                "Could not retrieve GitHub repository binding"
+            ) from exc
+        return _public(document) if document is not None else None
+
+    def create(self, binding: GitHubRepositoryBinding) -> dict[str, Any]:
+        document = binding.model_dump(mode="python")
+        document["_id"] = f"GITHUB_REPOSITORY:{binding.agent_project_id}"
+        try:
+            self._collection.insert_one(document)
+        except DuplicateKeyError as exc:
+            raise GitHubRepositoryBindingConflictError(
+                "Agent project already has a GitHub repository binding"
+            ) from exc
+        except PyMongoError as exc:
+            raise GitHubRepositoryBindingRepositoryError(
+                "Could not persist GitHub repository binding"
+            ) from exc
+        return _public(document)

@@ -9,9 +9,32 @@ from app.core.config import settings
 from app.modules.agents.implementation.schemas import (
     GitHubConnectionStatus,
     GitHubConnectResponse,
+    GitHubRepositoryCreateRequest,
+    GitHubRepositoryStatus,
     ImplementationArtifactType,
     ImplementationInputSourceType,
     UploadedFileMetadata,
+)
+from app.modules.agents.implementation.github_auth import (
+    GitHubAppAuthenticationError,
+    GitHubAppAuthenticator,
+    GitHubAppPermissionError,
+    GitHubExternalServiceError,
+    GitHubInstallationRevokedError,
+    GitHubPrivateKeyError,
+)
+from app.modules.agents.implementation.github_repository_service import (
+    GitHubConnectionRequiredError,
+    GitHubOrganizationConnectionError,
+    GitHubRepositoryAlreadyBoundError,
+    GitHubRepositoryAuthenticationError,
+    GitHubRepositoryClient,
+    GitHubRepositoryExternalError,
+    GitHubRepositoryNameConflictError,
+    GitHubRepositoryPartialFailureError,
+    GitHubRepositoryPermissionError,
+    GitHubRepositoryService,
+    GitHubRepositoryValidationError,
 )
 from app.modules.agents.implementation.github import (
     GitHubApiClient,
@@ -25,6 +48,8 @@ from app.modules.agents.implementation.github import (
 from app.modules.agents.implementation.repository import (
     GitHubConnectionRepository,
     GitHubConnectionRepositoryError,
+    GitHubRepositoryBindingRepository,
+    GitHubRepositoryBindingRepositoryError,
 )
 from app.modules.agents.implementation.service import (
     ImplementationInputService,
@@ -93,6 +118,35 @@ def get_github_connection_service(
         _github_states,
         GitHubApiClient(configuration),
         configuration,
+    )
+
+
+def get_github_repository_binding_repository() -> GitHubRepositoryBindingRepository:
+    return GitHubRepositoryBindingRepository()
+
+
+def get_github_repository_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    connection_repository: Annotated[
+        GitHubConnectionRepository,
+        Depends(get_github_connection_repository),
+    ],
+    binding_repository: Annotated[
+        GitHubRepositoryBindingRepository,
+        Depends(get_github_repository_binding_repository),
+    ],
+) -> GitHubRepositoryService:
+    return GitHubRepositoryService(
+        standalone_service,
+        connection_repository,
+        binding_repository,
+        GitHubAppAuthenticator(settings),
+        GitHubRepositoryClient(
+            settings.github_api_base_url,
+            settings.github_http_timeout_seconds,
+        ),
     )
 
 
@@ -423,3 +477,123 @@ def get_github_connection(
             "GitHub connection storage is unavailable",
         )
     return SuccessResponse(message="GitHub connection retrieved", data=result)
+
+
+def _repository_failure(
+    status_code: int,
+    message: str,
+    detail: str,
+    repository: GitHubRepositoryStatus | None = None,
+) -> JSONResponse:
+    content = ErrorResponse(
+        message=message,
+        errors=[ErrorDetail(field="repository", message=detail)],
+    ).model_dump(mode="json")
+    if repository is not None:
+        content["data"] = {
+            "repository": repository.model_dump(mode="json", exclude_none=True)
+        }
+    return JSONResponse(status_code=status_code, content=content)
+
+
+@router.get(
+    "/{agent_project_id}/github/repository",
+    response_model=SuccessResponse[GitHubRepositoryStatus],
+    response_model_exclude_none=True,
+)
+def get_github_repository(
+    agent_project_id: str,
+    service: Annotated[
+        GitHubRepositoryService, Depends(get_github_repository_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[GitHubRepositoryStatus] | JSONResponse:
+    try:
+        repository = service.get_repository(agent_project_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(
+            409,
+            "Agent project is archived",
+            "agent_project_id",
+            "Reactivate the agent project before checking its GitHub repository",
+        )
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except (StandaloneServiceError, GitHubRepositoryBindingRepositoryError):
+        return _repository_failure(
+            503,
+            "GitHub repository unavailable",
+            "Repository binding storage is unavailable",
+        )
+    return SuccessResponse(message="GitHub repository retrieved", data=repository)
+
+
+@router.post(
+    "/{agent_project_id}/github/repository",
+    response_model=SuccessResponse[GitHubRepositoryStatus],
+    response_model_exclude_none=True,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_github_repository(
+    agent_project_id: str,
+    request: GitHubRepositoryCreateRequest,
+    service: Annotated[
+        GitHubRepositoryService, Depends(get_github_repository_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[GitHubRepositoryStatus] | JSONResponse:
+    try:
+        repository = service.create_repository(
+            agent_project_id, current_user, request
+        )
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(
+            409,
+            "Agent project is archived",
+            "agent_project_id",
+            "Reactivate the agent project before creating a GitHub repository",
+        )
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except GitHubRepositoryAlreadyBoundError as exc:
+        return _repository_failure(409, str(exc), str(exc), exc.repository)
+    except GitHubConnectionRequiredError as exc:
+        return _repository_failure(409, "GitHub connection required", str(exc))
+    except GitHubOrganizationConnectionError as exc:
+        return _repository_failure(422, "Unsupported GitHub account", str(exc))
+    except GitHubPrivateKeyError as exc:
+        return _repository_failure(503, "GitHub App configuration unavailable", str(exc))
+    except (GitHubInstallationRevokedError, GitHubRepositoryAuthenticationError) as exc:
+        return _repository_failure(409, "GitHub reconnection required", str(exc))
+    except GitHubAppAuthenticationError as exc:
+        return _repository_failure(502, "GitHub App authentication failed", str(exc))
+    except (GitHubAppPermissionError, GitHubRepositoryPermissionError) as exc:
+        return _repository_failure(403, "GitHub App permission denied", str(exc))
+    except GitHubRepositoryNameConflictError as exc:
+        return _repository_failure(409, "Repository name unavailable", str(exc))
+    except GitHubRepositoryValidationError as exc:
+        return _repository_failure(422, "Repository creation rejected", str(exc))
+    except GitHubRepositoryPartialFailureError as exc:
+        return _repository_failure(
+            502,
+            "Repository created but binding failed",
+            str(exc),
+            exc.repository,
+        )
+    except (GitHubExternalServiceError, GitHubRepositoryExternalError) as exc:
+        return _repository_failure(502, "GitHub repository unavailable", str(exc))
+    except (
+        StandaloneServiceError,
+        GitHubConnectionRepositoryError,
+        GitHubRepositoryBindingRepositoryError,
+    ):
+        return _repository_failure(
+            503,
+            "GitHub repository unavailable",
+            "GitHub repository storage is unavailable",
+        )
+    return SuccessResponse(message="GitHub repository created", data=repository)

@@ -22,11 +22,12 @@ function notifyUnauthorized(error) {
 }
 
 export class ApiError extends Error {
-  constructor({ status, message, errors, workflow_stage, next_action, cause }) {
+  constructor({ status, message, errors, data, workflow_stage, next_action, cause }) {
     super(message, { cause })
     this.name = 'ApiError'
     this.status = status
     this.errors = errors
+    this.data = data
     this.workflow_stage = workflow_stage
     this.next_action = next_action
   }
@@ -37,6 +38,7 @@ function createApiError(status, payload, fallbackMessage, cause) {
     status,
     message: payload?.message || fallbackMessage,
     errors: Array.isArray(payload?.errors) ? payload.errors : [],
+    data: payload?.data ?? null,
     workflow_stage: payload?.workflow_stage ?? null,
     next_action: payload?.next_action ?? null,
     cause,

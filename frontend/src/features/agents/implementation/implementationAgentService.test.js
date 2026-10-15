@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiClient } from '../../../services/apiClient.js'
 import {
   connectGitHub,
+  createGitHubRepository,
   deleteImplementationInputFile,
   getGitHubConnection,
+  getGitHubRepository,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 
@@ -50,6 +52,22 @@ describe('implementationAgentService', () => {
     )
     expect(apiClient.get).toHaveBeenCalledWith(
       '/agents/implementation/AGP-003/github/connection',
+      { authenticated: true },
+    )
+  })
+
+  it('uses backend-only repository status and create endpoints', () => {
+    getGitHubRepository('AGP-003')
+    createGitHubRepository('AGP-003', {
+      name: 'quickbook', description: 'Booking', visibility: 'PRIVATE',
+    })
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/github/repository',
+      { authenticated: true },
+    )
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/github/repository',
+      { name: 'quickbook', description: 'Booking', visibility: 'PRIVATE' },
       { authenticated: true },
     )
   })

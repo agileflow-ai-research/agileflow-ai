@@ -21,7 +21,9 @@ vi.mock('../features/agents/implementation/implementationAgentService.js', () =>
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
   connectGitHub: vi.fn(),
+  createGitHubRepository: vi.fn(),
   getGitHubConnection: vi.fn(),
+  getGitHubRepository: vi.fn(),
 }))
 
 const project = {
