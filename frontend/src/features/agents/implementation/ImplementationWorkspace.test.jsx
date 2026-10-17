@@ -9,8 +9,10 @@ import {
   evaluateImplementationReadiness,
   extractImplementationDocument,
   getGitHubConnection,
+  getImplementationDocumentChunks,
   getImplementationDocumentExtraction,
   getGitHubRepository,
+  prepareImplementationDocumentChunks,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 import { navigateToGitHub } from './githubNavigation.js'
@@ -22,6 +24,8 @@ vi.mock('./implementationAgentService.js', () => ({
   evaluateImplementationReadiness: vi.fn(),
   extractImplementationDocument: vi.fn(),
   getImplementationDocumentExtraction: vi.fn(),
+  getImplementationDocumentChunks: vi.fn(),
+  prepareImplementationDocumentChunks: vi.fn(),
   connectGitHub: vi.fn(),
   createGitHubRepository: vi.fn(),
   getGitHubConnection: vi.fn(),
@@ -111,6 +115,41 @@ function extractionResult(overrides = {}) {
   }
 }
 
+function chunkResult(overrides = {}) {
+  return {
+    upload_id: metadata().upload_id,
+    agent_project_id: 'AGP-003',
+    source_sha256: 'a'.repeat(64),
+    document_type: 'PDF',
+    extraction_version: '1',
+    chunker_version: '1',
+    status: 'SUCCESS',
+    metrics: {
+      chunk_count: 1, total_lexical_tokens: 7, average_chunk_tokens: 7,
+      min_chunk_tokens: 7, max_chunk_tokens: 7,
+    },
+    warnings: [],
+    chunks: [{
+      chunk_id: 'CHK-0123456789ABCDEF0123', chunk_index: 0,
+      text: 'POST /bookings creates a booking.', text_hash: 'b'.repeat(64),
+      token_count: 7, character_count: 33,
+      context: {
+        heading_path: ['API Design'], section_title: 'API Design', heading_depth: 1,
+        structure_type: 'PARAGRAPH', structural_warning: null,
+      },
+      provenance: {
+        upload_id: metadata().upload_id, agent_project_id: 'AGP-003',
+        original_filename: 'bookease-api.pdf', source_sha256: 'a'.repeat(64),
+        document_type: 'PDF', page_start: 3, page_end: 4,
+        block_start: null, block_end: null, line_start: null, line_end: null,
+        structured_path: null,
+      },
+    }],
+    created_at: '2026-10-18T10:00:00Z',
+    ...overrides,
+  }
+}
+
 function readinessResult(overrides = {}) {
   return {
     status: 'READY_WITH_WARNINGS',
@@ -176,7 +215,77 @@ describe('ImplementationWorkspace', () => {
     getGitHubRepository.mockResolvedValue({ data: { created: false } })
     extractImplementationDocument.mockResolvedValue({ data: extractionResult() })
     getImplementationDocumentExtraction.mockResolvedValue({ data: extractionResult() })
+    prepareImplementationDocumentChunks.mockResolvedValue({ data: chunkResult() })
+    getImplementationDocumentChunks.mockResolvedValue({ data: chunkResult() })
     evaluateImplementationReadiness.mockResolvedValue({ data: readinessResult() })
+  })
+
+  it('prepares, summarizes, reviews, and force-rebuilds semantic chunks', async () => {
+    const user = userEvent.setup()
+    let resolvePreparation
+    prepareImplementationDocumentChunks.mockReturnValueOnce(new Promise((resolve) => { resolvePreparation = resolve }))
+    render(<ImplementationWorkspace project={project} />)
+    await attachFile(
+      user,
+      'DOCUMENT',
+      new File(['document'], 'bookease-api.pdf', { type: 'application/pdf' }),
+      metadata(),
+    )
+    expect(await screen.findByText('Not prepared')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Prepare Semantic Chunks' }))
+    expect(screen.getByText('Preparing...')).toBeInTheDocument()
+    resolvePreparation({ data: chunkResult() })
+    expect(await screen.findByText('\u2713 Prepared')).toBeInTheDocument()
+    expect(screen.getByText('Chunks: 1')).toBeInTheDocument()
+    expect(screen.getByText('Average size: 7 tokens')).toBeInTheDocument()
+    expect(screen.getByText('Chunker: v1')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Review Chunks' }))
+    expect(await screen.findByRole('heading', { name: 'Chunk 1' })).toBeInTheDocument()
+    expect(screen.getByText('Section: API Design')).toBeInTheDocument()
+    expect(screen.getByText('Source: pages 3\u20134')).toBeInTheDocument()
+    expect(screen.getByText('POST /bookings creates a booking.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Rebuild' }))
+    await waitFor(() => expect(prepareImplementationDocumentChunks).toHaveBeenLastCalledWith(
+      'AGP-003', metadata().upload_id, { force: true },
+    ))
+  })
+
+  it.each([
+    ['PARTIAL', 'Prepared with warnings'],
+    ['FAILED', 'Preparation failed'],
+  ])('renders %s semantic preparation truthfully', async (status, label) => {
+    const user = userEvent.setup()
+    prepareImplementationDocumentChunks.mockResolvedValue({ data: chunkResult({ status }) })
+    render(<ImplementationWorkspace project={project} />)
+    await attachFile(user, 'DOCUMENT', new File(['doc'], 'input.txt'), metadata({ original_filename: 'input.txt' }))
+    await user.click(screen.getByRole('button', { name: 'Prepare Semantic Chunks' }))
+    expect(await screen.findByText(label)).toBeInTheDocument()
+  })
+
+  it('shows structured source paths as plain text and no semantic action for images', async () => {
+    const user = userEvent.setup()
+    const structured = chunkResult({
+      document_type: 'JSON',
+      chunks: [{
+        ...chunkResult().chunks[0],
+        text: '{"id":"uuid"}',
+        context: { ...chunkResult().chunks[0].context, section_title: null, heading_path: [] },
+        provenance: {
+          ...chunkResult().chunks[0].provenance,
+          document_type: 'JSON', page_start: null, page_end: null,
+          structured_path: '$.tables.bookings',
+        },
+      }],
+    })
+    prepareImplementationDocumentChunks.mockResolvedValue({ data: structured })
+    getImplementationDocumentChunks.mockResolvedValue({ data: structured })
+    render(<ImplementationWorkspace project={project} />)
+    await attachFile(user, 'DOCUMENT', new File(['{}'], 'model.json'), metadata({ original_filename: 'model.json' }))
+    await user.click(screen.getByRole('button', { name: 'Prepare Semantic Chunks' }))
+    await user.click(await screen.findByRole('button', { name: 'Review Chunks' }))
+    expect(await screen.findByText('Source path: $.tables.bookings')).toBeInTheDocument()
+    expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument()
   })
 
   it('explicitly evaluates and renders READY_WITH_WARNINGS with grouped findings and frozen stack', async () => {

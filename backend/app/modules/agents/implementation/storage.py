@@ -62,6 +62,8 @@ class StagedUpload:
     file_path: Path
     extraction_path: Path
     extraction_partial_path: Path
+    chunks_path: Path
+    chunks_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -192,10 +194,16 @@ class ImplementationUploadStorage:
         extraction_partial_path = self._contained(
             project_directory, f"{upload_id}.extracted.json.part"
         )
+        chunks_path = self._contained(project_directory, f"{upload_id}.chunks.json")
+        chunks_partial_path = self._contained(
+            project_directory, f"{upload_id}.chunks.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
             extraction_path.unlink(missing_ok=True)
             extraction_partial_path.unlink(missing_ok=True)
+            chunks_path.unlink(missing_ok=True)
+            chunks_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise UploadNotFoundError(upload_id) from exc
@@ -231,6 +239,10 @@ class ImplementationUploadStorage:
         extraction_partial_path = self._contained(
             project_directory, f"{upload_id}.extracted.json.part"
         )
+        chunks_path = self._contained(project_directory, f"{upload_id}.chunks.json")
+        chunks_partial_path = self._contained(
+            project_directory, f"{upload_id}.chunks.json.part"
+        )
         try:
             if not stored_path.is_file():
                 raise UploadNotFoundError(upload_id)
@@ -249,6 +261,8 @@ class ImplementationUploadStorage:
             file_path=stored_path,
             extraction_path=extraction_path,
             extraction_partial_path=extraction_partial_path,
+            chunks_path=chunks_path,
+            chunks_partial_path=chunks_partial_path,
         )
 
     @staticmethod

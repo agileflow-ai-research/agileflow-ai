@@ -7,8 +7,10 @@ import {
   evaluateImplementationReadiness,
   extractImplementationDocument,
   getGitHubConnection,
+  getImplementationDocumentChunks,
   getImplementationDocumentExtraction,
   getGitHubRepository,
+  prepareImplementationDocumentChunks,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 import { navigateToGitHub } from './githubNavigation.js'
@@ -91,6 +93,7 @@ function emptyInput() {
     selectedFile: null,
     status: 'idle',
     extraction: null,
+    chunks: null,
     error: '',
   }
 }
@@ -288,6 +291,44 @@ function ExtractionContentReview({ result }) {
   )
 }
 
+function chunkSource(chunk) {
+  const source = chunk.provenance
+  if (source.structured_path) return `Source path: ${source.structured_path}`
+  if (source.page_start) {
+    return source.page_start === source.page_end
+      ? `Source: page ${source.page_start}`
+      : `Source: pages ${source.page_start}\u2013${source.page_end}`
+  }
+  if (source.block_start) {
+    return source.block_start === source.block_end
+      ? `Source: block ${source.block_start}`
+      : `Source: blocks ${source.block_start}\u2013${source.block_end}`
+  }
+  if (source.line_start) {
+    return source.line_start === source.line_end
+      ? `Source: line ${source.line_start}`
+      : `Source: lines ${source.line_start}\u2013${source.line_end}`
+  }
+  return `Source: ${source.original_filename}`
+}
+
+function SemanticChunkReview({ result }) {
+  return (
+    <section className="mt-4 space-y-4 border-t border-default pt-4" aria-label="Semantic Chunks">
+      <h5 className="font-semibold text-content-primary">Semantic Chunks</h5>
+      {result.chunks.map((chunk) => (
+        <article key={chunk.chunk_id} className="rounded-control border border-default p-3">
+          <h6 className="font-semibold text-content-primary">Chunk {chunk.chunk_index + 1}</h6>
+          <p className="mt-1 text-sm text-content-secondary">Tokens: {chunk.token_count}</p>
+          {chunk.context.section_title && <p className="text-sm text-content-secondary">Section: {chunk.context.section_title}</p>}
+          <p className="text-sm text-content-secondary">{chunkSource(chunk)}</p>
+          <pre className="mt-3 whitespace-pre-wrap text-sm text-content-secondary">{chunk.text}</pre>
+        </article>
+      ))}
+    </section>
+  )
+}
+
 function ImplementationWorkspace({ project }) {
   const [step, setStep] = useState(0)
   const [inputs, setInputs] = useState([emptyInput()])
@@ -303,6 +344,9 @@ function ImplementationWorkspace({ project }) {
     name: '', description: '', visibility: 'PRIVATE',
   })
   const [extractionReview, setExtractionReview] = useState({
+    uploadId: null, status: 'idle', result: null, error: '',
+  })
+  const [chunkReview, setChunkReview] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [readinessState, setReadinessState] = useState({
@@ -443,7 +487,7 @@ function ImplementationWorkspace({ project }) {
         { force },
       )
       if (!response?.data?.status) throw new Error('Invalid extraction response')
-      updateInput(index, { extraction: extractionSummary(response.data), error: '' })
+      updateInput(index, { extraction: extractionSummary(response.data), chunks: null, error: '' })
     } catch (error) {
       updateInput(index, {
         extraction: { status: 'error' },
@@ -475,6 +519,47 @@ function ImplementationWorkspace({ project }) {
     }
   }
 
+  async function prepareChunks(index, file, { force = false } = {}) {
+    updateInput(index, { chunks: { status: 'preparing' }, error: '' })
+    try {
+      const response = await prepareImplementationDocumentChunks(
+        project.agent_project_id,
+        file.upload_id,
+        { force },
+      )
+      if (!response?.data?.metrics) throw new Error('Invalid semantic chunk response')
+      updateInput(index, { chunks: response.data, error: '' })
+      if (chunkReview.uploadId === file.upload_id) {
+        setChunkReview({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+      }
+    } catch (error) {
+      updateInput(index, {
+        chunks: { status: 'error' },
+        error: error?.errors?.[0]?.message || error?.message || 'Semantic chunks could not be prepared.',
+      })
+    }
+  }
+
+  async function reviewChunks(file) {
+    if (chunkReview.uploadId === file.upload_id && chunkReview.result) {
+      setChunkReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      return
+    }
+    setChunkReview({ uploadId: file.upload_id, status: 'loading', result: null, error: '' })
+    try {
+      const response = await getImplementationDocumentChunks(project.agent_project_id, file.upload_id)
+      if (!Array.isArray(response?.data?.chunks)) throw new Error('Invalid semantic chunk response')
+      setChunkReview({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+    } catch (error) {
+      setChunkReview({
+        uploadId: file.upload_id,
+        status: 'error',
+        result: null,
+        error: error?.errors?.[0]?.message || error?.message || 'Semantic chunks could not be loaded.',
+      })
+    }
+  }
+
   async function removeInput(index) {
     const item = inputs[index]
     if (!item.file) {
@@ -492,6 +577,9 @@ function ImplementationWorkspace({ project }) {
       )
       if (extractionReview.uploadId === item.file.upload_id) {
         setExtractionReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      }
+      if (chunkReview.uploadId === item.file.upload_id) {
+        setChunkReview({ uploadId: null, status: 'idle', result: null, error: '' })
       }
       setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
       setReadinessState((current) => (
@@ -623,6 +711,7 @@ function ImplementationWorkspace({ project }) {
         item.status === 'uploading'
         || item.status === 'deleting'
         || item.extraction?.status === 'extracting'
+        || item.chunks?.status === 'preparing'
         || (item.source_type === 'TEXT' ? !item.content.trim() : !item.file)
       ))
       if (invalid) {
@@ -642,6 +731,7 @@ function ImplementationWorkspace({ project }) {
     item.status === 'uploading'
     || item.status === 'deleting'
     || item.extraction?.status === 'extracting'
+    || item.chunks?.status === 'preparing'
   ))
   const workspaceRequest = {
     inputs: inputs.map(requestInput),
@@ -704,6 +794,7 @@ function ImplementationWorkspace({ project }) {
               const isBusy = item.status === 'uploading'
                 || item.status === 'deleting'
                 || item.extraction?.status === 'extracting'
+                || item.chunks?.status === 'preparing'
               return (
                 <Card key={index} variant="elevated" className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
@@ -776,6 +867,47 @@ function ImplementationWorkspace({ project }) {
                           )}
                           {extractionReview.uploadId === item.file.upload_id && extractionReview.result && (
                             <ExtractionContentReview result={extractionReview.result} />
+                          )}
+                          {['SUCCESS', 'PARTIAL'].includes(item.extraction?.status) && (
+                            <section className="mt-4 space-y-2 border-t border-default pt-4" aria-label="Semantic Preparation">
+                              <p className="text-sm font-medium text-content-primary">Semantic Preparation</p>
+                              {!item.chunks && <p className="text-sm text-content-secondary">Not prepared</p>}
+                              {item.chunks?.status === 'preparing' && <p role="status" className="text-sm text-content-secondary">Preparing...</p>}
+                              {item.chunks?.status === 'SUCCESS' && <p className="text-sm text-state-success">{'\u2713 Prepared'}</p>}
+                              {item.chunks?.status === 'PARTIAL' && <p className="text-sm text-state-warning">Prepared with warnings</p>}
+                              {item.chunks?.status === 'FAILED' && <p className="text-sm text-state-danger">Preparation failed</p>}
+                              {item.chunks?.status === 'error' && <p className="text-sm text-state-danger">Preparation request failed</p>}
+                              {item.chunks?.metrics && (
+                                <div className="text-sm text-content-secondary">
+                                  <p>Chunks: {item.chunks.metrics.chunk_count}</p>
+                                  <p>Average size: {item.chunks.metrics.average_chunk_tokens} tokens</p>
+                                  <p>Chunker: v{item.chunks.chunker_version}</p>
+                                </div>
+                              )}
+                              {!item.chunks && (
+                                <Button variant="outline" size="small" onClick={() => prepareChunks(index, item.file)}>
+                                  Prepare Semantic Chunks
+                                </Button>
+                              )}
+                              {['SUCCESS', 'PARTIAL'].includes(item.chunks?.status) && (
+                                <>
+                                  <Button variant="outline" size="small" onClick={() => reviewChunks(item.file)}>Review Chunks</Button>
+                                  <Button variant="outline" size="small" onClick={() => prepareChunks(index, item.file, { force: true })}>Rebuild</Button>
+                                </>
+                              )}
+                              {['FAILED', 'error'].includes(item.chunks?.status) && (
+                                <Button variant="outline" size="small" onClick={() => prepareChunks(index, item.file, { force: true })}>Rebuild</Button>
+                              )}
+                              {chunkReview.uploadId === item.file.upload_id && chunkReview.status === 'loading' && (
+                                <p role="status" className="text-sm text-content-secondary">Loading semantic chunks...</p>
+                              )}
+                              {chunkReview.uploadId === item.file.upload_id && chunkReview.error && (
+                                <p role="alert" className="text-sm text-state-danger">{chunkReview.error}</p>
+                              )}
+                              {chunkReview.uploadId === item.file.upload_id && chunkReview.result && (
+                                <SemanticChunkReview result={chunkReview.result} />
+                              )}
+                            </section>
                           )}
                         </div>
                       )}

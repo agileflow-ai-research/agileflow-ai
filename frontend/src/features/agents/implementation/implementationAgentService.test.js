@@ -8,8 +8,10 @@ import {
   evaluateImplementationReadiness,
   extractImplementationDocument,
   getGitHubConnection,
+  getImplementationDocumentChunks,
   getImplementationDocumentExtraction,
   getGitHubRepository,
+  prepareImplementationDocumentChunks,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 
@@ -79,6 +81,26 @@ describe('implementationAgentService', () => {
     extractImplementationDocument('AGP-003', 'A3UP-abc', { force: true })
     expect(apiClient.post).toHaveBeenCalledWith(
       '/agents/implementation/AGP-003/input-files/A3UP-abc/extract?force=true',
+      undefined,
+      { authenticated: true },
+    )
+  })
+
+  it('uses read-only and explicit build semantic chunk endpoints', () => {
+    prepareImplementationDocumentChunks('AGP-003', 'A3UP-abc')
+    getImplementationDocumentChunks('AGP-003', 'A3UP-abc')
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/chunks',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/chunks',
+      { authenticated: true },
+    )
+    prepareImplementationDocumentChunks('AGP-003', 'A3UP-abc', { force: true })
+    expect(apiClient.post).toHaveBeenLastCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/chunks?force=true',
       undefined,
       { authenticated: true },
     )

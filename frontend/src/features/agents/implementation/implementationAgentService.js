@@ -37,6 +37,22 @@ export function getImplementationDocumentExtraction(agentProjectId, uploadId) {
   )
 }
 
+export function prepareImplementationDocumentChunks(agentProjectId, uploadId, { force = false } = {}) {
+  const suffix = force ? '?force=true' : ''
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/chunks${suffix}`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getImplementationDocumentChunks(agentProjectId, uploadId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/chunks`,
+    { authenticated: true },
+  )
+}
+
 export function evaluateImplementationReadiness(agentProjectId, request) {
   return apiClient.post(
     `/agents/implementation/${encodeURIComponent(agentProjectId)}/readiness/evaluate`,

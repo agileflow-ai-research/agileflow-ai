@@ -74,6 +74,15 @@ from app.modules.agents.implementation.service import (
     ImplementationInputService,
     WrongAgentProjectTypeError,
 )
+from app.modules.agents.implementation.semantic_discovery.schemas import (
+    DocumentChunkingResult,
+)
+from app.modules.agents.implementation.semantic_discovery.service import (
+    ChunkingNotFoundError,
+    ChunkingStorageError,
+    ChunkingUnavailableError,
+    SemanticChunkingService,
+)
 from app.modules.agents.implementation.storage import (
     ImplementationUploadStorage,
     UploadNotFoundError,
@@ -124,6 +133,18 @@ def get_document_extraction_service(
     ],
 ) -> DocumentExtractionService:
     return DocumentExtractionService(standalone_service, storage)
+
+
+def get_semantic_chunking_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+) -> SemanticChunkingService:
+    return SemanticChunkingService(standalone_service, storage)
 
 
 def get_github_connection_repository() -> GitHubConnectionRepository:
@@ -456,6 +477,73 @@ def get_implementation_document_extraction(
             "Document extraction storage is unavailable",
         )
     return SuccessResponse(message="Document extraction retrieved", data=extraction)
+
+
+def _chunking_error(status_code: int, message: str, detail: str) -> JSONResponse:
+    return _error(status_code, message, "chunks", detail)
+
+
+@router.post(
+    "/{agent_project_id}/input-files/{upload_id}/chunks",
+    response_model=SuccessResponse[DocumentChunkingResult],
+)
+def build_implementation_document_chunks(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[
+        SemanticChunkingService, Depends(get_semantic_chunking_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    force: Annotated[bool, Query()] = False,
+) -> SuccessResponse[DocumentChunkingResult] | JSONResponse:
+    try:
+        result = service.build(agent_project_id, upload_id, current_user, force=force)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before preparing semantic chunks")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _chunking_error(404, "Upload not found", "Staged upload not found")
+    except ExtractionNotFoundError:
+        return _chunking_error(409, "Semantic preparation unavailable", "A valid trusted extraction must exist before chunking")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _chunking_error(422, "Semantic preparation unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError, ChunkingStorageError):
+        return _chunking_error(503, "Semantic preparation unavailable", "Semantic chunk storage is unavailable")
+    return SuccessResponse(message="Semantic chunks prepared", data=result)
+
+
+@router.get(
+    "/{agent_project_id}/input-files/{upload_id}/chunks",
+    response_model=SuccessResponse[DocumentChunkingResult],
+)
+def get_implementation_document_chunks(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[
+        SemanticChunkingService, Depends(get_semantic_chunking_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[DocumentChunkingResult] | JSONResponse:
+    try:
+        result = service.get_existing(agent_project_id, upload_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before reviewing semantic chunks")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _chunking_error(404, "Upload not found", "Staged upload not found")
+    except (ExtractionNotFoundError, ChunkingNotFoundError):
+        return _chunking_error(404, "Semantic chunks not found", "No current semantic chunk result exists for this upload")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _chunking_error(422, "Semantic preparation unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError):
+        return _chunking_error(503, "Semantic preparation unavailable", "Semantic chunk storage is unavailable")
+    return SuccessResponse(message="Semantic chunks retrieved", data=result)
 
 
 @router.post(
