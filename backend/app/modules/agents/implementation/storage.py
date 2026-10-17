@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -53,6 +54,14 @@ class UploadNotFoundError(LookupError):
 
 class UploadStorageError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class StagedUpload:
+    metadata: UploadedFileMetadata
+    file_path: Path
+    extraction_path: Path
+    extraction_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -169,6 +178,86 @@ class ImplementationUploadStorage:
         metadata_path = self._contained(
             project_directory, f"{upload_id}.metadata.json"
         )
+        metadata = self._load_metadata(
+            metadata_path, agent_project_id, owner_user_id, upload_id
+        )
+        if metadata.extension not in DOCUMENT_EXTENSIONS | IMAGE_EXTENSIONS:
+            raise UploadStorageError("Staged upload metadata is invalid")
+        stored_path = self._contained(
+            project_directory, f"{upload_id}{metadata.extension}"
+        )
+        extraction_path = self._contained(
+            project_directory, f"{upload_id}.extracted.json"
+        )
+        extraction_partial_path = self._contained(
+            project_directory, f"{upload_id}.extracted.json.part"
+        )
+        try:
+            stored_path.unlink(missing_ok=True)
+            extraction_path.unlink(missing_ok=True)
+            extraction_partial_path.unlink(missing_ok=True)
+            metadata_path.unlink()
+        except FileNotFoundError as exc:
+            raise UploadNotFoundError(upload_id) from exc
+        except OSError as exc:
+            raise UploadStorageError(
+                "Staged upload could not be deleted"
+            ) from exc
+
+    def locate(
+        self,
+        *,
+        agent_project_id: str,
+        owner_user_id: str,
+        upload_id: str,
+    ) -> StagedUpload:
+        if not UPLOAD_ID_PATTERN.fullmatch(upload_id):
+            raise UploadNotFoundError(upload_id)
+        project_directory = self._project_directory(agent_project_id)
+        metadata_path = self._contained(
+            project_directory, f"{upload_id}.metadata.json"
+        )
+        metadata = self._load_metadata(
+            metadata_path, agent_project_id, owner_user_id, upload_id
+        )
+        if metadata.extension not in DOCUMENT_EXTENSIONS | IMAGE_EXTENSIONS:
+            raise UploadStorageError("Staged upload metadata is invalid")
+        stored_path = self._contained(
+            project_directory, f"{upload_id}{metadata.extension}"
+        )
+        extraction_path = self._contained(
+            project_directory, f"{upload_id}.extracted.json"
+        )
+        extraction_partial_path = self._contained(
+            project_directory, f"{upload_id}.extracted.json.part"
+        )
+        try:
+            if not stored_path.is_file():
+                raise UploadNotFoundError(upload_id)
+            digest = hashlib.sha256()
+            with stored_path.open("rb") as source:
+                while chunk := source.read(UPLOAD_CHUNK_SIZE):
+                    digest.update(chunk)
+        except UploadNotFoundError:
+            raise
+        except OSError as exc:
+            raise UploadStorageError("Staged upload is unavailable") from exc
+        if digest.hexdigest() != metadata.sha256:
+            raise UploadStorageError("Staged upload failed integrity validation")
+        return StagedUpload(
+            metadata=metadata,
+            file_path=stored_path,
+            extraction_path=extraction_path,
+            extraction_partial_path=extraction_partial_path,
+        )
+
+    @staticmethod
+    def _load_metadata(
+        metadata_path: Path,
+        agent_project_id: str,
+        owner_user_id: str,
+        upload_id: str,
+    ) -> UploadedFileMetadata:
         try:
             sidecar = json.loads(metadata_path.read_text(encoding="utf-8"))
             public_metadata = {
@@ -179,7 +268,7 @@ class ImplementationUploadStorage:
             metadata = UploadedFileMetadata.model_validate(public_metadata)
         except FileNotFoundError as exc:
             raise UploadNotFoundError(upload_id) from exc
-        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        except (OSError, json.JSONDecodeError, ValidationError, KeyError) as exc:
             raise UploadStorageError(
                 "Staged upload metadata is unavailable"
             ) from exc
@@ -189,20 +278,7 @@ class ImplementationUploadStorage:
             or metadata.upload_id != upload_id
         ):
             raise UploadNotFoundError(upload_id)
-        if metadata.extension not in DOCUMENT_EXTENSIONS | IMAGE_EXTENSIONS:
-            raise UploadStorageError("Staged upload metadata is invalid")
-        stored_path = self._contained(
-            project_directory, f"{upload_id}{metadata.extension}"
-        )
-        try:
-            stored_path.unlink(missing_ok=True)
-            metadata_path.unlink()
-        except FileNotFoundError as exc:
-            raise UploadNotFoundError(upload_id) from exc
-        except OSError as exc:
-            raise UploadStorageError(
-                "Staged upload could not be deleted"
-            ) from exc
+        return metadata
 
     def _project_directory(self, agent_project_id: str) -> Path:
         root = self._root.resolve()

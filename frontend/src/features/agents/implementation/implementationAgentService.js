@@ -21,6 +21,22 @@ export function deleteImplementationInputFile(agentProjectId, uploadId) {
   )
 }
 
+export function extractImplementationDocument(agentProjectId, uploadId, { force = false } = {}) {
+  const suffix = force ? '?force=true' : ''
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/extract${suffix}`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getImplementationDocumentExtraction(agentProjectId, uploadId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/extraction`,
+    { authenticated: true },
+  )
+}
+
 export function connectGitHub(agentProjectId) {
   return apiClient.post(
     `/agents/implementation/${encodeURIComponent(agentProjectId)}/github/connect`,

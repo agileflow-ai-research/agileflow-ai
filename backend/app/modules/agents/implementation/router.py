@@ -1,11 +1,20 @@
 from typing import Annotated
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from fastapi.responses import JSONResponse, RedirectResponse
-from urllib.parse import urlencode
 
 from app.common.response import ErrorDetail, ErrorResponse, SuccessResponse
 from app.core.config import settings
+from app.modules.agents.implementation.extraction.schemas import (
+    DocumentExtractionResult,
+)
+from app.modules.agents.implementation.extraction.service import (
+    DocumentExtractionService,
+    ExtractionNotFoundError,
+    ExtractionStorageError,
+    UnsupportedExtractionSourceError,
+)
 from app.modules.agents.implementation.schemas import (
     GitHubConnectionStatus,
     GitHubConnectResponse,
@@ -93,6 +102,18 @@ def get_implementation_input_service(
     ],
 ) -> ImplementationInputService:
     return ImplementationInputService(standalone_service, storage)
+
+
+def get_document_extraction_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+) -> DocumentExtractionService:
+    return DocumentExtractionService(standalone_service, storage)
 
 
 def get_github_connection_repository() -> GitHubConnectionRepository:
@@ -292,6 +313,118 @@ def delete_implementation_input_file(
         message="Implementation input file deleted",
         data={"upload_id": upload_id},
     )
+
+
+def _extraction_error(
+    status_code: int, message: str, detail: str
+) -> JSONResponse:
+    return _error(status_code, message, "extraction", detail)
+
+
+@router.post(
+    "/{agent_project_id}/input-files/{upload_id}/extract",
+    response_model=SuccessResponse[DocumentExtractionResult],
+)
+def extract_implementation_document(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[
+        DocumentExtractionService, Depends(get_document_extraction_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    force: Annotated[bool, Query()] = False,
+) -> SuccessResponse[DocumentExtractionResult] | JSONResponse:
+    try:
+        extraction = service.extract(
+            agent_project_id,
+            upload_id,
+            current_user,
+            force=force,
+        )
+    except AgentProjectNotFoundError:
+        return _error(
+            404,
+            "Agent project not found",
+            "agent_project_id",
+            "Agent project not found",
+        )
+    except ArchivedAgentProjectError:
+        return _error(
+            409,
+            "Agent project is archived",
+            "agent_project_id",
+            "Reactivate the agent project before extracting documents",
+        )
+    except WrongAgentProjectTypeError as exc:
+        return _error(
+            422, "Wrong agent project type", "agent_project_id", str(exc)
+        )
+    except UploadNotFoundError:
+        return _extraction_error(404, "Upload not found", "Staged upload not found")
+    except UnsupportedExtractionSourceError as exc:
+        return _extraction_error(
+            422, "Document extraction unavailable", str(exc)
+        )
+    except (StandaloneServiceError, UploadStorageError, ExtractionStorageError):
+        return _extraction_error(
+            503,
+            "Document extraction unavailable",
+            "Document extraction storage is unavailable",
+        )
+    return SuccessResponse(message="Document extraction completed", data=extraction)
+
+
+@router.get(
+    "/{agent_project_id}/input-files/{upload_id}/extraction",
+    response_model=SuccessResponse[DocumentExtractionResult],
+)
+def get_implementation_document_extraction(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[
+        DocumentExtractionService, Depends(get_document_extraction_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[DocumentExtractionResult] | JSONResponse:
+    try:
+        extraction = service.get_existing(
+            agent_project_id, upload_id, current_user
+        )
+    except AgentProjectNotFoundError:
+        return _error(
+            404,
+            "Agent project not found",
+            "agent_project_id",
+            "Agent project not found",
+        )
+    except ArchivedAgentProjectError:
+        return _error(
+            409,
+            "Agent project is archived",
+            "agent_project_id",
+            "Reactivate the agent project before reviewing extraction",
+        )
+    except WrongAgentProjectTypeError as exc:
+        return _error(
+            422, "Wrong agent project type", "agent_project_id", str(exc)
+        )
+    except (UploadNotFoundError, ExtractionNotFoundError):
+        return _extraction_error(
+            404,
+            "Extraction not found",
+            "No valid extraction exists for this upload",
+        )
+    except UnsupportedExtractionSourceError as exc:
+        return _extraction_error(
+            422, "Document extraction unavailable", str(exc)
+        )
+    except (StandaloneServiceError, UploadStorageError):
+        return _extraction_error(
+            503,
+            "Document extraction unavailable",
+            "Document extraction storage is unavailable",
+        )
+    return SuccessResponse(message="Document extraction retrieved", data=extraction)
 
 
 @router.post(

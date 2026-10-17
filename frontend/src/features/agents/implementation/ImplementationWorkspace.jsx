@@ -4,7 +4,9 @@ import {
   connectGitHub,
   createGitHubRepository,
   deleteImplementationInputFile,
+  extractImplementationDocument,
   getGitHubConnection,
+  getImplementationDocumentExtraction,
   getGitHubRepository,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
@@ -83,6 +85,7 @@ function emptyInput() {
     file: null,
     selectedFile: null,
     status: 'idle',
+    extraction: null,
     error: '',
   }
 }
@@ -121,6 +124,79 @@ function requestInput(item) {
     : { ...base, file: item.file }
 }
 
+function extractionSummary(result) {
+  return {
+    status: result.status,
+    document_type: result.document_type,
+    metrics: result.metrics,
+    warnings: result.warnings,
+    extracted_at: result.extracted_at,
+    extractor_version: result.extractor_version,
+  }
+}
+
+function ExtractionContentReview({ result }) {
+  const content = result.content
+  return (
+    <section className="mt-4 space-y-4 border-t border-default pt-4" aria-label="Extracted Document Content">
+      <div>
+        <h5 className="font-semibold text-content-primary">Extracted Document Content</h5>
+        <p className="mt-1 text-sm text-content-secondary">Extraction only — implementation readiness has not yet been validated.</p>
+      </div>
+      {result.document_type === 'PDF' && (
+        <div className="space-y-4">
+          {content.pages.map((page) => (
+            <section key={page.page_number} aria-label={`PDF page ${page.page_number}`}>
+              <h6 className="text-sm font-semibold text-content-primary">Page {page.page_number}</h6>
+              <pre className="mt-1 whitespace-pre-wrap text-sm text-content-secondary">{page.text || 'No extractable text.'}</pre>
+            </section>
+          ))}
+        </div>
+      )}
+      {result.document_type === 'DOCX' && (
+        <div className="space-y-3">
+          {content.blocks.map((block) => (
+            <div key={block.block_index} data-block-type={block.type}>
+              {block.type === 'HEADING' && <p className="font-semibold text-content-primary">{block.text}</p>}
+              {block.type === 'PARAGRAPH' && <p className="whitespace-pre-wrap text-sm text-content-secondary">{block.text}</p>}
+              {block.type === 'TABLE' && (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full border-collapse text-left text-sm">
+                    <tbody>
+                      {block.rows.map((row, rowIndex) => (
+                        <tr key={`${block.block_index}-${rowIndex}`}>
+                          {row.map((cell, cellIndex) => (
+                            <td key={`${block.block_index}-${rowIndex}-${cellIndex}`} className="border border-default p-2">{cell}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {result.document_type === 'TXT' && <pre className="whitespace-pre-wrap text-sm text-content-secondary">{content.text}</pre>}
+      {result.document_type === 'MD' && <pre className="whitespace-pre-wrap text-sm text-content-secondary">{content.markdown}</pre>}
+      {(result.document_type === 'JSON' || result.document_type === 'YAML') && (
+        <pre className="overflow-x-auto whitespace-pre-wrap text-sm text-content-secondary">{content.normalized_text}</pre>
+      )}
+      {result.warnings.length > 0 && (
+        <div>
+          <h6 className="text-sm font-semibold text-content-primary">Extraction warnings</h6>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-content-secondary">
+            {result.warnings.map((warning, index) => (
+              <li key={`${warning.code}-${index}`}>{warning.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function ImplementationWorkspace({ project }) {
   const [step, setStep] = useState(0)
   const [inputs, setInputs] = useState([emptyInput()])
@@ -134,6 +210,9 @@ function ImplementationWorkspace({ project }) {
   })
   const [repositoryForm, setRepositoryForm] = useState({
     name: '', description: '', visibility: 'PRIVATE',
+  })
+  const [extractionReview, setExtractionReview] = useState({
+    uploadId: null, status: 'idle', result: null, error: '',
   })
 
   useEffect(() => {
@@ -244,10 +323,55 @@ function ImplementationWorkspace({ project }) {
         file: response.data,
         selectedFile: null,
         status: 'uploaded',
+        extraction: item.source_type === 'DOCUMENT' ? { status: 'extracting' } : null,
       })
+      if (item.source_type === 'DOCUMENT') {
+        await runDocumentExtraction(index, response.data)
+      }
     } catch (error) {
       const message = error?.errors?.[0]?.message || error?.message || 'The file could not be uploaded.'
       updateInput(index, { status: 'idle', error: message })
+    }
+  }
+
+  async function runDocumentExtraction(index, file, { force = false } = {}) {
+    updateInput(index, { extraction: { status: 'extracting' }, error: '' })
+    try {
+      const response = await extractImplementationDocument(
+        project.agent_project_id,
+        file.upload_id,
+        { force },
+      )
+      if (!response?.data?.status) throw new Error('Invalid extraction response')
+      updateInput(index, { extraction: extractionSummary(response.data), error: '' })
+    } catch (error) {
+      updateInput(index, {
+        extraction: { status: 'error' },
+        error: error?.errors?.[0]?.message || error?.message || 'The document could not be extracted.',
+      })
+    }
+  }
+
+  async function reviewDocumentExtraction(file) {
+    if (extractionReview.uploadId === file.upload_id && extractionReview.result) {
+      setExtractionReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      return
+    }
+    setExtractionReview({ uploadId: file.upload_id, status: 'loading', result: null, error: '' })
+    try {
+      const response = await getImplementationDocumentExtraction(
+        project.agent_project_id,
+        file.upload_id,
+      )
+      if (!response?.data?.content) throw new Error('Invalid extraction response')
+      setExtractionReview({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+    } catch (error) {
+      setExtractionReview({
+        uploadId: file.upload_id,
+        status: 'error',
+        result: null,
+        error: error?.errors?.[0]?.message || error?.message || 'Extracted content could not be loaded.',
+      })
     }
   }
 
@@ -263,6 +387,9 @@ function ImplementationWorkspace({ project }) {
         project.agent_project_id,
         item.file.upload_id,
       )
+      if (extractionReview.uploadId === item.file.upload_id) {
+        setExtractionReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      }
       setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
     } catch (error) {
       const message = error?.errors?.[0]?.message || error?.message || 'The uploaded file could not be removed.'
@@ -324,10 +451,11 @@ function ImplementationWorkspace({ project }) {
       const invalid = inputs.some((item) => (
         item.status === 'uploading'
         || item.status === 'deleting'
+        || item.extraction?.status === 'extracting'
         || (item.source_type === 'TEXT' ? !item.content.trim() : !item.file)
       ))
       if (invalid) {
-        setErrors({ inputs: 'Enter text or attach a file for every implementation input.' })
+        setErrors({ inputs: 'Enter text or attach a file for every implementation input, and wait for document extraction to finish.' })
         return
       }
     }
@@ -340,7 +468,9 @@ function ImplementationWorkspace({ project }) {
   }
 
   const workspaceBusy = inputs.some((item) => (
-    item.status === 'uploading' || item.status === 'deleting'
+    item.status === 'uploading'
+    || item.status === 'deleting'
+    || item.extraction?.status === 'extracting'
   ))
   const workspaceRequest = {
     inputs: inputs.map(requestInput),
@@ -356,9 +486,12 @@ function ImplementationWorkspace({ project }) {
           {item.source_type === 'TEXT' ? (
             <p className="mt-1 whitespace-pre-wrap">{item.content}</p>
           ) : item.file ? (
-            <p className="mt-1">
-              Uploaded / Attached — {item.file.original_filename} · {item.file.mime_type} · {formatBytes(item.file.size_bytes)}
-            </p>
+            <div className="mt-1 space-y-1">
+              <p>Uploaded / Attached — {item.file.original_filename} · {item.file.mime_type} · {formatBytes(item.file.size_bytes)}</p>
+              {item.source_type === 'DOCUMENT' && item.extraction && (
+                <p>Extraction: {item.extraction.status}</p>
+              )}
+            </div>
           ) : (
             <p className="mt-1">No file attached.</p>
           )}
@@ -397,7 +530,9 @@ function ImplementationWorkspace({ project }) {
             {errors.inputs && <p role="alert" className="text-sm text-state-danger">{errors.inputs}</p>}
             {inputs.map((item, index) => {
               const hasUpload = Boolean(item.file)
-              const isBusy = item.status === 'uploading' || item.status === 'deleting'
+              const isBusy = item.status === 'uploading'
+                || item.status === 'deleting'
+                || item.extraction?.status === 'extracting'
               return (
                 <Card key={index} variant="elevated" className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
@@ -425,6 +560,54 @@ function ImplementationWorkspace({ project }) {
                       <p className="font-semibold text-content-primary">{item.file.original_filename}</p>
                       <p className="mt-1 text-sm text-content-secondary">{item.file.mime_type} · {formatBytes(item.file.size_bytes)}</p>
                       <p className="mt-2 text-sm text-state-success">Uploaded / Attached</p>
+                      <p className="text-sm text-content-secondary">Upload: Complete</p>
+                      {item.source_type === 'DOCUMENT' && (
+                        <div className="mt-4 space-y-2 border-t border-default pt-4">
+                          <p className="text-sm font-medium text-content-primary">Extraction</p>
+                          {item.extraction?.status === 'extracting' && <p role="status" className="text-sm text-content-secondary">Extracting...</p>}
+                          {item.extraction?.status === 'SUCCESS' && <p className="text-sm text-state-success">Complete</p>}
+                          {item.extraction?.status === 'PARTIAL' && <p className="text-sm text-state-warning">Partial</p>}
+                          {item.extraction?.status === 'FAILED' && <p className="text-sm text-state-danger">Failed</p>}
+                          {item.extraction?.status === 'error' && <p className="text-sm text-state-danger">Extraction request failed</p>}
+                          {item.extraction?.metrics?.page_count !== undefined && (
+                            <p className="text-sm text-content-secondary">
+                              Pages: {item.extraction.metrics.pages_with_text} with text of {item.extraction.metrics.page_count}
+                            </p>
+                          )}
+                          {item.extraction?.metrics && item.extraction.metrics.page_count === undefined && (
+                            <p className="text-sm text-content-secondary">Characters: {item.extraction.metrics.extracted_character_count}</p>
+                          )}
+                          {Array.isArray(item.extraction?.warnings) && (
+                            <p className="text-sm text-content-secondary">Warnings: {item.extraction.warnings.length}</p>
+                          )}
+                          {['PARTIAL', 'FAILED'].includes(item.extraction?.status) && item.extraction.warnings?.[0]?.message && (
+                            <p className="text-sm text-content-secondary">{item.extraction.warnings[0].message}</p>
+                          )}
+                          {['SUCCESS', 'PARTIAL', 'FAILED'].includes(item.extraction?.status) && (
+                            <Button variant="outline" size="small" onClick={() => reviewDocumentExtraction(item.file)}>
+                              Review Extracted Content
+                            </Button>
+                          )}
+                          {['PARTIAL', 'FAILED', 'error'].includes(item.extraction?.status) && (
+                            <Button
+                              variant="outline"
+                              size="small"
+                              onClick={() => runDocumentExtraction(index, item.file, { force: true })}
+                            >
+                              Retry Extraction
+                            </Button>
+                          )}
+                          {extractionReview.uploadId === item.file.upload_id && extractionReview.status === 'loading' && (
+                            <p role="status" className="text-sm text-content-secondary">Loading extracted content...</p>
+                          )}
+                          {extractionReview.uploadId === item.file.upload_id && extractionReview.error && (
+                            <p role="alert" className="text-sm text-state-danger">{extractionReview.error}</p>
+                          )}
+                          {extractionReview.uploadId === item.file.upload_id && extractionReview.result && (
+                            <ExtractionContentReview result={extractionReview.result} />
+                          )}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-3">

@@ -491,6 +491,14 @@ def test_openapi_exposes_only_step_1b_through_step_1d_agent3_routes():
         ),
         (
             "POST",
+            "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/extract",
+        ),
+        (
+            "GET",
+            "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/extraction",
+        ),
+        (
+            "POST",
             "/api/v1/agents/implementation/{agent_project_id}/github/connect",
         ),
         (

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -6,7 +6,9 @@ import {
   connectGitHub,
   createGitHubRepository,
   deleteImplementationInputFile,
+  extractImplementationDocument,
   getGitHubConnection,
+  getImplementationDocumentExtraction,
   getGitHubRepository,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
@@ -16,6 +18,8 @@ import ImplementationWorkspace from './ImplementationWorkspace.jsx'
 vi.mock('./implementationAgentService.js', () => ({
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
+  extractImplementationDocument: vi.fn(),
+  getImplementationDocumentExtraction: vi.fn(),
   connectGitHub: vi.fn(),
   createGitHubRepository: vi.fn(),
   getGitHubConnection: vi.fn(),
@@ -78,6 +82,33 @@ function repositoryMetadata(overrides = {}) {
   }
 }
 
+function extractionResult(overrides = {}) {
+  return {
+    upload_id: metadata().upload_id,
+    agent_project_id: 'AGP-003',
+    artifact_type: 'API_SPECIFICATION',
+    original_filename: 'bookease-api.pdf',
+    document_type: 'PDF',
+    status: 'SUCCESS',
+    extractor_version: '1',
+    source_sha256: 'a'.repeat(64),
+    content: {
+      pages: [{ page_number: 1, text: 'POST /bookings creates a booking.' }],
+      combined_text: 'POST /bookings creates a booking.',
+    },
+    metrics: {
+      page_count: 1,
+      processed_page_count: 1,
+      pages_with_text: 1,
+      pages_without_text: 0,
+      extracted_character_count: 33,
+    },
+    warnings: [],
+    extracted_at: '2026-10-16T10:00:00Z',
+    ...overrides,
+  }
+}
+
 async function chooseSource(user, sourceType) {
   await user.selectOptions(screen.getByLabelText(/Input Source/), sourceType)
 }
@@ -97,6 +128,8 @@ describe('ImplementationWorkspace', () => {
     window.history.replaceState({}, '', '/')
     getGitHubConnection.mockResolvedValue({ data: { connected: false } })
     getGitHubRepository.mockResolvedValue({ data: { created: false } })
+    extractImplementationDocument.mockResolvedValue({ data: extractionResult() })
+    getImplementationDocumentExtraction.mockResolvedValue({ data: extractionResult() })
   })
 
   it('preserves TEXT input, exact outputs, review, and no execution behavior', async () => {
@@ -170,6 +203,7 @@ describe('ImplementationWorkspace', () => {
     expect(screen.getByLabelText(/Input Source/)).toBeDisabled()
     expect(screen.getByText(/Remove this uploaded input before changing/i)).toBeInTheDocument()
 
+    if (sourceType === 'DOCUMENT') await screen.findByText('Complete')
     await user.click(screen.getByRole('button', { name: 'Next' }))
     await user.click(screen.getByRole('checkbox', { name: 'Project Structure' }))
     await user.click(screen.getByRole('button', { name: 'Review Workspace' }))
@@ -192,6 +226,119 @@ describe('ImplementationWorkspace', () => {
     rejectUpload({ errors: [{ message: 'DOCUMENT files must not exceed 10 MB' }] })
     expect(await screen.findByRole('alert')).toHaveTextContent('must not exceed 10 MB')
     expect(screen.queryByText('Uploaded / Attached')).not.toBeInTheDocument()
+  })
+
+  it('automatically extracts a document and shows the extracting state', async () => {
+    const user = userEvent.setup()
+    let resolveExtraction
+    extractImplementationDocument.mockReturnValue(new Promise((resolve) => { resolveExtraction = resolve }))
+    uploadImplementationInputFile.mockResolvedValue({ data: metadata() })
+    render(<ImplementationWorkspace project={project} />)
+    await chooseSource(user, 'DOCUMENT')
+    await user.upload(
+      screen.getByLabelText(/Document file/),
+      new File(['%PDF'], 'bookease-api.pdf', { type: 'application/pdf' }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Attach File' }))
+    expect(await screen.findByText('Extracting...')).toBeInTheDocument()
+    expect(extractImplementationDocument).toHaveBeenCalledWith(
+      'AGP-003', metadata().upload_id, { force: false },
+    )
+    resolveExtraction({ data: extractionResult() })
+    expect(await screen.findByText('Complete')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['PARTIAL', 'Partial', 'Some pages did not contain text.'],
+    ['FAILED', 'Failed', 'No reliable textual content could be extracted from this document.'],
+  ])('shows %s extraction with warnings and offers retry', async (status, label, warning) => {
+    const user = userEvent.setup()
+    extractImplementationDocument.mockResolvedValueOnce({
+      data: extractionResult({
+        status,
+        warnings: [{ code: 'NO_EXTRACTABLE_TEXT', message: warning, location: null }],
+      }),
+    }).mockResolvedValueOnce({ data: extractionResult() })
+    render(<ImplementationWorkspace project={project} />)
+    await attachFile(
+      user,
+      'DOCUMENT',
+      new File(['%PDF'], 'bookease-api.pdf', { type: 'application/pdf' }),
+      metadata(),
+    )
+    expect(screen.getByText(label)).toBeInTheDocument()
+    expect(screen.getByText('Warnings: 1')).toBeInTheDocument()
+    expect(screen.getByText(warning)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry Extraction' }))
+    await waitFor(() => expect(extractImplementationDocument).toHaveBeenLastCalledWith(
+      'AGP-003', metadata().upload_id, { force: true },
+    ))
+  })
+
+  it('reports extraction API failure honestly and allows retry', async () => {
+    const user = userEvent.setup()
+    extractImplementationDocument.mockRejectedValueOnce({
+      errors: [{ message: 'Document extraction is temporarily unavailable' }],
+    }).mockResolvedValueOnce({ data: extractionResult() })
+    render(<ImplementationWorkspace project={project} />)
+    uploadImplementationInputFile.mockResolvedValue({ data: metadata() })
+    await chooseSource(user, 'DOCUMENT')
+    await user.upload(
+      screen.getByLabelText(/Document file/),
+      new File(['%PDF'], 'bookease-api.pdf', { type: 'application/pdf' }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Attach File' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('temporarily unavailable')
+    expect(screen.getByText('Extraction request failed')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry Extraction' }))
+    expect(await screen.findByText('Complete')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['PDF', { pages: [{ page_number: 2, text: 'Page two API details' }], combined_text: 'Page two API details' }, 'Page 2', 'Page two API details'],
+    ['DOCX', { blocks: [
+      { block_index: 0, type: 'HEADING', level: 1, text: 'API Specification', rows: null },
+      { block_index: 1, type: 'PARAGRAPH', level: null, text: 'Create booking', rows: null },
+      { block_index: 2, type: 'TABLE', level: null, text: null, rows: [['Method', 'Path'], ['POST', '/bookings']] },
+    ], combined_text: 'API Specification\nCreate booking' }, 'API Specification', '/bookings'],
+    ['TXT', { text: 'Plain requirements', combined_text: 'Plain requirements' }, 'Plain requirements', null],
+    ['MD', { markdown: '# Requirements\n- Booking', combined_text: '# Requirements\n- Booking' }, '# Requirements', null],
+    ['JSON', { structured_content: { api: 'bookings' }, normalized_text: '{\n  "api": "bookings"\n}' }, '"api": "bookings"', null],
+    ['YAML', { structured_content: { api: 'bookings' }, normalized_text: '{\n  "api": "bookings"\n}' }, '"api": "bookings"', null],
+  ])('reviews safe structured %s extraction content', async (documentType, content, expected, secondary) => {
+    const user = userEvent.setup()
+    const result = extractionResult({ document_type: documentType, content })
+    extractImplementationDocument.mockResolvedValue({ data: result })
+    getImplementationDocumentExtraction.mockResolvedValue({ data: result })
+    render(<ImplementationWorkspace project={project} />)
+    await attachFile(
+      user,
+      'DOCUMENT',
+      new File(['document'], `input.${documentType.toLowerCase()}`, { type: 'application/octet-stream' }),
+      metadata({ original_filename: `input.${documentType.toLowerCase()}` }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Review Extracted Content' }))
+    expect(await screen.findByRole('heading', { name: 'Extracted Document Content' })).toBeInTheDocument()
+    const review = within(screen.getByLabelText('Extracted Document Content'))
+    expect(review.getByText(/implementation readiness has not yet been validated/i)).toBeInTheDocument()
+    expect(review.getByText(expected, { exact: false })).toBeInTheDocument()
+    if (secondary) expect(review.getByText(secondary, { exact: false })).toBeInTheDocument()
+  })
+
+  it('keeps IMAGE upload-only and never starts document extraction', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationWorkspace project={project} />)
+    await attachFile(
+      user,
+      'IMAGE',
+      new File(['png'], 'wireframe.png', { type: 'image/png' }),
+      metadata({
+        source_type: 'IMAGE', artifact_type: 'UI_WIREFRAMES', original_filename: 'wireframe.png',
+        mime_type: 'image/png', extension: '.png', size_bytes: 1024,
+      }),
+    )
+    expect(extractImplementationDocument).not.toHaveBeenCalled()
+    expect(screen.queryByText('Extraction')).not.toBeInTheDocument()
   })
 
   it('deletes an uploaded file before removing it locally', async () => {

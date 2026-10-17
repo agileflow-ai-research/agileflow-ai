@@ -5,7 +5,9 @@ import {
   connectGitHub,
   createGitHubRepository,
   deleteImplementationInputFile,
+  extractImplementationDocument,
   getGitHubConnection,
+  getImplementationDocumentExtraction,
   getGitHubRepository,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
@@ -38,6 +40,29 @@ describe('implementationAgentService', () => {
     deleteImplementationInputFile('AGP-003', 'A3UP-abc')
     expect(apiClient.delete).toHaveBeenCalledWith(
       '/agents/implementation/AGP-003/input-files/A3UP-abc',
+      { authenticated: true },
+    )
+  })
+
+  it('uses authenticated extraction endpoints without forcing extraction by default', () => {
+    extractImplementationDocument('AGP-003', 'A3UP-abc')
+    getImplementationDocumentExtraction('AGP-003', 'A3UP-abc')
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/extract',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/extraction',
+      { authenticated: true },
+    )
+  })
+
+  it('adds the explicit force query only for extraction retries', () => {
+    extractImplementationDocument('AGP-003', 'A3UP-abc', { force: true })
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/extract?force=true',
+      undefined,
       { authenticated: true },
     )
   })

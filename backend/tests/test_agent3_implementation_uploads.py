@@ -257,6 +257,8 @@ def test_openapi_exposes_upload_and_delete_input_file_routes():
         for path, operations in paths.items()
         if path.startswith("/api/v1/agents/implementation")
         and "/input-files" in path
+        and not path.endswith("/extract")
+        and not path.endswith("/extraction")
         for method in operations
     }
     assert agent3 == {
