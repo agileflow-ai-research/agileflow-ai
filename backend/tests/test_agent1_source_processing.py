@@ -11,8 +11,21 @@ from app.common.transcription_provider import (
 from app.core.config import Settings
 from app.main import app
 from app.modules.agent1.router import get_agent1_engine, get_speech_to_text_provider
-from app.modules.agent1.processing import DocumentProcessor, SourceNormalizer
+from app.modules.agent1.router import get_requirement_source_processing_service
+from app.modules.agent1.processing import (
+    AudioProcessor,
+    DocumentProcessor,
+    FFmpegAudioExtractor,
+    NoUsableAudioError,
+    SourceNormalizer,
+    SourceProcessorResolver,
+    VideoAudioExtractionError,
+    VideoProcessor,
+    VideoProcessorNotConfiguredError,
+)
 from app.modules.agent1.schemas import SourceProcessingStatus
+from app.modules.agent1.service import RequirementSourceProcessingService
+from app.modules.standalone.router import get_standalone_service
 from test_agent1_sources import create_project, sources_context
 
 
@@ -35,6 +48,32 @@ class FakeSpeechToTextProvider:
         if isinstance(value, Exception):
             raise value
         return value
+
+
+class FakeVideoAudioExtractor:
+    def __init__(self, error=None):
+        self.error = error
+        self.output_paths = []
+
+    def extract(self, video_path, output_path):
+        self.output_paths.append(output_path)
+        if self.error:
+            raise self.error
+        output_path.write_bytes(b"extracted audio")
+
+
+def configure_video_processing(projects, runs, sources, provider, extractor):
+    def override():
+        audio_processor = AudioProcessor(provider)
+        resolver = SourceProcessorResolver(
+            audio_processor=audio_processor,
+            video_processor=VideoProcessor(extractor, audio_processor),
+        )
+        return RequirementSourceProcessingService(
+            get_standalone_service(projects, runs), sources, resolver
+        )
+
+    app.dependency_overrides[get_requirement_source_processing_service] = override
 
 
 @pytest.fixture
@@ -184,19 +223,41 @@ def test_one_document_failure_does_not_fail_other_documents(sources_context):
     assert sources.documents[(project["agent_project_id"], "DOC-001")]["normalized_text"]
 
 
-def test_video_remains_ready_when_processor_is_not_configured(sources_context):
-    auth, _, _, _, _ = sources_context
-    client = auth.client("USR-001")
-    project = create_project(client)
-    client.post(
-        f"/api/v1/agents/requirements/{project['agent_project_id']}/sources",
-        files=[("files", ("walkthrough.mp4", b"video bytes", "video/mp4"))],
-    )
-    item = client.post(
-        f"/api/v1/agents/requirements/{project['agent_project_id']}/sources/process"
-    ).json()["data"][0]
-    assert item["processing_status"] == "READY"
-    assert item["processing_error_code"] == "PROCESSOR_NOT_CONFIGURED"
+@pytest.mark.parametrize(
+    ("filename", "mime_type"),
+    [("walkthrough.mp4", "video/mp4"), ("walkthrough.mov", "video/quicktime"), ("walkthrough.webm", "video/webm")],
+)
+def test_video_formats_extract_delegate_normalize_and_cleanup(
+    sources_context, filename, mime_type
+):
+    auth, projects, runs, sources, _ = sources_context
+    provider = FakeSpeechToTextProvider({"*": "  Video interview\r\n\r\n\r\nBooking flow  "})
+    extractor = FakeVideoAudioExtractor()
+    configure_video_processing(projects, runs, sources, provider, extractor)
+    try:
+        client = auth.client("USR-001")
+        project = create_project(client)
+        upload = client.post(
+            f"/api/v1/agents/requirements/{project['agent_project_id']}/sources",
+            files=[("files", (filename, b"video bytes", mime_type))],
+        ).json()["data"][0]
+        assert upload["source_id"] == "VID-001"
+        result = client.post(
+            f"/api/v1/agents/requirements/{project['agent_project_id']}/sources/process"
+        ).json()["data"][0]
+        assert result["source_id"] == "VID-001"
+        assert result["processing_status"] == "COMPLETED"
+        persisted = sources.documents[(project["agent_project_id"], "VID-001")]
+        assert persisted["normalized_text"] == "Video interview\n\nBooking flow"
+        assert sources.processing_updates == [
+            ("VID-001", SourceProcessingStatus.PROCESSING),
+            ("VID-001", SourceProcessingStatus.COMPLETED),
+        ]
+        assert provider.calls[0].suffix == ".wav"
+        assert extractor.output_paths and not extractor.output_paths[0].parent.exists()
+        assert runs.documents == {}
+    finally:
+        app.dependency_overrides.pop(get_requirement_source_processing_service, None)
 
 
 @pytest.mark.parametrize(
@@ -324,6 +385,150 @@ def test_mixed_document_and_audio_processing(sources_context, configured_transcr
     ]
     assert sources.documents[(project["agent_project_id"], "DOC-001")]["normalized_text"]
     assert sources.documents[(project["agent_project_id"], "AUD-001")]["normalized_text"]
+
+
+def test_ffmpeg_uses_shell_free_arguments_and_reports_missing_binary(tmp_path, monkeypatch):
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"video")
+    output = tmp_path / "audio.wav"
+    captured = {}
+
+    def missing(arguments, **kwargs):
+        captured["arguments"] = arguments
+        captured.update(kwargs)
+        raise FileNotFoundError("private executable path")
+
+    monkeypatch.setattr("app.modules.agent1.processing.subprocess.run", missing)
+    extractor = FFmpegAudioExtractor("configured-ffmpeg", 17)
+    with pytest.raises(VideoProcessorNotConfiguredError):
+        extractor.extract(video, output)
+    assert captured["arguments"][0] == "configured-ffmpeg"
+    assert captured["shell"] is False
+    assert captured["timeout"] == 17
+
+
+def test_ffmpeg_timeout_is_sanitized(tmp_path, monkeypatch):
+    video = tmp_path / "video.mov"
+    video.write_bytes(b"video")
+
+    def timeout(arguments, **kwargs):
+        raise __import__("subprocess").TimeoutExpired(arguments, kwargs["timeout"], stderr=b"private")
+
+    monkeypatch.setattr("app.modules.agent1.processing.subprocess.run", timeout)
+    with pytest.raises(VideoAudioExtractionError) as exc_info:
+        FFmpegAudioExtractor("ffmpeg", 1).extract(video, tmp_path / "audio.wav")
+    assert str(exc_info.value) == "Video audio extraction timed out."
+    assert "private" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("error", "code", "message"),
+    [
+        (VideoProcessorNotConfiguredError("C:\\secret\\ffmpeg"), "VIDEO_PROCESSOR_NOT_CONFIGURED", "Video processing is not configured."),
+        (VideoAudioExtractionError("stderr: private path"), "VIDEO_AUDIO_EXTRACTION_FAILED", "Audio could not be extracted from the video."),
+        (NoUsableAudioError("private temp path"), "NO_USABLE_AUDIO", "No usable audio transcript could be produced from the video."),
+    ],
+)
+def test_video_extraction_failures_are_safe_and_cleanup_temp_files(
+    sources_context, error, code, message
+):
+    auth, projects, runs, sources, _ = sources_context
+    provider = FakeSpeechToTextProvider({"*": "unused transcript"})
+    extractor = FakeVideoAudioExtractor(error)
+    configure_video_processing(projects, runs, sources, provider, extractor)
+    try:
+        client = auth.client("USR-001")
+        project = create_project(client)
+        client.post(
+            f"/api/v1/agents/requirements/{project['agent_project_id']}/sources",
+            files=[("files", ("video.webm", b"video", "video/webm"))],
+        )
+        response = client.post(
+            f"/api/v1/agents/requirements/{project['agent_project_id']}/sources/process"
+        )
+        result = response.json()["data"][0]
+        assert result["processing_status"] == "FAILED"
+        assert result["processing_error_code"] == code
+        assert result["processing_error_message"] == message
+        assert "secret" not in response.text and "private" not in response.text
+        assert extractor.output_paths and not extractor.output_paths[0].parent.exists()
+        assert runs.documents == {}
+    finally:
+        app.dependency_overrides.pop(get_requirement_source_processing_service, None)
+
+
+@pytest.mark.parametrize(
+    ("provider_value", "code", "message"),
+    [
+        (TranscriptionProviderError("provider secret"), "VIDEO_TRANSCRIPTION_FAILED", "The video audio could not be transcribed."),
+        ("   \r\n ", "NO_USABLE_AUDIO", "No usable audio transcript could be produced from the video."),
+    ],
+)
+def test_video_transcription_failure_and_blank_transcript_are_safe(
+    sources_context, provider_value, code, message
+):
+    auth, projects, runs, sources, _ = sources_context
+    provider = FakeSpeechToTextProvider({"*": provider_value})
+    extractor = FakeVideoAudioExtractor()
+    configure_video_processing(projects, runs, sources, provider, extractor)
+    try:
+        client = auth.client("USR-001")
+        project = create_project(client)
+        client.post(
+            f"/api/v1/agents/requirements/{project['agent_project_id']}/sources",
+            files=[("files", ("video.mp4", b"video", "video/mp4"))],
+        )
+        response = client.post(
+            f"/api/v1/agents/requirements/{project['agent_project_id']}/sources/process"
+        )
+        result = response.json()["data"][0]
+        assert result["processing_status"] == "FAILED"
+        assert result["processing_error_code"] == code
+        assert result["processing_error_message"] == message
+        assert "provider secret" not in response.text
+        assert not extractor.output_paths[0].parent.exists()
+        assert runs.documents == {}
+    finally:
+        app.dependency_overrides.pop(get_requirement_source_processing_service, None)
+
+
+def test_mixed_document_audio_video_partial_failure_without_engine(sources_context):
+    auth, projects, runs, sources, _ = sources_context
+    provider = FakeSpeechToTextProvider({
+        "interview.mp3": "Audio stakeholder requirement",
+        "audio.wav": TranscriptionProviderError("video provider secret"),
+    })
+    extractor = FakeVideoAudioExtractor()
+    configure_video_processing(projects, runs, sources, provider, extractor)
+    app.dependency_overrides[get_agent1_engine] = lambda: (_ for _ in ()).throw(
+        AssertionError("Agent1Engine must not be resolved")
+    )
+    try:
+        client = auth.client("USR-001")
+        project = create_project(client)
+        client.post(
+            f"/api/v1/agents/requirements/{project['agent_project_id']}/sources",
+            files=[
+                ("files", ("brief.txt", b"A useful document requirement", "text/plain")),
+                ("files", ("interview.mp3", b"audio", "audio/mpeg")),
+                ("files", ("walkthrough.mov", b"video", "video/quicktime")),
+            ],
+        )
+        data = client.post(
+            f"/api/v1/agents/requirements/{project['agent_project_id']}/sources/process"
+        ).json()["data"]
+        assert [(item["source_id"], item["processing_status"]) for item in data] == [
+            ("DOC-001", "COMPLETED"),
+            ("AUD-001", "COMPLETED"),
+            ("VID-001", "FAILED"),
+        ]
+        assert data[2]["processing_error_code"] == "VIDEO_TRANSCRIPTION_FAILED"
+        assert sources.documents[(project["agent_project_id"], "DOC-001")]["normalized_text"]
+        assert sources.documents[(project["agent_project_id"], "AUD-001")]["normalized_text"]
+        assert runs.documents == {}
+    finally:
+        app.dependency_overrides.pop(get_requirement_source_processing_service, None)
+        app.dependency_overrides.pop(get_agent1_engine, None)
 
 
 def test_processing_enforces_owner_type_and_archived_project(sources_context):

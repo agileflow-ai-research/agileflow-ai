@@ -11,7 +11,12 @@ from app.common.transcription_provider import (
 from app.common.response import ErrorDetail, ErrorResponse, SuccessResponse
 from app.core.config import settings
 from app.modules.agent1.engine import Agent1Engine
-from app.modules.agent1.processing import AudioProcessor, SourceProcessorResolver
+from app.modules.agent1.processing import (
+    AudioProcessor,
+    FFmpegAudioExtractor,
+    SourceProcessorResolver,
+    VideoProcessor,
+)
 from app.modules.agent1.repository import (
     RequirementSourceRepository,
     RequirementSourceRepositoryError,
@@ -85,8 +90,15 @@ def get_requirement_source_processing_service(
         SpeechToTextProvider, Depends(get_speech_to_text_provider)
     ],
 ) -> RequirementSourceProcessingService:
+    audio_processor = AudioProcessor(transcription_provider)
     resolver = SourceProcessorResolver(
-        audio_processor=AudioProcessor(transcription_provider)
+        audio_processor=audio_processor,
+        video_processor=VideoProcessor(
+            FFmpegAudioExtractor(
+                settings.ffmpeg_path, settings.video_processing_timeout_seconds
+            ),
+            audio_processor,
+        ),
     )
     return RequirementSourceProcessingService(standalone_service, repository, resolver)
 

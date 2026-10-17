@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     transcription_base_url: str = "https://api.openai.com/v1"
     transcription_timeout_seconds: float = 120.0
     transcription_language: str | None = None
+    ffmpeg_path: str = "ffmpeg"
+    video_processing_timeout_seconds: float = 120.0
     upload_dir: str = str(BACKEND_DIR.parent / "storage" / "uploads")
     max_upload_size_bytes: int = 50 * 1024 * 1024
 

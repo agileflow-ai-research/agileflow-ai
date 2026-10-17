@@ -286,4 +286,28 @@ describe('RequirementsWorkspace - Client Requirement Sources (Step 1)', () => {
     expect(screen.getByText('Failed')).toBeInTheDocument()
     expect(screen.getByText('The audio source could not be transcribed.')).toBeInTheDocument()
   })
+
+  it('renders Video Completed after processing', async () => {
+    getRequirementSources.mockResolvedValue({
+      data: [{ ...mockSources[3], processing_status: 'COMPLETED' }],
+    })
+    render(<RequirementsWorkspace project={project} />)
+    expect(await screen.findByText('Video')).toBeInTheDocument()
+    expect(screen.getByText('Completed')).toBeInTheDocument()
+  })
+
+  it('renders a safe Video Failed message', async () => {
+    getRequirementSources.mockResolvedValue({
+      data: [{
+        ...mockSources[3],
+        processing_status: 'FAILED',
+        processing_error_code: 'VIDEO_AUDIO_EXTRACTION_FAILED',
+        processing_error_message: 'Audio could not be extracted from the video.',
+      }],
+    })
+    render(<RequirementsWorkspace project={project} />)
+    expect(await screen.findByText('Video')).toBeInTheDocument()
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+    expect(screen.getByText('Audio could not be extracted from the video.')).toBeInTheDocument()
+  })
 })

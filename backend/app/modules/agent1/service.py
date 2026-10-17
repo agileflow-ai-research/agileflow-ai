@@ -16,6 +16,12 @@ from app.core.config import settings
 from app.modules.agent1.engine import Agent1Engine, StructuredOutputInvalidError
 from app.modules.agent1.extractor import ExtractionEmptyError, ExtractionError
 from app.modules.agent1.processing import ProcessorNotConfiguredError, SourceProcessorResolver
+from app.modules.agent1.processing import (
+    NoUsableAudioError,
+    VideoAudioExtractionError,
+    VideoProcessorNotConfiguredError,
+    VideoTranscriptionError,
+)
 from app.modules.agent1.repository import (
     RequirementSourceRepository,
 )
@@ -287,6 +293,30 @@ class RequirementSourceProcessingService:
             )
             try:
                 normalized_text = processor.process(raw["storage_path"])
+            except VideoProcessorNotConfiguredError:
+                result = self._fail_source(
+                    agent_project_id, source_id, source_type, current_user.user_id,
+                    "VIDEO_PROCESSOR_NOT_CONFIGURED",
+                    "Video processing is not configured.",
+                )
+            except VideoAudioExtractionError:
+                result = self._fail_source(
+                    agent_project_id, source_id, source_type, current_user.user_id,
+                    "VIDEO_AUDIO_EXTRACTION_FAILED",
+                    "Audio could not be extracted from the video.",
+                )
+            except NoUsableAudioError:
+                result = self._fail_source(
+                    agent_project_id, source_id, source_type, current_user.user_id,
+                    "NO_USABLE_AUDIO",
+                    "No usable audio transcript could be produced from the video.",
+                )
+            except VideoTranscriptionError:
+                result = self._fail_source(
+                    agent_project_id, source_id, source_type, current_user.user_id,
+                    "VIDEO_TRANSCRIPTION_FAILED",
+                    "The video audio could not be transcribed.",
+                )
             except TranscriptionProviderConfigurationError:
                 result = self._fail_source(
                     agent_project_id, source_id, source_type, current_user.user_id,
