@@ -56,7 +56,7 @@ function NonFunctionalRequirements({ items }) {
   return <div className="space-y-3">{items.map((item) => (
     <Item key={item.id} heading={item.id} metadata={item.category}>
       <p>{item.statement}</p>
-      {item.measure && <p className="mt-2"><span className="font-semibold">Measurable target:</span> {item.measure}</p>}
+      {(item.measurable_target || item.measure) && <p className="mt-2"><span className="font-semibold">Measurable target:</span> {item.measurable_target || item.measure}</p>}
       <References label="Sources" values={item.source_refs} />
     </Item>
   ))}</div>

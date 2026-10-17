@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.common.status import AgentRunMode, AgentRunStatus, AgentType
 from app.modules.standalone.schemas import AgentRunMessage
@@ -122,7 +122,7 @@ class RequirementSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source_id: str
-    source_type: Literal["TEXT", "DOCUMENT"] = "TEXT"
+    source_type: Literal["TEXT", "DOCUMENT", "AUDIO", "VIDEO"] = "TEXT"
     content: str
 
 
@@ -208,7 +208,10 @@ class NonFunctionalRequirement(BaseModel):
     id: str = Field(pattern=r"^NFR-\d{3,}$")
     category: str
     statement: str
-    measure: str | None = None
+    measurable_target: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("measurable_target", "measure"),
+    )
     source_refs: list[str] = Field(min_length=1)
 
 

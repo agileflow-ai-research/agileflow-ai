@@ -429,7 +429,7 @@ class Agent1Service:
         engine_sources = [
             RequirementSource(
                 source_id=raw["source_id"],
-                source_type="DOCUMENT",
+                source_type=raw["source_type"],
                 content=raw["normalized_text"],
             )
             for raw in raw_sources

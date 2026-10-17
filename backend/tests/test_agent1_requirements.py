@@ -171,7 +171,7 @@ ALL_OUTPUTS = {
             "id": "NFR-001",
             "category": "Security",
             "statement": "The system shall protect patient account data.",
-            "measure": "Security controls require stakeholder confirmation.",
+            "measurable_target": "Security controls require stakeholder confirmation.",
             "source_refs": ["TEXT-001"],
         }
     ],
@@ -297,6 +297,36 @@ def run_payload():
     }
 
 
+def add_persisted_source(
+    sources,
+    project_id,
+    source_id,
+    source_type,
+    processing_status="COMPLETED",
+    normalized_text="A usable normalized requirement source.",
+):
+    now = datetime.now(timezone.utc)
+    sources.documents[(project_id, source_id)] = {
+        "source_id": source_id,
+        "agent_project_id": project_id,
+        "owner_user_id": "USR-001",
+        "source_type": source_type,
+        "original_filename": f"{source_id.lower()}.source",
+        "safe_filename": f"{source_id.lower()}.source",
+        "storage_path": f"unused/{source_id}",
+        "mime_type": "application/octet-stream",
+        "file_size": 100,
+        "processing_status": processing_status,
+        "normalized_text": normalized_text,
+        "processing_error_code": None,
+        "processing_error_message": None,
+        "processed_at": now if processing_status == "COMPLETED" else None,
+        "is_deleted": False,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
 def test_agent1_run_uses_shared_lifecycle_and_respects_selected_outputs(
     agent1_context,
 ):
@@ -337,6 +367,155 @@ def test_agent1_run_uses_shared_lifecycle_and_respects_selected_outputs(
         f"/api/v1/agent-projects/{project['agent_project_id']}/runs"
     ).json()["data"]
     assert [item["run_id"] for item in history] == [result["run_id"]]
+
+
+@pytest.mark.parametrize(
+    ("source_id", "source_type"),
+    [("DOC-001", "DOCUMENT"), ("AUD-001", "AUDIO"), ("VID-001", "VIDEO")],
+)
+def test_completed_multimodal_source_generates_traceable_functional_requirement(
+    agent1_context, source_id, source_type
+):
+    authentication, _, runs, provider = agent1_context
+    sources = app.dependency_overrides[get_requirement_source_repository]()
+    client = authentication.client()
+    project = create_project(client)
+    add_persisted_source(sources, project["agent_project_id"], source_id, source_type)
+    provider.response = {
+        "FUNCTIONAL_REQUIREMENTS": [{
+            "id": "FR-001",
+            "statement": "The system shall preserve the supplied booking details.",
+            "source_refs": [source_id],
+            "rationale": None,
+        }]
+    }
+
+    response = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
+        json={"selected_outputs": ["FUNCTIONAL_REQUIREMENTS"]},
+    )
+    assert response.status_code == 200
+    result = response.json()["data"]
+    assert result["status"] == "COMPLETED"
+    assert result["outputs"]["FUNCTIONAL_REQUIREMENTS"][0]["source_refs"] == [source_id]
+    persisted = runs.documents[result["run_id"]]
+    assert persisted["input_snapshot"]["sources"] == [{
+        "source_id": source_id,
+        "source_type": source_type,
+        "content": "A usable normalized requirement source.",
+    }]
+    assert persisted["output_manifest"] == result["outputs"]
+    assert sources.extraction_updates == []
+
+
+def test_mixed_completed_sources_support_multiple_traceability_refs(agent1_context):
+    authentication, _, _, provider = agent1_context
+    sources = app.dependency_overrides[get_requirement_source_repository]()
+    client = authentication.client()
+    project = create_project(client)
+    for source_id, source_type in (
+        ("DOC-001", "DOCUMENT"), ("AUD-001", "AUDIO"), ("VID-001", "VIDEO")
+    ):
+        add_persisted_source(sources, project["agent_project_id"], source_id, source_type)
+    provider.response = {
+        "FUNCTIONAL_REQUIREMENTS": [{
+            "id": "FR-001",
+            "statement": "The system shall combine the documented stakeholder needs.",
+            "source_refs": ["DOC-001", "AUD-001", "VID-001"],
+            "rationale": None,
+        }]
+    }
+    result = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
+        json={"selected_outputs": ["FUNCTIONAL_REQUIREMENTS"]},
+    ).json()["data"]
+    assert result["outputs"]["FUNCTIONAL_REQUIREMENTS"][0]["source_refs"] == [
+        "DOC-001", "AUD-001", "VID-001"
+    ]
+
+
+def test_completed_source_generates_nfr_with_measurable_target(agent1_context):
+    authentication, _, _, provider = agent1_context
+    sources = app.dependency_overrides[get_requirement_source_repository]()
+    client = authentication.client()
+    project = create_project(client)
+    add_persisted_source(sources, project["agent_project_id"], "AUD-001", "AUDIO")
+    provider.response = {
+        "NON_FUNCTIONAL_REQUIREMENTS": [{
+            "id": "NFR-001",
+            "category": "Performance",
+            "statement": "Search results shall be returned promptly.",
+            "measurable_target": "95% of searches complete within two seconds.",
+            "source_refs": ["AUD-001"],
+        }]
+    }
+    result = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
+        json={"selected_outputs": ["NON_FUNCTIONAL_REQUIREMENTS"]},
+    ).json()["data"]
+    assert set(result["outputs"]) == {"NON_FUNCTIONAL_REQUIREMENTS"}
+    assert result["outputs"]["NON_FUNCTIONAL_REQUIREMENTS"][0] == provider.response["NON_FUNCTIONAL_REQUIREMENTS"][0]
+
+
+def test_non_completed_sources_are_ignored_and_never_reprocessed(agent1_context):
+    authentication, _, runs, provider = agent1_context
+    sources = app.dependency_overrides[get_requirement_source_repository]()
+    client = authentication.client()
+    project = create_project(client)
+    add_persisted_source(sources, project["agent_project_id"], "DOC-001", "DOCUMENT")
+    add_persisted_source(sources, project["agent_project_id"], "AUD-001", "AUDIO", "READY", None)
+    add_persisted_source(sources, project["agent_project_id"], "VID-001", "VIDEO", "FAILED", None)
+    provider.response = {
+        "FUNCTIONAL_REQUIREMENTS": [{
+            "id": "FR-001", "statement": "The system shall use completed evidence.",
+            "source_refs": ["DOC-001"], "rationale": None,
+        }]
+    }
+    result = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
+        json={"selected_outputs": ["FUNCTIONAL_REQUIREMENTS"]},
+    ).json()["data"]
+    assert [
+        item["source_id"]
+        for item in runs.documents[result["run_id"]]["input_snapshot"]["sources"]
+    ] == ["DOC-001"]
+    assert sources.extraction_updates == []
+
+
+def test_no_completed_sources_rejected_before_model_or_run(agent1_context):
+    authentication, _, runs, provider = agent1_context
+    sources = app.dependency_overrides[get_requirement_source_repository]()
+    client = authentication.client()
+    project = create_project(client)
+    add_persisted_source(sources, project["agent_project_id"], "AUD-001", "AUDIO", "READY", None)
+    response = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
+        json={"selected_outputs": ["FUNCTIONAL_REQUIREMENTS"]},
+    )
+    assert response.status_code == 422
+    assert provider.calls == []
+    assert runs.documents == {}
+
+
+def test_foreign_source_reference_fails_persisted_run(agent1_context):
+    authentication, _, runs, provider = agent1_context
+    sources = app.dependency_overrides[get_requirement_source_repository]()
+    client = authentication.client()
+    project = create_project(client)
+    add_persisted_source(sources, project["agent_project_id"], "DOC-001", "DOCUMENT")
+    provider.response = {
+        "FUNCTIONAL_REQUIREMENTS": [{
+            "id": "FR-001", "statement": "The system shall invent evidence.",
+            "source_refs": ["DOC-999"], "rationale": None,
+        }]
+    }
+    result = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
+        json={"selected_outputs": ["FUNCTIONAL_REQUIREMENTS"]},
+    ).json()["data"]
+    assert result["status"] == "FAILED"
+    assert result["errors"][0]["code"] == "STRUCTURED_OUTPUT_INVALID"
+    assert runs.documents[result["run_id"]]["status"].value == "FAILED"
 
 
 def test_agent1_rejects_wrong_type_foreign_and_archived_projects(agent1_context):

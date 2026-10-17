@@ -5,7 +5,7 @@ import RequirementsResults from './RequirementsResults.jsx'
 
 const outputs = {
   FUNCTIONAL_REQUIREMENTS: [{ id: 'FR-001', statement: 'Book an available slot.', source_refs: ['TEXT-001'], rationale: 'Reduce calls.' }],
-  NON_FUNCTIONAL_REQUIREMENTS: [{ id: 'NFR-001', category: 'Security', statement: 'Protect patient data.', measure: 'Target requires confirmation.', source_refs: ['TEXT-001'] }],
+  NON_FUNCTIONAL_REQUIREMENTS: [{ id: 'NFR-001', category: 'Security', statement: 'Protect patient data.', measurable_target: 'Target requires confirmation.', source_refs: ['TEXT-001'] }],
   USER_STORIES: [{ id: 'US-001', actor: 'patient', goal: 'book a slot', benefit: 'I avoid a phone call', source_refs: ['TEXT-001'], requirement_refs: ['FR-001'] }],
   ACCEPTANCE_CRITERIA: [{ id: 'AC-001', related_ids: ['US-001'], given: 'a free slot', when: 'the patient books it', then: 'the booking is confirmed' }],
   PERSONAS: [{ id: 'PER-001', role: 'Patient', goals: ['Book online'], pain_points: ['Telephone delays'], context: 'Uses a mobile browser.' }],
