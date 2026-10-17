@@ -1,5 +1,13 @@
+import { useEffect, useState } from 'react'
+
+import {
+  getClarificationResponses,
+  saveClarificationResponse,
+} from '../../services/requirementsAgentService.js'
 import ArtifactViewer from './ArtifactViewer.jsx'
 import ResultsWorkspace from './ResultsWorkspace.jsx'
+import Button from '../ui/Button.jsx'
+import Textarea from '../ui/Textarea.jsx'
 
 const outputLabels = {
   FUNCTIONAL_REQUIREMENTS: 'Functional Requirements',
@@ -113,16 +121,82 @@ function QualityFindings({ items }) {
   ))}</div>
 }
 
-function ClarificationQuestions({ items }) {
+function ClarificationQuestions({ items, agentProjectId, runId }) {
+  const [answers, setAnswers] = useState({})
+  const [saved, setSaved] = useState({})
+  const [savingId, setSavingId] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    if (!agentProjectId || !runId) return undefined
+    getClarificationResponses(agentProjectId, runId)
+      .then((response) => {
+        if (!active || !Array.isArray(response?.data)) return
+        const persisted = Object.fromEntries(
+          response.data.map((item) => [item.question_id, item.answer]),
+        )
+        setAnswers(persisted)
+        setSaved(persisted)
+      })
+      .catch(() => {
+        if (active) setError('Saved clarification answers could not be loaded.')
+      })
+    return () => { active = false }
+  }, [agentProjectId, runId])
+
+  async function saveAnswer(questionId) {
+    const answer = answers[questionId]?.trim() ?? ''
+    if (!answer) {
+      setError('Enter an answer before saving.')
+      return
+    }
+    setSavingId(questionId)
+    setError('')
+    try {
+      const response = await saveClarificationResponse(
+        agentProjectId,
+        runId,
+        { question_id: questionId, answer },
+      )
+      const persistedAnswer = response?.data?.answer ?? answer
+      setAnswers((current) => ({ ...current, [questionId]: persistedAnswer }))
+      setSaved((current) => ({ ...current, [questionId]: persistedAnswer }))
+    } catch (requestError) {
+      setError(requestError?.errors?.[0]?.message ?? 'The answer could not be saved.')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
   if (!items.length) return <EmptyArtifact />
-  return <ol className="space-y-3">{items.map((item) => (
-    <li key={item.id}>
-      <Item heading={item.question} metadata={item.id}>
-        <p><span className="font-semibold">Why this matters:</span> {item.reason}</p>
-        <References label="Affected references" values={item.related_refs} />
-      </Item>
-    </li>
-  ))}</ol>
+  return <div className="space-y-3">
+    {error && <p role="alert" className="text-sm text-state-danger">{error}</p>}
+    <ol className="space-y-3">{items.map((item) => (
+      <li key={item.id}>
+        <Item heading={item.question} metadata={item.priority ? `${item.id} · ${item.priority}` : item.id}>
+          <p><span className="font-semibold">Why this matters:</span> {item.reason}</p>
+          <References label="Quality findings" values={item.quality_finding_refs} />
+          <References label="Requirements" values={item.requirement_refs} />
+          <References label="Sources" values={item.source_refs ?? item.related_refs} />
+          {agentProjectId && runId && <div className="mt-4 space-y-2">
+            <Textarea
+              label={`Answer for ${item.id}`}
+              rows={3}
+              value={answers[item.id] ?? ''}
+              onChange={(event) => setAnswers((current) => ({ ...current, [item.id]: event.target.value }))}
+            />
+            <div className="flex items-center gap-3">
+              <Button onClick={() => saveAnswer(item.id)} disabled={savingId === item.id}>
+                {savingId === item.id ? 'Saving…' : 'Save answer'}
+              </Button>
+              {saved[item.id] && <span className="text-sm text-state-success">Answer saved</span>}
+            </div>
+          </div>}
+        </Item>
+      </li>
+    ))}</ol>
+  </div>
 }
 
 function SRS({ artifact }) {
@@ -136,7 +210,7 @@ function SRS({ artifact }) {
   )
 }
 
-function renderOutput(code, value) {
+function renderOutput(code, value, context) {
   switch (code) {
     case 'FUNCTIONAL_REQUIREMENTS': return <FunctionalRequirements items={value} />
     case 'NON_FUNCTIONAL_REQUIREMENTS': return <NonFunctionalRequirements items={value} />
@@ -144,13 +218,13 @@ function renderOutput(code, value) {
     case 'ACCEPTANCE_CRITERIA': return <AcceptanceCriteria items={value} />
     case 'PERSONAS': return <Personas items={value} />
     case 'QUALITY_FINDINGS': return <QualityFindings items={value} />
-    case 'CLARIFICATION_QUESTIONS': return <ClarificationQuestions items={value} />
+    case 'CLARIFICATION_QUESTIONS': return <ClarificationQuestions items={value} {...context} />
     case 'SRS': return <SRS artifact={value} />
     default: return null
   }
 }
 
-function buildRequirementsSections(outputs) {
+function buildRequirementsSections(outputs, context) {
   const safeOutputs = outputs && typeof outputs === 'object' ? outputs : {}
   return outputOrder
     .filter((code) => Object.hasOwn(safeOutputs, code))
@@ -159,14 +233,14 @@ function buildRequirementsSections(outputs) {
       title: outputLabels[code],
       content: (
         <ArtifactViewer heading={outputLabels[code]} metadata={code}>
-          {renderOutput(code, safeOutputs[code])}
+          {renderOutput(code, safeOutputs[code], context)}
         </ArtifactViewer>
       ),
     }))
 }
 
-function RequirementsResults({ outputs, title = 'Requirements results', warnings = [], errors = [], actions }) {
-  const sections = buildRequirementsSections(outputs)
+function RequirementsResults({ outputs, title = 'Requirements results', warnings = [], errors = [], actions, agentProjectId, runId }) {
+  const sections = buildRequirementsSections(outputs, { agentProjectId, runId })
   if (sections.length === 0) {
     sections.push({
       id: 'no-output',

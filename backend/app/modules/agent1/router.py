@@ -18,18 +18,24 @@ from app.modules.agent1.processing import (
     VideoProcessor,
 )
 from app.modules.agent1.repository import (
+    ClarificationResponseRepository,
+    ClarificationResponseRepositoryError,
     RequirementSourceRepository,
     RequirementSourceRepositoryError,
 )
 from app.modules.agent1.schemas import (
     Agent1RunRequest,
     Agent1RunResult,
+    ClarificationResponse,
+    ClarificationResponseRequest,
     RequirementSourceResponse,
     RequirementSourceType,
     SourceProcessingResult,
 )
 from app.modules.agent1.service import (
     Agent1Service,
+    ClarificationQuestionNotFoundError,
+    ClarificationResponseService,
     NoUsableSourceError,
     RequirementSourceProcessingService,
     RequirementSourceService,
@@ -41,6 +47,7 @@ from app.modules.auth.schemas import UserPublicResponse
 from app.modules.standalone.router import get_standalone_service
 from app.modules.standalone.service import (
     AgentProjectNotFoundError,
+    AgentRunNotFoundError,
     ArchivedAgentProjectError,
     StandaloneService,
     StandaloneServiceError,
@@ -56,6 +63,20 @@ def get_agent1_engine() -> Agent1Engine:
 
 def get_requirement_source_repository() -> RequirementSourceRepository:
     return RequirementSourceRepository()
+
+
+def get_clarification_response_repository() -> ClarificationResponseRepository:
+    return ClarificationResponseRepository()
+
+
+def get_clarification_response_service(
+    standalone_service: Annotated[StandaloneService, Depends(get_standalone_service)],
+    repository: Annotated[
+        ClarificationResponseRepository,
+        Depends(get_clarification_response_repository),
+    ],
+) -> ClarificationResponseService:
+    return ClarificationResponseService(standalone_service, repository)
 
 
 def get_agent1_service(
@@ -390,3 +411,83 @@ def run_requirements_agent(
             "Standalone run storage is unavailable",
         )
     return SuccessResponse(message="Requirements agent run finished", data=result)
+
+
+@router.get(
+    "/{agent_project_id}/runs/{run_id}/clarification-responses",
+    response_model=SuccessResponse[list[ClarificationResponse]],
+)
+def list_clarification_responses(
+    agent_project_id: str,
+    run_id: str,
+    service: Annotated[
+        ClarificationResponseService,
+        Depends(get_clarification_response_service),
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[list[ClarificationResponse]] | JSONResponse:
+    try:
+        responses = service.list_responses(agent_project_id, run_id, current_user)
+    except (AgentProjectNotFoundError, AgentRunNotFoundError):
+        return _error(
+            status.HTTP_404_NOT_FOUND,
+            "Agent run not found",
+            "run_id",
+            "Agent run not found",
+        )
+    except (ClarificationResponseRepositoryError, StandaloneServiceError):
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Clarification response retrieval failed",
+            "database",
+            "Clarification response storage is unavailable",
+        )
+    return SuccessResponse(
+        message="Clarification responses retrieved successfully",
+        data=responses,
+    )
+
+
+@router.post(
+    "/{agent_project_id}/runs/{run_id}/clarification-responses",
+    response_model=SuccessResponse[ClarificationResponse],
+)
+def save_clarification_response(
+    agent_project_id: str,
+    run_id: str,
+    request: ClarificationResponseRequest,
+    service: Annotated[
+        ClarificationResponseService,
+        Depends(get_clarification_response_service),
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[ClarificationResponse] | JSONResponse:
+    try:
+        response = service.save_response(
+            agent_project_id, run_id, request, current_user
+        )
+    except (AgentProjectNotFoundError, AgentRunNotFoundError):
+        return _error(
+            status.HTTP_404_NOT_FOUND,
+            "Agent run not found",
+            "run_id",
+            "Agent run not found",
+        )
+    except ClarificationQuestionNotFoundError:
+        return _error(
+            status.HTTP_404_NOT_FOUND,
+            "Clarification question not found",
+            "question_id",
+            "Clarification question not found in the originating run",
+        )
+    except (ClarificationResponseRepositoryError, StandaloneServiceError):
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Clarification response persistence failed",
+            "database",
+            "Clarification response storage is unavailable",
+        )
+    return SuccessResponse(
+        message="Clarification response saved successfully",
+        data=response,
+    )

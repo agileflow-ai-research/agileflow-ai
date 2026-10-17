@@ -20,6 +20,7 @@ ID_PREFIXES = (
     "DOC",
     "AUD",
     "VID",
+    "CR",
 )
 
 APPROVED_ID_PREFIXES = frozenset(ID_PREFIXES)

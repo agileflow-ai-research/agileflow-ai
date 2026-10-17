@@ -303,12 +303,78 @@ class QualityFinding(BaseModel):
 
 class ClarificationQuestion(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(
-        pattern=r"^CQ-(?:\d{3,}|DUP-\d{3,}|QF-(?:\d{3,}|DUP-\d{3,}))$"
-    )
+    id: str = Field(pattern=r"^CQ-\d{3,}$")
     question: str
     reason: str
-    related_refs: list[str]
+    quality_finding_refs: list[str] = Field(default_factory=list)
+    requirement_refs: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    priority: Literal["LOW", "MEDIUM", "HIGH"] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_related_refs(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        legacy_refs = normalized.pop("related_refs", None)
+        if legacy_refs is not None:
+            normalized.setdefault(
+                "quality_finding_refs",
+                [ref for ref in legacy_refs if str(ref).startswith("QF-")],
+            )
+            normalized.setdefault(
+                "requirement_refs",
+                [
+                    ref
+                    for ref in legacy_refs
+                    if str(ref).startswith(("FR-", "NFR-"))
+                ],
+            )
+            normalized.setdefault(
+                "source_refs",
+                [
+                    ref
+                    for ref in legacy_refs
+                    if not str(ref).startswith(("QF-", "FR-", "NFR-"))
+                ],
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def require_traceability(self) -> "ClarificationQuestion":
+        if not (
+            self.quality_finding_refs
+            or self.requirement_refs
+            or self.source_refs
+        ):
+            raise ValueError("clarification question must reference run evidence")
+        return self
+
+
+class ClarificationResponseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    question_id: str = Field(pattern=r"^CQ-\d{3,}$")
+    answer: str = Field(min_length=1, max_length=10000)
+
+    @field_validator("answer")
+    @classmethod
+    def answer_must_not_be_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("answer must not be blank")
+        return stripped
+
+
+class ClarificationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    response_id: str = Field(pattern=r"^CR-\d{3,}$")
+    agent_project_id: str
+    run_id: str
+    question_id: str = Field(pattern=r"^CQ-\d{3,}$")
+    answer: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class SRSSection(BaseModel):

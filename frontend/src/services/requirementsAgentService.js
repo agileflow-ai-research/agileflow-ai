@@ -7,3 +7,18 @@ export function runRequirementsAgent(agentProjectId, input) {
     { authenticated: true },
   )
 }
+
+export function getClarificationResponses(agentProjectId, runId) {
+  return apiClient.get(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/runs/${encodeURIComponent(runId)}/clarification-responses`,
+    { authenticated: true },
+  )
+}
+
+export function saveClarificationResponse(agentProjectId, runId, response) {
+  return apiClient.post(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/runs/${encodeURIComponent(runId)}/clarification-responses`,
+    response,
+    { authenticated: true },
+  )
+}

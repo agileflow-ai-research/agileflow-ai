@@ -54,7 +54,8 @@ requirement_refs with generated FR/NFR IDs. Acceptance criteria related_ids must
 FR/NFR/US IDs when those artifacts are requested together; otherwise link to the relevant source ID.
 Quality findings use issue, affected_requirement_refs, source_refs, and recommendation. Their affected
 requirement references may contain only generated FR/NFR IDs, and their source references may contain
-only supplied source IDs. Clarification questions may reference only supplied sources or generated artifacts.
+only supplied source IDs. Clarification questions use quality_finding_refs, requirement_refs, source_refs,
+and optional LOW/MEDIUM/HIGH priority. Ask targeted questions about unresolved issues, never generic questions.
 Do not repeat equivalent items. Optional unknown values must be null rather than invented."""
 
 
@@ -159,6 +160,7 @@ class Agent1Engine:
 
         first_source_id = context.sources[0].source_id if context.sources else "TEXT-001"
         self._merge_deterministic_findings(validated, duplicates, first_source_id)
+        self._merge_required_clarifications(validated)
         self._validate_nonblank_strings(validated)
         self._validate_references(context, validated)
         self._validate_unique_artifacts(
@@ -167,7 +169,6 @@ class Agent1Engine:
                 RequirementOutputCode.QUALITY_FINDINGS.value in validated
             ),
         )
-        self._merge_required_clarifications(validated, duplicates, first_source_id)
         return validated
 
     @staticmethod
@@ -258,15 +259,26 @@ class Agent1Engine:
                     "QUALITY_FINDINGS contains an invalid source reference"
                 )
 
-        evidence_refs = (
-            valid_source_refs | requirement_refs | story_refs | criterion_refs
-        )
+        valid_quality_refs = {
+            item["id"]
+            for item in outputs.get(
+                RequirementOutputCode.QUALITY_FINDINGS.value, []
+            )
+        }
         for item in outputs.get(
             RequirementOutputCode.CLARIFICATION_QUESTIONS.value, []
         ):
-            if not set(item["related_refs"]).issubset(evidence_refs):
+            if not set(item["quality_finding_refs"]).issubset(valid_quality_refs):
                 raise StructuredOutputInvalidError(
-                    "CLARIFICATION_QUESTIONS contains an invalid reference"
+                    "CLARIFICATION_QUESTIONS contains an invalid quality finding reference"
+                )
+            if not set(item["requirement_refs"]).issubset(requirement_refs):
+                raise StructuredOutputInvalidError(
+                    "CLARIFICATION_QUESTIONS contains an invalid requirement reference"
+                )
+            if not set(item["source_refs"]).issubset(valid_source_refs):
+                raise StructuredOutputInvalidError(
+                    "CLARIFICATION_QUESTIONS contains an invalid source reference"
                 )
 
     @staticmethod
@@ -431,8 +443,6 @@ class Agent1Engine:
     @staticmethod
     def _merge_required_clarifications(
         outputs: dict[str, Any],
-        duplicates: list[str],
-        first_source_id: str = "TEXT-001",
     ) -> None:
         questions = outputs.get(
             RequirementOutputCode.CLARIFICATION_QUESTIONS.value
@@ -441,29 +451,34 @@ class Agent1Engine:
         if supplemental:
             questions = []
 
-        candidates: list[tuple[str, str, list[str], str]] = []
-        for index, statement in enumerate(duplicates, start=1):
-            candidates.append(
-                (
-                    f"CQ-DUP-{index:03d}",
-                    "Is the repeated requirement intentional, or should it be consolidated?",
-                    [first_source_id],
-                    f"The statement appears more than once: {statement}",
-                )
-            )
+        candidates: list[dict[str, Any]] = []
         for finding in outputs.get(
             RequirementOutputCode.QUALITY_FINDINGS.value, []
         ):
             suggestion = finding.get("recommendation")
             if suggestion:
+                prompts = {
+                    "AMBIGUITY": "What exact meaning should replace the ambiguous wording",
+                    "MISSING_INFORMATION": "What missing business rule or detail should apply",
+                    "CONFLICT": "Which conflicting rule should take precedence",
+                    "DUPLICATE": "Should the identified duplicate be consolidated",
+                    "INCONSISTENCY": "Which interpretation should be used consistently",
+                }
                 candidates.append(
-                    (
-                        f"CQ-QF-{finding['id'].removeprefix('QF-')}",
-                        suggestion,
-                        finding["affected_requirement_refs"]
-                        + finding["source_refs"],
-                        finding["issue"],
-                    )
+                    {
+                        "question": (
+                            f"{prompts[finding['category']]} for {finding['id']}?"
+                        ),
+                        "reason": finding["issue"],
+                        "quality_finding_refs": [finding["id"]],
+                        "requirement_refs": finding["affected_requirement_refs"],
+                        "source_refs": finding["source_refs"],
+                        "priority": (
+                            "HIGH"
+                            if finding["category"] == "CONFLICT"
+                            else "MEDIUM"
+                        ),
+                    }
                 )
         if not candidates:
             return
@@ -472,20 +487,15 @@ class Agent1Engine:
             _canonical_statement(question["question"]) for question in questions
         }
         existing_ids = {question["id"] for question in questions}
-        for identifier, question, refs, reason in candidates:
-            if (
-                identifier not in existing_ids
-                and _canonical_statement(question) not in existing
-            ):
-                questions.append(
-                    {
-                        "id": identifier,
-                        "question": question,
-                        "reason": reason,
-                        "related_refs": refs,
-                    }
-                )
-                existing_ids.add(identifier)
-                existing.add(_canonical_statement(question))
+        next_id = 1
+        for candidate in candidates:
+            if _canonical_statement(candidate["question"]) in existing:
+                continue
+            while f"CQ-{next_id:03d}" in existing_ids:
+                next_id += 1
+            question = {"id": f"CQ-{next_id:03d}", **candidate}
+            questions.append(question)
+            existing_ids.add(question["id"])
+            existing.add(_canonical_statement(question["question"]))
         if supplemental and questions:
             outputs[RequirementOutputCode.CLARIFICATION_QUESTIONS.value] = questions

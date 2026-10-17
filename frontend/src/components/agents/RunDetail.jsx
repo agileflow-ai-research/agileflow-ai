@@ -110,7 +110,12 @@ function RunDetail({ agentProjectId, runId, onClose }) {
       <RunMessageList title="Errors" messages={run.errors} tone="danger" />
 
       {run.agent_type === 'REQUIREMENTS' ? (
-        <RequirementsResults outputs={manifest} title="Persisted requirements outputs" />
+        <RequirementsResults
+          outputs={manifest}
+          title="Persisted requirements outputs"
+          agentProjectId={agentProjectId}
+          runId={runId}
+        />
       ) : (
         <ArtifactViewer heading="Output manifest" metadata="Persisted manifest metadata">
           {Object.keys(manifest).length > 0 ? (

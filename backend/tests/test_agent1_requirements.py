@@ -20,7 +20,11 @@ from app.modules.agent1.schemas import (
     RequirementSourceRecord,
     SourceProcessingStatus,
 )
-from app.modules.agent1.router import get_agent1_engine, get_requirement_source_repository
+from app.modules.agent1.router import (
+    get_agent1_engine,
+    get_clarification_response_repository,
+    get_requirement_source_repository,
+)
 from app.modules.standalone.router import (
     get_agent_project_repository,
     get_agent_run_repository,
@@ -52,6 +56,7 @@ class FakeRequirementSourceRepositoryForRun:
                     except ValueError:
                         pass
         return largest + 1
+
 
     def create_source(self, source: RequirementSourceRecord) -> dict[str, Any]:
         doc = source.model_dump(mode="python")
@@ -126,6 +131,39 @@ class FakeRequirementSourceRepositoryForRun:
             if doc.get("agent_project_id") == agent_project_id
             and doc.get("owner_user_id") == owner_user_id
             and not doc.get("is_deleted", False)
+        ]
+
+
+class FakeClarificationResponseRepository:
+    def __init__(self) -> None:
+        self.documents = {}
+
+    def next_response_sequence(self):
+        return len(self.documents) + 1
+
+    def get_response(self, owner_user_id, agent_project_id, run_id, question_id):
+        return deepcopy(
+            self.documents.get(
+                (owner_user_id, agent_project_id, run_id, question_id)
+            )
+        )
+
+    def save_response(self, response, owner_user_id):
+        document = response.model_dump(mode="python")
+        key = (
+            owner_user_id,
+            response.agent_project_id,
+            response.run_id,
+            response.question_id,
+        )
+        self.documents[key] = deepcopy(document)
+        return deepcopy(document)
+
+    def list_responses(self, owner_user_id, agent_project_id, run_id):
+        return [
+            deepcopy(document)
+            for key, document in self.documents.items()
+            if key[:3] == (owner_user_id, agent_project_id, run_id)
         ]
 
 
@@ -262,10 +300,12 @@ def agent1_context(authentication_context):
     projects = FakeAgentProjectRepository()
     runs = FakeAgentRunRepository()
     sources = FakeRequirementSourceRepositoryForRun()
+    responses = FakeClarificationResponseRepository()
     provider = FixedProvider({"FUNCTIONAL_REQUIREMENTS": VALID_FUNCTIONAL})
     app.dependency_overrides[get_agent_project_repository] = lambda: projects
     app.dependency_overrides[get_agent_run_repository] = lambda: runs
     app.dependency_overrides[get_requirement_source_repository] = lambda: sources
+    app.dependency_overrides[get_clarification_response_repository] = lambda: responses
     app.dependency_overrides[get_agent1_engine] = lambda: Agent1Engine(provider)
     try:
         yield authentication_context, projects, runs, provider
@@ -273,6 +313,7 @@ def agent1_context(authentication_context):
         app.dependency_overrides.pop(get_agent_project_repository, None)
         app.dependency_overrides.pop(get_agent_run_repository, None)
         app.dependency_overrides.pop(get_requirement_source_repository, None)
+        app.dependency_overrides.pop(get_clarification_response_repository, None)
         app.dependency_overrides.pop(get_agent1_engine, None)
 
 
@@ -490,6 +531,69 @@ def test_quality_findings_are_persisted_in_run_output_manifest(agent1_context):
     assert result["status"] == "COMPLETED"
     assert runs.documents[result["run_id"]]["output_manifest"] == result["outputs"]
     assert result["outputs"]["QUALITY_FINDINGS"][0]["source_refs"] == ["DOC-001"]
+
+
+def test_human_clarification_answer_persists_reloads_and_is_owner_isolated(
+    agent1_context,
+):
+    authentication, _, runs, provider = agent1_context
+    client = authentication.client()
+    project = create_project(client)
+    provider.response = {
+        "FUNCTIONAL_REQUIREMENTS": deepcopy(VALID_FUNCTIONAL),
+        "CLARIFICATION_QUESTIONS": [{
+            "id": "CQ-001",
+            "question": "How long before an appointment may a patient cancel?",
+            "reason": "The cancellation window is missing.",
+            "quality_finding_refs": [],
+            "requirement_refs": ["FR-001"],
+            "source_refs": ["TEXT-001"],
+            "priority": "HIGH",
+        }],
+    }
+    run = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
+        json={
+            "text": "Patients may cancel appointments.",
+            "selected_outputs": [
+                "FUNCTIONAL_REQUIREMENTS",
+                "CLARIFICATION_QUESTIONS",
+            ],
+        },
+    ).json()["data"]
+    manifest_before = deepcopy(runs.documents[run["run_id"]]["output_manifest"])
+    run_count = len(runs.documents)
+    path = (
+        f"/api/v1/agents/requirements/{project['agent_project_id']}"
+        f"/runs/{run['run_id']}/clarification-responses"
+    )
+
+    saved = client.post(path, json={
+        "question_id": "CQ-001",
+        "answer": "Patients may cancel up to 12 hours before the appointment.",
+    })
+    assert saved.status_code == 200
+    assert saved.json()["data"]["response_id"] == "CR-001"
+    assert client.get(path).json()["data"][0]["answer"].startswith("Patients")
+    assert len(runs.documents) == run_count
+    assert runs.documents[run["run_id"]]["output_manifest"] == manifest_before
+
+    foreign = authentication.client("USR-002")
+    assert foreign.get(path).status_code == 404
+
+
+def test_blank_clarification_answer_is_rejected(agent1_context):
+    authentication, _, _, _ = agent1_context
+    client = authentication.client()
+    project = create_project(client)
+
+    response = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}"
+        "/runs/RUN-001/clarification-responses",
+        json={"question_id": "CQ-001", "answer": "   "},
+    )
+
+    assert response.status_code == 422
 
 
 def test_non_completed_sources_are_ignored_and_never_reprocessed(agent1_context):
@@ -949,12 +1053,13 @@ def test_quality_issue_adds_only_required_supplemental_clarification():
     ).execute(CLINIC_CONTEXT, [RequirementOutputCode.QUALITY_FINDINGS])
 
     assert set(outputs) == {"QUALITY_FINDINGS", "CLARIFICATION_QUESTIONS"}
-    assert outputs["CLARIFICATION_QUESTIONS"][0]["related_refs"] == [
-        "TEXT-001"
-    ]
+    question = outputs["CLARIFICATION_QUESTIONS"][0]
+    assert question["quality_finding_refs"] == ["QF-001"]
+    assert question["source_refs"] == ["TEXT-001"]
+    assert "exact meaning" in question["question"]
 
 
-def test_exact_duplicate_adds_clarification_without_unselected_quality_output():
+def test_unselected_quality_does_not_add_clarification_questions():
     duplicate_context = Agent1InputContext(
         project_name=CLINIC_CONTEXT.project_name,
         domain=CLINIC_CONTEXT.domain,
@@ -973,11 +1078,78 @@ def test_exact_duplicate_adds_clarification_without_unselected_quality_output():
         [RequirementOutputCode.FUNCTIONAL_REQUIREMENTS],
     )
 
-    assert set(outputs) == {
-        "FUNCTIONAL_REQUIREMENTS",
-        "CLARIFICATION_QUESTIONS",
+    assert set(outputs) == {"FUNCTIONAL_REQUIREMENTS"}
+
+
+@pytest.mark.parametrize(
+    ("category", "expected_text"),
+    [
+        ("AMBIGUITY", "exact meaning"),
+        ("MISSING_INFORMATION", "missing business rule"),
+        ("CONFLICT", "take precedence"),
+    ],
+)
+def test_quality_findings_generate_targeted_questions(category, expected_text):
+    finding = {
+        "id": "QF-001",
+        "category": category,
+        "issue": "Stakeholder input is required.",
+        "affected_requirement_refs": ["FR-001"],
+        "source_refs": ["TEXT-001"],
+        "recommendation": "Resolve with the product owner.",
     }
-    assert "QUALITY_FINDINGS" not in outputs
+    outputs = Agent1Engine(FixedProvider({
+        "FUNCTIONAL_REQUIREMENTS": deepcopy(VALID_FUNCTIONAL),
+        "QUALITY_FINDINGS": [finding],
+    })).execute(CLINIC_CONTEXT, [
+        RequirementOutputCode.FUNCTIONAL_REQUIREMENTS,
+        RequirementOutputCode.QUALITY_FINDINGS,
+    ])
+
+    question = outputs["CLARIFICATION_QUESTIONS"][0]
+    assert expected_text in question["question"]
+    assert question["quality_finding_refs"] == ["QF-001"]
+    assert question["requirement_refs"] == ["FR-001"]
+    assert question["source_refs"] == ["TEXT-001"]
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_ref", "message"),
+    [
+        ("quality_finding_refs", "QF-999", "invalid quality finding"),
+        ("requirement_refs", "FR-999", "invalid requirement"),
+        ("source_refs", "DOC-999", "invalid source"),
+    ],
+)
+def test_clarification_questions_reject_invalid_refs(field, invalid_ref, message):
+    question = {
+        "id": "CQ-001",
+        "question": "Which rule applies?",
+        "reason": "A decision is required.",
+        "quality_finding_refs": ["QF-001"],
+        "requirement_refs": ["FR-001"],
+        "source_refs": ["TEXT-001"],
+        "priority": "HIGH",
+    }
+    question[field] = [invalid_ref]
+    response = {
+        "FUNCTIONAL_REQUIREMENTS": deepcopy(VALID_FUNCTIONAL),
+        "QUALITY_FINDINGS": [{
+            "id": "QF-001",
+            "category": "CONFLICT",
+            "issue": "Rules conflict.",
+            "affected_requirement_refs": ["FR-001"],
+            "source_refs": ["TEXT-001"],
+            "recommendation": None,
+        }],
+        "CLARIFICATION_QUESTIONS": [question],
+    }
+    with pytest.raises(ValueError, match=message):
+        Agent1Engine(FixedProvider(response)).execute(CLINIC_CONTEXT, [
+            RequirementOutputCode.FUNCTIONAL_REQUIREMENTS,
+            RequirementOutputCode.QUALITY_FINDINGS,
+            RequirementOutputCode.CLARIFICATION_QUESTIONS,
+        ])
 
 
 class StubResponse:

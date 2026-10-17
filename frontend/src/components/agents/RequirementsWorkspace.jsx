@@ -208,6 +208,8 @@ function RequirementsWorkspace({ project, onRunCompleted }) {
           outputs={result.outputs}
           warnings={(result.warnings ?? []).map((item) => item.message)}
           errors={(result.errors ?? []).map((item) => `${item.code}: ${item.message}`)}
+          agentProjectId={project.agent_project_id}
+          runId={result.run_id}
           actions={<Button variant="outline" onClick={() => { setResult(null); setRunState('idle'); setStep(0) }}>Start another run</Button>}
         />
       </div>

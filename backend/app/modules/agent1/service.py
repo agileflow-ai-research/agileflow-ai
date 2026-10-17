@@ -23,6 +23,8 @@ from app.modules.agent1.processing import (
     VideoTranscriptionError,
 )
 from app.modules.agent1.repository import (
+    ClarificationResponseRepository,
+    ClarificationResponseRepositoryError,
     RequirementSourceRepository,
 )
 from app.modules.agent1.schemas import (
@@ -32,6 +34,8 @@ from app.modules.agent1.schemas import (
     Agent1InputContext,
     Agent1RunRequest,
     Agent1RunResult,
+    ClarificationResponse,
+    ClarificationResponseRequest,
     RequirementSource,
     RequirementSourceRecord,
     RequirementSourceResponse,
@@ -235,6 +239,83 @@ class RequirementSourceService:
                     p.unlink(missing_ok=True)
             except OSError:
                 pass
+
+
+class ClarificationQuestionNotFoundError(LookupError):
+    pass
+
+
+class ClarificationResponseService:
+    """Capture human answers without creating or mutating an AgentRun."""
+
+    def __init__(
+        self,
+        standalone_service: StandaloneService,
+        repository: ClarificationResponseRepository,
+    ) -> None:
+        self._standalone = standalone_service
+        self._repository = repository
+
+    def list_responses(
+        self,
+        agent_project_id: str,
+        run_id: str,
+        current_user: UserPublicResponse,
+    ) -> list[ClarificationResponse]:
+        self._get_questions(agent_project_id, run_id, current_user)
+        try:
+            return [
+                ClarificationResponse.model_validate(document)
+                for document in self._repository.list_responses(
+                    current_user.user_id, agent_project_id, run_id
+                )
+            ]
+        except ClarificationResponseRepositoryError:
+            raise
+
+    def save_response(
+        self,
+        agent_project_id: str,
+        run_id: str,
+        request: ClarificationResponseRequest,
+        current_user: UserPublicResponse,
+    ) -> ClarificationResponse:
+        questions = self._get_questions(agent_project_id, run_id, current_user)
+        if request.question_id not in {item.get("id") for item in questions}:
+            raise ClarificationQuestionNotFoundError(request.question_id)
+        existing = self._repository.get_response(
+            current_user.user_id,
+            agent_project_id,
+            run_id,
+            request.question_id,
+        )
+        now = datetime.now(timezone.utc)
+        response = ClarificationResponse(
+            response_id=(
+                existing["response_id"]
+                if existing
+                else generate_id("CR", self._repository.next_response_sequence())
+            ),
+            agent_project_id=agent_project_id,
+            run_id=run_id,
+            question_id=request.question_id,
+            answer=request.answer,
+            created_at=existing["created_at"] if existing else now,
+            updated_at=now,
+        )
+        return ClarificationResponse.model_validate(
+            self._repository.save_response(response, current_user.user_id)
+        )
+
+    def _get_questions(
+        self,
+        agent_project_id: str,
+        run_id: str,
+        current_user: UserPublicResponse,
+    ) -> list[dict[str, Any]]:
+        run = self._standalone.get_run(agent_project_id, run_id, current_user)
+        questions = run.output_manifest.get("CLARIFICATION_QUESTIONS", [])
+        return questions if isinstance(questions, list) else []
 
 
         # Success — persist and add to engine context

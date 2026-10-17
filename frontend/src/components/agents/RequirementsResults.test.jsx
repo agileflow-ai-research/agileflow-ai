@@ -1,7 +1,17 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import RequirementsResults from './RequirementsResults.jsx'
+import {
+  getClarificationResponses,
+  saveClarificationResponse,
+} from '../../services/requirementsAgentService.js'
+
+vi.mock('../../services/requirementsAgentService.js', () => ({
+  getClarificationResponses: vi.fn(),
+  saveClarificationResponse: vi.fn(),
+}))
 
 const outputs = {
   FUNCTIONAL_REQUIREMENTS: [{ id: 'FR-001', statement: 'Book an available slot.', source_refs: ['TEXT-001'], rationale: 'Reduce calls.' }],
@@ -16,11 +26,15 @@ const outputs = {
     { id: 'QF-004', category: 'DUPLICATE', affected_requirement_refs: ['FR-001'], source_refs: ['TEXT-001'], issue: 'The booking rule is duplicated.', recommendation: 'Consolidate the duplicate.' },
     { id: 'QF-005', category: 'INCONSISTENCY', affected_requirement_refs: ['FR-001', 'NFR-001'], source_refs: ['TEXT-001'], issue: 'Terminology is inconsistent.', recommendation: 'Use one term consistently.' },
   ],
-  CLARIFICATION_QUESTIONS: [{ id: 'CQ-001', question: 'Which usability target applies?', reason: 'Ease of use is ambiguous.', related_refs: ['NFR-001'] }],
+  CLARIFICATION_QUESTIONS: [{ id: 'CQ-001', question: 'Which usability target applies?', reason: 'Ease of use is ambiguous.', quality_finding_refs: ['QF-001'], requirement_refs: ['NFR-001'], source_refs: ['TEXT-001'], priority: 'HIGH' }],
   SRS: { title: 'Clinic Booking SRS', overview: 'A responsive booking system.', sections: [{ title: 'Scope', content: 'Appointment booking.' }], assumptions: ['Email delivery is available.'], unresolved_issues: ['Security target.'] },
 }
 
 describe('RequirementsResults', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getClarificationResponses.mockResolvedValue({ data: [] })
+  })
   it('renders all eight Agent 1 outputs as readable artifacts', () => {
     render(<RequirementsResults outputs={outputs} />)
 
@@ -48,5 +62,42 @@ describe('RequirementsResults', () => {
     expect(screen.getAllByText('Functional Requirements').length).toBeGreaterThan(0)
     expect(screen.queryByText('User Stories')).not.toBeInTheDocument()
     expect(screen.queryByText('Software Requirements Specification')).not.toBeInTheDocument()
+  })
+
+  it('reloads and saves a human clarification answer', async () => {
+    const user = userEvent.setup()
+    getClarificationResponses.mockResolvedValue({
+      data: [{ question_id: 'CQ-001', answer: 'Use a five-point score.' }],
+    })
+    saveClarificationResponse.mockResolvedValue({
+      data: { question_id: 'CQ-001', answer: 'Use an SUS score of at least 80.' },
+    })
+    render(
+      <RequirementsResults
+        outputs={{ CLARIFICATION_QUESTIONS: outputs.CLARIFICATION_QUESTIONS }}
+        agentProjectId="AGP-001"
+        runId="RUN-001"
+      />,
+    )
+
+    const answer = await screen.findByLabelText('Answer for CQ-001')
+    expect(answer).toHaveValue('Use a five-point score.')
+    await user.clear(answer)
+    await user.type(answer, 'Use an SUS score of at least 80.')
+    await user.click(screen.getByRole('button', { name: 'Save answer' }))
+
+    await waitFor(() => expect(saveClarificationResponse).toHaveBeenCalledWith(
+      'AGP-001',
+      'RUN-001',
+      { question_id: 'CQ-001', answer: 'Use an SUS score of at least 80.' },
+    ))
+    expect(screen.getByText('Answer saved')).toBeInTheDocument()
+    ;[
+      'Quality findings: QF-001',
+      'Requirements: NFR-001',
+      'Sources: TEXT-001',
+    ].forEach((text) => expect(screen.getByText((_, node) => (
+      node.tagName === 'P' && node.textContent === text
+    ))).toBeInTheDocument())
   })
 })
