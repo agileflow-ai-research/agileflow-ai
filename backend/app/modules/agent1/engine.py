@@ -52,7 +52,9 @@ Never use AGP-, RUN-, PRJ-, USR-, APP-, or EVT- identifiers. Every source_refs v
 source ID. When requirements and user stories are requested together, populate each story's
 requirement_refs with generated FR/NFR IDs. Acceptance criteria related_ids must reference generated
 FR/NFR/US IDs when those artifacts are requested together; otherwise link to the relevant source ID.
-Quality findings and clarification questions may reference only supplied sources or generated artifacts.
+Quality findings use issue, affected_requirement_refs, source_refs, and recommendation. Their affected
+requirement references may contain only generated FR/NFR IDs, and their source references may contain
+only supplied source IDs. Clarification questions may reference only supplied sources or generated artifacts.
 Do not repeat equivalent items. Optional unknown values must be null rather than invented."""
 
 
@@ -155,11 +157,16 @@ class Agent1Engine:
                 "Model output failed Agent 1 structured validation"
             ) from exc
 
-        self._validate_nonblank_strings(validated)
-        self._validate_references(context, validated)
-        self._validate_unique_artifacts(validated)
         first_source_id = context.sources[0].source_id if context.sources else "TEXT-001"
         self._merge_deterministic_findings(validated, duplicates, first_source_id)
+        self._validate_nonblank_strings(validated)
+        self._validate_references(context, validated)
+        self._validate_unique_artifacts(
+            validated,
+            allow_requirement_duplicates=(
+                RequirementOutputCode.QUALITY_FINDINGS.value in validated
+            ),
+        )
         self._merge_required_clarifications(validated, duplicates, first_source_id)
         return validated
 
@@ -241,18 +248,26 @@ class Agent1Engine:
                     "ACCEPTANCE_CRITERIA must link to a generated requirement or story"
                 )
 
+        for item in outputs.get(RequirementOutputCode.QUALITY_FINDINGS.value, []):
+            if not set(item["affected_requirement_refs"]).issubset(requirement_refs):
+                raise StructuredOutputInvalidError(
+                    "QUALITY_FINDINGS contains an invalid requirement reference"
+                )
+            if not set(item["source_refs"]).issubset(valid_source_refs):
+                raise StructuredOutputInvalidError(
+                    "QUALITY_FINDINGS contains an invalid source reference"
+                )
+
         evidence_refs = (
             valid_source_refs | requirement_refs | story_refs | criterion_refs
         )
-        for code, field in (
-            (RequirementOutputCode.QUALITY_FINDINGS.value, "affected_refs"),
-            (RequirementOutputCode.CLARIFICATION_QUESTIONS.value, "related_refs"),
+        for item in outputs.get(
+            RequirementOutputCode.CLARIFICATION_QUESTIONS.value, []
         ):
-            for item in outputs.get(code, []):
-                if not set(item[field]).issubset(evidence_refs):
-                    raise StructuredOutputInvalidError(
-                        f"{code} contains an invalid reference"
-                    )
+            if not set(item["related_refs"]).issubset(evidence_refs):
+                raise StructuredOutputInvalidError(
+                    "CLARIFICATION_QUESTIONS contains an invalid reference"
+                )
 
     @staticmethod
     def _validate_nonblank_strings(value: Any) -> None:
@@ -279,31 +294,103 @@ class Agent1Engine:
         duplicates: list[str],
         first_source_id: str = "TEXT-001",
     ) -> None:
-        if not duplicates:
-            return
         findings = outputs.get(RequirementOutputCode.QUALITY_FINDINGS.value)
         if findings is None:
             return
-        existing = {
-            (item["category"], item["explanation"].casefold()) for item in findings
-        }
-        for index, statement in enumerate(duplicates, start=1):
-            explanation = f"The exact statement appears more than once: {statement}"
-            key = (QualityFindingCategory.DUPLICATE.value, explanation.casefold())
-            if key not in existing:
-                findings.append(
+        candidates: list[dict[str, Any]] = []
+        for statement in duplicates:
+            candidates.append(
+                {
+                    "issue": (
+                        "The exact source statement appears more than once: "
+                        f"{statement}"
+                    ),
+                    "affected_requirement_refs": [],
+                    "source_refs": [first_source_id],
+                }
+            )
+
+        requirements = [
+            item
+            for code in (
+                RequirementOutputCode.FUNCTIONAL_REQUIREMENTS.value,
+                RequirementOutputCode.NON_FUNCTIONAL_REQUIREMENTS.value,
+            )
+            for item in outputs.get(code, [])
+        ]
+        by_statement: dict[str, list[dict[str, Any]]] = {}
+        by_id: dict[str, list[dict[str, Any]]] = {}
+        for requirement in requirements:
+            by_statement.setdefault(
+                _canonical_statement(requirement["statement"]), []
+            ).append(requirement)
+            by_id.setdefault(requirement["id"], []).append(requirement)
+        for statement, matches in by_statement.items():
+            if len(matches) > 1:
+                candidates.append(
                     {
-                        "id": f"QF-DUP-{index:03d}",
-                        "category": QualityFindingCategory.DUPLICATE.value,
-                        "affected_refs": [first_source_id],
-                        "explanation": explanation,
-                        "suggested_clarification": "Confirm whether the repeated statement is intentional.",
+                        "issue": (
+                            "Multiple requirements have the same statement: "
+                            f"{statement}"
+                        ),
+                        "affected_requirement_refs": list(
+                            dict.fromkeys(item["id"] for item in matches)
+                        ),
+                        "source_refs": list(
+                            dict.fromkeys(
+                                ref
+                                for item in matches
+                                for ref in item["source_refs"]
+                            )
+                        ),
+                    }
+                )
+        for identifier, matches in by_id.items():
+            if len(matches) > 1:
+                candidates.append(
+                    {
+                        "issue": (
+                            "The requirement identifier is used more than once: "
+                            f"{identifier}"
+                        ),
+                        "affected_requirement_refs": [identifier],
+                        "source_refs": list(
+                            dict.fromkeys(
+                                ref
+                                for item in matches
+                                for ref in item["source_refs"]
+                            )
+                        ),
                     }
                 )
 
+        existing_issues = {_canonical_statement(item["issue"]) for item in findings}
+        used_ids = {item["id"] for item in findings}
+        next_id = 1
+        for candidate in candidates:
+            if _canonical_statement(candidate["issue"]) in existing_issues:
+                continue
+            while f"QF-{next_id:03d}" in used_ids:
+                next_id += 1
+            finding = {
+                "id": f"QF-{next_id:03d}",
+                "category": QualityFindingCategory.DUPLICATE.value,
+                **candidate,
+                "recommendation": (
+                    "Confirm whether the duplicate is intentional and consolidate "
+                    "it if not."
+                ),
+            }
+            findings.append(finding)
+            used_ids.add(finding["id"])
+            existing_issues.add(_canonical_statement(finding["issue"]))
+
     @staticmethod
-    def _validate_unique_artifacts(outputs: dict[str, Any]) -> None:
+    def _validate_unique_artifacts(
+        outputs: dict[str, Any], *, allow_requirement_duplicates: bool = False
+    ) -> None:
         identifiers: list[str] = []
+        non_requirement_identifiers: list[str] = []
         requirement_statements: list[str] = []
         for code, value in outputs.items():
             if not isinstance(value, list):
@@ -318,11 +405,25 @@ class Agent1Engine:
                 requirement_statements.extend(
                     _canonical_statement(item["statement"]) for item in value
                 )
-        if len(identifiers) != len(set(identifiers)):
+            else:
+                non_requirement_identifiers.extend(
+                    item["id"]
+                    for item in value
+                    if isinstance(item, dict) and "id" in item
+                )
+        checked_identifiers = (
+            non_requirement_identifiers
+            if allow_requirement_duplicates
+            else identifiers
+        )
+        if len(checked_identifiers) != len(set(checked_identifiers)):
             raise StructuredOutputInvalidError(
                 "Model output contains duplicate artifact identifiers"
             )
-        if len(requirement_statements) != len(set(requirement_statements)):
+        if (
+            len(requirement_statements) != len(set(requirement_statements))
+            and not allow_requirement_duplicates
+        ):
             raise StructuredOutputInvalidError(
                 "Model output contains duplicate requirement statements"
             )
@@ -353,14 +454,15 @@ class Agent1Engine:
         for finding in outputs.get(
             RequirementOutputCode.QUALITY_FINDINGS.value, []
         ):
-            suggestion = finding.get("suggested_clarification")
+            suggestion = finding.get("recommendation")
             if suggestion:
                 candidates.append(
                     (
                         f"CQ-QF-{finding['id'].removeprefix('QF-')}",
                         suggestion,
-                        finding["affected_refs"],
-                        finding["explanation"],
+                        finding["affected_requirement_refs"]
+                        + finding["source_refs"],
+                        finding["issue"],
                     )
                 )
         if not candidates:

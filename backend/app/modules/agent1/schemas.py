@@ -2,7 +2,14 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from app.common.status import AgentRunMode, AgentRunStatus, AgentType
 from app.modules.standalone.schemas import AgentRunMessage
@@ -245,11 +252,53 @@ class Persona(BaseModel):
 
 class QualityFinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^QF-(?:\d{3,}|DUP-\d{3,})$")
+    id: str = Field(pattern=r"^QF-\d{3,}$")
     category: QualityFindingCategory
-    affected_refs: list[str]
-    explanation: str
-    suggested_clarification: str | None = None
+    issue: str
+    affected_requirement_refs: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    recommendation: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_finding_fields(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        if "issue" not in normalized and "explanation" in normalized:
+            normalized["issue"] = normalized.pop("explanation")
+        if (
+            "recommendation" not in normalized
+            and "suggested_clarification" in normalized
+        ):
+            normalized["recommendation"] = normalized.pop(
+                "suggested_clarification"
+            )
+        legacy_refs = normalized.pop("affected_refs", None)
+        if legacy_refs is not None:
+            normalized.setdefault(
+                "affected_requirement_refs",
+                [
+                    ref
+                    for ref in legacy_refs
+                    if str(ref).startswith(("FR-", "NFR-"))
+                ],
+            )
+            normalized.setdefault(
+                "source_refs",
+                [
+                    ref
+                    for ref in legacy_refs
+                    if not str(ref).startswith(("FR-", "NFR-"))
+                ],
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def require_traceability(self) -> "QualityFinding":
+        if not self.affected_requirement_refs and not self.source_refs:
+            raise ValueError("quality finding must reference a requirement or source")
+        return self
 
 
 class ClarificationQuestion(BaseModel):

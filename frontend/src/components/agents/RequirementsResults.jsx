@@ -105,9 +105,10 @@ function QualityFindings({ items }) {
   if (!items.length) return <EmptyArtifact />
   return <div className="space-y-3">{items.map((item) => (
     <Item key={item.id} heading={item.category} metadata={item.id}>
-      <p>{item.explanation}</p>
-      {item.suggested_clarification && <p className="mt-2"><span className="font-semibold">Recommendation:</span> {item.suggested_clarification}</p>}
-      <References label="Affected references" values={item.affected_refs} />
+      <p>{item.issue ?? item.explanation}</p>
+      {(item.recommendation ?? item.suggested_clarification) && <p className="mt-2"><span className="font-semibold">Recommendation:</span> {item.recommendation ?? item.suggested_clarification}</p>}
+      <References label="Affected requirements" values={item.affected_requirement_refs ?? item.affected_refs?.filter((ref) => ref.startsWith('FR-') || ref.startsWith('NFR-')) ?? []} />
+      <References label="Sources" values={item.source_refs ?? item.affected_refs?.filter((ref) => !ref.startsWith('FR-') && !ref.startsWith('NFR-')) ?? []} />
     </Item>
   ))}</div>
 }

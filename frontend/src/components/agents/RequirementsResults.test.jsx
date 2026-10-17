@@ -9,7 +9,13 @@ const outputs = {
   USER_STORIES: [{ id: 'US-001', actor: 'patient', goal: 'book a slot', benefit: 'I avoid a phone call', source_refs: ['TEXT-001'], requirement_refs: ['FR-001'] }],
   ACCEPTANCE_CRITERIA: [{ id: 'AC-001', related_ids: ['US-001'], given: 'a free slot', when: 'the patient books it', then: 'the booking is confirmed' }],
   PERSONAS: [{ id: 'PER-001', role: 'Patient', goals: ['Book online'], pain_points: ['Telephone delays'], context: 'Uses a mobile browser.' }],
-  QUALITY_FINDINGS: [{ id: 'QF-001', category: 'AMBIGUITY', affected_refs: ['NFR-001'], explanation: 'Easy to use is not measurable.', suggested_clarification: 'Define a usability target.' }],
+  QUALITY_FINDINGS: [
+    { id: 'QF-001', category: 'AMBIGUITY', affected_requirement_refs: ['NFR-001'], source_refs: ['TEXT-001'], issue: 'Easy to use is not measurable.', recommendation: 'Define a usability target.' },
+    { id: 'QF-002', category: 'MISSING_INFORMATION', affected_requirement_refs: ['FR-001'], source_refs: ['TEXT-001'], issue: 'The applicable booking window is missing.', recommendation: 'Define the booking window.' },
+    { id: 'QF-003', category: 'CONFLICT', affected_requirement_refs: ['FR-001'], source_refs: ['TEXT-001'], issue: 'Booking rules conflict.', recommendation: 'Choose the authoritative rule.' },
+    { id: 'QF-004', category: 'DUPLICATE', affected_requirement_refs: ['FR-001'], source_refs: ['TEXT-001'], issue: 'The booking rule is duplicated.', recommendation: 'Consolidate the duplicate.' },
+    { id: 'QF-005', category: 'INCONSISTENCY', affected_requirement_refs: ['FR-001', 'NFR-001'], source_refs: ['TEXT-001'], issue: 'Terminology is inconsistent.', recommendation: 'Use one term consistently.' },
+  ],
   CLARIFICATION_QUESTIONS: [{ id: 'CQ-001', question: 'Which usability target applies?', reason: 'Ease of use is ambiguous.', related_refs: ['NFR-001'] }],
   SRS: { title: 'Clinic Booking SRS', overview: 'A responsive booking system.', sections: [{ title: 'Scope', content: 'Appointment booking.' }], assumptions: ['Email delivery is available.'], unresolved_issues: ['Security target.'] },
 }
@@ -29,6 +35,10 @@ describe('RequirementsResults', () => {
     expect(screen.getByText('Given')).toBeInTheDocument()
     expect(screen.getByText('Patient')).toBeInTheDocument()
     expect(screen.getByText('Define a usability target.')).toBeInTheDocument()
+    ;['AMBIGUITY', 'MISSING_INFORMATION', 'CONFLICT', 'DUPLICATE', 'INCONSISTENCY']
+      .forEach((category) => expect(screen.getByText(category)).toBeInTheDocument())
+    expect(screen.getAllByText(/Affected requirements:/).length).toBe(5)
+    expect(screen.getAllByText(/Sources:/).length).toBeGreaterThanOrEqual(5)
     expect(screen.getByText('Clinic Booking SRS')).toBeInTheDocument()
     expect(screen.queryByText(/"statement"/)).not.toBeInTheDocument()
   })

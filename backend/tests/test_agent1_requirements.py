@@ -457,6 +457,41 @@ def test_completed_source_generates_nfr_with_measurable_target(agent1_context):
     assert result["outputs"]["NON_FUNCTIONAL_REQUIREMENTS"][0] == provider.response["NON_FUNCTIONAL_REQUIREMENTS"][0]
 
 
+def test_quality_findings_are_persisted_in_run_output_manifest(agent1_context):
+    authentication, _, runs, provider = agent1_context
+    sources = app.dependency_overrides[get_requirement_source_repository]()
+    client = authentication.client()
+    project = create_project(client)
+    add_persisted_source(
+        sources, project["agent_project_id"], "DOC-001", "DOCUMENT"
+    )
+    provider.response = {
+        "FUNCTIONAL_REQUIREMENTS": [{
+            "id": "FR-001",
+            "statement": "The system shall support catalogue search.",
+            "source_refs": ["DOC-001"],
+            "rationale": None,
+        }],
+        "QUALITY_FINDINGS": [{
+            "id": "QF-001",
+            "category": "MISSING_INFORMATION",
+            "issue": "The supported search fields are unspecified.",
+            "affected_requirement_refs": ["FR-001"],
+            "source_refs": ["DOC-001"],
+            "recommendation": "Define the supported search fields.",
+        }],
+    }
+
+    result = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
+        json={"selected_outputs": ["FUNCTIONAL_REQUIREMENTS", "QUALITY_FINDINGS"]},
+    ).json()["data"]
+
+    assert result["status"] == "COMPLETED"
+    assert runs.documents[result["run_id"]]["output_manifest"] == result["outputs"]
+    assert result["outputs"]["QUALITY_FINDINGS"][0]["source_refs"] == ["DOC-001"]
+
+
 def test_non_completed_sources_are_ignored_and_never_reprocessed(agent1_context):
     authentication, _, runs, provider = agent1_context
     sources = app.dependency_overrides[get_requirement_source_repository]()
@@ -724,8 +759,8 @@ def test_invalid_cross_artifact_references_are_rejected(mutate):
         )
 
 
-def test_duplicate_generated_requirement_statements_are_rejected():
-    response = deepcopy(ALL_OUTPUTS)
+def test_duplicate_generated_requirement_statements_are_rejected_without_quality():
+    response = {"FUNCTIONAL_REQUIREMENTS": deepcopy(VALID_FUNCTIONAL)}
     response["FUNCTIONAL_REQUIREMENTS"].append(
         {
             **response["FUNCTIONAL_REQUIREMENTS"][0],
@@ -735,8 +770,102 @@ def test_duplicate_generated_requirement_statements_are_rejected():
 
     with pytest.raises(ValueError, match="duplicate requirement statements"):
         Agent1Engine(FixedProvider(response)).execute(
-            CLINIC_CONTEXT, list(RequirementOutputCode)
+            CLINIC_CONTEXT, [RequirementOutputCode.FUNCTIONAL_REQUIREMENTS]
         )
+
+
+def test_deterministic_requirement_duplicates_are_merged_when_quality_selected():
+    requirements = deepcopy(VALID_FUNCTIONAL)
+    requirements.append({**requirements[0], "id": "FR-002"})
+    outputs = Agent1Engine(FixedProvider({
+        "FUNCTIONAL_REQUIREMENTS": requirements,
+        "QUALITY_FINDINGS": [],
+    })).execute(CLINIC_CONTEXT, [
+        RequirementOutputCode.FUNCTIONAL_REQUIREMENTS,
+        RequirementOutputCode.QUALITY_FINDINGS,
+    ])
+
+    finding = outputs["QUALITY_FINDINGS"][0]
+    assert finding["id"] == "QF-001"
+    assert finding["category"] == "DUPLICATE"
+    assert finding["affected_requirement_refs"] == ["FR-001", "FR-002"]
+    assert finding["source_refs"] == ["TEXT-001"]
+
+
+def test_deterministic_duplicate_requirement_ids_are_reported():
+    requirements = deepcopy(VALID_FUNCTIONAL)
+    requirements.append({
+        **requirements[0],
+        "statement": "The system shall cancel an appointment.",
+    })
+    outputs = Agent1Engine(FixedProvider({
+        "FUNCTIONAL_REQUIREMENTS": requirements,
+        "QUALITY_FINDINGS": [],
+    })).execute(CLINIC_CONTEXT, [
+        RequirementOutputCode.FUNCTIONAL_REQUIREMENTS,
+        RequirementOutputCode.QUALITY_FINDINGS,
+    ])
+
+    assert any(
+        finding["category"] == "DUPLICATE"
+        and finding["affected_requirement_refs"] == ["FR-001"]
+        and "identifier" in finding["issue"]
+        for finding in outputs["QUALITY_FINDINGS"]
+    )
+
+
+@pytest.mark.parametrize(
+    "category",
+    ["AMBIGUITY", "MISSING_INFORMATION", "CONFLICT", "DUPLICATE", "INCONSISTENCY"],
+)
+def test_ai_quality_categories_validate_requirement_and_source_refs(category):
+    response = {
+        "FUNCTIONAL_REQUIREMENTS": deepcopy(VALID_FUNCTIONAL),
+        "QUALITY_FINDINGS": [{
+            "id": "QF-001",
+            "category": category,
+            "issue": f"Detected {category.lower()} in the requirement.",
+            "affected_requirement_refs": ["FR-001"],
+            "source_refs": ["TEXT-001"],
+            "recommendation": "Review the requirement with stakeholders.",
+        }],
+    }
+
+    outputs = Agent1Engine(FixedProvider(response)).execute(CLINIC_CONTEXT, [
+        RequirementOutputCode.FUNCTIONAL_REQUIREMENTS,
+        RequirementOutputCode.QUALITY_FINDINGS,
+    ])
+
+    assert outputs["QUALITY_FINDINGS"][0]["category"] == category
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_ref", "message"),
+    [
+        ("affected_requirement_refs", "FR-999", "invalid requirement reference"),
+        ("source_refs", "DOC-999", "invalid source reference"),
+    ],
+)
+def test_quality_findings_reject_invalid_traceability(field, invalid_ref, message):
+    finding = {
+        "id": "QF-001",
+        "category": "CONFLICT",
+        "issue": "Two rules conflict.",
+        "affected_requirement_refs": ["FR-001"],
+        "source_refs": ["TEXT-001"],
+        "recommendation": None,
+    }
+    finding[field] = [invalid_ref]
+    response = {
+        "FUNCTIONAL_REQUIREMENTS": deepcopy(VALID_FUNCTIONAL),
+        "QUALITY_FINDINGS": [finding],
+    }
+
+    with pytest.raises(ValueError, match=message):
+        Agent1Engine(FixedProvider(response)).execute(CLINIC_CONTEXT, [
+            RequirementOutputCode.FUNCTIONAL_REQUIREMENTS,
+            RequirementOutputCode.QUALITY_FINDINGS,
+        ])
 
 
 @pytest.mark.parametrize(
