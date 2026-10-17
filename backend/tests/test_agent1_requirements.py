@@ -12,12 +12,15 @@ from app.common.model_provider import (
 )
 from app.main import app
 from app.modules.agent1.engine import Agent1Engine, _selected_schema, find_exact_duplicates
+from app.modules.agent1.repository import _public_document
 from app.modules.agent1.schemas import (
     Agent1InputContext,
     QualityFindingCategory,
     RequirementOutputCode,
+    RequirementSourceRecord,
+    SourceProcessingStatus,
 )
-from app.modules.agent1.router import get_agent1_engine
+from app.modules.agent1.router import get_agent1_engine, get_requirement_source_repository
 from app.modules.standalone.router import (
     get_agent_project_repository,
     get_agent_run_repository,
@@ -26,6 +29,104 @@ from test_standalone_foundation import (
     FakeAgentProjectRepository,
     FakeAgentRunRepository,
 )
+from typing import Any
+from datetime import datetime, timezone
+
+
+class FakeRequirementSourceRepositoryForRun:
+    """Minimal fake source repository for Agent 1 run tests."""
+
+    def __init__(self) -> None:
+        self.documents: dict[tuple[str, str], dict[str, Any]] = {}
+        self.extraction_updates: list[dict[str, Any]] = []
+
+    def next_source_sequence(self, agent_project_id: str, prefix: str) -> int:
+        largest = 0
+        for doc in self.documents.values():
+            if doc.get("agent_project_id") == agent_project_id:
+                sid = doc.get("source_id", "")
+                if sid.startswith(f"{prefix}-"):
+                    try:
+                        seq = int(sid.rsplit("-", maxsplit=1)[1])
+                        largest = max(largest, seq)
+                    except ValueError:
+                        pass
+        return largest + 1
+
+    def create_source(self, source: RequirementSourceRecord) -> dict[str, Any]:
+        doc = source.model_dump(mode="python")
+        self.documents[(source.agent_project_id, source.source_id)] = doc.copy()
+        return _public_document(doc)
+
+    def list_sources(
+        self, agent_project_id: str, owner_user_id: str
+    ) -> list[dict[str, Any]]:
+        return [
+            _public_document(doc)
+            for doc in self.documents.values()
+            if doc.get("agent_project_id") == agent_project_id
+            and doc.get("owner_user_id") == owner_user_id
+            and not doc.get("is_deleted", False)
+        ]
+
+    def get_source(
+        self, agent_project_id: str, source_id: str, owner_user_id: str
+    ) -> dict[str, Any] | None:
+        doc = self.documents.get((agent_project_id, source_id))
+        if (
+            doc
+            and doc.get("agent_project_id") == agent_project_id
+            and doc.get("owner_user_id") == owner_user_id
+            and not doc.get("is_deleted", False)
+        ):
+            return _public_document(doc)
+        return None
+
+    def delete_source(
+        self, agent_project_id: str, source_id: str, owner_user_id: str
+    ) -> bool:
+        doc = self.documents.get((agent_project_id, source_id))
+        if doc and not doc.get("is_deleted", False):
+            doc["is_deleted"] = True
+            return True
+        return False
+
+    def update_source_processing(
+        self,
+        agent_project_id: str,
+        source_id: str,
+        owner_user_id: str,
+        processing_status: SourceProcessingStatus,
+        normalized_text: str | None = None,
+        processing_error_code: str | None = None,
+        processing_error_message: str | None = None,
+        processed_at=None,
+        clear_result: bool = False,
+    ) -> bool:
+        self.extraction_updates.append({
+            "source_id": source_id,
+            "processing_status": processing_status,
+            "normalized_text": normalized_text,
+            "processing_error_code": processing_error_code,
+        })
+        doc = self.documents.get((agent_project_id, source_id))
+        if doc:
+            doc["processing_status"] = processing_status.value
+            if normalized_text is not None:
+                doc["normalized_text"] = normalized_text
+            return True
+        return False
+
+    def list_sources_for_run(
+        self, agent_project_id: str, owner_user_id: str
+    ) -> list[dict[str, Any]]:
+        return [
+            _public_document(doc)
+            for doc in self.documents.values()
+            if doc.get("agent_project_id") == agent_project_id
+            and doc.get("owner_user_id") == owner_user_id
+            and not doc.get("is_deleted", False)
+        ]
 
 
 VALID_FUNCTIONAL = [
@@ -160,15 +261,18 @@ class InvalidJsonProvider:
 def agent1_context(authentication_context):
     projects = FakeAgentProjectRepository()
     runs = FakeAgentRunRepository()
+    sources = FakeRequirementSourceRepositoryForRun()
     provider = FixedProvider({"FUNCTIONAL_REQUIREMENTS": VALID_FUNCTIONAL})
     app.dependency_overrides[get_agent_project_repository] = lambda: projects
     app.dependency_overrides[get_agent_run_repository] = lambda: runs
+    app.dependency_overrides[get_requirement_source_repository] = lambda: sources
     app.dependency_overrides[get_agent1_engine] = lambda: Agent1Engine(provider)
     try:
         yield authentication_context, projects, runs, provider
     finally:
         app.dependency_overrides.pop(get_agent_project_repository, None)
         app.dependency_overrides.pop(get_agent_run_repository, None)
+        app.dependency_overrides.pop(get_requirement_source_repository, None)
         app.dependency_overrides.pop(get_agent1_engine, None)
 
 
@@ -265,7 +369,8 @@ def test_agent1_rejects_wrong_type_foreign_and_archived_projects(agent1_context)
 @pytest.mark.parametrize(
     "payload, field",
     [
-        ({"text": "   ", "selected_outputs": ["SRS"]}, "text"),
+        # Whitespace-only text with no uploaded sources → no usable sources error
+        ({"text": "   ", "selected_outputs": ["SRS"]}, "sources"),
         ({"text": "A valid source", "selected_outputs": []}, "selected_outputs"),
         (
             {"text": "A valid source", "selected_outputs": ["NOT_SUPPORTED"]},

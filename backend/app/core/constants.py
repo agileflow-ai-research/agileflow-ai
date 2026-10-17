@@ -17,6 +17,9 @@ ID_PREFIXES = (
     "APP",
     "AGP",
     "RUN",
+    "DOC",
+    "AUD",
+    "VID",
 )
 
 APPROVED_ID_PREFIXES = frozenset(ID_PREFIXES)

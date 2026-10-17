@@ -9,6 +9,13 @@ vi.mock('../../services/requirementsAgentService.js', () => ({
   runRequirementsAgent: vi.fn(),
 }))
 
+vi.mock('../../services/requirementSourcesService.js', () => ({
+  getRequirementSources: vi.fn().mockResolvedValue({ data: [] }),
+  uploadRequirementSources: vi.fn().mockResolvedValue({ data: [] }),
+  deleteRequirementSource: vi.fn().mockResolvedValue({ data: null }),
+  processRequirementSources: vi.fn().mockResolvedValue({ data: [] }),
+}))
+
 const project = {
   agent_project_id: 'AGP-001',
   agent_type: 'REQUIREMENTS',
@@ -53,11 +60,11 @@ describe('RequirementsWorkspace', () => {
     expect(onRunCompleted).toHaveBeenCalledWith(expect.objectContaining({ run_id: 'RUN-001' }))
   })
 
-  it('requires text and at least one output before advancing', async () => {
+  it('requires a completed source or text and at least one output before advancing', async () => {
     const user = userEvent.setup()
     render(<RequirementsWorkspace project={project} />)
     await user.click(screen.getByRole('button', { name: 'Next' }))
-    expect(screen.getByText('Enter at least one text requirement source.')).toBeInTheDocument()
+    expect(screen.getByText('Enter at least one text requirement or upload a document.')).toBeInTheDocument()
     await user.type(screen.getByLabelText(/requirement text/i), 'A requirement')
     await user.click(screen.getByRole('button', { name: 'Next' }))
     await user.click(screen.getByRole('button', { name: 'Next' }))

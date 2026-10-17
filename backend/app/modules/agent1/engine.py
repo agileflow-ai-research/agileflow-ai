@@ -158,8 +158,9 @@ class Agent1Engine:
         self._validate_nonblank_strings(validated)
         self._validate_references(context, validated)
         self._validate_unique_artifacts(validated)
-        self._merge_deterministic_findings(validated, duplicates)
-        self._merge_required_clarifications(validated, duplicates)
+        first_source_id = context.sources[0].source_id if context.sources else "TEXT-001"
+        self._merge_deterministic_findings(validated, duplicates, first_source_id)
+        self._merge_required_clarifications(validated, duplicates, first_source_id)
         return validated
 
     @staticmethod
@@ -276,6 +277,7 @@ class Agent1Engine:
     def _merge_deterministic_findings(
         outputs: dict[str, Any],
         duplicates: list[str],
+        first_source_id: str = "TEXT-001",
     ) -> None:
         if not duplicates:
             return
@@ -293,7 +295,7 @@ class Agent1Engine:
                     {
                         "id": f"QF-DUP-{index:03d}",
                         "category": QualityFindingCategory.DUPLICATE.value,
-                        "affected_refs": ["TEXT-001"],
+                        "affected_refs": [first_source_id],
                         "explanation": explanation,
                         "suggested_clarification": "Confirm whether the repeated statement is intentional.",
                     }
@@ -329,6 +331,7 @@ class Agent1Engine:
     def _merge_required_clarifications(
         outputs: dict[str, Any],
         duplicates: list[str],
+        first_source_id: str = "TEXT-001",
     ) -> None:
         questions = outputs.get(
             RequirementOutputCode.CLARIFICATION_QUESTIONS.value
@@ -343,7 +346,7 @@ class Agent1Engine:
                 (
                     f"CQ-DUP-{index:03d}",
                     "Is the repeated requirement intentional, or should it be consolidated?",
-                    ["TEXT-001"],
+                    [first_source_id],
                     f"The statement appears more than once: {statement}",
                 )
             )

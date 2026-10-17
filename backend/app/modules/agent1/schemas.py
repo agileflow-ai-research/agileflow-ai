@@ -8,6 +8,13 @@ from app.common.status import AgentRunMode, AgentRunStatus, AgentType
 from app.modules.standalone.schemas import AgentRunMessage
 
 
+class SourceProcessingStatus(StrEnum):
+    READY = "READY"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class RequirementOutputCode(StrEnum):
     FUNCTIONAL_REQUIREMENTS = "FUNCTIONAL_REQUIREMENTS"
     NON_FUNCTIONAL_REQUIREMENTS = "NON_FUNCTIONAL_REQUIREMENTS"
@@ -27,6 +34,81 @@ class QualityFindingCategory(StrEnum):
     INCONSISTENCY = "INCONSISTENCY"
 
 
+class RequirementSourceType(StrEnum):
+    DOCUMENT = "DOCUMENT"
+    AUDIO = "AUDIO"
+    VIDEO = "VIDEO"
+
+
+ALLOWED_EXTENSIONS: dict[RequirementSourceType, frozenset[str]] = {
+    RequirementSourceType.DOCUMENT: frozenset({".pdf", ".docx", ".txt"}),
+    RequirementSourceType.AUDIO: frozenset({".mp3", ".wav", ".m4a"}),
+    RequirementSourceType.VIDEO: frozenset({".mp4", ".mov", ".webm"}),
+}
+
+PREFIX_BY_SOURCE_TYPE: dict[RequirementSourceType, str] = {
+    RequirementSourceType.DOCUMENT: "DOC",
+    RequirementSourceType.AUDIO: "AUD",
+    RequirementSourceType.VIDEO: "VID",
+}
+
+SOURCE_TYPE_BY_PREFIX: dict[str, RequirementSourceType] = {
+    "DOC": RequirementSourceType.DOCUMENT,
+    "AUD": RequirementSourceType.AUDIO,
+    "VID": RequirementSourceType.VIDEO,
+}
+
+EXTENSION_TO_SOURCE_TYPE: dict[str, RequirementSourceType] = {
+    ".pdf": RequirementSourceType.DOCUMENT,
+    ".docx": RequirementSourceType.DOCUMENT,
+    ".txt": RequirementSourceType.DOCUMENT,
+    ".mp3": RequirementSourceType.AUDIO,
+    ".wav": RequirementSourceType.AUDIO,
+    ".m4a": RequirementSourceType.AUDIO,
+    ".mp4": RequirementSourceType.VIDEO,
+    ".mov": RequirementSourceType.VIDEO,
+    ".webm": RequirementSourceType.VIDEO,
+}
+
+
+class RequirementSourceRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str
+    agent_project_id: str
+    owner_user_id: str
+    source_type: RequirementSourceType
+    original_filename: str
+    safe_filename: str
+    storage_path: str
+    mime_type: str | None = None
+    file_size: int
+    processing_status: SourceProcessingStatus = SourceProcessingStatus.READY
+    normalized_text: str | None = None
+    processing_error_code: str | None = None
+    processing_error_message: str | None = None
+    processed_at: datetime | None = None
+    is_deleted: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class RequirementSourceResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    source_id: str
+    agent_project_id: str
+    source_type: RequirementSourceType
+    original_filename: str
+    mime_type: str | None = None
+    file_size: int
+    processing_status: SourceProcessingStatus = SourceProcessingStatus.READY
+    processing_error_code: str | None = None
+    processing_error_message: str | None = None
+    processed_at: datetime | None = None
+    created_at: datetime
+
+
 def _strip_optional(value: str | None) -> str | None:
     if value is None:
         return None
@@ -35,17 +117,26 @@ def _strip_optional(value: str | None) -> str | None:
 
 
 class RequirementSource(BaseModel):
+    """A normalised source entry passed into the Agent 1 engine."""
+
     model_config = ConfigDict(extra="forbid")
 
-    source_id: str = Field(pattern=r"^TEXT-\d{3,}$")
-    source_type: Literal["TEXT"] = "TEXT"
+    source_id: str
+    source_type: Literal["TEXT", "DOCUMENT"] = "TEXT"
     content: str
 
 
 class Agent1RunRequest(BaseModel):
+    """
+    Run request for Agent 1.
+
+    At least one of *text* or uploaded requirement sources must be present.
+    Validation of that constraint happens in the service layer (after DB lookup).
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    text: str
+    text: str | None = None
     selected_outputs: list[RequirementOutputCode] = Field(min_length=1)
     background_context: str | None = None
     business_goals: str | None = None
@@ -55,11 +146,8 @@ class Agent1RunRequest(BaseModel):
 
     @field_validator("text")
     @classmethod
-    def require_text(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("at least one non-empty TEXT requirement source is required")
-        return normalized
+    def normalize_text(cls, value: str | None) -> str | None:
+        return _strip_optional(value)
 
     @field_validator(
         "background_context",
@@ -80,6 +168,18 @@ class Agent1RunRequest(BaseModel):
         if len(values) != len(set(values)):
             raise ValueError("selected_outputs must not contain duplicates")
         return values
+
+
+class SourceProcessingResult(BaseModel):
+    """Safe result for one independently processed requirement source."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str
+    source_type: RequirementSourceType
+    processing_status: SourceProcessingStatus
+    processing_error_code: str | None = None
+    processing_error_message: str | None = None
 
 
 class Agent1InputContext(BaseModel):

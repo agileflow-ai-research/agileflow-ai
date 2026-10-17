@@ -21,6 +21,14 @@ class Settings(BaseSettings):
     model_name: str = "gpt-4.1-mini"
     model_base_url: str = "https://api.openai.com/v1"
     model_timeout_seconds: float = 60.0
+    transcription_provider: str = "openai_compatible"
+    transcription_api_key: str | None = None
+    transcription_model: str = "whisper-1"
+    transcription_base_url: str = "https://api.openai.com/v1"
+    transcription_timeout_seconds: float = 120.0
+    transcription_language: str | None = None
+    upload_dir: str = str(BACKEND_DIR.parent / "storage" / "uploads")
+    max_upload_size_bytes: int = 50 * 1024 * 1024
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",
