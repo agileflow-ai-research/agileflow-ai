@@ -507,6 +507,14 @@ def test_openapi_exposes_only_implemented_agent3_routes():
         ),
         (
             "POST",
+            "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/rule-detections",
+        ),
+        (
+            "GET",
+            "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/rule-detections",
+        ),
+        (
+            "POST",
             "/api/v1/agents/implementation/{agent_project_id}/readiness/evaluate",
         ),
         (

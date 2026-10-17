@@ -17,9 +17,12 @@ from app.modules.standalone.service import StandaloneService
 from . import constants
 from .chunker import DraftChunk, chunk_unstructured
 from .schemas import (
-    ChunkContext, ChunkMetrics, ChunkProvenance, ChunkWarningCode,
-    ChunkingStatus, DocumentChunkingResult, SemanticChunk,
+    ArtifactDetectionLabel, ChunkContext, ChunkMetrics, ChunkProvenance,
+    ChunkWarningCode, ChunkingStatus, DocumentChunkingResult,
+    DocumentRuleDetectionResult, RuleDetectionMetrics, RuleStrength,
+    SemanticChunk,
 )
+from .rule_detector import detect_chunk, strength_for_score
 from .structured_chunker import chunk_structured
 from .tokenizer import count_tokens, normalize_text
 
@@ -33,6 +36,14 @@ class ChunkingUnavailableError(ValueError):
 
 
 class ChunkingStorageError(RuntimeError):
+    pass
+
+
+class RuleDetectionNotFoundError(LookupError):
+    pass
+
+
+class RuleDetectionStorageError(RuntimeError):
     pass
 
 
@@ -209,3 +220,156 @@ class SemanticChunkingService:
             except OSError:
                 pass
             raise ChunkingStorageError("Semantic chunk sidecar could not be stored") from exc
+
+
+class RuleDetectionService:
+    _lock = Lock()
+
+    def __init__(self, standalone_service: StandaloneService,
+                 storage: ImplementationUploadStorage, *, clock=utc_now) -> None:
+        self._standalone = standalone_service
+        self._storage = storage
+        self._clock = clock
+
+    def build(self, agent_project_id: str, upload_id: str,
+              current_user: UserPublicResponse, *, force: bool = False
+              ) -> DocumentRuleDetectionResult:
+        project, staged, chunks = self._resolve(
+            agent_project_id, upload_id, current_user
+        )
+        with self._lock:
+            if not force:
+                cached = self._load_valid_cache(
+                    staged, project.agent_project_id, chunks
+                )
+                if cached is not None:
+                    return cached
+            detections = [detect_chunk(chunk) for chunk in chunks.chunks]
+            result = DocumentRuleDetectionResult(
+                upload_id=chunks.upload_id,
+                agent_project_id=chunks.agent_project_id,
+                original_filename=staged.metadata.original_filename,
+                source_sha256=chunks.source_sha256,
+                document_type=chunks.document_type,
+                extraction_version=chunks.extraction_version,
+                chunker_version=chunks.chunker_version,
+                rule_detector_version=constants.RULE_DETECTOR_VERSION,
+                metrics=self._metrics(detections),
+                detections=detections,
+                created_at=self._clock(),
+            )
+            self._persist(staged, result)
+            return result
+
+    def get_existing(self, agent_project_id: str, upload_id: str,
+                     current_user: UserPublicResponse
+                     ) -> DocumentRuleDetectionResult:
+        project, staged, chunks = self._resolve(
+            agent_project_id, upload_id, current_user
+        )
+        cached = self._load_valid_cache(
+            staged, project.agent_project_id, chunks
+        )
+        if cached is None:
+            raise RuleDetectionNotFoundError(upload_id)
+        return cached
+
+    def _resolve(self, agent_project_id: str, upload_id: str,
+                 current_user: UserPublicResponse):
+        project = require_implementation_project(
+            self._standalone, agent_project_id, current_user
+        )
+        staged = self._storage.locate(
+            agent_project_id=project.agent_project_id,
+            owner_user_id=current_user.user_id,
+            upload_id=upload_id,
+        )
+        DocumentExtractionService._require_document(staged)
+        extraction = SemanticChunkingService._load_extraction(
+            staged, project.agent_project_id
+        )
+        chunks = SemanticChunkingService._load_valid_cache(
+            staged, project.agent_project_id, extraction
+        )
+        if chunks is None or chunks.status is ChunkingStatus.FAILED:
+            raise ChunkingNotFoundError(upload_id)
+        return project, staged, chunks
+
+    @staticmethod
+    def _metrics(detections) -> RuleDetectionMetrics:
+        counts = {label: 0 for label in ArtifactDetectionLabel}
+        strengths = {strength: 0 for strength in RuleStrength}
+        prediction_count = 0
+        classified = 0
+        for detection in detections:
+            if detection.unclassified:
+                counts[ArtifactDetectionLabel.OTHER_CONTEXT] += 1
+                continue
+            classified += 1
+            for prediction in detection.predictions:
+                counts[prediction.label] += 1
+                strengths[prediction.strength] += 1
+                prediction_count += 1
+        return RuleDetectionMetrics(
+            chunk_count=len(detections),
+            classified_chunk_count=classified,
+            other_context_chunk_count=len(detections) - classified,
+            prediction_count=prediction_count,
+            per_label_counts=counts,
+            strong_prediction_count=strengths[RuleStrength.STRONG],
+            moderate_prediction_count=strengths[RuleStrength.MODERATE],
+            weak_prediction_count=strengths[RuleStrength.WEAK],
+        )
+
+    @staticmethod
+    def _load_valid_cache(staged: StagedUpload, agent_project_id: str,
+                          chunks: DocumentChunkingResult
+                          ) -> DocumentRuleDetectionResult | None:
+        try:
+            result = DocumentRuleDetectionResult.model_validate_json(
+                staged.rule_detections_path.read_text(encoding="utf-8")
+            )
+        except (FileNotFoundError, OSError, ValidationError):
+            return None
+        if (
+            result.upload_id != chunks.upload_id
+            or result.agent_project_id != agent_project_id
+            or result.original_filename != staged.metadata.original_filename
+            or result.source_sha256 != chunks.source_sha256
+            or result.document_type != chunks.document_type
+            or result.extraction_version != chunks.extraction_version
+            or result.chunker_version != chunks.chunker_version
+            or result.rule_detector_version != constants.RULE_DETECTOR_VERSION
+            or len(result.detections) != len(chunks.chunks)
+        ):
+            return None
+        for detection, chunk in zip(result.detections, chunks.chunks, strict=True):
+            if detection.chunk_id != chunk.chunk_id or detection.text_hash != chunk.text_hash:
+                return None
+            if len(detection.predictions) > constants.MAX_LABELS_PER_CHUNK:
+                return None
+            for prediction in detection.predictions:
+                if prediction.strength is not strength_for_score(prediction.rule_score):
+                    return None
+        if result.metrics != RuleDetectionService._metrics(result.detections):
+            return None
+        return result
+
+    @staticmethod
+    def _persist(staged: StagedUpload,
+                 result: DocumentRuleDetectionResult) -> None:
+        try:
+            staged.rule_detections_partial_path.write_text(
+                result.model_dump_json(), encoding="utf-8"
+            )
+            staged.rule_detections_partial_path.replace(
+                staged.rule_detections_path
+            )
+        except OSError as exc:
+            try:
+                staged.rule_detections_partial_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise RuleDetectionStorageError(
+                "Rule-detection sidecar could not be stored"
+            ) from exc

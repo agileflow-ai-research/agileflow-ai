@@ -260,6 +260,7 @@ def test_openapi_exposes_upload_and_delete_input_file_routes():
         and not path.endswith("/extract")
         and not path.endswith("/extraction")
         and not path.endswith("/chunks")
+        and not path.endswith("/rule-detections")
         for method in operations
     }
     assert agent3 == {

@@ -10,8 +10,10 @@ import {
   getGitHubConnection,
   getImplementationDocumentChunks,
   getImplementationDocumentExtraction,
+  getImplementationRuleDetections,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
+  runImplementationRuleDetector,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 
@@ -101,6 +103,26 @@ describe('implementationAgentService', () => {
     prepareImplementationDocumentChunks('AGP-003', 'A3UP-abc', { force: true })
     expect(apiClient.post).toHaveBeenLastCalledWith(
       '/agents/implementation/AGP-003/input-files/A3UP-abc/chunks?force=true',
+      undefined,
+      { authenticated: true },
+    )
+  })
+
+  it('uses read-only and explicit rule-detection endpoints', () => {
+    runImplementationRuleDetector('AGP-003', 'A3UP-abc')
+    getImplementationRuleDetections('AGP-003', 'A3UP-abc')
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/rule-detections',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/rule-detections',
+      { authenticated: true },
+    )
+    runImplementationRuleDetector('AGP-003', 'A3UP-abc', { force: true })
+    expect(apiClient.post).toHaveBeenLastCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/rule-detections?force=true',
       undefined,
       { authenticated: true },
     )

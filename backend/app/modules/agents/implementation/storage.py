@@ -64,6 +64,8 @@ class StagedUpload:
     extraction_partial_path: Path
     chunks_path: Path
     chunks_partial_path: Path
+    rule_detections_path: Path
+    rule_detections_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -198,12 +200,20 @@ class ImplementationUploadStorage:
         chunks_partial_path = self._contained(
             project_directory, f"{upload_id}.chunks.json.part"
         )
+        rule_detections_path = self._contained(
+            project_directory, f"{upload_id}.rule-detections.json"
+        )
+        rule_detections_partial_path = self._contained(
+            project_directory, f"{upload_id}.rule-detections.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
             extraction_path.unlink(missing_ok=True)
             extraction_partial_path.unlink(missing_ok=True)
             chunks_path.unlink(missing_ok=True)
             chunks_partial_path.unlink(missing_ok=True)
+            rule_detections_path.unlink(missing_ok=True)
+            rule_detections_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise UploadNotFoundError(upload_id) from exc
@@ -243,6 +253,12 @@ class ImplementationUploadStorage:
         chunks_partial_path = self._contained(
             project_directory, f"{upload_id}.chunks.json.part"
         )
+        rule_detections_path = self._contained(
+            project_directory, f"{upload_id}.rule-detections.json"
+        )
+        rule_detections_partial_path = self._contained(
+            project_directory, f"{upload_id}.rule-detections.json.part"
+        )
         try:
             if not stored_path.is_file():
                 raise UploadNotFoundError(upload_id)
@@ -263,6 +279,8 @@ class ImplementationUploadStorage:
             extraction_partial_path=extraction_partial_path,
             chunks_path=chunks_path,
             chunks_partial_path=chunks_partial_path,
+            rule_detections_path=rule_detections_path,
+            rule_detections_partial_path=rule_detections_partial_path,
         )
 
     @staticmethod

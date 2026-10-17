@@ -11,8 +11,10 @@ import {
   getGitHubConnection,
   getImplementationDocumentChunks,
   getImplementationDocumentExtraction,
+  getImplementationRuleDetections,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
+  runImplementationRuleDetector,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 import { navigateToGitHub } from './githubNavigation.js'
@@ -26,6 +28,8 @@ vi.mock('./implementationAgentService.js', () => ({
   getImplementationDocumentExtraction: vi.fn(),
   getImplementationDocumentChunks: vi.fn(),
   prepareImplementationDocumentChunks: vi.fn(),
+  getImplementationRuleDetections: vi.fn(),
+  runImplementationRuleDetector: vi.fn(),
   connectGitHub: vi.fn(),
   createGitHubRepository: vi.fn(),
   getGitHubConnection: vi.fn(),
@@ -150,6 +154,39 @@ function chunkResult(overrides = {}) {
   }
 }
 
+function ruleDetectionResult(overrides = {}) {
+  return {
+    upload_id: metadata().upload_id,
+    agent_project_id: 'AGP-003',
+    original_filename: 'bookease-api.pdf',
+    source_sha256: 'a'.repeat(64),
+    document_type: 'PDF',
+    extraction_version: '1',
+    chunker_version: '1',
+    rule_detector_version: '1',
+    metrics: {
+      chunk_count: 1, classified_chunk_count: 1, other_context_chunk_count: 0,
+      prediction_count: 2,
+      per_label_counts: { API_SPECIFICATION: 1, ACCEPTANCE_CRITERIA: 1 },
+      strong_prediction_count: 1, moderate_prediction_count: 1, weak_prediction_count: 0,
+    },
+    detections: [{
+      chunk_id: chunkResult().chunks[0].chunk_id,
+      text_hash: chunkResult().chunks[0].text_hash,
+      unclassified: false,
+      predictions: [{
+        label: 'API_SPECIFICATION', rule_score: 0.96, strength: 'STRONG',
+        evidence: [{ rule_id: 'API_HTTP_METHOD_PATH', matched_text: 'POST /bookings', source: 'TEXT' }],
+      }, {
+        label: 'ACCEPTANCE_CRITERIA', rule_score: 0.62, strength: 'MODERATE',
+        evidence: [{ rule_id: 'AC_EXPECTED_RESULT', matched_text: 'Expected Result:', source: 'TEXT' }],
+      }],
+    }],
+    created_at: '2026-10-18T11:00:00Z',
+    ...overrides,
+  }
+}
+
 function readinessResult(overrides = {}) {
   return {
     status: 'READY_WITH_WARNINGS',
@@ -207,6 +244,17 @@ async function attachFile(user, sourceType, file, responseMetadata) {
   await screen.findByText('Uploaded / Attached')
 }
 
+async function attachAndPrepareDocument(user) {
+  await attachFile(
+    user,
+    'DOCUMENT',
+    new File(['document'], 'bookease-api.pdf', { type: 'application/pdf' }),
+    metadata(),
+  )
+  await user.click(await screen.findByRole('button', { name: 'Prepare Semantic Chunks' }))
+  await screen.findByText('\u2713 Prepared')
+}
+
 describe('ImplementationWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -217,6 +265,8 @@ describe('ImplementationWorkspace', () => {
     getImplementationDocumentExtraction.mockResolvedValue({ data: extractionResult() })
     prepareImplementationDocumentChunks.mockResolvedValue({ data: chunkResult() })
     getImplementationDocumentChunks.mockResolvedValue({ data: chunkResult() })
+    runImplementationRuleDetector.mockResolvedValue({ data: ruleDetectionResult() })
+    getImplementationRuleDetections.mockResolvedValue({ data: ruleDetectionResult() })
     evaluateImplementationReadiness.mockResolvedValue({ data: readinessResult() })
   })
 
@@ -286,6 +336,72 @@ describe('ImplementationWorkspace', () => {
     await user.click(await screen.findByRole('button', { name: 'Review Chunks' }))
     expect(await screen.findByText('Source path: $.tables.bookings')).toBeInTheDocument()
     expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument()
+  })
+
+  it('shows rule detection only after chunks and renders running and completed metrics', async () => {
+    const user = userEvent.setup()
+    let resolveDetection
+    runImplementationRuleDetector.mockReturnValueOnce(new Promise((resolve) => { resolveDetection = resolve }))
+    render(<ImplementationWorkspace project={project} />)
+    await attachFile(user, 'DOCUMENT', new File(['doc'], 'input.txt'), metadata({ original_filename: 'input.txt' }))
+    expect(screen.queryByRole('button', { name: 'Run Rule Detector' })).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Prepare Semantic Chunks' }))
+    expect(await screen.findByText('Not run')).toBeInTheDocument()
+    expect(screen.getByText(/Deterministic baseline/)).toHaveTextContent('no AI model used')
+    await user.click(screen.getByRole('button', { name: 'Run Rule Detector' }))
+    expect(screen.getByText('Running rule detector...')).toBeInTheDocument()
+    resolveDetection({ data: ruleDetectionResult() })
+    expect(await screen.findByText('\u2713 Complete')).toBeInTheDocument()
+    expect(screen.getByText('Chunks analyzed: 1')).toBeInTheDocument()
+    expect(screen.getByText('Artifact candidates: 2')).toBeInTheDocument()
+    expect(screen.getByText('Other context: 0')).toBeInTheDocument()
+  })
+
+  it('reviews multi-label rule strengths, scores, evidence, and chunk text', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationWorkspace project={project} />)
+    await attachAndPrepareDocument(user)
+    await user.click(screen.getByRole('button', { name: 'Run Rule Detector' }))
+    await user.click(await screen.findByRole('button', { name: 'Review Rule Predictions' }))
+    expect(await screen.findByText('API Specification \u2014 Strong')).toBeInTheDocument()
+    expect(screen.getByText('Acceptance Criteria \u2014 Moderate')).toBeInTheDocument()
+    expect(screen.getByText('Rule strength: Strong')).toBeInTheDocument()
+    expect(screen.getByText('Heuristic score: 0.96')).toBeInTheDocument()
+    expect(screen.getByText('POST /bookings')).toBeInTheDocument()
+    expect(screen.getByText('POST /bookings creates a booking.')).toBeInTheDocument()
+    expect(screen.queryByText(/AI confidence/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/DeBERTa|LLM/i)).not.toBeInTheDocument()
+  })
+
+  it('renders OTHER_CONTEXT and re-runs with force=true', async () => {
+    const user = userEvent.setup()
+    const other = ruleDetectionResult({
+      metrics: {
+        ...ruleDetectionResult().metrics,
+        classified_chunk_count: 0, other_context_chunk_count: 1, prediction_count: 0,
+        strong_prediction_count: 0, moderate_prediction_count: 0, weak_prediction_count: 0,
+      },
+      detections: [{
+        chunk_id: chunkResult().chunks[0].chunk_id,
+        text_hash: chunkResult().chunks[0].text_hash,
+        unclassified: true,
+        predictions: [{
+          label: 'OTHER_CONTEXT', rule_score: 0, strength: 'WEAK',
+          evidence: [{ rule_id: 'NO_ARTIFACT_RULE_MATCH', matched_text: 'No artifact rule met the emission threshold.', source: 'TEXT' }],
+        }],
+      }],
+    })
+    runImplementationRuleDetector.mockResolvedValue({ data: other })
+    getImplementationRuleDetections.mockResolvedValue({ data: other })
+    render(<ImplementationWorkspace project={project} />)
+    await attachAndPrepareDocument(user)
+    await user.click(screen.getByRole('button', { name: 'Run Rule Detector' }))
+    await user.click(await screen.findByRole('button', { name: 'Review Rule Predictions' }))
+    expect(await screen.findByText('Other Context \u2014 Weak')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Re-run' }))
+    await waitFor(() => expect(runImplementationRuleDetector).toHaveBeenLastCalledWith(
+      'AGP-003', metadata().upload_id, { force: true },
+    ))
   })
 
   it('explicitly evaluates and renders READY_WITH_WARNINGS with grouped findings and frozen stack', async () => {

@@ -76,11 +76,15 @@ from app.modules.agents.implementation.service import (
 )
 from app.modules.agents.implementation.semantic_discovery.schemas import (
     DocumentChunkingResult,
+    DocumentRuleDetectionResult,
 )
 from app.modules.agents.implementation.semantic_discovery.service import (
     ChunkingNotFoundError,
     ChunkingStorageError,
     ChunkingUnavailableError,
+    RuleDetectionNotFoundError,
+    RuleDetectionService,
+    RuleDetectionStorageError,
     SemanticChunkingService,
 )
 from app.modules.agents.implementation.storage import (
@@ -145,6 +149,18 @@ def get_semantic_chunking_service(
     ],
 ) -> SemanticChunkingService:
     return SemanticChunkingService(standalone_service, storage)
+
+
+def get_rule_detection_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+) -> RuleDetectionService:
+    return RuleDetectionService(standalone_service, storage)
 
 
 def get_github_connection_repository() -> GitHubConnectionRepository:
@@ -544,6 +560,77 @@ def get_implementation_document_chunks(
     except (StandaloneServiceError, UploadStorageError):
         return _chunking_error(503, "Semantic preparation unavailable", "Semantic chunk storage is unavailable")
     return SuccessResponse(message="Semantic chunks retrieved", data=result)
+
+
+def _rule_detection_error(
+    status_code: int, message: str, detail: str
+) -> JSONResponse:
+    return _error(status_code, message, "rule_detections", detail)
+
+
+@router.post(
+    "/{agent_project_id}/input-files/{upload_id}/rule-detections",
+    response_model=SuccessResponse[DocumentRuleDetectionResult],
+)
+def build_implementation_rule_detections(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[
+        RuleDetectionService, Depends(get_rule_detection_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    force: Annotated[bool, Query()] = False,
+) -> SuccessResponse[DocumentRuleDetectionResult] | JSONResponse:
+    try:
+        result = service.build(
+            agent_project_id, upload_id, current_user, force=force
+        )
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before running rule detection")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _rule_detection_error(404, "Upload not found", "Staged upload not found")
+    except (ExtractionNotFoundError, ChunkingNotFoundError):
+        return _rule_detection_error(409, "Rule detection unavailable", "Current trusted semantic chunks must exist before rule detection")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _rule_detection_error(422, "Rule detection unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError, RuleDetectionStorageError):
+        return _rule_detection_error(503, "Rule detection unavailable", "Rule-detection storage is unavailable")
+    return SuccessResponse(message="Rule-based artifact detection completed", data=result)
+
+
+@router.get(
+    "/{agent_project_id}/input-files/{upload_id}/rule-detections",
+    response_model=SuccessResponse[DocumentRuleDetectionResult],
+)
+def get_implementation_rule_detections(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[
+        RuleDetectionService, Depends(get_rule_detection_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[DocumentRuleDetectionResult] | JSONResponse:
+    try:
+        result = service.get_existing(agent_project_id, upload_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before reviewing rule detection")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _rule_detection_error(404, "Upload not found", "Staged upload not found")
+    except (ExtractionNotFoundError, ChunkingNotFoundError, RuleDetectionNotFoundError):
+        return _rule_detection_error(404, "Rule detections not found", "No current rule-detection result exists for this upload")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _rule_detection_error(422, "Rule detection unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError):
+        return _rule_detection_error(503, "Rule detection unavailable", "Rule-detection storage is unavailable")
+    return SuccessResponse(message="Rule-based artifact detections retrieved", data=result)
 
 
 @router.post(

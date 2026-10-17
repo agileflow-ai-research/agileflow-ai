@@ -9,8 +9,10 @@ import {
   getGitHubConnection,
   getImplementationDocumentChunks,
   getImplementationDocumentExtraction,
+  getImplementationRuleDetections,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
+  runImplementationRuleDetector,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 import { navigateToGitHub } from './githubNavigation.js'
@@ -94,6 +96,7 @@ function emptyInput() {
     status: 'idle',
     extraction: null,
     chunks: null,
+    ruleDetections: null,
     error: '',
   }
 }
@@ -329,6 +332,59 @@ function SemanticChunkReview({ result }) {
   )
 }
 
+function detectionLabel(value) {
+  const exactLabels = {
+    API_SPECIFICATION: 'API Specification',
+    UI_FLOW: 'UI Flow',
+    OTHER_CONTEXT: 'Other Context',
+  }
+  if (exactLabels[value]) return exactLabels[value]
+  return value.toLowerCase().split('_').map((word) => (
+    word.charAt(0).toUpperCase() + word.slice(1)
+  )).join(' ')
+}
+
+function RuleDetectionReview({ result, chunks }) {
+  const chunkById = new Map(chunks.map((chunk) => [chunk.chunk_id, chunk]))
+  return (
+    <section className="mt-4 space-y-4 border-t border-default pt-4" aria-label="Rule Predictions">
+      <div>
+        <h5 className="font-semibold text-content-primary">Rule Predictions</h5>
+        <p className="mt-1 text-sm text-content-secondary">Deterministic baseline {'\u2014'} no AI model used.</p>
+      </div>
+      {result.detections.map((detection) => {
+        const chunk = chunkById.get(detection.chunk_id)
+        return (
+          <article key={detection.chunk_id} className="rounded-control border border-default p-3">
+            <h6 className="font-semibold text-content-primary">Chunk {(chunk?.chunk_index ?? 0) + 1}</h6>
+            {chunk?.context.section_title && <p className="mt-1 text-sm text-content-secondary">Section: {chunk.context.section_title}</p>}
+            {chunk && <p className="text-sm text-content-secondary">{chunkSource(chunk)}</p>}
+            <p className="mt-3 text-sm font-medium text-content-primary">Detected:</p>
+            <div className="mt-2 space-y-3">
+              {detection.predictions.map((prediction) => (
+                <div key={prediction.label}>
+                  <p className="text-sm font-semibold text-content-primary">
+                    {`${detectionLabel(prediction.label)} \u2014 ${detectionLabel(prediction.strength)}`}
+                  </p>
+                  <p className="text-sm text-content-secondary">Rule strength: {detectionLabel(prediction.strength)}</p>
+                  <p className="text-sm text-content-secondary">Heuristic score: {prediction.rule_score.toFixed(2)}</p>
+                  <p className="mt-1 text-sm font-medium text-content-primary">Evidence:</p>
+                  <ul className="list-disc pl-5 text-sm text-content-secondary">
+                    {prediction.evidence.map((evidence) => (
+                      <li key={`${evidence.rule_id}-${evidence.matched_text}`}>{evidence.matched_text}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            {chunk && <pre className="mt-3 whitespace-pre-wrap text-sm text-content-secondary">{chunk.text}</pre>}
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
 function ImplementationWorkspace({ project }) {
   const [step, setStep] = useState(0)
   const [inputs, setInputs] = useState([emptyInput()])
@@ -347,6 +403,9 @@ function ImplementationWorkspace({ project }) {
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [chunkReview, setChunkReview] = useState({
+    uploadId: null, status: 'idle', result: null, error: '',
+  })
+  const [detectionReview, setDetectionReview] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [readinessState, setReadinessState] = useState({
@@ -487,7 +546,12 @@ function ImplementationWorkspace({ project }) {
         { force },
       )
       if (!response?.data?.status) throw new Error('Invalid extraction response')
-      updateInput(index, { extraction: extractionSummary(response.data), chunks: null, error: '' })
+      updateInput(index, {
+        extraction: extractionSummary(response.data),
+        chunks: null,
+        ruleDetections: null,
+        error: '',
+      })
     } catch (error) {
       updateInput(index, {
         extraction: { status: 'error' },
@@ -520,7 +584,12 @@ function ImplementationWorkspace({ project }) {
   }
 
   async function prepareChunks(index, file, { force = false } = {}) {
-    updateInput(index, { chunks: { status: 'preparing' }, error: '' })
+    if (detectionReview.uploadId === file.upload_id) {
+      setDetectionReview({ uploadId: null, status: 'idle', result: null, error: '' })
+    }
+    updateInput(index, {
+      chunks: { status: 'preparing' }, ruleDetections: null, error: '',
+    })
     try {
       const response = await prepareImplementationDocumentChunks(
         project.agent_project_id,
@@ -560,6 +629,57 @@ function ImplementationWorkspace({ project }) {
     }
   }
 
+  async function runRuleDetector(index, file, { force = false } = {}) {
+    updateInput(index, { ruleDetections: { status: 'running' }, error: '' })
+    try {
+      const response = await runImplementationRuleDetector(
+        project.agent_project_id,
+        file.upload_id,
+        { force },
+      )
+      if (!response?.data?.metrics || !Array.isArray(response.data.detections)) {
+        throw new Error('Invalid rule-detection response')
+      }
+      updateInput(index, { ruleDetections: response.data, error: '' })
+      if (detectionReview.uploadId === file.upload_id) {
+        setDetectionReview({
+          uploadId: file.upload_id, status: 'loaded', result: response.data, error: '',
+        })
+      }
+    } catch (error) {
+      updateInput(index, {
+        ruleDetections: { status: 'error' },
+        error: error?.errors?.[0]?.message || error?.message || 'Rule detection could not be completed.',
+      })
+    }
+  }
+
+  async function reviewRuleDetections(file) {
+    if (detectionReview.uploadId === file.upload_id && detectionReview.result) {
+      setDetectionReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      return
+    }
+    setDetectionReview({ uploadId: file.upload_id, status: 'loading', result: null, error: '' })
+    try {
+      const response = await getImplementationRuleDetections(
+        project.agent_project_id, file.upload_id,
+      )
+      if (!Array.isArray(response?.data?.detections)) {
+        throw new Error('Invalid rule-detection response')
+      }
+      setDetectionReview({
+        uploadId: file.upload_id, status: 'loaded', result: response.data, error: '',
+      })
+    } catch (error) {
+      setDetectionReview({
+        uploadId: file.upload_id,
+        status: 'error',
+        result: null,
+        error: error?.errors?.[0]?.message || error?.message || 'Rule predictions could not be loaded.',
+      })
+    }
+  }
+
   async function removeInput(index) {
     const item = inputs[index]
     if (!item.file) {
@@ -580,6 +700,9 @@ function ImplementationWorkspace({ project }) {
       }
       if (chunkReview.uploadId === item.file.upload_id) {
         setChunkReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      }
+      if (detectionReview.uploadId === item.file.upload_id) {
+        setDetectionReview({ uploadId: null, status: 'idle', result: null, error: '' })
       }
       setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
       setReadinessState((current) => (
@@ -712,6 +835,7 @@ function ImplementationWorkspace({ project }) {
         || item.status === 'deleting'
         || item.extraction?.status === 'extracting'
         || item.chunks?.status === 'preparing'
+        || item.ruleDetections?.status === 'running'
         || (item.source_type === 'TEXT' ? !item.content.trim() : !item.file)
       ))
       if (invalid) {
@@ -732,6 +856,7 @@ function ImplementationWorkspace({ project }) {
     || item.status === 'deleting'
     || item.extraction?.status === 'extracting'
     || item.chunks?.status === 'preparing'
+    || item.ruleDetections?.status === 'running'
   ))
   const workspaceRequest = {
     inputs: inputs.map(requestInput),
@@ -795,6 +920,7 @@ function ImplementationWorkspace({ project }) {
                 || item.status === 'deleting'
                 || item.extraction?.status === 'extracting'
                 || item.chunks?.status === 'preparing'
+                || item.ruleDetections?.status === 'running'
               return (
                 <Card key={index} variant="elevated" className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
@@ -906,6 +1032,49 @@ function ImplementationWorkspace({ project }) {
                               )}
                               {chunkReview.uploadId === item.file.upload_id && chunkReview.result && (
                                 <SemanticChunkReview result={chunkReview.result} />
+                              )}
+                              {['SUCCESS', 'PARTIAL'].includes(item.chunks?.status) && (
+                                <section className="mt-4 space-y-2 border-t border-default pt-4" aria-label="Artifact Detection Baseline">
+                                  <p className="text-sm font-medium text-content-primary">Artifact Detection Baseline</p>
+                                  <p className="text-sm text-content-secondary">Deterministic baseline {'\u2014'} no AI model used.</p>
+                                  {!item.ruleDetections && <p className="text-sm text-content-secondary">Not run</p>}
+                                  {item.ruleDetections?.status === 'running' && <p role="status" className="text-sm text-content-secondary">Running rule detector...</p>}
+                                  {item.ruleDetections?.metrics && (
+                                    <div>
+                                      <p className="text-sm font-medium text-content-primary">Rule-Based Detection</p>
+                                      <p className="text-sm text-state-success">{'\u2713 Complete'}</p>
+                                    </div>
+                                  )}
+                                  {item.ruleDetections?.status === 'error' && <p className="text-sm text-state-danger">Rule detection failed</p>}
+                                  {item.ruleDetections?.metrics && (
+                                    <div className="text-sm text-content-secondary">
+                                      <p>Chunks analyzed: {item.ruleDetections.metrics.chunk_count}</p>
+                                      <p>Artifact candidates: {item.ruleDetections.metrics.prediction_count}</p>
+                                      <p>Other context: {item.ruleDetections.metrics.other_context_chunk_count}</p>
+                                    </div>
+                                  )}
+                                  {!item.ruleDetections && (
+                                    <Button variant="outline" size="small" onClick={() => runRuleDetector(index, item.file)}>Run Rule Detector</Button>
+                                  )}
+                                  {item.ruleDetections?.metrics && (
+                                    <>
+                                      <Button variant="outline" size="small" onClick={() => reviewRuleDetections(item.file)}>Review Rule Predictions</Button>
+                                      <Button variant="outline" size="small" onClick={() => runRuleDetector(index, item.file, { force: true })}>Re-run</Button>
+                                    </>
+                                  )}
+                                  {item.ruleDetections?.status === 'error' && (
+                                    <Button variant="outline" size="small" onClick={() => runRuleDetector(index, item.file, { force: true })}>Re-run</Button>
+                                  )}
+                                  {detectionReview.uploadId === item.file.upload_id && detectionReview.status === 'loading' && (
+                                    <p role="status" className="text-sm text-content-secondary">Loading rule predictions...</p>
+                                  )}
+                                  {detectionReview.uploadId === item.file.upload_id && detectionReview.error && (
+                                    <p role="alert" className="text-sm text-state-danger">{detectionReview.error}</p>
+                                  )}
+                                  {detectionReview.uploadId === item.file.upload_id && detectionReview.result && (
+                                    <RuleDetectionReview result={detectionReview.result} chunks={item.chunks.chunks} />
+                                  )}
+                                </section>
                               )}
                             </section>
                           )}

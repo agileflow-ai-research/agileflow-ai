@@ -53,6 +53,22 @@ export function getImplementationDocumentChunks(agentProjectId, uploadId) {
   )
 }
 
+export function runImplementationRuleDetector(agentProjectId, uploadId, { force = false } = {}) {
+  const suffix = force ? '?force=true' : ''
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/rule-detections${suffix}`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getImplementationRuleDetections(agentProjectId, uploadId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/rule-detections`,
+    { authenticated: true },
+  )
+}
+
 export function evaluateImplementationReadiness(agentProjectId, request) {
   return apiClient.post(
     `/agents/implementation/${encodeURIComponent(agentProjectId)}/readiness/evaluate`,
