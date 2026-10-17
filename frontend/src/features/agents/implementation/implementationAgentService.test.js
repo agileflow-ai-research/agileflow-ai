@@ -5,6 +5,7 @@ import {
   connectGitHub,
   createGitHubRepository,
   deleteImplementationInputFile,
+  evaluateImplementationReadiness,
   extractImplementationDocument,
   getGitHubConnection,
   getImplementationDocumentExtraction,
@@ -54,6 +55,22 @@ describe('implementationAgentService', () => {
     )
     expect(apiClient.get).toHaveBeenCalledWith(
       '/agents/implementation/AGP-003/input-files/A3UP-abc/extraction',
+      { authenticated: true },
+    )
+  })
+
+  it('posts readiness evaluation only to the AgileFlow backend', () => {
+    const request = {
+      selected_outputs: ['BACKEND_CODE'],
+      text_inputs: [],
+      document_upload_ids: [],
+      image_upload_ids: [],
+      human_resolutions: [],
+    }
+    evaluateImplementationReadiness('AGP-003', request)
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/readiness/evaluate',
+      request,
       { authenticated: true },
     )
   })

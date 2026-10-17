@@ -4,6 +4,7 @@ import {
   connectGitHub,
   createGitHubRepository,
   deleteImplementationInputFile,
+  evaluateImplementationReadiness,
   extractImplementationDocument,
   getGitHubConnection,
   getImplementationDocumentExtraction,
@@ -76,8 +77,12 @@ const steps = [
   { id: 'review', label: 'Review' },
 ]
 
+let localInputSequence = 0
+
 function emptyInput() {
+  localInputSequence += 1
   return {
+    input_id: `LOCAL-${localInputSequence}`,
     source_type: 'TEXT',
     artifact_type: 'FUNCTIONAL_REQUIREMENTS',
     content: '',
@@ -88,6 +93,92 @@ function emptyInput() {
     extraction: null,
     error: '',
   }
+}
+
+const readinessLabels = {
+  READY: 'READY',
+  READY_WITH_WARNINGS: 'READY WITH WARNINGS',
+  NOT_READY: 'NOT READY',
+}
+
+function ReadinessReview({ state, onAdapt, onBack }) {
+  const result = state.result
+  if (!result) return null
+  const grouped = {
+    ERROR: result.findings.filter((item) => item.severity === 'ERROR' && !item.resolved),
+    WARNING: result.findings.filter((item) => item.severity === 'WARNING' && !item.resolved),
+    INFO: result.findings.filter((item) => item.severity === 'INFO' && !item.resolved),
+  }
+  return (
+    <Card aria-labelledby="implementation-readiness-title" className="space-y-5">
+      <div>
+        <h3 id="implementation-readiness-title" className="text-card-heading font-semibold text-content-primary">Implementation Readiness</h3>
+        <p className="mt-2 font-semibold text-content-primary">{readinessLabels[result.status]}</p>
+        <p className="mt-1 text-sm text-content-secondary">
+          {result.summary.errors} blocking · {result.summary.warnings} warnings · {result.summary.info} information
+        </p>
+      </div>
+      {state.stale && <p role="alert" className="text-sm text-state-warning">Inputs changed — run readiness evaluation again.</p>}
+      <dl className="grid gap-2 text-sm sm:grid-cols-2">
+        {[
+          ['Requirements Context', result.coverage.requirements ? 'Available' : 'Missing'],
+          ['Design Context', result.coverage.design ? 'Available' : 'Missing'],
+          ['Technical Context', result.coverage.implementation ? 'Available' : 'Using PP1 defaults'],
+          ['Pre-code Tests', result.coverage.tests ? 'Available' : 'Missing'],
+          ['Visual Context', result.coverage.visual_context_pending ? 'Pending image analysis' : 'No pending images'],
+        ].map(([label, value]) => (
+          <div key={label}><dt className="inline font-medium text-content-primary">{label}: </dt><dd className="inline text-content-secondary">{value}</dd></div>
+        ))}
+      </dl>
+      <section aria-labelledby="prototype-stack-title">
+        <h4 id="prototype-stack-title" className="font-semibold text-content-primary">Prototype Stack</h4>
+        <ul className="mt-2 grid gap-1 text-sm text-content-secondary sm:grid-cols-2">
+          {Object.values(result.effective_stack).map((value) => <li key={value}>{value}</li>)}
+        </ul>
+      </section>
+      <section aria-labelledby="output-readiness-title">
+        <h4 id="output-readiness-title" className="font-semibold text-content-primary">Output Readiness</h4>
+        <ul className="mt-2 space-y-1 text-sm text-content-secondary">
+          {result.output_readiness.map((item) => (
+            <li key={item.output}>{item.output}: {item.ready ? 'Ready' : 'Blocked'}</li>
+          ))}
+        </ul>
+      </section>
+      {[
+        ['ERROR', 'Blocking Issues'], ['WARNING', 'Warnings'], ['INFO', 'Information'],
+      ].map(([severity, title]) => grouped[severity].length > 0 && (
+        <section key={severity} aria-label={title}>
+          <h4 className="font-semibold text-content-primary">{title}</h4>
+          <div className="mt-2 space-y-3">
+            {grouped[severity].map((finding) => (
+              <div key={finding.finding_id} className="rounded-control border border-default p-3">
+                <p className="font-medium text-content-primary">{finding.title}</p>
+                <p className="mt-1 text-xs font-semibold text-content-muted">{finding.code}</p>
+                <p className="mt-1 text-sm text-content-secondary">{finding.message}</p>
+                {finding.provided_value && <p className="mt-2 text-sm text-content-secondary">Provided: {finding.provided_value}</p>}
+                {finding.supported_value && <p className="text-sm text-content-secondary">PP1 target: {finding.supported_value}</p>}
+                {finding.allowed_resolutions.includes('ADAPT_TO_SUPPORTED_STACK') && (
+                  <Button className="mt-3" variant="outline" size="small" onClick={() => onAdapt(finding)} disabled={state.status === 'evaluating' || state.stale}>
+                    Adapt to AgileFlow PP1 Stack
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+      {result.findings.some((item) => item.resolved) && (
+        <section aria-label="Human-approved resolutions">
+          <h4 className="font-semibold text-content-primary">Human-approved Decisions</h4>
+          {result.findings.filter((item) => item.resolved).map((item) => (
+            <p key={item.finding_id} className="mt-2 text-sm text-state-success">Human decision recorded: use the AgileFlow PP1 supported stack for {item.category}.</p>
+          ))}
+        </section>
+      )}
+      <p className="text-sm text-content-secondary">This readiness review does not start an AgentRun or code generation.</p>
+      {result.status === 'NOT_READY' && <Button variant="outline" onClick={onBack}>Back to Inputs</Button>}
+    </Card>
+  )
 }
 
 function artifactLabel(value) {
@@ -214,6 +305,9 @@ function ImplementationWorkspace({ project }) {
   const [extractionReview, setExtractionReview] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
+  const [readinessState, setReadinessState] = useState({
+    status: 'idle', result: null, error: '', stale: false, resolutions: [],
+  })
 
   useEffect(() => {
     let active = true
@@ -292,6 +386,12 @@ function ImplementationWorkspace({ project }) {
         : item
     )))
     setErrors((current) => ({ ...current, inputs: '' }))
+    if (['source_type', 'artifact_type', 'label', 'content', 'file', 'extraction']
+      .some((field) => Object.hasOwn(changes, field))) {
+      setReadinessState((current) => (
+        current.result ? { ...current, stale: true } : current
+      ))
+    }
   }
 
   function changeSource(index, sourceType) {
@@ -379,6 +479,9 @@ function ImplementationWorkspace({ project }) {
     const item = inputs[index]
     if (!item.file) {
       setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
+      setReadinessState((current) => (
+        current.result ? { ...current, stale: true } : current
+      ))
       return
     }
     updateInput(index, { status: 'deleting' })
@@ -391,6 +494,9 @@ function ImplementationWorkspace({ project }) {
         setExtractionReview({ uploadId: null, status: 'idle', result: null, error: '' })
       }
       setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
+      setReadinessState((current) => (
+        current.result ? { ...current, stale: true } : current
+      ))
     } catch (error) {
       const message = error?.errors?.[0]?.message || error?.message || 'The uploaded file could not be removed.'
       updateInput(index, { status: 'uploaded', error: message })
@@ -432,6 +538,11 @@ function ImplementationWorkspace({ project }) {
       })
       if (!response?.data?.created) throw new Error('Invalid GitHub repository response')
       setRepositoryState({ status: 'created', repository: response.data, error: '' })
+      if (selectedOutputs.includes('GIT_SUMMARY')) {
+        setReadinessState((current) => (
+          current.result ? { ...current, stale: true } : current
+        ))
+      }
     } catch (error) {
       const partialRepository = error?.data?.repository
       setRepositoryState({
@@ -440,6 +551,66 @@ function ImplementationWorkspace({ project }) {
         error: error?.errors?.[0]?.message || error?.message || 'The GitHub repository could not be created.',
       })
     }
+  }
+
+  function readinessRequest(resolutions = [], fingerprint = undefined) {
+    return {
+      selected_outputs: selectedOutputs,
+      text_inputs: inputs
+        .filter((item) => item.source_type === 'TEXT')
+        .map((item) => ({
+          input_id: item.input_id,
+          artifact_type: item.artifact_type,
+          ...(item.label.trim() ? { label: item.label.trim() } : {}),
+          content: item.content,
+        })),
+      document_upload_ids: inputs
+        .filter((item) => item.source_type === 'DOCUMENT' && item.file)
+        .map((item) => item.file.upload_id),
+      image_upload_ids: inputs
+        .filter((item) => item.source_type === 'IMAGE' && item.file)
+        .map((item) => item.file.upload_id),
+      human_resolutions: resolutions,
+      ...(fingerprint ? { input_fingerprint: fingerprint } : {}),
+    }
+  }
+
+  async function checkReadiness(resolutions = [], fingerprint = undefined) {
+    setReadinessState((current) => ({
+      ...current, status: 'evaluating', error: '', resolutions,
+    }))
+    try {
+      const response = await evaluateImplementationReadiness(
+        project.agent_project_id,
+        readinessRequest(resolutions, fingerprint),
+      )
+      if (!response?.data?.status || !response?.data?.input_fingerprint) {
+        throw new Error('Invalid readiness response')
+      }
+      setReadinessState({
+        status: 'complete', result: response.data, error: '', stale: false,
+        resolutions,
+      })
+    } catch (error) {
+      setReadinessState((current) => ({
+        ...current,
+        status: 'error',
+        error: error?.errors?.[0]?.message || error?.message || 'Implementation readiness could not be evaluated.',
+      }))
+    }
+  }
+
+  function adaptToSupportedStack(finding) {
+    if (!readinessState.result || readinessState.stale) return
+    const resolutions = [
+      ...readinessState.resolutions,
+      {
+        finding_id: finding.finding_id,
+        decision: 'ADAPT_TO_SUPPORTED_STACK',
+        note: 'Approved for the AgileFlow PP1 prototype.',
+      },
+    ]
+    checkReadiness(resolutions, readinessState.result.input_fingerprint)
   }
 
   function next() {
@@ -633,7 +804,16 @@ function ImplementationWorkspace({ project }) {
                 </Card>
               )
             })}
-            <Button variant="outline" disabled={workspaceBusy} onClick={() => setInputs((current) => [...current, emptyInput()])}>Add Input</Button>
+            <Button
+              variant="outline"
+              disabled={workspaceBusy}
+              onClick={() => {
+                setInputs((current) => [...current, emptyInput()])
+                setReadinessState((current) => (
+                  current.result ? { ...current, stale: true } : current
+                ))
+              }}
+            >Add Input</Button>
           </section>
         )}
 
@@ -646,6 +826,9 @@ function ImplementationWorkspace({ project }) {
               onChange={(values) => {
                 setSelectedOutputs(values)
                 setErrors((current) => ({ ...current, outputs: '' }))
+                setReadinessState((current) => (
+                  current.result ? { ...current, stale: true } : current
+                ))
               }}
             />
             {errors.outputs && <p role="alert" className="mt-3 text-sm text-state-danger">{errors.outputs}</p>}
@@ -653,16 +836,33 @@ function ImplementationWorkspace({ project }) {
         )}
 
         {step === 2 && (
-          <RunReview
-            project={project}
-            selectedOutputs={workspaceRequest.selected_outputs}
-            sections={[
-              { id: 'inputs', title: 'Implementation inputs', content: reviewInputs },
-              { id: 'github', title: 'GitHub status', content: githubReview },
-            ]}
-          />
+          <div className="space-y-4">
+            <RunReview
+              project={project}
+              selectedOutputs={workspaceRequest.selected_outputs}
+              sections={[
+                { id: 'inputs', title: 'Implementation inputs', content: reviewInputs },
+                { id: 'github', title: 'GitHub status', content: githubReview },
+              ]}
+            />
+            <Button
+              loading={readinessState.status === 'evaluating'}
+              loadingLabel="Evaluating implementation readiness"
+              disabled={workspaceBusy}
+              onClick={() => checkReadiness()}
+            >
+              Check Implementation Readiness
+            </Button>
+            {readinessState.error && <p role="alert" className="text-sm text-state-danger">{readinessState.error}</p>}
+          </div>
         )}
       </AgentInputWizard>
+
+      <ReadinessReview
+        state={readinessState}
+        onAdapt={adaptToSupportedStack}
+        onBack={() => setStep(0)}
+      />
 
       <Card aria-labelledby="github-integration-title">
         <h3 id="github-integration-title" className="text-card-heading font-semibold text-content-primary">GitHub Integration</h3>

@@ -60,6 +60,16 @@ from app.modules.agents.implementation.repository import (
     GitHubRepositoryBindingRepository,
     GitHubRepositoryBindingRepositoryError,
 )
+from app.modules.agents.implementation.readiness.schemas import (
+    ReadinessEvaluationRequest,
+    ReadinessEvaluationResult,
+)
+from app.modules.agents.implementation.readiness.service import (
+    ImplementationReadinessService,
+    ReadinessResolutionError,
+    ReadinessUploadTypeError,
+    StaleReadinessResolutionError,
+)
 from app.modules.agents.implementation.service import (
     ImplementationInputService,
     WrongAgentProjectTypeError,
@@ -144,6 +154,27 @@ def get_github_connection_service(
 
 def get_github_repository_binding_repository() -> GitHubRepositoryBindingRepository:
     return GitHubRepositoryBindingRepository()
+
+
+def get_implementation_readiness_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+    binding_repository: Annotated[
+        GitHubRepositoryBindingRepository,
+        Depends(get_github_repository_binding_repository),
+    ],
+) -> ImplementationReadinessService:
+    return ImplementationReadinessService(
+        standalone_service,
+        storage,
+        DocumentExtractionService(standalone_service, storage),
+        binding_repository,
+    )
 
 
 def get_github_repository_service(
@@ -425,6 +456,63 @@ def get_implementation_document_extraction(
             "Document extraction storage is unavailable",
         )
     return SuccessResponse(message="Document extraction retrieved", data=extraction)
+
+
+@router.post(
+    "/{agent_project_id}/readiness/evaluate",
+    response_model=SuccessResponse[ReadinessEvaluationResult],
+)
+def evaluate_implementation_readiness(
+    agent_project_id: str,
+    request: ReadinessEvaluationRequest,
+    service: Annotated[
+        ImplementationReadinessService,
+        Depends(get_implementation_readiness_service),
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[ReadinessEvaluationResult] | JSONResponse:
+    try:
+        result = service.evaluate(agent_project_id, request, current_user)
+    except AgentProjectNotFoundError:
+        return _error(
+            404,
+            "Agent project not found",
+            "agent_project_id",
+            "Agent project not found",
+        )
+    except ArchivedAgentProjectError:
+        return _error(
+            409,
+            "Agent project is archived",
+            "agent_project_id",
+            "Reactivate the agent project before evaluating readiness",
+        )
+    except WrongAgentProjectTypeError as exc:
+        return _error(
+            422, "Wrong agent project type", "agent_project_id", str(exc)
+        )
+    except UploadNotFoundError:
+        return _error(
+            404, "Upload not found", "upload_id", "Staged upload not found"
+        )
+    except StaleReadinessResolutionError as exc:
+        return _error(409, "Readiness result is stale", "input_fingerprint", str(exc))
+    except (ReadinessResolutionError, ReadinessUploadTypeError) as exc:
+        return _error(422, "Readiness request is invalid", "readiness", str(exc))
+    except (
+        StandaloneServiceError,
+        UploadStorageError,
+        GitHubRepositoryBindingRepositoryError,
+    ):
+        return _error(
+            503,
+            "Readiness evaluation unavailable",
+            "readiness",
+            "Readiness dependencies are unavailable",
+        )
+    return SuccessResponse(
+        message="Implementation readiness evaluated", data=result
+    )
 
 
 @router.post(

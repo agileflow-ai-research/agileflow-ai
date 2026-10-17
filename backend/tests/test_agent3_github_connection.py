@@ -472,7 +472,7 @@ def test_callback_routes_complete_without_exposing_credentials(github_context):
         assert secret not in location
 
 
-def test_openapi_exposes_only_step_1b_through_step_1d_agent3_routes():
+def test_openapi_exposes_only_implemented_agent3_routes():
     paths = app.openapi()["paths"]
     agent3 = {
         (method.upper(), path)
@@ -496,6 +496,10 @@ def test_openapi_exposes_only_step_1b_through_step_1d_agent3_routes():
         (
             "GET",
             "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/extraction",
+        ),
+        (
+            "POST",
+            "/api/v1/agents/implementation/{agent_project_id}/readiness/evaluate",
         ),
         (
             "POST",
@@ -523,6 +527,8 @@ def test_openapi_exposes_only_step_1b_through_step_1d_agent3_routes():
         ),
     }
     assert not any("/run" in path for _, path in agent3)
+    assert not any("/generate" in path for _, path in agent3)
+    assert not any("image-analysis" in path for _, path in agent3)
     assert not any(
         segment in path
         for _, path in agent3

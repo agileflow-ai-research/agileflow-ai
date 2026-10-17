@@ -20,6 +20,7 @@ vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({ 
 vi.mock('../features/agents/implementation/implementationAgentService.js', () => ({
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
+  evaluateImplementationReadiness: vi.fn(),
   extractImplementationDocument: vi.fn(),
   getImplementationDocumentExtraction: vi.fn(),
   connectGitHub: vi.fn(),

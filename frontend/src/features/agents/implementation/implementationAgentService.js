@@ -37,6 +37,14 @@ export function getImplementationDocumentExtraction(agentProjectId, uploadId) {
   )
 }
 
+export function evaluateImplementationReadiness(agentProjectId, request) {
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/readiness/evaluate`,
+    request,
+    { authenticated: true },
+  )
+}
+
 export function connectGitHub(agentProjectId) {
   return apiClient.post(
     `/agents/implementation/${encodeURIComponent(agentProjectId)}/github/connect`,
