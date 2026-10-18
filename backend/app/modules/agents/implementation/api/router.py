@@ -11,6 +11,9 @@ from app.modules.agents.implementation.api.input_routes import (
 from app.modules.agents.implementation.api.preparation_routes import (
     router as preparation_router,
 )
+from app.modules.agents.implementation.api.project_preparation_routes import (
+    router as project_preparation_router,
+)
 from app.modules.agents.implementation.api.semantic_routes import (
     router as semantic_router,
 )
@@ -26,6 +29,8 @@ from app.modules.agents.implementation.api.dependencies import (
     get_implementation_input_service,
     get_implementation_readiness_service,
     get_implementation_upload_storage,
+    get_project_preparation_service,
+    get_project_preparation_storage,
     get_rule_detection_service,
     get_semantic_artifact_service,
     get_semantic_chunking_service,
@@ -39,6 +44,7 @@ router = APIRouter(
 )
 router.include_router(input_router)
 router.include_router(preparation_router)
+router.include_router(project_preparation_router)
 router.include_router(semantic_router)
 router.include_router(github_router)
 
@@ -55,6 +61,8 @@ __all__ = [
     "get_implementation_input_service",
     "get_implementation_readiness_service",
     "get_implementation_upload_storage",
+    "get_project_preparation_service",
+    "get_project_preparation_storage",
     "get_rule_detection_service",
     "get_semantic_artifact_service",
     "get_semantic_chunking_service",

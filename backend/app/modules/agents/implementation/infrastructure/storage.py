@@ -373,6 +373,48 @@ class ImplementationUploadStorage:
             semantic_artifacts_partial_path=semantic_artifacts_partial_path,
         )
 
+    def list_for_project(
+        self,
+        *,
+        agent_project_id: str,
+        owner_user_id: str,
+    ) -> list[UploadedFileMetadata]:
+        """Discover current trusted uploads without exposing storage paths."""
+        project_directory = self._project_directory(agent_project_id)
+        if not project_directory.exists():
+            return []
+        uploads: list[UploadedFileMetadata] = []
+        try:
+            metadata_paths = sorted(
+                project_directory.glob("A3UP-*.metadata.json")
+            )
+            for metadata_path in metadata_paths:
+                upload_id = metadata_path.name.removesuffix(".metadata.json")
+                if not UPLOAD_ID_PATTERN.fullmatch(upload_id):
+                    continue
+                metadata = self._load_metadata(
+                    metadata_path,
+                    agent_project_id,
+                    owner_user_id,
+                    upload_id,
+                )
+                stored_path = self._contained(
+                    project_directory,
+                    f"{upload_id}{metadata.extension}",
+                )
+                if not stored_path.is_file():
+                    raise UploadStorageError(
+                        "Staged upload metadata references a missing file"
+                    )
+                uploads.append(metadata)
+        except UploadStorageError:
+            raise
+        except OSError as exc:
+            raise UploadStorageError(
+                "Staged uploads could not be discovered"
+            ) from exc
+        return sorted(uploads, key=lambda item: (item.created_at, item.upload_id))
+
     @staticmethod
     def _load_metadata(
         metadata_path: Path,

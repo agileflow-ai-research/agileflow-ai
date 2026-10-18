@@ -19,10 +19,12 @@ import {
   getImplementationCanonicalArtifacts,
   getImplementationSemanticArtifacts,
   getGitHubRepository,
+  getPreparationStatus,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
   saveImplementationHumanReview,
+  startPreparation,
   uploadImplementationInputFile,
 } from './services/implementationAgentService.js'
 import { navigateToGitHub } from './utils/githubNavigation.js'
@@ -94,6 +96,52 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
   const [readinessState, setReadinessState] = useState({
     status: 'idle', result: null, error: '', stale: false, resolutions: [],
   })
+  const [preparationState, setPreparationState] = useState({
+    status: 'loading', result: null, error: '',
+  })
+
+  useEffect(() => {
+    let active = true
+    setPreparationState({ status: 'loading', result: null, error: '' })
+    getPreparationStatus(project.agent_project_id)
+      .then((response) => {
+        if (!active) return
+        if (!response?.data?.status || !Array.isArray(response.data.sources)) {
+          throw new Error('Invalid project preparation response')
+        }
+        setPreparationState({ status: 'loaded', result: response.data, error: '' })
+      })
+      .catch((error) => {
+        if (!active || error?.status === 401) return
+        setPreparationState({
+          status: 'error', result: null,
+          error: error?.errors?.[0]?.message || error?.message || 'Project input analysis status could not be loaded.',
+        })
+      })
+    return () => { active = false }
+  }, [project.agent_project_id])
+
+  useEffect(() => {
+    if (preparationState.result?.status !== 'RUNNING') return undefined
+    let active = true
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await getPreparationStatus(project.agent_project_id)
+        if (!active || !response?.data?.status || !Array.isArray(response.data.sources)) return
+        setPreparationState({ status: 'loaded', result: response.data, error: '' })
+      } catch (error) {
+        if (!active || error?.status === 401) return
+        setPreparationState((current) => ({
+          ...current, status: 'error',
+          error: error?.errors?.[0]?.message || error?.message || 'Project input analysis status could not be refreshed.',
+        }))
+      }
+    }, 2000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [preparationState.result?.status, project.agent_project_id])
 
   useEffect(() => {
     let active = true
@@ -168,8 +216,34 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       readinessState,
       githubState,
       repositoryState,
+      preparationState,
     })
-  }, [githubState, inputs, onPresentationChange, readinessState, repositoryState, selectedOutputs])
+  }, [githubState, inputs, onPresentationChange, preparationState, readinessState, repositoryState, selectedOutputs])
+
+  async function analyzeProjectInputs() {
+    setPreparationState((current) => ({ ...current, status: 'starting', error: '' }))
+    const textInputs = inputs
+      .filter((item) => item.source_type === 'TEXT' && item.content.trim())
+      .map((item) => ({
+        input_id: item.input_id,
+        artifact_type: item.artifact_type,
+        ...(item.label.trim() ? { label: item.label.trim() } : {}),
+        content: item.content,
+      }))
+    try {
+      const response = await startPreparation(project.agent_project_id, textInputs)
+      if (!response?.data?.status || !Array.isArray(response.data.sources)) {
+        throw new Error('Invalid project preparation response')
+      }
+      setPreparationState({ status: 'loaded', result: response.data, error: '' })
+    } catch (error) {
+      if (error?.status === 401) return
+      setPreparationState((current) => ({
+        ...current, status: 'error',
+        error: error?.errors?.[0]?.message || error?.message || 'Project input analysis could not be started.',
+      }))
+    }
+  }
 
   function updateInput(index, changes) {
     setInputs((current) => current.map((item, itemIndex) => (
@@ -982,7 +1056,14 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
           inputStepProps={inputStepProps}
         />
       ) : null}
-      {activeSection === 'INPUT_ANALYSIS' ? <InputAnalysisPanel inputs={inputs} researchContent={analysisResearchContent} /> : null}
+      {activeSection === 'INPUT_ANALYSIS' ? (
+        <InputAnalysisPanel
+          inputs={inputs}
+          preparationState={preparationState}
+          onAnalyze={analyzeProjectInputs}
+          researchContent={analysisResearchContent}
+        />
+      ) : null}
       {activeSection === 'SPECIFICATION_VERIFICATION' ? (
         <SpecificationVerificationPanel inputs={inputs} humanReviewContent={humanReviewContent} researchContent={specificationResearchContent} />
       ) : null}

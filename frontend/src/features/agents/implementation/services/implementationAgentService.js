@@ -1,5 +1,20 @@
 import { apiClient } from '../../../../services/apiClient.js'
 
+export function startPreparation(agentProjectId, textInputs = []) {
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/preparation/start`,
+    { text_inputs: textInputs },
+    { authenticated: true },
+  )
+}
+
+export function getPreparationStatus(agentProjectId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/preparation/status`,
+    { authenticated: true },
+  )
+}
+
 export function uploadImplementationInputFile(agentProjectId, input) {
   const formData = new FormData()
   formData.append('source_type', input.source_type)

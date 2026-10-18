@@ -559,6 +559,14 @@ def test_openapi_exposes_only_implemented_agent3_routes():
         ),
         (
             "POST",
+            "/api/v1/agents/implementation/{agent_project_id}/preparation/start",
+        ),
+        (
+            "GET",
+            "/api/v1/agents/implementation/{agent_project_id}/preparation/status",
+        ),
+        (
+            "POST",
             "/api/v1/agents/implementation/{agent_project_id}/github/connect",
         ),
         (

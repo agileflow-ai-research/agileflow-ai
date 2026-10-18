@@ -95,6 +95,12 @@ from app.modules.agents.implementation.preparation.canonical.service import (
     SemanticChunksRequiredError,
     StaleHumanVerificationError,
 )
+from app.modules.agents.implementation.preparation.orchestration.service import (
+    ProjectPreparationService,
+)
+from app.modules.agents.implementation.preparation.orchestration.storage import (
+    ProjectPreparationStorage,
+)
 from app.modules.agents.implementation.preparation.semantic_extraction.artifact_service import (
     CanonicalArtifactsRequiredError,
     SemanticArtifactService,
@@ -215,6 +221,60 @@ def get_human_review_service(
     ],
 ) -> HumanReviewService:
     return HumanReviewService(standalone_service, storage)
+
+
+def get_project_preparation_storage() -> ProjectPreparationStorage:
+    return ProjectPreparationStorage(settings.agent3_upload_root)
+
+
+def get_project_preparation_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    upload_storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+    state_storage: Annotated[
+        ProjectPreparationStorage,
+        Depends(get_project_preparation_storage),
+    ],
+    extraction_service: Annotated[
+        DocumentExtractionService,
+        Depends(get_document_extraction_service),
+    ],
+    chunking_service: Annotated[
+        SemanticChunkingService,
+        Depends(get_semantic_chunking_service),
+    ],
+    rule_service: Annotated[
+        RuleDetectionService,
+        Depends(get_rule_detection_service),
+    ],
+    zero_shot_service: Annotated[
+        ZeroShotDetectionService,
+        Depends(get_zero_shot_detection_service),
+    ],
+    hybrid_service: Annotated[
+        HybridDetectionService,
+        Depends(get_hybrid_detection_service),
+    ],
+    human_review_service: Annotated[
+        HumanReviewService,
+        Depends(get_human_review_service),
+    ],
+) -> ProjectPreparationService:
+    return ProjectPreparationService(
+        standalone_service,
+        upload_storage,
+        state_storage,
+        extraction_service,
+        chunking_service,
+        rule_service,
+        zero_shot_service,
+        hybrid_service,
+        human_review_service,
+    )
 
 
 def get_canonical_artifact_service(

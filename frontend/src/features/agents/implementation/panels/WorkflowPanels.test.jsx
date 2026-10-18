@@ -97,6 +97,37 @@ describe('Agent 3 workflow panels', () => {
     expect(screen.queryByText(/75%|100%/)).not.toBeInTheDocument()
   })
 
+  it('shows authoritative multi-source preparation state and safe failures', async () => {
+    const user = userEvent.setup()
+    const onAnalyze = vi.fn()
+    render(
+      <InputAnalysisPanel
+        inputs={[]}
+        preparationState={{
+          status: 'loaded', error: '',
+          result: {
+            status: 'PARTIAL_FAILURE', source_count: 3,
+            completed_source_count: 2, failed_source_count: 1,
+            sources: [
+              { source_id: 'UP-1', filename: 'requirements.pdf', source_kind: 'DOCUMENT', status: 'READY', current_stage: 'HUMAN_REVIEW' },
+              { source_id: 'UP-2', filename: 'api-spec.docx', source_kind: 'DOCUMENT', status: 'WAITING_FOR_HUMAN', current_stage: 'HUMAN_REVIEW' },
+              { source_id: 'UP-3', filename: 'broken.yaml', source_kind: 'DOCUMENT', status: 'FAILED', current_stage: 'EXTRACTION', error: { message: 'The document could not be extracted.' } },
+            ],
+          },
+        }}
+        onAnalyze={onAnalyze}
+        researchContent={<button type="button">Run Hybrid Analysis</button>}
+      />,
+    )
+
+    expect(screen.getAllByText('Needs Attention')).toHaveLength(2)
+    expect(screen.getByText('requirements.pdf').closest('div').parentElement).toHaveTextContent('Prepared')
+    expect(screen.getByText('api-spec.docx').closest('div').parentElement).toHaveTextContent('Waiting for Review')
+    expect(screen.getByText('broken.yaml').closest('div').parentElement).toHaveTextContent('The document could not be extracted.')
+    await user.click(screen.getByRole('button', { name: 'Analyze Project Inputs' }))
+    expect(onAnalyze).toHaveBeenCalledOnce()
+  })
+
   it('groups loaded specification layers by artifact and preserves source identity and advanced access', () => {
     const verifiedInput = input({
       label: '',

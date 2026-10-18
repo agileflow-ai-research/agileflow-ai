@@ -20,10 +20,12 @@ import {
   getImplementationCanonicalArtifacts,
   getImplementationSemanticArtifacts,
   getGitHubRepository,
+  getPreparationStatus,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
   saveImplementationHumanReview,
+  startPreparation,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 
@@ -33,6 +35,23 @@ vi.mock('../../../../services/apiClient.js', () => ({
 
 describe('implementationAgentService', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('uses project-level preparation endpoints without sending upload IDs', () => {
+    const textInputs = [{
+      input_id: 'LOCAL-1', artifact_type: 'REQUIREMENTS', content: 'Build it',
+    }]
+    startPreparation('AGP-003', textInputs)
+    getPreparationStatus('AGP-003')
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/preparation/start',
+      { text_inputs: textInputs },
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/preparation/status',
+      { authenticated: true },
+    )
+  })
 
   it('sends upload fields as FormData without multipart headers', () => {
     const file = new File(['%PDF-test'], 'api.pdf', { type: 'application/pdf' })

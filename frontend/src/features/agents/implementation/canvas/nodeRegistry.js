@@ -1,6 +1,7 @@
 import { MarkerType } from '@xyflow/react'
 
 import { WORKFLOW_NODE_STATES } from '../constants/workflow.js'
+import { preparationToWorkflowState } from '../constants/preparation.js'
 import { DEFAULT_NODE_POSITIONS } from './layout.js'
 
 export const IMPLEMENTATION_NODE_REGISTRY = Object.freeze([
@@ -50,6 +51,7 @@ export function deriveWorkflowPresentation(snapshot) {
   const readiness = snapshot?.readinessState
   const github = snapshot?.githubState
   const repository = snapshot?.repositoryState
+  const preparation = snapshot?.preparationState?.result
 
   let readinessStatus = WORKFLOW_NODE_STATES.NOT_STARTED
   if (readiness?.status === 'evaluating') readinessStatus = WORKFLOW_NODE_STATES.RUNNING
@@ -71,13 +73,19 @@ export function deriveWorkflowPresentation(snapshot) {
       attentionCount,
     },
     INPUT_ANALYSIS: {
-      status: preparedCount > 0 ? WORKFLOW_NODE_STATES.RUNNING : attentionCount > 0 ? WORKFLOW_NODE_STATES.NEEDS_ATTENTION : WORKFLOW_NODE_STATES.NOT_STARTED,
-      summary: `${preparedCount} ${preparedCount === 1 ? 'source' : 'sources'} prepared · ${Math.max(sourceCount - preparedCount, 0)} pending`,
-      attentionCount,
+      status: preparation ? preparationToWorkflowState(preparation.status) : preparedCount > 0 ? WORKFLOW_NODE_STATES.RUNNING : attentionCount > 0 ? WORKFLOW_NODE_STATES.NEEDS_ATTENTION : WORKFLOW_NODE_STATES.NOT_STARTED,
+      summary: preparation
+        ? `${preparation.processed_source_count} / ${preparation.eligible_source_count} eligible sources processed${preparation.failed_source_count ? ` · ${preparation.failed_source_count} failed` : ''}`
+        : `${preparedCount} ${preparedCount === 1 ? 'source' : 'sources'} prepared · ${Math.max(sourceCount - preparedCount, 0)} pending`,
+      attentionCount: preparation?.failed_source_count ?? attentionCount,
     },
     SPECIFICATION_VERIFICATION: {
-      status: verifiedSourceCount > 0 ? WORKFLOW_NODE_STATES.RUNNING : preparedCount > 0 ? WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN : WORKFLOW_NODE_STATES.NOT_STARTED,
-      summary: `${verifiedSourceCount} ${verifiedSourceCount === 1 ? 'source' : 'sources'} verified · ${Math.max(preparedCount - verifiedSourceCount, 0)} awaiting review`,
+      status: preparation?.requires_human_review
+        ? WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
+        : verifiedSourceCount > 0 ? WORKFLOW_NODE_STATES.RUNNING : preparedCount > 0 ? WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN : WORKFLOW_NODE_STATES.NOT_STARTED,
+      summary: preparation?.requires_human_review
+        ? `${preparation.human_review_source_count} ${preparation.human_review_source_count === 1 ? 'source' : 'sources'} awaiting verification`
+        : `${verifiedSourceCount} ${verifiedSourceCount === 1 ? 'source' : 'sources'} verified · ${Math.max(preparedCount - verifiedSourceCount, 0)} awaiting review`,
     },
     IMPLEMENTATION_READINESS: {
       status: readinessStatus,

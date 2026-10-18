@@ -52,4 +52,26 @@ describe('implementation workflow registry', () => {
     expect(presentation.IMPLEMENTATION_READINESS.status).toBe('NOT_STARTED')
     expect(presentation.DELIVERY_SETUP.status).toBe('RUNNING')
   })
+
+  it('maps authoritative preparation and human-review states into workflow nodes', () => {
+    const presentation = deriveWorkflowPresentation({
+      inputs: [],
+      selectedOutputs: [],
+      preparationState: {
+        result: {
+          status: 'WAITING_FOR_HUMAN', processed_source_count: 3,
+          eligible_source_count: 3, failed_source_count: 0,
+          human_review_source_count: 2,
+          requires_human_review: true,
+        },
+      },
+    })
+
+    expect(presentation.INPUT_ANALYSIS).toMatchObject({
+      status: 'WAITING_FOR_HUMAN', summary: '3 / 3 eligible sources processed',
+    })
+    expect(presentation.SPECIFICATION_VERIFICATION).toMatchObject({
+      status: 'WAITING_FOR_HUMAN', summary: '2 sources awaiting verification',
+    })
+  })
 })

@@ -21,10 +21,12 @@ import {
   getImplementationCanonicalArtifacts,
   getImplementationSemanticArtifacts,
   getGitHubRepository,
+  getPreparationStatus,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
   saveImplementationHumanReview,
+  startPreparation,
   uploadImplementationInputFile,
 } from './services/implementationAgentService.js'
 import { navigateToGitHub } from './utils/githubNavigation.js'
@@ -54,6 +56,8 @@ vi.mock('./services/implementationAgentService.js', () => ({
   createGitHubRepository: vi.fn(),
   getGitHubConnection: vi.fn(),
   getGitHubRepository: vi.fn(),
+  getPreparationStatus: vi.fn(),
+  startPreparation: vi.fn(),
 }))
 vi.mock('./utils/githubNavigation.js', () => ({ navigateToGitHub: vi.fn() }))
 
@@ -484,6 +488,23 @@ describe('ImplementationWorkspace', () => {
     window.history.replaceState({}, '', '/')
     getGitHubConnection.mockResolvedValue({ data: { connected: false } })
     getGitHubRepository.mockResolvedValue({ data: { created: false } })
+    getPreparationStatus.mockResolvedValue({
+      data: {
+        status: 'NOT_STARTED', source_count: 0, eligible_source_count: 0,
+        processed_source_count: 0, completed_source_count: 0,
+        active_source_count: 0, failed_source_count: 0, sources: [],
+        requires_human_review: false, human_review_source_count: 0,
+      },
+    })
+    startPreparation.mockResolvedValue({
+      data: {
+        status: 'ANALYSIS_READY', source_count: 1, eligible_source_count: 1,
+        processed_source_count: 1, completed_source_count: 1,
+        active_source_count: 0, failed_source_count: 0,
+        sources: [{ source_id: 'LOCAL-1', source_kind: 'TEXT', status: 'READY' }],
+        requires_human_review: false, human_review_source_count: 0,
+      },
+    })
     extractImplementationDocument.mockResolvedValue({ data: extractionResult() })
     getImplementationDocumentExtraction.mockResolvedValue({ data: extractionResult() })
     prepareImplementationDocumentChunks.mockResolvedValue({ data: chunkResult() })
@@ -1429,6 +1450,58 @@ describe('ImplementationWorkspace', () => {
     expect(await screen.findByText('Research Details')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Implementation Inputs' })).toBeInTheDocument()
   })
+
+  it('loads persisted project preparation state and starts analysis once', async () => {
+    const user = userEvent.setup()
+    getPreparationStatus.mockResolvedValue({
+      data: {
+        status: 'WAITING_FOR_HUMAN', source_count: 1, eligible_source_count: 1,
+        processed_source_count: 1, completed_source_count: 1,
+        active_source_count: 0, failed_source_count: 0,
+        sources: [{
+          source_id: 'A3UP-1', source_kind: 'DOCUMENT', filename: 'requirements.pdf',
+          status: 'WAITING_FOR_HUMAN', current_stage: 'HUMAN_REVIEW', error: null,
+        }],
+        requires_human_review: true, human_review_source_count: 1,
+      },
+    })
+    render(<ImplementationWorkspace project={project} activeSection="INPUT_ANALYSIS" />)
+
+    expect(await screen.findByText('requirements.pdf')).toBeInTheDocument()
+    expect(screen.getByText('Waiting for You')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Analyze Project Inputs' }))
+    expect(startPreparation).toHaveBeenCalledOnce()
+    expect(startPreparation).toHaveBeenCalledWith(project.agent_project_id, [])
+  })
+
+  it('polls while preparation is running and stops at a terminal state', async () => {
+    const running = {
+      status: 'RUNNING', source_count: 1, eligible_source_count: 1,
+      processed_source_count: 0, completed_source_count: 0,
+      active_source_count: 1, failed_source_count: 0,
+      sources: [{
+        source_id: 'A3UP-1', source_kind: 'DOCUMENT', filename: 'requirements.pdf',
+        status: 'CLASSIFYING_MODEL', current_stage: 'MODEL_CLASSIFICATION', error: null,
+      }],
+      requires_human_review: false, human_review_source_count: 0,
+    }
+    getPreparationStatus
+      .mockResolvedValueOnce({ data: running })
+      .mockResolvedValue({
+        data: {
+          ...running, status: 'ANALYSIS_READY', processed_source_count: 1,
+          completed_source_count: 1, active_source_count: 0,
+          sources: [{ ...running.sources[0], status: 'READY', current_stage: 'HUMAN_REVIEW' }],
+        },
+      })
+    render(<ImplementationWorkspace project={project} activeSection="INPUT_ANALYSIS" />)
+
+    expect(await screen.findByText('In Progress')).toBeInTheDocument()
+    await waitFor(() => expect(getPreparationStatus).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    expect(await screen.findByText('Analysis Ready')).toBeInTheDocument()
+    await new Promise((resolve) => window.setTimeout(resolve, 2200))
+    expect(getPreparationStatus).toHaveBeenCalledTimes(2)
+  }, 7000)
 
   it('shows an honest empty readiness panel until the existing evaluation has run', async () => {
     render(<ImplementationWorkspace project={project} activeSection="IMPLEMENTATION_READINESS" />)

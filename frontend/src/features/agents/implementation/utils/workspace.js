@@ -1,11 +1,8 @@
 import { artifactOptions } from '../constants/workspace.js'
 
-let localInputSequence = 0
-
 export function emptyInput() {
-  localInputSequence += 1
   return {
-    input_id: `LOCAL-${localInputSequence}`,
+    input_id: `LOCAL-${globalThis.crypto.randomUUID()}`,
     source_type: 'TEXT',
     artifact_type: 'FUNCTIONAL_REQUIREMENTS',
     content: '',
