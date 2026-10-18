@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '../../../services/apiClient.js'
 import {
+  buildImplementationCanonicalArtifacts,
   buildImplementationHybridDetections,
   connectGitHub,
   createGitHubRepository,
@@ -15,6 +16,7 @@ import {
   getImplementationZeroShotDetections,
   getImplementationHybridDetections,
   getImplementationHumanReviews,
+  getImplementationCanonicalArtifacts,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
@@ -188,6 +190,26 @@ describe('implementationAgentService', () => {
     expect(apiClient.put).toHaveBeenCalledWith(
       '/agents/implementation/AGP-003/input-files/A3UP-abc/human-reviews/CHK-ABC',
       request,
+      { authenticated: true },
+    )
+  })
+
+  it('uses read-only and explicit canonical artifact endpoints', () => {
+    buildImplementationCanonicalArtifacts('AGP-003', 'A3UP-abc')
+    getImplementationCanonicalArtifacts('AGP-003', 'A3UP-abc')
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/canonical-artifacts',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/canonical-artifacts',
+      { authenticated: true },
+    )
+    buildImplementationCanonicalArtifacts('AGP-003', 'A3UP-abc', { force: true })
+    expect(apiClient.post).toHaveBeenLastCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/canonical-artifacts?force=true',
+      undefined,
       { authenticated: true },
     )
   })

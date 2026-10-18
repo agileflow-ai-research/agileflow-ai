@@ -264,6 +264,7 @@ def test_openapi_exposes_upload_and_delete_input_file_routes():
         and not path.endswith("/zero-shot-detections")
             and not path.endswith("/hybrid-detections")
             and "/human-reviews" not in path
+            and "/canonical-artifacts" not in path
         for method in operations
     }
     assert agent3 == {

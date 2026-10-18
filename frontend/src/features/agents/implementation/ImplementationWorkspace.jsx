@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import {
   connectGitHub,
+  buildImplementationCanonicalArtifacts,
   buildImplementationHybridDetections,
   createGitHubRepository,
   deleteImplementationInputFile,
@@ -14,6 +15,7 @@ import {
   getImplementationZeroShotDetections,
   getImplementationHybridDetections,
   getImplementationHumanReviews,
+  getImplementationCanonicalArtifacts,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
@@ -113,6 +115,7 @@ function emptyInput() {
     zeroShotDetections: null,
     hybridDetections: null,
     humanReviews: null,
+    canonicalArtifacts: null,
     error: '',
   }
 }
@@ -660,6 +663,60 @@ function HumanReviewWorkspace({ state, onSave }) {
   )
 }
 
+function canonicalStatusLabel(status) {
+  if (status === 'UNRESOLVED') return 'Needs Semantic Extraction'
+  return detectionLabel(status)
+}
+
+function canonicalSourceLabel(source) {
+  const location = source.structured_path
+    ? `Path ${source.structured_path}`
+    : source.line_start
+      ? `Lines ${source.line_start}${source.line_end && source.line_end !== source.line_start ? `–${source.line_end}` : ''}`
+      : source.page_start
+        ? `Pages ${source.page_start}${source.page_end && source.page_end !== source.page_start ? `–${source.page_end}` : ''}`
+        : source.block_start !== null && source.block_start !== undefined
+          ? `Blocks ${source.block_start}${source.block_end !== null && source.block_end !== source.block_start ? `–${source.block_end}` : ''}`
+          : 'Document source'
+  return `${source.original_filename} · ${location} · Chunk ${source.chunk_id}`
+}
+
+function CanonicalArtifactReview({ result }) {
+  const groups = result.artifacts.reduce((current, artifact) => {
+    current[artifact.artifact_type] = [...(current[artifact.artifact_type] || []), artifact]
+    return current
+  }, {})
+  return (
+    <section className="mt-4 space-y-4 border-t border-default pt-4" aria-label="Canonical Artifact Review">
+      {Object.entries(groups).map(([type, artifacts]) => (
+        <section key={type} className="space-y-3">
+          <h4 className="font-semibold text-content-primary">{detectionLabel(type)}</h4>
+          {artifacts.map((artifact) => (
+            <article key={artifact.artifact_id} className="rounded-lg border border-default p-3 text-sm">
+              <p className="font-medium text-content-primary">{artifact.artifact_id}</p>
+              <p className={artifact.status === 'UNRESOLVED' ? 'text-state-warning' : 'text-content-secondary'}>
+                Status: {canonicalStatusLabel(artifact.status)}
+              </p>
+              <p className="mt-2 font-medium text-content-primary">Extracted structure</p>
+              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-content-secondary">{JSON.stringify(artifact.data, null, 2)}</pre>
+              {artifact.unresolved_items.length > 0 && (
+                <div className="mt-2">
+                  <p className="font-medium text-content-primary">Unresolved</p>
+                  {artifact.unresolved_items.map((item, index) => <p key={`${item.reason}-${index}`} className="text-state-warning">{item.reason}</p>)}
+                </div>
+              )}
+              <div className="mt-2">
+                <p className="font-medium text-content-primary">Source</p>
+                {artifact.source_refs.map((source) => <p key={`${source.chunk_id}-${source.text_hash}`} className="text-content-secondary">{canonicalSourceLabel(source)}</p>)}
+              </div>
+            </article>
+          ))}
+        </section>
+      ))}
+    </section>
+  )
+}
+
 function ImplementationWorkspace({ project }) {
   const [step, setStep] = useState(0)
   const [inputs, setInputs] = useState([emptyInput()])
@@ -690,6 +747,9 @@ function ImplementationWorkspace({ project }) {
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [humanReviewWorkspace, setHumanReviewWorkspace] = useState({
+    uploadId: null, status: 'idle', result: null, error: '',
+  })
+  const [canonicalReview, setCanonicalReview] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [readinessState, setReadinessState] = useState({
@@ -840,6 +900,7 @@ function ImplementationWorkspace({ project }) {
         zeroShotDetections: null,
         hybridDetections: null,
         humanReviews: null,
+        canonicalArtifacts: null,
         error: '',
       })
     } catch (error) {
@@ -884,7 +945,7 @@ function ImplementationWorkspace({ project }) {
       setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
     }
     updateInput(index, {
-      chunks: { status: 'preparing' }, ruleDetections: null, zeroShotDetections: null, hybridDetections: null, humanReviews: null, error: '',
+      chunks: { status: 'preparing' }, ruleDetections: null, zeroShotDetections: null, hybridDetections: null, humanReviews: null, canonicalArtifacts: null, error: '',
     })
     try {
       const response = await prepareImplementationDocumentChunks(
@@ -929,7 +990,7 @@ function ImplementationWorkspace({ project }) {
     if (humanReviewWorkspace.uploadId === file.upload_id) {
       setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
     }
-    updateInput(index, { ruleDetections: { status: 'running' }, hybridDetections: null, humanReviews: null, error: '' })
+    updateInput(index, { ruleDetections: { status: 'running' }, hybridDetections: null, humanReviews: null, canonicalArtifacts: null, error: '' })
     try {
       const response = await runImplementationRuleDetector(
         project.agent_project_id,
@@ -983,7 +1044,7 @@ function ImplementationWorkspace({ project }) {
     if (humanReviewWorkspace.uploadId === file.upload_id) {
       setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
     }
-    updateInput(index, { zeroShotDetections: { status: 'running' }, hybridDetections: null, humanReviews: null, error: '' })
+    updateInput(index, { zeroShotDetections: { status: 'running' }, hybridDetections: null, humanReviews: null, canonicalArtifacts: null, error: '' })
     try {
       const response = await runImplementationZeroShotClassifier(
         project.agent_project_id,
@@ -1031,7 +1092,7 @@ function ImplementationWorkspace({ project }) {
     if (humanReviewWorkspace.uploadId === file.upload_id) {
       setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
     }
-    updateInput(index, { hybridDetections: { status: 'running' }, humanReviews: null, error: '' })
+    updateInput(index, { hybridDetections: { status: 'running' }, humanReviews: null, canonicalArtifacts: null, error: '' })
     try {
       const response = await buildImplementationHybridDetections(
         project.agent_project_id, file.upload_id, { force },
@@ -1092,13 +1153,57 @@ function ImplementationWorkspace({ project }) {
         { expected_review_fingerprint: fingerprint, decisions },
       )
       if (!response?.data?.review || !Array.isArray(response.data.review_queue)) throw new Error('Invalid human-review response')
-      updateInput(index, { humanReviews: response.data, error: '' })
+      updateInput(index, { humanReviews: response.data, canonicalArtifacts: null, error: '' })
+      if (canonicalReview.uploadId === file.upload_id) {
+        setCanonicalReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      }
       setHumanReviewWorkspace({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
     } catch (error) {
       setHumanReviewWorkspace((current) => ({
         ...current, status: 'error',
         error: error?.errors?.[0]?.message || error?.message || 'Human verification could not be saved.',
       }))
+    }
+  }
+
+  async function buildCanonicalArtifacts(index, file, { force = false } = {}) {
+    updateInput(index, { canonicalArtifacts: { status: 'building' }, error: '' })
+    try {
+      const response = await buildImplementationCanonicalArtifacts(
+        project.agent_project_id, file.upload_id, { force },
+      )
+      if (!response?.data?.metrics || !Array.isArray(response.data.artifacts)) {
+        throw new Error('Invalid canonical-artifact response')
+      }
+      updateInput(index, { canonicalArtifacts: response.data, error: '' })
+      if (canonicalReview.uploadId === file.upload_id) {
+        setCanonicalReview({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+      }
+    } catch (error) {
+      updateInput(index, {
+        canonicalArtifacts: { status: 'error' },
+        error: error?.errors?.[0]?.message || error?.message || 'Canonical artifacts could not be prepared.',
+      })
+    }
+  }
+
+  async function reviewCanonicalArtifacts(file) {
+    if (canonicalReview.uploadId === file.upload_id && canonicalReview.result) {
+      setCanonicalReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      return
+    }
+    setCanonicalReview({ uploadId: file.upload_id, status: 'loading', result: null, error: '' })
+    try {
+      const response = await getImplementationCanonicalArtifacts(project.agent_project_id, file.upload_id)
+      if (!response?.data?.metrics || !Array.isArray(response.data.artifacts)) {
+        throw new Error('Invalid canonical-artifact response')
+      }
+      setCanonicalReview({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+    } catch (error) {
+      setCanonicalReview({
+        uploadId: file.upload_id, status: 'error', result: null,
+        error: error?.errors?.[0]?.message || error?.message || 'Canonical artifacts could not be loaded.',
+      })
     }
   }
 
@@ -1626,6 +1731,34 @@ function ImplementationWorkspace({ project }) {
                                           onSave={(chunkId, fingerprint, decisions) => saveHumanReview(index, item.file, chunkId, fingerprint, decisions)}
                                         />
                                       )}
+                                    </section>
+                                  )}
+                                  {item.humanReviews?.review.review_status === 'COMPLETE' && (
+                                    <section className="mt-4 space-y-3 border-t border-default pt-4" aria-label="Canonical Artifact Preparation">
+                                      <p className="text-sm font-medium text-content-primary">Canonical Artifact Preparation</p>
+                                      {!item.canonicalArtifacts && <p className="text-sm text-content-secondary">Not prepared</p>}
+                                      {item.canonicalArtifacts?.status === 'building' && <p role="status" className="text-sm text-content-secondary">Building canonical artifacts...</p>}
+                                      {item.canonicalArtifacts?.metrics && (
+                                        <>
+                                          <p className="text-sm text-state-success">{'✓ Prepared'}</p>
+                                          <div className="text-sm text-content-secondary">
+                                            <p>Artifacts: {item.canonicalArtifacts.metrics.canonical_artifact_count}</p>
+                                            <p>Complete: {item.canonicalArtifacts.metrics.complete_artifact_count}</p>
+                                            <p>Partial: {item.canonicalArtifacts.metrics.partial_artifact_count}</p>
+                                            <p>Unresolved: {item.canonicalArtifacts.metrics.unresolved_artifact_count}</p>
+                                          </div>
+                                          <p className="text-sm text-content-secondary">Built from human-verified artifact labels.</p>
+                                          <div className="flex flex-wrap gap-2">
+                                            <Button variant="outline" size="small" onClick={() => reviewCanonicalArtifacts(item.file)}>Review Canonical Artifacts</Button>
+                                            <Button variant="outline" size="small" onClick={() => buildCanonicalArtifacts(index, item.file, { force: true })}>Rebuild</Button>
+                                          </div>
+                                        </>
+                                      )}
+                                      {!item.canonicalArtifacts && <Button variant="outline" size="small" onClick={() => buildCanonicalArtifacts(index, item.file)}>Build Canonical Artifacts</Button>}
+                                      {item.canonicalArtifacts?.status === 'error' && <Button variant="outline" size="small" onClick={() => buildCanonicalArtifacts(index, item.file, { force: true })}>Rebuild</Button>}
+                                      {canonicalReview.uploadId === item.file.upload_id && canonicalReview.status === 'loading' && <p role="status" className="text-sm text-content-secondary">Loading canonical artifacts...</p>}
+                                      {canonicalReview.uploadId === item.file.upload_id && canonicalReview.error && <p role="alert" className="text-sm text-state-danger">{canonicalReview.error}</p>}
+                                      {canonicalReview.uploadId === item.file.upload_id && canonicalReview.result && <CanonicalArtifactReview result={canonicalReview.result} />}
                                     </section>
                                   )}
                                 </section>

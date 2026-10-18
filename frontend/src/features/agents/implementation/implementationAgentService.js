@@ -116,6 +116,22 @@ export function saveImplementationHumanReview(agentProjectId, uploadId, chunkId,
   )
 }
 
+export function buildImplementationCanonicalArtifacts(agentProjectId, uploadId, { force = false } = {}) {
+  const suffix = force ? '?force=true' : ''
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/canonical-artifacts${suffix}`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getImplementationCanonicalArtifacts(agentProjectId, uploadId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/canonical-artifacts`,
+    { authenticated: true },
+  )
+}
+
 export function evaluateImplementationReadiness(agentProjectId, request) {
   return apiClient.post(
     `/agents/implementation/${encodeURIComponent(agentProjectId)}/readiness/evaluate`,

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  buildImplementationCanonicalArtifacts,
   buildImplementationHybridDetections,
   connectGitHub,
   createGitHubRepository,
@@ -16,6 +17,7 @@ import {
   getImplementationZeroShotDetections,
   getImplementationHybridDetections,
   getImplementationHumanReviews,
+  getImplementationCanonicalArtifacts,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
@@ -27,9 +29,11 @@ import { navigateToGitHub } from './githubNavigation.js'
 import ImplementationWorkspace from './ImplementationWorkspace.jsx'
 
 vi.mock('./implementationAgentService.js', () => ({
+  buildImplementationCanonicalArtifacts: vi.fn(),
   buildImplementationHybridDetections: vi.fn(),
   getImplementationHybridDetections: vi.fn(),
   getImplementationHumanReviews: vi.fn(),
+  getImplementationCanonicalArtifacts: vi.fn(),
   saveImplementationHumanReview: vi.fn(),
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
@@ -285,6 +289,39 @@ function humanReviewState({ complete = false, stale = false } = {}) {
   }
 }
 
+function canonicalArtifactResult() {
+  const chunk = chunkResult().chunks[0]
+  return {
+    upload_id: metadata().upload_id, agent_project_id: 'AGP-003',
+    source_sha256: 'a'.repeat(64), human_review_fingerprint: 'd'.repeat(64),
+    canonical_schema_version: '1', extractor_version: '1', status: 'PARTIAL',
+    artifacts: [{
+      artifact_id: 'CA-0123456789ABCDEF01234567', artifact_type: 'API_SPECIFICATION',
+      extraction_method: 'DETERMINISTIC', status: 'PARTIAL',
+      data: { endpoints: [{ id: null, method: 'POST', path: '/bookings', description: null, request_fields: [], response_statuses: [], source_refs: [] }] },
+      source_refs: [{
+        upload_id: metadata().upload_id, chunk_id: chunk.chunk_id, text_hash: chunk.text_hash,
+        original_filename: metadata().original_filename, page_start: 3, page_end: 4,
+        block_start: null, block_end: null, line_start: null, line_end: null, structured_path: null,
+      }],
+      unresolved_items: [{ reason: 'API_REQUEST_STRUCTURE_NOT_EXPLICIT', source_ref: null }],
+      canonical_schema_version: '1', extractor_version: '1', created_at: '2026-10-18T13:00:00Z',
+    }, {
+      artifact_id: 'CA-UNRESOLVED000000000000', artifact_type: 'DATABASE_SCHEMA',
+      extraction_method: 'DETERMINISTIC', status: 'UNRESOLVED', data: { entities: [] },
+      source_refs: [{ upload_id: metadata().upload_id, chunk_id: chunk.chunk_id, text_hash: chunk.text_hash,
+        original_filename: metadata().original_filename, page_start: 3, page_end: 4,
+        block_start: null, block_end: null, line_start: null, line_end: null, structured_path: null }],
+      unresolved_items: [{ reason: 'NO_EXPLICIT_DATABASE_STRUCTURE', source_ref: null }],
+      canonical_schema_version: '1', extractor_version: '1', created_at: '2026-10-18T13:00:00Z',
+    }],
+    metrics: { verified_chunk_count: 1, canonical_artifact_count: 2, complete_artifact_count: 0,
+      partial_artifact_count: 1, unresolved_artifact_count: 1,
+      per_artifact_type_counts: { API_SPECIFICATION: 1, DATABASE_SCHEMA: 1 } },
+    warnings: ['NO_EXPLICIT_DATABASE_STRUCTURE'], created_at: '2026-10-18T13:00:00Z',
+  }
+}
+
 function zeroShotResult(overrides = {}) {
   const labels = [
     'FUNCTIONAL_REQUIREMENTS', 'NON_FUNCTIONAL_REQUIREMENTS', 'USER_STORIES',
@@ -422,6 +459,8 @@ describe('ImplementationWorkspace', () => {
     getImplementationHybridDetections.mockResolvedValue({ data: hybridDetectionResult() })
     getImplementationHumanReviews.mockResolvedValue({ data: humanReviewState() })
     saveImplementationHumanReview.mockResolvedValue({ data: humanReviewState({ complete: true }) })
+    buildImplementationCanonicalArtifacts.mockResolvedValue({ data: canonicalArtifactResult() })
+    getImplementationCanonicalArtifacts.mockResolvedValue({ data: canonicalArtifactResult() })
     evaluateImplementationReadiness.mockResolvedValue({ data: readinessResult() })
   })
 
@@ -612,6 +651,41 @@ describe('ImplementationWorkspace', () => {
     await user.click(await screen.findByRole('button', { name: 'Start Review' }))
     expect(await screen.findByText('Artifact analysis changed. Human verification must be performed again.')).toBeInTheDocument()
     expect(screen.getByText('No final labels selected yet.')).toBeInTheDocument()
+  })
+
+  it('prepares and reviews canonical artifacts only after complete human verification', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationWorkspace project={project} />)
+    await attachAndPrepareDocument(user)
+    await user.click(screen.getByRole('button', { name: 'Run Rule Detector' }))
+    await user.click(screen.getByRole('button', { name: 'Run Zero-Shot Classifier' }))
+    await user.click(await screen.findByRole('button', { name: 'Build Hybrid Candidates' }))
+    expect(screen.queryByRole('region', { name: 'Canonical Artifact Preparation' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Start Review' }))
+    const human = await screen.findByRole('region', { name: 'Human Artifact Verification Review' })
+    await user.click(within(human).getByRole('button', { name: 'Accept API Specification' }))
+    await user.click(within(human).getByRole('button', { name: 'Save Chunk Verification' }))
+    const preparation = await screen.findByRole('region', { name: 'Canonical Artifact Preparation' })
+    expect(within(preparation).getByText('Not prepared')).toBeInTheDocument()
+    await user.click(within(preparation).getByRole('button', { name: 'Build Canonical Artifacts' }))
+    expect(await within(preparation).findByText('Artifacts: 2')).toBeInTheDocument()
+    expect(within(preparation).getByText('Complete: 0')).toBeInTheDocument()
+    expect(within(preparation).getByText('Partial: 1')).toBeInTheDocument()
+    expect(within(preparation).getByText('Unresolved: 1')).toBeInTheDocument()
+    expect(within(preparation).getByText('Built from human-verified artifact labels.')).toBeInTheDocument()
+    await user.click(within(preparation).getByRole('button', { name: 'Review Canonical Artifacts' }))
+    const review = await within(preparation).findByRole('region', { name: 'Canonical Artifact Review' })
+    expect(within(review).getByText('API Specification')).toBeInTheDocument()
+    expect(within(review).getAllByText('Status: Partial').length).toBeGreaterThan(0)
+    expect(within(review).getByText('Status: Needs Semantic Extraction')).toBeInTheDocument()
+    expect(within(review).getAllByText(/bookease-api\.pdf · Pages 3–4 · Chunk CHK-/)).toHaveLength(2)
+    expect(within(review).getByText('NO_EXPLICIT_DATABASE_STRUCTURE')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Human Artifact Verification' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Hybrid Artifact Analysis' })).toBeInTheDocument()
+    await user.click(within(preparation).getByRole('button', { name: 'Rebuild' }))
+    await waitFor(() => expect(buildImplementationCanonicalArtifacts).toHaveBeenLastCalledWith(
+      'AGP-003', metadata().upload_id, { force: true },
+    ))
   })
 
   it('renders OTHER_CONTEXT and re-runs with force=true', async () => {

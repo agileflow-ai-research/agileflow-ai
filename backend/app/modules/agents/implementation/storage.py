@@ -72,6 +72,8 @@ class StagedUpload:
     hybrid_detections_partial_path: Path
     human_reviews_path: Path
     human_reviews_partial_path: Path
+    canonical_artifacts_path: Path
+    canonical_artifacts_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -230,6 +232,12 @@ class ImplementationUploadStorage:
         human_reviews_partial_path = self._contained(
             project_directory, f"{upload_id}.human-reviews.json.part"
         )
+        canonical_artifacts_path = self._contained(
+            project_directory, f"{upload_id}.canonical-artifacts.json"
+        )
+        canonical_artifacts_partial_path = self._contained(
+            project_directory, f"{upload_id}.canonical-artifacts.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
             extraction_path.unlink(missing_ok=True)
@@ -244,6 +252,8 @@ class ImplementationUploadStorage:
             hybrid_detections_partial_path.unlink(missing_ok=True)
             human_reviews_path.unlink(missing_ok=True)
             human_reviews_partial_path.unlink(missing_ok=True)
+            canonical_artifacts_path.unlink(missing_ok=True)
+            canonical_artifacts_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise UploadNotFoundError(upload_id) from exc
@@ -307,6 +317,12 @@ class ImplementationUploadStorage:
         human_reviews_partial_path = self._contained(
             project_directory, f"{upload_id}.human-reviews.json.part"
         )
+        canonical_artifacts_path = self._contained(
+            project_directory, f"{upload_id}.canonical-artifacts.json"
+        )
+        canonical_artifacts_partial_path = self._contained(
+            project_directory, f"{upload_id}.canonical-artifacts.json.part"
+        )
         try:
             if not stored_path.is_file():
                 raise UploadNotFoundError(upload_id)
@@ -335,6 +351,8 @@ class ImplementationUploadStorage:
             hybrid_detections_partial_path=hybrid_detections_partial_path,
             human_reviews_path=human_reviews_path,
             human_reviews_partial_path=human_reviews_partial_path,
+            canonical_artifacts_path=canonical_artifacts_path,
+            canonical_artifacts_partial_path=canonical_artifacts_partial_path,
         )
 
     @staticmethod

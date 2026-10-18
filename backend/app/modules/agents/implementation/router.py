@@ -120,6 +120,17 @@ from app.modules.agents.implementation.semantic_discovery.human_review.service i
     HybridReviewRequiredError,
     StaleHumanReviewError,
 )
+from app.modules.agents.implementation.semantic_discovery.canonical.schemas import (
+    DocumentCanonicalArtifactResult,
+)
+from app.modules.agents.implementation.semantic_discovery.canonical.service import (
+    CanonicalArtifactService,
+    CanonicalArtifactStorageError,
+    CanonicalArtifactsNotFoundError,
+    HumanVerificationRequiredError,
+    SemanticChunksRequiredError,
+    StaleHumanVerificationError,
+)
 from app.modules.agents.implementation.storage import (
     ImplementationUploadStorage,
     UploadNotFoundError,
@@ -236,6 +247,18 @@ def get_human_review_service(
     ],
 ) -> HumanReviewService:
     return HumanReviewService(standalone_service, storage)
+
+
+def get_canonical_artifact_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+) -> CanonicalArtifactService:
+    return CanonicalArtifactService(standalone_service, storage)
 
 
 def get_github_connection_repository() -> GitHubConnectionRepository:
@@ -938,6 +961,87 @@ def save_implementation_human_review(
     except (StandaloneServiceError, UploadStorageError, HumanReviewStorageError):
         return _human_review_error(503, "Human verification unavailable", "Human-review storage is unavailable")
     return SuccessResponse(message="Human artifact verification saved", data=result)
+
+
+def _canonical_error(status_code: int, message: str, detail: str) -> JSONResponse:
+    return _error(status_code, message, "canonical_artifacts", detail)
+
+
+@router.post(
+    "/{agent_project_id}/input-files/{upload_id}/canonical-artifacts",
+    response_model=SuccessResponse[DocumentCanonicalArtifactResult],
+)
+def build_implementation_canonical_artifacts(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[CanonicalArtifactService, Depends(get_canonical_artifact_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    force: Annotated[bool, Query()] = False,
+) -> SuccessResponse[DocumentCanonicalArtifactResult] | JSONResponse:
+    try:
+        result = service.build(agent_project_id, upload_id, current_user, force=force)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before canonical extraction")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _canonical_error(404, "Upload not found", "Staged upload not found")
+    except SemanticChunksRequiredError:
+        return _canonical_error(409, "Canonical extraction unavailable", "SEMANTIC_CHUNKS_REQUIRED")
+    except (HumanVerificationRequiredError, RuleDetectionRequiredError,
+            ZeroShotDetectionRequiredError, HybridReviewRequiredError):
+        return _canonical_error(409, "Canonical extraction unavailable", "HUMAN_VERIFICATION_REQUIRED")
+    except (StaleHumanVerificationError, StaleClassificationInputError):
+        return _canonical_error(409, "Canonical extraction unavailable", "STALE_HUMAN_VERIFICATION")
+    except (ExtractionNotFoundError, ChunkingNotFoundError):
+        return _canonical_error(409, "Canonical extraction unavailable", "SEMANTIC_CHUNKS_REQUIRED")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _canonical_error(422, "Canonical extraction unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError, HumanReviewStorageError,
+            CanonicalArtifactStorageError):
+        return _canonical_error(503, "Canonical extraction unavailable", "Canonical artifact storage is unavailable")
+    return SuccessResponse(message="Canonical artifacts prepared", data=result)
+
+
+@router.get(
+    "/{agent_project_id}/input-files/{upload_id}/canonical-artifacts",
+    response_model=SuccessResponse[DocumentCanonicalArtifactResult],
+)
+def get_implementation_canonical_artifacts(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[CanonicalArtifactService, Depends(get_canonical_artifact_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[DocumentCanonicalArtifactResult] | JSONResponse:
+    try:
+        result = service.get_existing(agent_project_id, upload_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before reviewing canonical artifacts")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _canonical_error(404, "Upload not found", "Staged upload not found")
+    except SemanticChunksRequiredError:
+        return _canonical_error(409, "Canonical extraction unavailable", "SEMANTIC_CHUNKS_REQUIRED")
+    except (HumanVerificationRequiredError, RuleDetectionRequiredError,
+            ZeroShotDetectionRequiredError, HybridReviewRequiredError):
+        return _canonical_error(409, "Canonical extraction unavailable", "HUMAN_VERIFICATION_REQUIRED")
+    except (StaleHumanVerificationError, StaleClassificationInputError):
+        return _canonical_error(409, "Canonical extraction unavailable", "STALE_HUMAN_VERIFICATION")
+    except CanonicalArtifactsNotFoundError:
+        return _canonical_error(404, "Canonical artifacts not found", "No current canonical artifact result exists for this upload")
+    except (ExtractionNotFoundError, ChunkingNotFoundError):
+        return _canonical_error(409, "Canonical extraction unavailable", "SEMANTIC_CHUNKS_REQUIRED")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _canonical_error(422, "Canonical extraction unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError, HumanReviewStorageError,
+            CanonicalArtifactStorageError):
+        return _canonical_error(503, "Canonical extraction unavailable", "Canonical artifact storage is unavailable")
+    return SuccessResponse(message="Canonical artifacts retrieved", data=result)
 
 
 @router.post(
