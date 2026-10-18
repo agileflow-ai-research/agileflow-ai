@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import {
   connectGitHub,
   buildImplementationCanonicalArtifacts,
+  buildImplementationSemanticArtifacts,
   buildImplementationHybridDetections,
   createGitHubRepository,
   deleteImplementationInputFile,
@@ -16,6 +17,7 @@ import {
   getImplementationHybridDetections,
   getImplementationHumanReviews,
   getImplementationCanonicalArtifacts,
+  getImplementationSemanticArtifacts,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
@@ -116,6 +118,7 @@ function emptyInput() {
     hybridDetections: null,
     humanReviews: null,
     canonicalArtifacts: null,
+    semanticArtifacts: null,
     error: '',
   }
 }
@@ -717,6 +720,52 @@ function CanonicalArtifactReview({ result }) {
   )
 }
 
+function SemanticArtifactReview({ result }) {
+  return (
+    <section className="mt-4 space-y-4 border-t border-default pt-4" aria-label="Semantic Result Review">
+      {result.results.map((item) => (
+        <article key={item.artifact_id} className="rounded-lg border border-default p-3 text-sm">
+          <p className="font-semibold text-content-primary">{detectionLabel(item.artifact_type)}</p>
+          <p className="text-content-secondary">Status: {detectionLabel(item.status)}</p>
+          {item.semantic_proposal && (
+            <>
+              <p className="mt-2 font-medium text-content-primary">Semantic proposal</p>
+              <pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-content-secondary">{JSON.stringify(item.semantic_proposal, null, 2)}</pre>
+            </>
+          )}
+          {item.merged_preview?.field_provenance.filter((field) => field.origin === 'SEMANTIC').map((field) => (
+            <div key={field.field_path} className="mt-2 rounded border border-default p-2">
+              <p>Proposed field: {field.field_path}</p>
+              <p>Origin: SEMANTIC</p>
+              {field.evidence.map((evidence, index) => (
+                <p key={`${field.field_path}-${index}`} className="text-content-secondary">Evidence: “{evidence.quote}”</p>
+              ))}
+              <p className="text-state-success">{'✓ Source evidence verified'}</p>
+            </div>
+          ))}
+          {item.validation?.rejections.map((rejection) => (
+            <div key={`${rejection.field_path}-${String(rejection.proposed_value)}`} className="mt-2 rounded border border-default p-2">
+              <p>Rejected proposed field: {rejection.field_path} = {JSON.stringify(rejection.proposed_value)}</p>
+              <p className="text-state-danger">{'✕ Unsupported by source'}</p>
+              <p>Reason: {rejection.code}</p>
+            </div>
+          ))}
+          {item.validation?.conflicts.map((conflict) => (
+            <div key={`${conflict.field_path}-${JSON.stringify(conflict.semantic_value)}`} className="mt-2 rounded border border-default p-2">
+              <p className="font-medium text-state-warning">Semantic / Deterministic Conflict</p>
+              <p>Field: {conflict.field_path}</p>
+              <p>Deterministic: {JSON.stringify(conflict.deterministic_value)}</p>
+              <p>Semantic: {JSON.stringify(conflict.semantic_value)}</p>
+              {conflict.semantic_evidence.map((evidence, index) => <p key={index}>Evidence: “{evidence.quote}”</p>)}
+              <p>Status: Human Review Required</p>
+            </div>
+          ))}
+        </article>
+      ))}
+    </section>
+  )
+}
+
 function ImplementationWorkspace({ project }) {
   const [step, setStep] = useState(0)
   const [inputs, setInputs] = useState([emptyInput()])
@@ -750,6 +799,9 @@ function ImplementationWorkspace({ project }) {
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [canonicalReview, setCanonicalReview] = useState({
+    uploadId: null, status: 'idle', result: null, error: '',
+  })
+  const [semanticReview, setSemanticReview] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [readinessState, setReadinessState] = useState({
@@ -901,6 +953,7 @@ function ImplementationWorkspace({ project }) {
         hybridDetections: null,
         humanReviews: null,
         canonicalArtifacts: null,
+        semanticArtifacts: null,
         error: '',
       })
     } catch (error) {
@@ -945,7 +998,7 @@ function ImplementationWorkspace({ project }) {
       setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
     }
     updateInput(index, {
-      chunks: { status: 'preparing' }, ruleDetections: null, zeroShotDetections: null, hybridDetections: null, humanReviews: null, canonicalArtifacts: null, error: '',
+      chunks: { status: 'preparing' }, ruleDetections: null, zeroShotDetections: null, hybridDetections: null, humanReviews: null, canonicalArtifacts: null, semanticArtifacts: null, error: '',
     })
     try {
       const response = await prepareImplementationDocumentChunks(
@@ -990,7 +1043,7 @@ function ImplementationWorkspace({ project }) {
     if (humanReviewWorkspace.uploadId === file.upload_id) {
       setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
     }
-    updateInput(index, { ruleDetections: { status: 'running' }, hybridDetections: null, humanReviews: null, canonicalArtifacts: null, error: '' })
+    updateInput(index, { ruleDetections: { status: 'running' }, hybridDetections: null, humanReviews: null, canonicalArtifacts: null, semanticArtifacts: null, error: '' })
     try {
       const response = await runImplementationRuleDetector(
         project.agent_project_id,
@@ -1044,7 +1097,7 @@ function ImplementationWorkspace({ project }) {
     if (humanReviewWorkspace.uploadId === file.upload_id) {
       setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
     }
-    updateInput(index, { zeroShotDetections: { status: 'running' }, hybridDetections: null, humanReviews: null, canonicalArtifacts: null, error: '' })
+    updateInput(index, { zeroShotDetections: { status: 'running' }, hybridDetections: null, humanReviews: null, canonicalArtifacts: null, semanticArtifacts: null, error: '' })
     try {
       const response = await runImplementationZeroShotClassifier(
         project.agent_project_id,
@@ -1092,7 +1145,7 @@ function ImplementationWorkspace({ project }) {
     if (humanReviewWorkspace.uploadId === file.upload_id) {
       setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
     }
-    updateInput(index, { hybridDetections: { status: 'running' }, humanReviews: null, canonicalArtifacts: null, error: '' })
+    updateInput(index, { hybridDetections: { status: 'running' }, humanReviews: null, canonicalArtifacts: null, semanticArtifacts: null, error: '' })
     try {
       const response = await buildImplementationHybridDetections(
         project.agent_project_id, file.upload_id, { force },
@@ -1153,7 +1206,7 @@ function ImplementationWorkspace({ project }) {
         { expected_review_fingerprint: fingerprint, decisions },
       )
       if (!response?.data?.review || !Array.isArray(response.data.review_queue)) throw new Error('Invalid human-review response')
-      updateInput(index, { humanReviews: response.data, canonicalArtifacts: null, error: '' })
+      updateInput(index, { humanReviews: response.data, canonicalArtifacts: null, semanticArtifacts: null, error: '' })
       if (canonicalReview.uploadId === file.upload_id) {
         setCanonicalReview({ uploadId: null, status: 'idle', result: null, error: '' })
       }
@@ -1167,7 +1220,10 @@ function ImplementationWorkspace({ project }) {
   }
 
   async function buildCanonicalArtifacts(index, file, { force = false } = {}) {
-    updateInput(index, { canonicalArtifacts: { status: 'building' }, error: '' })
+    if (semanticReview.uploadId === file.upload_id) {
+      setSemanticReview({ uploadId: null, status: 'idle', result: null, error: '' })
+    }
+    updateInput(index, { canonicalArtifacts: { status: 'building' }, semanticArtifacts: null, error: '' })
     try {
       const response = await buildImplementationCanonicalArtifacts(
         project.agent_project_id, file.upload_id, { force },
@@ -1207,6 +1263,47 @@ function ImplementationWorkspace({ project }) {
     }
   }
 
+  async function buildSemanticArtifacts(index, file, { force = false } = {}) {
+    updateInput(index, { semanticArtifacts: { status: 'running' }, error: '' })
+    try {
+      const response = await buildImplementationSemanticArtifacts(
+        project.agent_project_id, file.upload_id, { force },
+      )
+      if (!response?.data?.metrics || !Array.isArray(response.data.results)) {
+        throw new Error('Invalid semantic-artifact response')
+      }
+      updateInput(index, { semanticArtifacts: response.data, error: '' })
+      if (semanticReview.uploadId === file.upload_id) {
+        setSemanticReview({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+      }
+    } catch (error) {
+      updateInput(index, {
+        semanticArtifacts: { status: 'error' },
+        error: error?.errors?.[0]?.message || error?.message || 'Semantic fallback could not be completed.',
+      })
+    }
+  }
+
+  async function reviewSemanticArtifacts(file) {
+    if (semanticReview.uploadId === file.upload_id && semanticReview.result) {
+      setSemanticReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      return
+    }
+    setSemanticReview({ uploadId: file.upload_id, status: 'loading', result: null, error: '' })
+    try {
+      const response = await getImplementationSemanticArtifacts(project.agent_project_id, file.upload_id)
+      if (!response?.data?.metrics || !Array.isArray(response.data.results)) {
+        throw new Error('Invalid semantic-artifact response')
+      }
+      setSemanticReview({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+    } catch (error) {
+      setSemanticReview({
+        uploadId: file.upload_id, status: 'error', result: null,
+        error: error?.errors?.[0]?.message || error?.message || 'Semantic results could not be loaded.',
+      })
+    }
+  }
+
   async function removeInput(index) {
     const item = inputs[index]
     if (!item.file) {
@@ -1236,6 +1333,9 @@ function ImplementationWorkspace({ project }) {
       }
       if (humanReviewWorkspace.uploadId === item.file.upload_id) {
         setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
+      }
+      if (semanticReview.uploadId === item.file.upload_id) {
+        setSemanticReview({ uploadId: null, status: 'idle', result: null, error: '' })
       }
       setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
       setReadinessState((current) => (
@@ -1759,6 +1859,45 @@ function ImplementationWorkspace({ project }) {
                                       {canonicalReview.uploadId === item.file.upload_id && canonicalReview.status === 'loading' && <p role="status" className="text-sm text-content-secondary">Loading canonical artifacts...</p>}
                                       {canonicalReview.uploadId === item.file.upload_id && canonicalReview.error && <p role="alert" className="text-sm text-state-danger">{canonicalReview.error}</p>}
                                       {canonicalReview.uploadId === item.file.upload_id && canonicalReview.result && <CanonicalArtifactReview result={canonicalReview.result} />}
+                                      {item.canonicalArtifacts?.metrics && (
+                                        item.canonicalArtifacts.metrics.partial_artifact_count
+                                        + item.canonicalArtifacts.metrics.unresolved_artifact_count > 0
+                                      ) && (
+                                        <section className="mt-4 space-y-3 border-t border-default pt-4" aria-label="Semantic Fallback">
+                                          <p className="text-sm font-medium text-content-primary">Semantic Fallback</p>
+                                          {!item.semanticArtifacts && <p className="text-sm text-state-success">Available</p>}
+                                          <p className="text-sm text-content-secondary">Local model: Qwen3-1.7B</p>
+                                          <p className="text-sm text-content-secondary">Semantic fallback is used only for information the deterministic parser could not structure.</p>
+                                          {item.semanticArtifacts?.status === 'running' && (
+                                            <>
+                                              <p role="status" className="text-sm text-content-secondary">Semantic extraction in progress...</p>
+                                              <p className="text-sm text-content-secondary">First local model load may take longer.</p>
+                                            </>
+                                          )}
+                                          {item.semanticArtifacts?.metrics && (
+                                            <>
+                                              <p className="text-sm text-state-success">{'✓ Completed'}</p>
+                                              <div className="text-sm text-content-secondary">
+                                                <p>Target artifacts: {item.semanticArtifacts.metrics.target_artifact_count}</p>
+                                                <p>Grounded: {item.semanticArtifacts.metrics.grounded_count}</p>
+                                                <p>Partially grounded: {item.semanticArtifacts.metrics.partially_grounded_count}</p>
+                                                <p>Needs human review: {item.semanticArtifacts.metrics.human_review_required_count}</p>
+                                                <p>Rejected unsupported facts: {item.semanticArtifacts.metrics.rejected_fact_count}</p>
+                                              </div>
+                                              <p className="text-sm text-content-secondary">Model additions are source-grounded proposals and have not replaced the deterministic baseline.</p>
+                                              <div className="flex flex-wrap gap-2">
+                                                <Button variant="outline" size="small" onClick={() => reviewSemanticArtifacts(item.file)}>Review Semantic Results</Button>
+                                                <Button variant="outline" size="small" onClick={() => buildSemanticArtifacts(index, item.file, { force: true })}>Re-run Semantic Fallback</Button>
+                                              </div>
+                                            </>
+                                          )}
+                                          {!item.semanticArtifacts && <Button variant="outline" size="small" onClick={() => buildSemanticArtifacts(index, item.file)}>Run Semantic Fallback</Button>}
+                                          {item.semanticArtifacts?.status === 'error' && <Button variant="outline" size="small" onClick={() => buildSemanticArtifacts(index, item.file, { force: true })}>Retry Semantic Fallback</Button>}
+                                          {semanticReview.uploadId === item.file.upload_id && semanticReview.status === 'loading' && <p role="status" className="text-sm text-content-secondary">Loading semantic results...</p>}
+                                          {semanticReview.uploadId === item.file.upload_id && semanticReview.error && <p role="alert" className="text-sm text-state-danger">{semanticReview.error}</p>}
+                                          {semanticReview.uploadId === item.file.upload_id && semanticReview.result && <SemanticArtifactReview result={semanticReview.result} />}
+                                        </section>
+                                      )}
                                     </section>
                                   )}
                                 </section>

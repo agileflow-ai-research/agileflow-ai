@@ -25,6 +25,10 @@ class Settings(BaseSettings):
         BACKEND_DIR / "storage" / "standalone" / "implementation"
     )
     agent3_zero_shot_local_files_only: bool = False
+    agent3_semantic_model_id: str = "Qwen/Qwen3-1.7B"
+    agent3_semantic_model_revision: str = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
+    agent3_semantic_local_files_only: bool = False
+    agent3_semantic_device: str = "auto"
     github_app_id: str | None = None
     github_app_client_id: str | None = None
     github_app_client_secret: str | None = None

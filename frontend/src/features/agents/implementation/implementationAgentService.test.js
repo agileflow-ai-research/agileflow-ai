@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiClient } from '../../../services/apiClient.js'
 import {
   buildImplementationCanonicalArtifacts,
+  buildImplementationSemanticArtifacts,
   buildImplementationHybridDetections,
   connectGitHub,
   createGitHubRepository,
@@ -17,6 +18,7 @@ import {
   getImplementationHybridDetections,
   getImplementationHumanReviews,
   getImplementationCanonicalArtifacts,
+  getImplementationSemanticArtifacts,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
@@ -209,6 +211,26 @@ describe('implementationAgentService', () => {
     buildImplementationCanonicalArtifacts('AGP-003', 'A3UP-abc', { force: true })
     expect(apiClient.post).toHaveBeenLastCalledWith(
       '/agents/implementation/AGP-003/input-files/A3UP-abc/canonical-artifacts?force=true',
+      undefined,
+      { authenticated: true },
+    )
+  })
+
+  it('uses read-only and explicit semantic artifact endpoints', () => {
+    buildImplementationSemanticArtifacts('AGP-003', 'A3UP-abc')
+    getImplementationSemanticArtifacts('AGP-003', 'A3UP-abc')
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/semantic-artifacts',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/semantic-artifacts',
+      { authenticated: true },
+    )
+    buildImplementationSemanticArtifacts('AGP-003', 'A3UP-abc', { force: true })
+    expect(apiClient.post).toHaveBeenLastCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/semantic-artifacts?force=true',
       undefined,
       { authenticated: true },
     )

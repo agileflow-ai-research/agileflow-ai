@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   buildImplementationCanonicalArtifacts,
+  buildImplementationSemanticArtifacts,
   buildImplementationHybridDetections,
   connectGitHub,
   createGitHubRepository,
@@ -18,6 +19,7 @@ import {
   getImplementationHybridDetections,
   getImplementationHumanReviews,
   getImplementationCanonicalArtifacts,
+  getImplementationSemanticArtifacts,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
@@ -30,10 +32,12 @@ import ImplementationWorkspace from './ImplementationWorkspace.jsx'
 
 vi.mock('./implementationAgentService.js', () => ({
   buildImplementationCanonicalArtifacts: vi.fn(),
+  buildImplementationSemanticArtifacts: vi.fn(),
   buildImplementationHybridDetections: vi.fn(),
   getImplementationHybridDetections: vi.fn(),
   getImplementationHumanReviews: vi.fn(),
   getImplementationCanonicalArtifacts: vi.fn(),
+  getImplementationSemanticArtifacts: vi.fn(),
   saveImplementationHumanReview: vi.fn(),
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
@@ -322,6 +326,39 @@ function canonicalArtifactResult() {
   }
 }
 
+function semanticArtifactResult() {
+  return {
+    upload_id: metadata().upload_id, agent_project_id: 'AGP-003',
+    model_id: 'Qwen/Qwen3-1.7B', model_revision: '7'.repeat(40),
+    results: [{
+      artifact_id: 'CA-0123456789ABCDEF01234567', artifact_type: 'API_SPECIFICATION',
+      deterministic_status: 'PARTIAL', status: 'HUMAN_REVIEW_REQUIRED',
+      model: { model_id: 'Qwen/Qwen3-1.7B', revision: '7'.repeat(40), device: 'cpu' },
+      generation: { attempt_count: 1, input_token_count: 100, output_token_count: 30, generation_ms: 20, first_model_load_ms: 200 },
+      semantic_proposal: { artifact_type: 'API_SPECIFICATION', endpoints: [{ method: null, path: null, request_fields: ['name'], response_statuses: [] }] },
+      validation: {
+        proposal_status: 'HUMAN_REVIEW_REQUIRED', accepted_facts: 1,
+        rejected_facts: 1, conflict_count: 1,
+        rejections: [{ code: 'UNSUPPORTED_BY_SOURCE', field_path: 'endpoints[0].method', proposed_value: 'POST', reason: 'No valid source evidence' }],
+        conflicts: [{ code: 'SEMANTIC_DETERMINISTIC_CONFLICT', field_path: 'endpoints[0].method', deterministic_value: 'POST', semantic_value: 'PUT', semantic_evidence: [{ quote: 'PUT /bookings', chunk_id: chunkResult().chunks[0].chunk_id }] }],
+      },
+      merged_preview: {
+        data: { endpoints: [{ method: 'POST', path: '/bookings', request_fields: ['name'] }] },
+        field_provenance: [{ field_path: 'endpoints[0].request_fields[0]', origin: 'SEMANTIC', source_refs: [], evidence: [{ quote: 'Create a booking using name.', chunk_id: chunkResult().chunks[0].chunk_id }] }],
+        conflicts: [],
+      },
+    }],
+    metrics: {
+      artifact_count: 2, target_artifact_count: 1, skipped_complete_count: 1,
+      grounded_count: 0, partially_grounded_count: 0,
+      human_review_required_count: 1, rejected_count: 0,
+      model_output_invalid_count: 0, model_error_count: 0,
+      accepted_fact_count: 1, rejected_fact_count: 1, conflict_count: 1,
+      total_attempt_count: 1, total_generation_ms: 20, first_model_load_ms: 200,
+    },
+  }
+}
+
 function zeroShotResult(overrides = {}) {
   const labels = [
     'FUNCTIONAL_REQUIREMENTS', 'NON_FUNCTIONAL_REQUIREMENTS', 'USER_STORIES',
@@ -461,6 +498,8 @@ describe('ImplementationWorkspace', () => {
     saveImplementationHumanReview.mockResolvedValue({ data: humanReviewState({ complete: true }) })
     buildImplementationCanonicalArtifacts.mockResolvedValue({ data: canonicalArtifactResult() })
     getImplementationCanonicalArtifacts.mockResolvedValue({ data: canonicalArtifactResult() })
+    buildImplementationSemanticArtifacts.mockResolvedValue({ data: semanticArtifactResult() })
+    getImplementationSemanticArtifacts.mockResolvedValue({ data: semanticArtifactResult() })
     evaluateImplementationReadiness.mockResolvedValue({ data: readinessResult() })
   })
 
@@ -684,6 +723,52 @@ describe('ImplementationWorkspace', () => {
     expect(screen.getByRole('region', { name: 'Hybrid Artifact Analysis' })).toBeInTheDocument()
     await user.click(within(preparation).getByRole('button', { name: 'Rebuild' }))
     await waitFor(() => expect(buildImplementationCanonicalArtifacts).toHaveBeenLastCalledWith(
+      'AGP-003', metadata().upload_id, { force: true },
+    ))
+  })
+
+  it('runs and reviews source-grounded local semantic fallback without replacing canonical results', async () => {
+    const user = userEvent.setup()
+    let resolveSemantic
+    buildImplementationSemanticArtifacts.mockReturnValueOnce(new Promise((resolve) => { resolveSemantic = resolve }))
+    render(<ImplementationWorkspace project={project} />)
+    await attachAndPrepareDocument(user)
+    await user.click(screen.getByRole('button', { name: 'Run Rule Detector' }))
+    await user.click(screen.getByRole('button', { name: 'Run Zero-Shot Classifier' }))
+    await user.click(await screen.findByRole('button', { name: 'Build Hybrid Candidates' }))
+    await user.click(screen.getByRole('button', { name: 'Start Review' }))
+    const human = await screen.findByRole('region', { name: 'Human Artifact Verification Review' })
+    await user.click(within(human).getByRole('button', { name: 'Accept API Specification' }))
+    await user.click(within(human).getByRole('button', { name: 'Save Chunk Verification' }))
+    await user.click(await screen.findByRole('button', { name: 'Build Canonical Artifacts' }))
+
+    const fallback = await screen.findByRole('region', { name: 'Semantic Fallback' })
+    expect(within(fallback).getByText('Available')).toBeInTheDocument()
+    expect(within(fallback).getByText('Local model: Qwen3-1.7B')).toBeInTheDocument()
+    expect(within(fallback).getByText(/only for information the deterministic parser could not structure/)).toBeInTheDocument()
+    await user.click(within(fallback).getByRole('button', { name: 'Run Semantic Fallback' }))
+    expect(within(fallback).getByText('Semantic extraction in progress...')).toBeInTheDocument()
+    expect(within(fallback).getByText('First local model load may take longer.')).toBeInTheDocument()
+    resolveSemantic({ data: semanticArtifactResult() })
+    expect(await within(fallback).findByText('Target artifacts: 1')).toBeInTheDocument()
+    expect(within(fallback).getByText('Needs human review: 1')).toBeInTheDocument()
+    expect(within(fallback).getByText('Rejected unsupported facts: 1')).toBeInTheDocument()
+    expect(within(fallback).getByText(/have not replaced the deterministic baseline/)).toBeInTheDocument()
+
+    await user.click(within(fallback).getByRole('button', { name: 'Review Semantic Results' }))
+    const review = await within(fallback).findByRole('region', { name: 'Semantic Result Review' })
+    expect(within(review).getByText('Origin: SEMANTIC')).toBeInTheDocument()
+    expect(within(review).getByText('Evidence: “Create a booking using name.”')).toBeInTheDocument()
+    expect(within(review).getByText('✓ Source evidence verified')).toBeInTheDocument()
+    expect(within(review).getByText('✕ Unsupported by source')).toBeInTheDocument()
+    expect(within(review).getByText('Reason: UNSUPPORTED_BY_SOURCE')).toBeInTheDocument()
+    expect(within(review).getByText('Semantic / Deterministic Conflict')).toBeInTheDocument()
+    expect(within(review).getByText('Deterministic: "POST"')).toBeInTheDocument()
+    expect(within(review).getByText('Semantic: "PUT"')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Canonical Artifact Preparation' })).toBeInTheDocument()
+    expect(screen.queryByText(/readiness.*semantic/i)).not.toBeInTheDocument()
+    await user.click(within(fallback).getByRole('button', { name: 'Re-run Semantic Fallback' }))
+    await waitFor(() => expect(buildImplementationSemanticArtifacts).toHaveBeenLastCalledWith(
       'AGP-003', metadata().upload_id, { force: true },
     ))
   })

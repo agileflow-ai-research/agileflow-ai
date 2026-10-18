@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
@@ -332,3 +333,80 @@ class SemanticExtractionSessionResult(StrictModel):
     proposal: SemanticExtractionProposal
     validation: SemanticValidationReport
     merged_artifact: MergedSemanticArtifact | None
+
+
+class SemanticArtifactRunStatus(StrEnum):
+    SKIPPED_COMPLETE = "SKIPPED_COMPLETE"
+    GROUNDED = "GROUNDED"
+    PARTIALLY_GROUNDED = "PARTIALLY_GROUNDED"
+    REJECTED = "REJECTED"
+    HUMAN_REVIEW_REQUIRED = "HUMAN_REVIEW_REQUIRED"
+    MODEL_OUTPUT_INVALID = "MODEL_OUTPUT_INVALID"
+    MODEL_ERROR = "MODEL_ERROR"
+
+
+class SemanticModelMetadata(StrictModel):
+    model_id: str
+    revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    device: Literal["cpu", "cuda"]
+
+
+class SemanticGenerationMetrics(StrictModel):
+    attempt_count: int = Field(ge=1)
+    input_token_count: int = Field(ge=0)
+    output_token_count: int = Field(ge=0)
+    generation_ms: int = Field(ge=0)
+    first_model_load_ms: int = Field(ge=0)
+
+
+class SemanticArtifactRunResult(StrictModel):
+    artifact_id: str = Field(pattern=r"^CA-[0-9A-F]{24}$")
+    artifact_type: ArtifactDetectionLabel
+    deterministic_status: CanonicalStatus
+    status: SemanticArtifactRunStatus
+    model: SemanticModelMetadata | None = None
+    generation: SemanticGenerationMetrics | None = None
+    semantic_proposal: SemanticExtractionProposal | None = None
+    validation: SemanticValidationReport | None = None
+    merged_preview: MergedSemanticArtifact | None = None
+    error_code: Literal["MODEL_OUTPUT_INVALID", "MODEL_ERROR"] | None = None
+
+
+class SemanticArtifactMetrics(StrictModel):
+    artifact_count: int = Field(ge=0)
+    target_artifact_count: int = Field(ge=0)
+    skipped_complete_count: int = Field(ge=0)
+    grounded_count: int = Field(ge=0)
+    partially_grounded_count: int = Field(ge=0)
+    human_review_required_count: int = Field(ge=0)
+    rejected_count: int = Field(ge=0)
+    model_output_invalid_count: int = Field(ge=0)
+    model_error_count: int = Field(ge=0)
+    accepted_fact_count: int = Field(ge=0)
+    rejected_fact_count: int = Field(ge=0)
+    conflict_count: int = Field(ge=0)
+    total_attempt_count: int = Field(ge=0)
+    total_generation_ms: int = Field(ge=0)
+    first_model_load_ms: int = Field(ge=0)
+
+
+class DocumentSemanticArtifactResult(StrictModel):
+    upload_id: str = Field(pattern=r"^A3UP-[0-9a-f]{32}$")
+    agent_project_id: str = Field(pattern=r"^AGP-\d{3,}$")
+    original_filename: str
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    human_review_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    canonical_artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    chunk_id_hashes: dict[str, str]
+    semantic_contract_version: str
+    grounding_version: str
+    merge_policy_version: str
+    adapter_version: str
+    model_id: str
+    model_revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    prompt_version: str
+    generation_policy_version: str
+    results: list[SemanticArtifactRunResult]
+    metrics: SemanticArtifactMetrics
+    warnings: list[str]
+    created_at: datetime

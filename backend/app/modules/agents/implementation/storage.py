@@ -74,6 +74,8 @@ class StagedUpload:
     human_reviews_partial_path: Path
     canonical_artifacts_path: Path
     canonical_artifacts_partial_path: Path
+    semantic_artifacts_path: Path
+    semantic_artifacts_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -238,6 +240,12 @@ class ImplementationUploadStorage:
         canonical_artifacts_partial_path = self._contained(
             project_directory, f"{upload_id}.canonical-artifacts.json.part"
         )
+        semantic_artifacts_path = self._contained(
+            project_directory, f"{upload_id}.semantic-artifacts.json"
+        )
+        semantic_artifacts_partial_path = self._contained(
+            project_directory, f"{upload_id}.semantic-artifacts.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
             extraction_path.unlink(missing_ok=True)
@@ -254,6 +262,8 @@ class ImplementationUploadStorage:
             human_reviews_partial_path.unlink(missing_ok=True)
             canonical_artifacts_path.unlink(missing_ok=True)
             canonical_artifacts_partial_path.unlink(missing_ok=True)
+            semantic_artifacts_path.unlink(missing_ok=True)
+            semantic_artifacts_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise UploadNotFoundError(upload_id) from exc
@@ -323,6 +333,12 @@ class ImplementationUploadStorage:
         canonical_artifacts_partial_path = self._contained(
             project_directory, f"{upload_id}.canonical-artifacts.json.part"
         )
+        semantic_artifacts_path = self._contained(
+            project_directory, f"{upload_id}.semantic-artifacts.json"
+        )
+        semantic_artifacts_partial_path = self._contained(
+            project_directory, f"{upload_id}.semantic-artifacts.json.part"
+        )
         try:
             if not stored_path.is_file():
                 raise UploadNotFoundError(upload_id)
@@ -353,6 +369,8 @@ class ImplementationUploadStorage:
             human_reviews_partial_path=human_reviews_partial_path,
             canonical_artifacts_path=canonical_artifacts_path,
             canonical_artifacts_partial_path=canonical_artifacts_partial_path,
+            semantic_artifacts_path=semantic_artifacts_path,
+            semantic_artifacts_partial_path=semantic_artifacts_partial_path,
         )
 
     @staticmethod

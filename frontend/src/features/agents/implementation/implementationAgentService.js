@@ -132,6 +132,22 @@ export function getImplementationCanonicalArtifacts(agentProjectId, uploadId) {
   )
 }
 
+export function buildImplementationSemanticArtifacts(agentProjectId, uploadId, { force = false } = {}) {
+  const suffix = force ? '?force=true' : ''
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/semantic-artifacts${suffix}`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getImplementationSemanticArtifacts(agentProjectId, uploadId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/semantic-artifacts`,
+    { authenticated: true },
+  )
+}
+
 export function evaluateImplementationReadiness(agentProjectId, request) {
   return apiClient.post(
     `/agents/implementation/${encodeURIComponent(agentProjectId)}/readiness/evaluate`,

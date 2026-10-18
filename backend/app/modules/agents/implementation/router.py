@@ -131,6 +131,21 @@ from app.modules.agents.implementation.semantic_discovery.canonical.service impo
     SemanticChunksRequiredError,
     StaleHumanVerificationError,
 )
+from app.modules.agents.implementation.semantic_discovery.semantic_extraction.artifact_service import (
+    CanonicalArtifactsRequiredError,
+    SemanticArtifactService,
+    SemanticArtifactsNotFoundError,
+    SemanticArtifactStorageError,
+)
+from app.modules.agents.implementation.semantic_discovery.semantic_extraction.local_model.adapter import (
+    LocalSemanticExtractorAdapter,
+)
+from app.modules.agents.implementation.semantic_discovery.semantic_extraction.local_model.model_loader import (
+    SemanticModelUnavailableError,
+)
+from app.modules.agents.implementation.semantic_discovery.semantic_extraction.schemas import (
+    DocumentSemanticArtifactResult,
+)
 from app.modules.agents.implementation.storage import (
     ImplementationUploadStorage,
     UploadNotFoundError,
@@ -259,6 +274,24 @@ def get_canonical_artifact_service(
     ],
 ) -> CanonicalArtifactService:
     return CanonicalArtifactService(standalone_service, storage)
+
+
+def get_semantic_artifact_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+) -> SemanticArtifactService:
+    adapter = LocalSemanticExtractorAdapter(
+        model_id=settings.agent3_semantic_model_id,
+        revision=settings.agent3_semantic_model_revision,
+        local_files_only=settings.agent3_semantic_local_files_only,
+        device=settings.agent3_semantic_device,
+    )
+    return SemanticArtifactService(standalone_service, storage, adapter)
 
 
 def get_github_connection_repository() -> GitHubConnectionRepository:
@@ -1042,6 +1075,101 @@ def get_implementation_canonical_artifacts(
             CanonicalArtifactStorageError):
         return _canonical_error(503, "Canonical extraction unavailable", "Canonical artifact storage is unavailable")
     return SuccessResponse(message="Canonical artifacts retrieved", data=result)
+
+
+def _semantic_artifact_error(
+    status_code: int, message: str, detail: str,
+) -> JSONResponse:
+    return _error(status_code, message, "semantic_artifacts", detail)
+
+
+@router.post(
+    "/{agent_project_id}/input-files/{upload_id}/semantic-artifacts",
+    response_model=SuccessResponse[DocumentSemanticArtifactResult],
+)
+def build_implementation_semantic_artifacts(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[SemanticArtifactService, Depends(get_semantic_artifact_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    force: Annotated[bool, Query()] = False,
+) -> SuccessResponse[DocumentSemanticArtifactResult] | JSONResponse:
+    try:
+        result = service.build(agent_project_id, upload_id, current_user, force=force)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before semantic extraction")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _semantic_artifact_error(404, "Upload not found", "Staged upload not found")
+    except SemanticChunksRequiredError:
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "SEMANTIC_CHUNKS_REQUIRED")
+    except HumanVerificationRequiredError:
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "HUMAN_VERIFICATION_REQUIRED")
+    except StaleHumanVerificationError:
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "STALE_HUMAN_VERIFICATION")
+    except CanonicalArtifactsRequiredError:
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "CANONICAL_ARTIFACTS_REQUIRED")
+    except SemanticModelUnavailableError:
+        return _semantic_artifact_error(503, "Semantic extraction unavailable", "SEMANTIC_MODEL_UNAVAILABLE")
+    except (RuleDetectionRequiredError, ZeroShotDetectionRequiredError,
+            HybridReviewRequiredError):
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "HUMAN_VERIFICATION_REQUIRED")
+    except StaleClassificationInputError:
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "STALE_HUMAN_VERIFICATION")
+    except (ExtractionNotFoundError, ChunkingNotFoundError):
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "SEMANTIC_CHUNKS_REQUIRED")
+    except (StandaloneServiceError, UploadStorageError,
+            CanonicalArtifactStorageError, HumanReviewStorageError,
+            SemanticArtifactStorageError):
+        return _semantic_artifact_error(503, "Semantic extraction unavailable", "Semantic artifact storage is unavailable")
+    return SuccessResponse(message="Semantic artifact proposals prepared", data=result)
+
+
+@router.get(
+    "/{agent_project_id}/input-files/{upload_id}/semantic-artifacts",
+    response_model=SuccessResponse[DocumentSemanticArtifactResult],
+)
+def get_implementation_semantic_artifacts(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[SemanticArtifactService, Depends(get_semantic_artifact_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[DocumentSemanticArtifactResult] | JSONResponse:
+    try:
+        result = service.get_existing(agent_project_id, upload_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before reviewing semantic artifacts")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _semantic_artifact_error(404, "Upload not found", "Staged upload not found")
+    except SemanticChunksRequiredError:
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "SEMANTIC_CHUNKS_REQUIRED")
+    except HumanVerificationRequiredError:
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "HUMAN_VERIFICATION_REQUIRED")
+    except StaleHumanVerificationError:
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "STALE_HUMAN_VERIFICATION")
+    except CanonicalArtifactsRequiredError:
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "CANONICAL_ARTIFACTS_REQUIRED")
+    except SemanticArtifactsNotFoundError:
+        return _semantic_artifact_error(404, "Semantic artifacts not found", "No current semantic artifact result exists for this upload")
+    except (RuleDetectionRequiredError, ZeroShotDetectionRequiredError,
+            HybridReviewRequiredError):
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "HUMAN_VERIFICATION_REQUIRED")
+    except StaleClassificationInputError:
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "STALE_HUMAN_VERIFICATION")
+    except (ExtractionNotFoundError, ChunkingNotFoundError):
+        return _semantic_artifact_error(409, "Semantic extraction unavailable", "SEMANTIC_CHUNKS_REQUIRED")
+    except (StandaloneServiceError, UploadStorageError,
+            CanonicalArtifactStorageError, HumanReviewStorageError,
+            SemanticArtifactStorageError):
+        return _semantic_artifact_error(503, "Semantic extraction unavailable", "Semantic artifact storage is unavailable")
+    return SuccessResponse(message="Semantic artifact proposals retrieved", data=result)
 
 
 @router.post(
