@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '../../../services/apiClient.js'
 import {
+  buildImplementationHybridDetections,
   connectGitHub,
   createGitHubRepository,
   deleteImplementationInputFile,
@@ -12,6 +13,7 @@ import {
   getImplementationDocumentExtraction,
   getImplementationRuleDetections,
   getImplementationZeroShotDetections,
+  getImplementationHybridDetections,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
@@ -145,6 +147,26 @@ describe('implementationAgentService', () => {
     runImplementationZeroShotClassifier('AGP-003', 'A3UP-abc', { force: true })
     expect(apiClient.post).toHaveBeenLastCalledWith(
       '/agents/implementation/AGP-003/input-files/A3UP-abc/zero-shot-detections?force=true',
+      undefined,
+      { authenticated: true },
+    )
+  })
+
+  it('uses read-only and explicit hybrid candidate endpoints', () => {
+    buildImplementationHybridDetections('AGP-003', 'A3UP-abc')
+    getImplementationHybridDetections('AGP-003', 'A3UP-abc')
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/hybrid-detections',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/hybrid-detections',
+      { authenticated: true },
+    )
+    buildImplementationHybridDetections('AGP-003', 'A3UP-abc', { force: true })
+    expect(apiClient.post).toHaveBeenLastCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/hybrid-detections?force=true',
       undefined,
       { authenticated: true },
     )

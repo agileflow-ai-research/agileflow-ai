@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import {
   connectGitHub,
+  buildImplementationHybridDetections,
   createGitHubRepository,
   deleteImplementationInputFile,
   evaluateImplementationReadiness,
@@ -11,6 +12,7 @@ import {
   getImplementationDocumentExtraction,
   getImplementationRuleDetections,
   getImplementationZeroShotDetections,
+  getImplementationHybridDetections,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
@@ -100,6 +102,7 @@ function emptyInput() {
     chunks: null,
     ruleDetections: null,
     zeroShotDetections: null,
+    hybridDetections: null,
     error: '',
   }
 }
@@ -438,6 +441,60 @@ function ZeroShotDetectionReview({ result, chunks }) {
   )
 }
 
+function HybridDetectionReview({ result, chunks }) {
+  const chunkById = new Map(chunks.map((chunk) => [chunk.chunk_id, chunk]))
+  return (
+    <section className="mt-4 space-y-4 border-t border-default pt-4" aria-label="Hybrid Candidates">
+      <div>
+        <h5 className="font-semibold text-content-primary">Hybrid Candidates</h5>
+        <p className="mt-1 text-sm text-content-secondary">Hybrid candidates are not human-verified artifacts yet.</p>
+      </div>
+      {result.chunks.map((record) => {
+        const chunk = chunkById.get(record.chunk_id)
+        const hasDisagreement = record.candidates.some((candidate) => candidate.evidence_state === 'RULE_MODEL_DISAGREEMENT')
+        return (
+          <article key={record.chunk_id} className="rounded-control border border-default p-3">
+            <h6 className="font-semibold text-content-primary">Chunk {(chunk?.chunk_index ?? 0) + 1}</h6>
+            {chunk?.context.section_title && <p className="text-sm text-content-secondary">Section: {chunk.context.section_title}</p>}
+            {chunk && <p className="text-sm text-content-secondary">{chunkSource(chunk)}</p>}
+            {record.diagnostics.model_label_explosion && (
+              <p className="mt-2 text-sm text-state-warning">Warning: Zero-shot model produced several competing high-scoring labels for this chunk.</p>
+            )}
+            {record.diagnostics.model_ambiguous && (
+              <p className="mt-2 text-sm text-state-warning">Warning: Top zero-shot scores are ambiguous.</p>
+            )}
+            {hasDisagreement && <p className="mt-2 text-sm text-state-warning">Needs Review: Rule and model interpretations disagree.</p>}
+            {(record.diagnostics.model_label_explosion || record.diagnostics.model_ambiguous || hasDisagreement) && (
+              <ul className="mt-1 text-sm text-content-secondary">
+                {record.diagnostics.top_model_scores.map((score) => (
+                  <li key={score.label}>{detectionLabel(score.label)}: {score.score.toFixed(4)}</li>
+                ))}
+              </ul>
+            )}
+            <div className="mt-3 space-y-4">
+              {record.candidates.map((candidate) => (
+                <section key={candidate.label} aria-label={`${detectionLabel(candidate.label)} hybrid candidate`}>
+                  <p className="font-semibold text-content-primary">Candidate: {detectionLabel(candidate.label)}</p>
+                  <p className="text-sm text-content-secondary">Decision: {candidate.decision === 'AUTO_CANDIDATE' ? 'Likely Candidate' : detectionLabel(candidate.decision)}</p>
+                  <p className="text-sm text-content-secondary">Evidence state: {detectionLabel(candidate.evidence_state)}</p>
+                  <p className="mt-1 text-sm text-content-secondary">
+                    Rule baseline: {candidate.rule.matched ? `${detectionLabel(candidate.rule.strength)} (score ${candidate.rule.score.toFixed(2)})` : 'No matching deterministic rule'}
+                  </p>
+                  {candidate.rule.evidence.map((evidence) => (
+                    <p key={`${evidence.rule_id}-${evidence.matched_text}`} className="text-sm text-content-secondary">Evidence: {evidence.matched_text}</p>
+                  ))}
+                  <p className="text-sm text-content-secondary">Zero-shot DeBERTa: {candidate.model.score == null ? 'No score' : candidate.model.score.toFixed(4)}</p>
+                  <p className="text-sm text-content-secondary">Reason: {candidate.reason_codes.join(', ')}</p>
+                </section>
+              ))}
+            </div>
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
 function ImplementationWorkspace({ project }) {
   const [step, setStep] = useState(0)
   const [inputs, setInputs] = useState([emptyInput()])
@@ -462,6 +519,9 @@ function ImplementationWorkspace({ project }) {
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [zeroShotReview, setZeroShotReview] = useState({
+    uploadId: null, status: 'idle', result: null, error: '',
+  })
+  const [hybridReview, setHybridReview] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [readinessState, setReadinessState] = useState({
@@ -607,6 +667,7 @@ function ImplementationWorkspace({ project }) {
         chunks: null,
         ruleDetections: null,
         zeroShotDetections: null,
+        hybridDetections: null,
         error: '',
       })
     } catch (error) {
@@ -648,7 +709,7 @@ function ImplementationWorkspace({ project }) {
       setZeroShotReview({ uploadId: null, status: 'idle', result: null, error: '' })
     }
     updateInput(index, {
-      chunks: { status: 'preparing' }, ruleDetections: null, zeroShotDetections: null, error: '',
+      chunks: { status: 'preparing' }, ruleDetections: null, zeroShotDetections: null, hybridDetections: null, error: '',
     })
     try {
       const response = await prepareImplementationDocumentChunks(
@@ -690,7 +751,7 @@ function ImplementationWorkspace({ project }) {
   }
 
   async function runRuleDetector(index, file, { force = false } = {}) {
-    updateInput(index, { ruleDetections: { status: 'running' }, error: '' })
+    updateInput(index, { ruleDetections: { status: 'running' }, hybridDetections: null, error: '' })
     try {
       const response = await runImplementationRuleDetector(
         project.agent_project_id,
@@ -741,7 +802,7 @@ function ImplementationWorkspace({ project }) {
   }
 
   async function runZeroShotClassifier(index, file, { force = false } = {}) {
-    updateInput(index, { zeroShotDetections: { status: 'running' }, error: '' })
+    updateInput(index, { zeroShotDetections: { status: 'running' }, hybridDetections: null, error: '' })
     try {
       const response = await runImplementationZeroShotClassifier(
         project.agent_project_id,
@@ -782,6 +843,41 @@ function ImplementationWorkspace({ project }) {
         result: null,
         error: error?.errors?.[0]?.message || error?.message || 'Zero-shot predictions could not be loaded.',
       })
+    }
+  }
+
+  async function buildHybridDetections(index, file, { force = false } = {}) {
+    updateInput(index, { hybridDetections: { status: 'running' }, error: '' })
+    try {
+      const response = await buildImplementationHybridDetections(
+        project.agent_project_id, file.upload_id, { force },
+      )
+      if (!response?.data?.metrics || !Array.isArray(response.data.chunks)) throw new Error('Invalid hybrid response')
+      updateInput(index, { hybridDetections: response.data, error: '' })
+      if (hybridReview.uploadId === file.upload_id) {
+        setHybridReview({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+      }
+    } catch (error) {
+      updateInput(index, {
+        hybridDetections: { status: 'error' },
+        error: error?.errors?.[0]?.message || error?.message || 'Hybrid candidates could not be built.',
+      })
+    }
+  }
+
+  async function reviewHybridDetections(file) {
+    if (hybridReview.uploadId === file.upload_id && hybridReview.result) {
+      setHybridReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      return
+    }
+    setHybridReview({ uploadId: file.upload_id, status: 'loading', result: null, error: '' })
+    try {
+      const response = await getImplementationHybridDetections(project.agent_project_id, file.upload_id)
+      if (!Array.isArray(response?.data?.chunks)) throw new Error('Invalid hybrid response')
+      setHybridReview({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+    } catch (error) {
+      setHybridReview({ uploadId: file.upload_id, status: 'error', result: null,
+        error: error?.errors?.[0]?.message || error?.message || 'Hybrid candidates could not be loaded.' })
     }
   }
 
@@ -1237,6 +1333,48 @@ function ImplementationWorkspace({ project }) {
                                   )}
                                   {zeroShotReview.uploadId === item.file.upload_id && zeroShotReview.result && (
                                     <ZeroShotDetectionReview result={zeroShotReview.result} chunks={item.chunks.chunks} />
+                                  )}
+                                </section>
+                              )}
+                              {['SUCCESS', 'PARTIAL'].includes(item.chunks?.status) && (
+                                <section className="mt-4 space-y-2 border-t border-default pt-4" aria-label="Hybrid Artifact Analysis">
+                                  <p className="text-sm font-medium text-content-primary">Hybrid Artifact Analysis</p>
+                                  {!item.hybridDetections && <p className="text-sm text-content-secondary">Not run</p>}
+                                  {item.hybridDetections?.status === 'running' && <p role="status" className="text-sm text-content-secondary">Building hybrid candidates...</p>}
+                                  {item.hybridDetections?.metrics && (
+                                    <>
+                                      <p className="text-sm text-state-success">{'✓ Complete'}</p>
+                                      <div className="text-sm text-content-secondary">
+                                        <p>Chunks analyzed: {item.hybridDetections.metrics.chunk_count}</p>
+                                        <p>Likely candidates: {item.hybridDetections.metrics.auto_candidate_count}</p>
+                                        <p>Needs review: {item.hybridDetections.metrics.review_required_count}</p>
+                                        <p>Rejected weak candidates: {item.hybridDetections.metrics.rejected_count}</p>
+                                        <p>Rule + Model Agreement: {item.hybridDetections.metrics.rule_and_model_count}</p>
+                                        <p>Rule Only: {item.hybridDetections.metrics.rule_only_count}</p>
+                                        <p>Model Only: {item.hybridDetections.metrics.model_only_count}</p>
+                                        <p>Disagreements: {item.hybridDetections.metrics.disagreement_count}</p>
+                                      </div>
+                                      <p className="text-sm text-content-secondary">Hybrid candidates are not human-verified artifacts yet.</p>
+                                    </>
+                                  )}
+                                  {!item.ruleDetections?.metrics && <p className="text-sm text-content-secondary">Required: complete Rule-Based Detection.</p>}
+                                  {!['SUCCESS', 'PARTIAL'].includes(item.zeroShotDetections?.status) && <p className="text-sm text-content-secondary">Required: complete Zero-Shot Model Baseline.</p>}
+                                  {!item.hybridDetections && item.ruleDetections?.metrics && ['SUCCESS', 'PARTIAL'].includes(item.zeroShotDetections?.status) && (
+                                    <Button variant="outline" size="small" onClick={() => buildHybridDetections(index, item.file)}>Build Hybrid Candidates</Button>
+                                  )}
+                                  {item.hybridDetections?.metrics && (
+                                    <>
+                                      <Button variant="outline" size="small" onClick={() => reviewHybridDetections(item.file)}>Review Hybrid Candidates</Button>
+                                      <Button variant="outline" size="small" onClick={() => buildHybridDetections(index, item.file, { force: true })}>Rebuild</Button>
+                                    </>
+                                  )}
+                                  {item.hybridDetections?.status === 'error' && (
+                                    <Button variant="outline" size="small" onClick={() => buildHybridDetections(index, item.file, { force: true })}>Rebuild</Button>
+                                  )}
+                                  {hybridReview.uploadId === item.file.upload_id && hybridReview.status === 'loading' && <p role="status" className="text-sm text-content-secondary">Loading hybrid candidates...</p>}
+                                  {hybridReview.uploadId === item.file.upload_id && hybridReview.error && <p role="alert" className="text-sm text-state-danger">{hybridReview.error}</p>}
+                                  {hybridReview.uploadId === item.file.upload_id && hybridReview.result && (
+                                    <HybridDetectionReview result={hybridReview.result} chunks={item.chunks.chunks} />
                                   )}
                                 </section>
                               )}

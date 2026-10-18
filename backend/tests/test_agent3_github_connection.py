@@ -521,6 +521,14 @@ def test_openapi_exposes_only_implemented_agent3_routes():
             "GET",
             "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/zero-shot-detections",
         ),
+            (
+                "POST",
+                "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/hybrid-detections",
+            ),
+            (
+                "GET",
+                "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/hybrid-detections",
+            ),
         (
             "POST",
             "/api/v1/agents/implementation/{agent_project_id}/readiness/evaluate",

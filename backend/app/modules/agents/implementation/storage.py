@@ -68,6 +68,8 @@ class StagedUpload:
     rule_detections_partial_path: Path
     zero_shot_detections_path: Path
     zero_shot_detections_partial_path: Path
+    hybrid_detections_path: Path
+    hybrid_detections_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -214,6 +216,12 @@ class ImplementationUploadStorage:
         zero_shot_detections_partial_path = self._contained(
             project_directory, f"{upload_id}.zero-shot-detections.json.part"
         )
+        hybrid_detections_path = self._contained(
+            project_directory, f"{upload_id}.hybrid-detections.json"
+        )
+        hybrid_detections_partial_path = self._contained(
+            project_directory, f"{upload_id}.hybrid-detections.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
             extraction_path.unlink(missing_ok=True)
@@ -224,6 +232,8 @@ class ImplementationUploadStorage:
             rule_detections_partial_path.unlink(missing_ok=True)
             zero_shot_detections_path.unlink(missing_ok=True)
             zero_shot_detections_partial_path.unlink(missing_ok=True)
+            hybrid_detections_path.unlink(missing_ok=True)
+            hybrid_detections_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise UploadNotFoundError(upload_id) from exc
@@ -275,6 +285,12 @@ class ImplementationUploadStorage:
         zero_shot_detections_partial_path = self._contained(
             project_directory, f"{upload_id}.zero-shot-detections.json.part"
         )
+        hybrid_detections_path = self._contained(
+            project_directory, f"{upload_id}.hybrid-detections.json"
+        )
+        hybrid_detections_partial_path = self._contained(
+            project_directory, f"{upload_id}.hybrid-detections.json.part"
+        )
         try:
             if not stored_path.is_file():
                 raise UploadNotFoundError(upload_id)
@@ -299,6 +315,8 @@ class ImplementationUploadStorage:
             rule_detections_partial_path=rule_detections_partial_path,
             zero_shot_detections_path=zero_shot_detections_path,
             zero_shot_detections_partial_path=zero_shot_detections_partial_path,
+            hybrid_detections_path=hybrid_detections_path,
+            hybrid_detections_partial_path=hybrid_detections_partial_path,
         )
 
     @staticmethod

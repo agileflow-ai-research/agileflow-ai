@@ -363,10 +363,10 @@ def test_security_guards_and_deletion_cleanup(zero_context):
     assert not partial.exists()
 
 
-def test_openapi_exposes_only_zero_shot_baseline_routes_for_this_stage():
+def test_openapi_exposes_zero_shot_baseline_routes_without_later_stage_routes():
     paths = app.openapi()["paths"]
     route = "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/zero-shot-detections"
     assert set(paths[route]) == {"get", "post"}
-    forbidden = ("fine-tun", "hybrid", "dataset-export", "agent-run", "code-generation", "image-analysis")
+    forbidden = ("fine-tun", "dataset-export", "agent-run", "code-generation", "image-analysis")
     agent_paths = [path for path in paths if path.startswith("/api/v1/agents/implementation")]
     assert not any(any(term in path for term in forbidden) for path in agent_paths)

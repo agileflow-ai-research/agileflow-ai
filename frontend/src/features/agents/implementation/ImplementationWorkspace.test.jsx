@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  buildImplementationHybridDetections,
   connectGitHub,
   createGitHubRepository,
   deleteImplementationInputFile,
@@ -13,6 +14,7 @@ import {
   getImplementationDocumentExtraction,
   getImplementationRuleDetections,
   getImplementationZeroShotDetections,
+  getImplementationHybridDetections,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
@@ -23,6 +25,8 @@ import { navigateToGitHub } from './githubNavigation.js'
 import ImplementationWorkspace from './ImplementationWorkspace.jsx'
 
 vi.mock('./implementationAgentService.js', () => ({
+  buildImplementationHybridDetections: vi.fn(),
+  getImplementationHybridDetections: vi.fn(),
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
   evaluateImplementationReadiness: vi.fn(),
@@ -191,6 +195,45 @@ function ruleDetectionResult(overrides = {}) {
   }
 }
 
+function hybridDetectionResult(overrides = {}) {
+  return {
+    upload_id: metadata().upload_id,
+    agent_project_id: 'AGP-003',
+    metrics: {
+      chunk_count: 1, auto_candidate_count: 1, review_required_count: 1,
+      rejected_count: 1, rule_and_model_count: 1, rule_only_count: 0,
+      model_only_count: 1, disagreement_count: 0, insufficient_evidence_count: 1,
+      label_explosion_chunk_count: 1, ambiguous_chunk_count: 1,
+      per_label_candidate_counts: {},
+    },
+    chunks: [{
+      chunk_id: chunkResult().chunks[0].chunk_id,
+      text_hash: chunkResult().chunks[0].text_hash,
+      diagnostics: {
+        model_label_explosion: true, model_ambiguous: true, top_model_margin: 0.02,
+        top_model_scores: [
+          { label: 'API_SPECIFICATION', score: 0.91 },
+          { label: 'DATABASE_SCHEMA', score: 0.89 },
+        ],
+      },
+      candidates: [{
+        label: 'API_SPECIFICATION', evidence_state: 'RULE_AND_MODEL', decision: 'AUTO_CANDIDATE',
+        rule: { matched: true, score: 0.94, strength: 'STRONG', evidence: [{ rule_id: 'HTTP_METHOD_PATH', matched_text: 'POST /bookings', source: 'TEXT' }] },
+        model: { score: 0.91 }, reason_codes: ['RULE_MODEL_AGREEMENT'],
+      }, {
+        label: 'DATABASE_SCHEMA', evidence_state: 'MODEL_ONLY', decision: 'REVIEW_REQUIRED',
+        rule: { matched: false, score: null, strength: null, evidence: [] },
+        model: { score: 0.89 }, reason_codes: ['MODEL_ONLY_REQUIRES_REVIEW', 'MODEL_LABEL_EXPLOSION'],
+      }, {
+        label: 'OTHER_CONTEXT', evidence_state: 'INSUFFICIENT_EVIDENCE', decision: 'REJECTED',
+        rule: { matched: false, score: null, strength: null, evidence: [] },
+        model: { score: 0.1 }, reason_codes: ['WEAK_EVIDENCE'],
+      }],
+    }],
+    ...overrides,
+  }
+}
+
 function zeroShotResult(overrides = {}) {
   const labels = [
     'FUNCTIONAL_REQUIREMENTS', 'NON_FUNCTIONAL_REQUIREMENTS', 'USER_STORIES',
@@ -324,6 +367,8 @@ describe('ImplementationWorkspace', () => {
     getImplementationRuleDetections.mockResolvedValue({ data: ruleDetectionResult() })
     runImplementationZeroShotClassifier.mockResolvedValue({ data: zeroShotResult() })
     getImplementationZeroShotDetections.mockResolvedValue({ data: zeroShotResult() })
+    buildImplementationHybridDetections.mockResolvedValue({ data: hybridDetectionResult() })
+    getImplementationHybridDetections.mockResolvedValue({ data: hybridDetectionResult() })
     evaluateImplementationReadiness.mockResolvedValue({ data: readinessResult() })
   })
 
@@ -403,7 +448,7 @@ describe('ImplementationWorkspace', () => {
     await attachFile(user, 'DOCUMENT', new File(['doc'], 'input.txt'), metadata({ original_filename: 'input.txt' }))
     expect(screen.queryByRole('button', { name: 'Run Rule Detector' })).not.toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'Prepare Semantic Chunks' }))
-    expect((await screen.findAllByText('Not run')).length).toBe(2)
+    expect((await screen.findAllByText('Not run')).length).toBe(3)
     expect(screen.getByText(/Deterministic baseline/)).toHaveTextContent('no AI model used')
     await user.click(screen.getByRole('button', { name: 'Run Rule Detector' }))
     expect(screen.getByText('Running rule detector...')).toBeInTheDocument()
@@ -428,6 +473,33 @@ describe('ImplementationWorkspace', () => {
     expect(screen.getByText('POST /bookings creates a booking.')).toBeInTheDocument()
     expect(screen.queryByText(/AI confidence/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/LLM/i)).not.toBeInTheDocument()
+  })
+
+  it('requires both baselines then summarizes and reviews explainable hybrid candidates', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationWorkspace project={project} />)
+    await attachAndPrepareDocument(user)
+    const hybrid = screen.getByRole('region', { name: 'Hybrid Artifact Analysis' })
+    expect(within(hybrid).getByText('Required: complete Rule-Based Detection.')).toBeInTheDocument()
+    expect(within(hybrid).getByText('Required: complete Zero-Shot Model Baseline.')).toBeInTheDocument()
+    expect(within(hybrid).queryByRole('button', { name: 'Build Hybrid Candidates' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Run Rule Detector' }))
+    await user.click(screen.getByRole('button', { name: 'Run Zero-Shot Classifier' }))
+    await user.click(await within(hybrid).findByRole('button', { name: 'Build Hybrid Candidates' }))
+    expect(await within(hybrid).findByText('Likely candidates: 1')).toBeInTheDocument()
+    expect(within(hybrid).getByText('Needs review: 1')).toBeInTheDocument()
+    expect(within(hybrid).getByText('Rejected weak candidates: 1')).toBeInTheDocument()
+    expect(within(hybrid).getByText('Hybrid candidates are not human-verified artifacts yet.')).toBeInTheDocument()
+    await user.click(within(hybrid).getByRole('button', { name: 'Review Hybrid Candidates' }))
+    expect(await within(hybrid).findByText(/several competing high-scoring labels/)).toBeInTheDocument()
+    expect(within(hybrid).getByText(/Top zero-shot scores are ambiguous/)).toBeInTheDocument()
+    expect(within(hybrid).getByText('Evidence state: Rule And Model')).toBeInTheDocument()
+    expect(within(hybrid).getByText('Reason: RULE_MODEL_AGREEMENT')).toBeInTheDocument()
+    expect(within(hybrid).getByText('Decision: Review Required')).toBeInTheDocument()
+    expect(within(hybrid).queryByText(/hybrid confidence/i)).not.toBeInTheDocument()
+    expect(within(hybrid).queryByRole('button', { name: /accept|relabel|exclude/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Artifact Detection Baseline' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Zero-Shot Model Baseline' })).toBeInTheDocument()
   })
 
   it('renders OTHER_CONTEXT and re-runs with force=true', async () => {

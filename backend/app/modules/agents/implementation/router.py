@@ -98,6 +98,17 @@ from app.modules.agents.implementation.semantic_discovery.zero_shot.service impo
     ZeroShotDetectionService,
     ZeroShotDetectionStorageError,
 )
+from app.modules.agents.implementation.semantic_discovery.hybrid.schemas import (
+    DocumentHybridDetectionResult,
+)
+from app.modules.agents.implementation.semantic_discovery.hybrid.service import (
+    HybridDetectionNotFoundError,
+    HybridDetectionService,
+    HybridDetectionStorageError,
+    RuleDetectionRequiredError,
+    StaleClassificationInputError,
+    ZeroShotDetectionRequiredError,
+)
 from app.modules.agents.implementation.storage import (
     ImplementationUploadStorage,
     UploadNotFoundError,
@@ -190,6 +201,18 @@ def get_zero_shot_detection_service(
             local_files_only=settings.agent3_zero_shot_local_files_only
         ),
     )
+
+
+def get_hybrid_detection_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+) -> HybridDetectionService:
+    return HybridDetectionService(standalone_service, storage)
 
 
 def get_github_connection_repository() -> GitHubConnectionRepository:
@@ -731,6 +754,81 @@ def get_implementation_zero_shot_detections(
     except (StandaloneServiceError, UploadStorageError):
         return _zero_shot_error(503, "Zero-shot classification unavailable", "Zero-shot result storage is unavailable")
     return SuccessResponse(message="Zero-shot artifact classifications retrieved", data=result)
+
+
+def _hybrid_error(status_code: int, message: str, detail: str) -> JSONResponse:
+    return _error(status_code, message, "hybrid_detections", detail)
+
+
+@router.post(
+    "/{agent_project_id}/input-files/{upload_id}/hybrid-detections",
+    response_model=SuccessResponse[DocumentHybridDetectionResult],
+)
+def build_implementation_hybrid_detections(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[HybridDetectionService, Depends(get_hybrid_detection_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    force: Annotated[bool, Query()] = False,
+) -> SuccessResponse[DocumentHybridDetectionResult] | JSONResponse:
+    try:
+        result = service.build(agent_project_id, upload_id, current_user, force=force)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before building hybrid candidates")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _hybrid_error(404, "Upload not found", "Staged upload not found")
+    except RuleDetectionRequiredError:
+        return _hybrid_error(409, "Hybrid detection unavailable", "RULE_DETECTION_REQUIRED")
+    except ZeroShotDetectionRequiredError:
+        return _hybrid_error(409, "Hybrid detection unavailable", "ZERO_SHOT_DETECTION_REQUIRED")
+    except StaleClassificationInputError:
+        return _hybrid_error(409, "Hybrid detection unavailable", "STALE_CLASSIFICATION_INPUT")
+    except (ExtractionNotFoundError, ChunkingNotFoundError):
+        return _hybrid_error(409, "Hybrid detection unavailable", "Current trusted semantic chunks are required")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _hybrid_error(422, "Hybrid detection unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError, HybridDetectionStorageError):
+        return _hybrid_error(503, "Hybrid detection unavailable", "Hybrid result storage is unavailable")
+    return SuccessResponse(message="Hybrid artifact candidates built", data=result)
+
+
+@router.get(
+    "/{agent_project_id}/input-files/{upload_id}/hybrid-detections",
+    response_model=SuccessResponse[DocumentHybridDetectionResult],
+)
+def get_implementation_hybrid_detections(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[HybridDetectionService, Depends(get_hybrid_detection_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[DocumentHybridDetectionResult] | JSONResponse:
+    try:
+        result = service.get_existing(agent_project_id, upload_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before reviewing hybrid candidates")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _hybrid_error(404, "Upload not found", "Staged upload not found")
+    except RuleDetectionRequiredError:
+        return _hybrid_error(409, "Hybrid detection unavailable", "RULE_DETECTION_REQUIRED")
+    except ZeroShotDetectionRequiredError:
+        return _hybrid_error(409, "Hybrid detection unavailable", "ZERO_SHOT_DETECTION_REQUIRED")
+    except StaleClassificationInputError:
+        return _hybrid_error(409, "Hybrid detection unavailable", "STALE_CLASSIFICATION_INPUT")
+    except (ExtractionNotFoundError, ChunkingNotFoundError, HybridDetectionNotFoundError):
+        return _hybrid_error(404, "Hybrid detections not found", "No current hybrid result exists for this upload")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _hybrid_error(422, "Hybrid detection unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError):
+        return _hybrid_error(503, "Hybrid detection unavailable", "Hybrid result storage is unavailable")
+    return SuccessResponse(message="Hybrid artifact candidates retrieved", data=result)
 
 
 @router.post(
