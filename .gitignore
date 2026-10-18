@@ -22,3 +22,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Standalone artifact uploads and extraction sidecars (runtime data)
+backend/storage/standalone/

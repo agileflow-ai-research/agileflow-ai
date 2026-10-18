@@ -895,7 +895,7 @@ def test_standalone_public_routes_require_authentication(
     ).status_code == 401
 
 
-def test_only_six_common_standalone_operations_are_public() -> None:
+def test_only_common_standalone_and_shared_artifact_upload_operations_are_public() -> None:
     paths = app.openapi()["paths"]
     standalone_operations = {
         (method.upper(), path)
@@ -913,6 +913,11 @@ def test_only_six_common_standalone_operations_are_public() -> None:
             "GET",
             "/api/v1/agent-projects/{agent_project_id}/runs/{run_id}",
         ),
+        # Shared standalone artifact inputs (DOCUMENT/IMAGE). Agent-scoped by the service registry.
+        ("POST", "/api/v1/agent-projects/{agent_project_id}/artifact-uploads"),
+        ("DELETE", "/api/v1/agent-projects/{agent_project_id}/artifact-uploads/{upload_id}"),
+        ("POST", "/api/v1/agent-projects/{agent_project_id}/artifact-uploads/{upload_id}/extraction"),
+        ("GET", "/api/v1/agent-projects/{agent_project_id}/artifact-uploads/{upload_id}/extraction"),
     }
 
 

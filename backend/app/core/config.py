@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     model_name: str = "gpt-4.1-mini"
     model_base_url: str = "https://api.openai.com/v1"
     model_timeout_seconds: float = 60.0
+    standalone_artifact_upload_root: Path = BACKEND_DIR / "storage" / "standalone" / "artifacts"
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",
