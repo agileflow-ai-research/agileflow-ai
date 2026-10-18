@@ -12,9 +12,11 @@ import {
   getImplementationDocumentChunks,
   getImplementationDocumentExtraction,
   getImplementationRuleDetections,
+  getImplementationZeroShotDetections,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
+  runImplementationZeroShotClassifier,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 import { navigateToGitHub } from './githubNavigation.js'
@@ -30,6 +32,8 @@ vi.mock('./implementationAgentService.js', () => ({
   prepareImplementationDocumentChunks: vi.fn(),
   getImplementationRuleDetections: vi.fn(),
   runImplementationRuleDetector: vi.fn(),
+  getImplementationZeroShotDetections: vi.fn(),
+  runImplementationZeroShotClassifier: vi.fn(),
   connectGitHub: vi.fn(),
   createGitHubRepository: vi.fn(),
   getGitHubConnection: vi.fn(),
@@ -187,6 +191,57 @@ function ruleDetectionResult(overrides = {}) {
   }
 }
 
+function zeroShotResult(overrides = {}) {
+  const labels = [
+    'FUNCTIONAL_REQUIREMENTS', 'NON_FUNCTIONAL_REQUIREMENTS', 'USER_STORIES',
+    'ACCEPTANCE_CRITERIA', 'SYSTEM_ARCHITECTURE', 'DATABASE_SCHEMA',
+    'API_SPECIFICATION', 'UI_FLOW', 'TECHNOLOGY_STACK', 'TECHNICAL_CONSTRAINTS',
+    'IMPLEMENTATION_TASKS', 'TEST_CASES', 'OTHER_CONTEXT',
+  ]
+  return {
+    upload_id: metadata().upload_id,
+    agent_project_id: 'AGP-003',
+    original_filename: 'bookease-api.pdf',
+    source_sha256: 'a'.repeat(64),
+    document_type: 'PDF',
+    extraction_version: '1',
+    chunker_version: '1',
+    classifier_type: 'ZERO_SHOT_NLI',
+    classifier_version: '1',
+    score_semantics: 'ZERO_SHOT_NLI_NOT_DOMAIN_CALIBRATED',
+    model: {
+      model_id: 'MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli',
+      revision: '6f5cf0a2b59cabb106aca4c287eed12e357e90eb',
+      task: 'zero-shot-classification',
+      hypothesis_template: 'This software-engineering text describes {}.',
+      multi_label: true, label_map_version: '1', template_version: '1', device: 'cpu',
+    },
+    status: 'SUCCESS',
+    chunks: [{
+      chunk_id: chunkResult().chunks[0].chunk_id,
+      text_hash: chunkResult().chunks[0].text_hash,
+      provenance: chunkResult().chunks[0].provenance,
+      model_token_count: 42, model_max_length: 512, input_truncated: false,
+      classification_succeeded: true, inference_ms: 80,
+      scores: labels.map((label, index) => ({
+        label, score: index === 6 ? 0.94 : index === 3 ? 0.73 : 0.1,
+      })),
+      display_predictions: [
+        { label: 'API_SPECIFICATION', score: 0.94 },
+        { label: 'ACCEPTANCE_CRITERIA', score: 0.73 },
+      ],
+    }],
+    metrics: {
+      chunk_count: 1, classified_chunk_count: 1, truncated_chunk_count: 0,
+      failed_chunk_count: 0, average_inference_ms_per_chunk: 80,
+      total_inference_ms: 80, top_label_counts: { API_SPECIFICATION: 1 },
+    },
+    warnings: [],
+    created_at: '2026-10-18T12:00:00Z',
+    ...overrides,
+  }
+}
+
 function readinessResult(overrides = {}) {
   return {
     status: 'READY_WITH_WARNINGS',
@@ -267,6 +322,8 @@ describe('ImplementationWorkspace', () => {
     getImplementationDocumentChunks.mockResolvedValue({ data: chunkResult() })
     runImplementationRuleDetector.mockResolvedValue({ data: ruleDetectionResult() })
     getImplementationRuleDetections.mockResolvedValue({ data: ruleDetectionResult() })
+    runImplementationZeroShotClassifier.mockResolvedValue({ data: zeroShotResult() })
+    getImplementationZeroShotDetections.mockResolvedValue({ data: zeroShotResult() })
     evaluateImplementationReadiness.mockResolvedValue({ data: readinessResult() })
   })
 
@@ -346,7 +403,7 @@ describe('ImplementationWorkspace', () => {
     await attachFile(user, 'DOCUMENT', new File(['doc'], 'input.txt'), metadata({ original_filename: 'input.txt' }))
     expect(screen.queryByRole('button', { name: 'Run Rule Detector' })).not.toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'Prepare Semantic Chunks' }))
-    expect(await screen.findByText('Not run')).toBeInTheDocument()
+    expect((await screen.findAllByText('Not run')).length).toBe(2)
     expect(screen.getByText(/Deterministic baseline/)).toHaveTextContent('no AI model used')
     await user.click(screen.getByRole('button', { name: 'Run Rule Detector' }))
     expect(screen.getByText('Running rule detector...')).toBeInTheDocument()
@@ -370,7 +427,7 @@ describe('ImplementationWorkspace', () => {
     expect(screen.getByText('POST /bookings')).toBeInTheDocument()
     expect(screen.getByText('POST /bookings creates a booking.')).toBeInTheDocument()
     expect(screen.queryByText(/AI confidence/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/DeBERTa|LLM/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/LLM/i)).not.toBeInTheDocument()
   })
 
   it('renders OTHER_CONTEXT and re-runs with force=true', async () => {
@@ -402,6 +459,58 @@ describe('ImplementationWorkspace', () => {
     await waitFor(() => expect(runImplementationRuleDetector).toHaveBeenLastCalledWith(
       'AGP-003', metadata().upload_id, { force: true },
     ))
+  })
+
+  it('shows zero-shot action only after chunks, running state, metrics, and baseline wording', async () => {
+    const user = userEvent.setup()
+    let resolveModel
+    runImplementationZeroShotClassifier.mockReturnValueOnce(new Promise((resolve) => { resolveModel = resolve }))
+    render(<ImplementationWorkspace project={project} />)
+    await attachFile(user, 'DOCUMENT', new File(['doc'], 'input.txt'), metadata({ original_filename: 'input.txt' }))
+    expect(screen.queryByRole('button', { name: 'Run Zero-Shot Classifier' })).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: 'Prepare Semantic Chunks' }))
+    expect(await screen.findByText('Zero-Shot Model Baseline')).toBeInTheDocument()
+    expect(screen.getByText(/not fine-tuned on AgileFlow data/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Run Zero-Shot Classifier' }))
+    expect(screen.getByText('Loading/classifying...')).toBeInTheDocument()
+    expect(screen.getByText(/first run may take longer/i)).toBeInTheDocument()
+    resolveModel({ data: zeroShotResult() })
+    expect(await screen.findByText('Zero-Shot DeBERTa')).toBeInTheDocument()
+    expect(screen.getByText('Chunks classified: 1')).toBeInTheDocument()
+    expect(screen.getByText('Truncated chunks: 0')).toBeInTheDocument()
+    expect(screen.getByText('Model: DeBERTa-v3-base-mnli-fever-anli')).toBeInTheDocument()
+  })
+
+  it('reviews all raw zero-shot scores, provenance, model tokens, and force re-runs', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationWorkspace project={project} />)
+    await attachAndPrepareDocument(user)
+    await user.click(screen.getByRole('button', { name: 'Run Zero-Shot Classifier' }))
+    await user.click(await screen.findByRole('button', { name: 'Review Model Predictions' }))
+    expect(await screen.findByRole('heading', { name: 'Zero-Shot Predictions' })).toBeInTheDocument()
+    expect(screen.getByText(/not calibrated domain confidence/i)).toBeInTheDocument()
+    expect(screen.getAllByText('API Specification: 0.9400')).toHaveLength(2)
+    expect(screen.getAllByText('Acceptance Criteria: 0.7300')).toHaveLength(2)
+    expect(screen.getByText('Other Context: 0.1000')).toBeInTheDocument()
+    expect(screen.getByText('Model tokens: 42 / 512')).toBeInTheDocument()
+    expect(screen.getByText('Source: pages 3–4')).toBeInTheDocument()
+    expect(screen.queryByText(/AI confidence/i)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Re-run Model' }))
+    await waitFor(() => expect(runImplementationZeroShotClassifier).toHaveBeenLastCalledWith(
+      'AGP-003', metadata().upload_id, { force: true },
+    ))
+  })
+
+  it.each([
+    ['PARTIAL', 'Partial'],
+    ['FAILED', 'Model classification failed'],
+  ])('renders %s zero-shot status truthfully', async (status, label) => {
+    const user = userEvent.setup()
+    runImplementationZeroShotClassifier.mockResolvedValue({ data: zeroShotResult({ status }) })
+    render(<ImplementationWorkspace project={project} />)
+    await attachAndPrepareDocument(user)
+    await user.click(screen.getByRole('button', { name: 'Run Zero-Shot Classifier' }))
+    expect(await screen.findByText(label)).toBeInTheDocument()
   })
 
   it('explicitly evaluates and renders READY_WITH_WARNINGS with grouped findings and frozen stack', async () => {

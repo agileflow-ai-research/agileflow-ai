@@ -10,9 +10,11 @@ import {
   getImplementationDocumentChunks,
   getImplementationDocumentExtraction,
   getImplementationRuleDetections,
+  getImplementationZeroShotDetections,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
+  runImplementationZeroShotClassifier,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 import { navigateToGitHub } from './githubNavigation.js'
@@ -97,6 +99,7 @@ function emptyInput() {
     extraction: null,
     chunks: null,
     ruleDetections: null,
+    zeroShotDetections: null,
     error: '',
   }
 }
@@ -385,6 +388,56 @@ function RuleDetectionReview({ result, chunks }) {
   )
 }
 
+function ZeroShotDetectionReview({ result, chunks }) {
+  const chunkById = new Map(chunks.map((chunk) => [chunk.chunk_id, chunk]))
+  return (
+    <section className="mt-4 space-y-4 border-t border-default pt-4" aria-label="Zero-Shot Predictions">
+      <div>
+        <h5 className="font-semibold text-content-primary">Zero-Shot Predictions</h5>
+        <p className="mt-1 text-sm text-content-secondary">
+          Scores are zero-shot NLI outputs and are not calibrated domain confidence.
+        </p>
+      </div>
+      {result.chunks.map((detection) => {
+        const chunk = chunkById.get(detection.chunk_id)
+        return (
+          <article key={detection.chunk_id} className="rounded-control border border-default p-3">
+            <h6 className="font-semibold text-content-primary">Chunk {(chunk?.chunk_index ?? 0) + 1}</h6>
+            {chunk?.context.section_title && <p className="mt-1 text-sm text-content-secondary">Section: {chunk.context.section_title}</p>}
+            {chunk && <p className="text-sm text-content-secondary">{chunkSource(chunk)}</p>}
+            <p className="mt-2 text-sm text-content-secondary">
+              Model tokens: {detection.model_token_count} / {detection.model_max_length}
+            </p>
+            {detection.input_truncated && <p className="text-sm text-state-warning">Input truncated for model inference</p>}
+            {!detection.classification_succeeded && <p className="text-sm text-state-danger">Classification failed for this chunk</p>}
+            {detection.classification_succeeded && (
+              <>
+                <p className="mt-3 text-sm font-medium text-content-primary">Zero-shot model predictions:</p>
+                {detection.display_predictions.length > 0 ? (
+                  <ul className="mt-2 space-y-1 text-sm text-content-secondary">
+                    {detection.display_predictions.map((prediction) => (
+                      <li key={prediction.label}>{detectionLabel(prediction.label)}: {prediction.score.toFixed(4)}</li>
+                    ))}
+                  </ul>
+                ) : <p className="text-sm text-content-secondary">No label crossed the temporary display threshold.</p>}
+                <p className="mt-3 text-sm font-medium text-content-primary">All taxonomy scores:</p>
+                <ul className="mt-2 space-y-1 text-sm text-content-secondary">
+                  {[...detection.scores].sort((left, right) => right.score - left.score).map((prediction) => (
+                    <li key={prediction.label}>
+                      {detectionLabel(prediction.label)}: {prediction.score.toFixed(4)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {chunk && <pre className="mt-3 whitespace-pre-wrap text-sm text-content-secondary">{chunk.text}</pre>}
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
 function ImplementationWorkspace({ project }) {
   const [step, setStep] = useState(0)
   const [inputs, setInputs] = useState([emptyInput()])
@@ -406,6 +459,9 @@ function ImplementationWorkspace({ project }) {
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [detectionReview, setDetectionReview] = useState({
+    uploadId: null, status: 'idle', result: null, error: '',
+  })
+  const [zeroShotReview, setZeroShotReview] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [readinessState, setReadinessState] = useState({
@@ -550,6 +606,7 @@ function ImplementationWorkspace({ project }) {
         extraction: extractionSummary(response.data),
         chunks: null,
         ruleDetections: null,
+        zeroShotDetections: null,
         error: '',
       })
     } catch (error) {
@@ -587,8 +644,11 @@ function ImplementationWorkspace({ project }) {
     if (detectionReview.uploadId === file.upload_id) {
       setDetectionReview({ uploadId: null, status: 'idle', result: null, error: '' })
     }
+    if (zeroShotReview.uploadId === file.upload_id) {
+      setZeroShotReview({ uploadId: null, status: 'idle', result: null, error: '' })
+    }
     updateInput(index, {
-      chunks: { status: 'preparing' }, ruleDetections: null, error: '',
+      chunks: { status: 'preparing' }, ruleDetections: null, zeroShotDetections: null, error: '',
     })
     try {
       const response = await prepareImplementationDocumentChunks(
@@ -680,6 +740,51 @@ function ImplementationWorkspace({ project }) {
     }
   }
 
+  async function runZeroShotClassifier(index, file, { force = false } = {}) {
+    updateInput(index, { zeroShotDetections: { status: 'running' }, error: '' })
+    try {
+      const response = await runImplementationZeroShotClassifier(
+        project.agent_project_id,
+        file.upload_id,
+        { force },
+      )
+      if (!response?.data?.metrics || !Array.isArray(response.data.chunks)) {
+        throw new Error('Invalid zero-shot classification response')
+      }
+      updateInput(index, { zeroShotDetections: response.data, error: '' })
+      if (zeroShotReview.uploadId === file.upload_id) {
+        setZeroShotReview({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+      }
+    } catch (error) {
+      updateInput(index, {
+        zeroShotDetections: { status: 'error' },
+        error: error?.errors?.[0]?.message || error?.message || 'Zero-shot classification could not be completed.',
+      })
+    }
+  }
+
+  async function reviewZeroShotDetections(file) {
+    if (zeroShotReview.uploadId === file.upload_id && zeroShotReview.result) {
+      setZeroShotReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      return
+    }
+    setZeroShotReview({ uploadId: file.upload_id, status: 'loading', result: null, error: '' })
+    try {
+      const response = await getImplementationZeroShotDetections(
+        project.agent_project_id, file.upload_id,
+      )
+      if (!Array.isArray(response?.data?.chunks)) throw new Error('Invalid zero-shot classification response')
+      setZeroShotReview({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+    } catch (error) {
+      setZeroShotReview({
+        uploadId: file.upload_id,
+        status: 'error',
+        result: null,
+        error: error?.errors?.[0]?.message || error?.message || 'Zero-shot predictions could not be loaded.',
+      })
+    }
+  }
+
   async function removeInput(index) {
     const item = inputs[index]
     if (!item.file) {
@@ -703,6 +808,9 @@ function ImplementationWorkspace({ project }) {
       }
       if (detectionReview.uploadId === item.file.upload_id) {
         setDetectionReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      }
+      if (zeroShotReview.uploadId === item.file.upload_id) {
+        setZeroShotReview({ uploadId: null, status: 'idle', result: null, error: '' })
       }
       setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
       setReadinessState((current) => (
@@ -836,6 +944,7 @@ function ImplementationWorkspace({ project }) {
         || item.extraction?.status === 'extracting'
         || item.chunks?.status === 'preparing'
         || item.ruleDetections?.status === 'running'
+        || item.zeroShotDetections?.status === 'running'
         || (item.source_type === 'TEXT' ? !item.content.trim() : !item.file)
       ))
       if (invalid) {
@@ -857,6 +966,7 @@ function ImplementationWorkspace({ project }) {
     || item.extraction?.status === 'extracting'
     || item.chunks?.status === 'preparing'
     || item.ruleDetections?.status === 'running'
+    || item.zeroShotDetections?.status === 'running'
   ))
   const workspaceRequest = {
     inputs: inputs.map(requestInput),
@@ -921,6 +1031,7 @@ function ImplementationWorkspace({ project }) {
                 || item.extraction?.status === 'extracting'
                 || item.chunks?.status === 'preparing'
                 || item.ruleDetections?.status === 'running'
+                || item.zeroShotDetections?.status === 'running'
               return (
                 <Card key={index} variant="elevated" className="space-y-4">
                   <div className="flex items-center justify-between gap-3">
@@ -1073,6 +1184,59 @@ function ImplementationWorkspace({ project }) {
                                   )}
                                   {detectionReview.uploadId === item.file.upload_id && detectionReview.result && (
                                     <RuleDetectionReview result={detectionReview.result} chunks={item.chunks.chunks} />
+                                  )}
+                                </section>
+                              )}
+                              {['SUCCESS', 'PARTIAL'].includes(item.chunks?.status) && (
+                                <section className="mt-4 space-y-2 border-t border-default pt-4" aria-label="Zero-Shot Model Baseline">
+                                  <p className="text-sm font-medium text-content-primary">Zero-Shot Model Baseline</p>
+                                  <p className="text-sm text-content-secondary">Model: DeBERTa-v3-base NLI</p>
+                                  <p className="text-sm text-content-secondary">Zero-shot model baseline {'\u2014'} not fine-tuned on AgileFlow data.</p>
+                                  {!item.zeroShotDetections && <p className="text-sm text-content-secondary">Not run</p>}
+                                  {item.zeroShotDetections?.status === 'running' && (
+                                    <div role="status" className="text-sm text-content-secondary">
+                                      <p>Loading/classifying...</p>
+                                      <p>First run may take longer while the local model is loaded.</p>
+                                    </div>
+                                  )}
+                                  {['SUCCESS', 'PARTIAL'].includes(item.zeroShotDetections?.status) && (
+                                    <div>
+                                      <p className="text-sm font-medium text-content-primary">Zero-Shot DeBERTa</p>
+                                      <p className={item.zeroShotDetections.status === 'SUCCESS' ? 'text-sm text-state-success' : 'text-sm text-state-warning'}>
+                                        {item.zeroShotDetections.status === 'SUCCESS' ? '\u2713 Complete' : 'Partial'}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {item.zeroShotDetections?.status === 'FAILED' && <p className="text-sm text-state-danger">Model classification failed</p>}
+                                  {item.zeroShotDetections?.status === 'error' && <p className="text-sm text-state-danger">Classification request failed</p>}
+                                  {item.zeroShotDetections?.metrics && (
+                                    <div className="text-sm text-content-secondary">
+                                      <p>Chunks analyzed: {item.zeroShotDetections.metrics.chunk_count}</p>
+                                      <p>Chunks classified: {item.zeroShotDetections.metrics.classified_chunk_count}</p>
+                                      <p>Truncated chunks: {item.zeroShotDetections.metrics.truncated_chunk_count}</p>
+                                      <p>Model: {item.zeroShotDetections.model.model_id.split('/').at(-1)}</p>
+                                    </div>
+                                  )}
+                                  {!item.zeroShotDetections && (
+                                    <Button variant="outline" size="small" onClick={() => runZeroShotClassifier(index, item.file)}>Run Zero-Shot Classifier</Button>
+                                  )}
+                                  {item.zeroShotDetections?.metrics && item.zeroShotDetections.status !== 'FAILED' && (
+                                    <>
+                                      <Button variant="outline" size="small" onClick={() => reviewZeroShotDetections(item.file)}>Review Model Predictions</Button>
+                                      <Button variant="outline" size="small" onClick={() => runZeroShotClassifier(index, item.file, { force: true })}>Re-run Model</Button>
+                                    </>
+                                  )}
+                                  {['FAILED', 'error'].includes(item.zeroShotDetections?.status) && (
+                                    <Button variant="outline" size="small" onClick={() => runZeroShotClassifier(index, item.file, { force: true })}>Re-run Model</Button>
+                                  )}
+                                  {zeroShotReview.uploadId === item.file.upload_id && zeroShotReview.status === 'loading' && (
+                                    <p role="status" className="text-sm text-content-secondary">Loading zero-shot predictions...</p>
+                                  )}
+                                  {zeroShotReview.uploadId === item.file.upload_id && zeroShotReview.error && (
+                                    <p role="alert" className="text-sm text-state-danger">{zeroShotReview.error}</p>
+                                  )}
+                                  {zeroShotReview.uploadId === item.file.upload_id && zeroShotReview.result && (
+                                    <ZeroShotDetectionReview result={zeroShotReview.result} chunks={item.chunks.chunks} />
                                   )}
                                 </section>
                               )}

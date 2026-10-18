@@ -12,4 +12,7 @@ pytest==9.1.1
 python-dotenv==1.2.4
 PyYAML==6.0.3
 uvicorn==0.54.0
+transformers==5.20.1
+torch==2.14.1
+sentencepiece==0.2.2
 

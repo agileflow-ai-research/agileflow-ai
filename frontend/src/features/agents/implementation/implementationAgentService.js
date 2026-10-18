@@ -69,6 +69,22 @@ export function getImplementationRuleDetections(agentProjectId, uploadId) {
   )
 }
 
+export function runImplementationZeroShotClassifier(agentProjectId, uploadId, { force = false } = {}) {
+  const suffix = force ? '?force=true' : ''
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/zero-shot-detections${suffix}`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getImplementationZeroShotDetections(agentProjectId, uploadId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/zero-shot-detections`,
+    { authenticated: true },
+  )
+}
+
 export function evaluateImplementationReadiness(agentProjectId, request) {
   return apiClient.post(
     `/agents/implementation/${encodeURIComponent(agentProjectId)}/readiness/evaluate`,

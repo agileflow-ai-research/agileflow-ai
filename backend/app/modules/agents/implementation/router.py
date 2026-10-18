@@ -87,6 +87,17 @@ from app.modules.agents.implementation.semantic_discovery.service import (
     RuleDetectionStorageError,
     SemanticChunkingService,
 )
+from app.modules.agents.implementation.semantic_discovery.zero_shot.classifier import (
+    ZeroShotClassifier,
+)
+from app.modules.agents.implementation.semantic_discovery.zero_shot.schemas import (
+    DocumentZeroShotDetectionResult,
+)
+from app.modules.agents.implementation.semantic_discovery.zero_shot.service import (
+    ZeroShotDetectionNotFoundError,
+    ZeroShotDetectionService,
+    ZeroShotDetectionStorageError,
+)
 from app.modules.agents.implementation.storage import (
     ImplementationUploadStorage,
     UploadNotFoundError,
@@ -161,6 +172,24 @@ def get_rule_detection_service(
     ],
 ) -> RuleDetectionService:
     return RuleDetectionService(standalone_service, storage)
+
+
+def get_zero_shot_detection_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+) -> ZeroShotDetectionService:
+    return ZeroShotDetectionService(
+        standalone_service,
+        storage,
+        ZeroShotClassifier(
+            local_files_only=settings.agent3_zero_shot_local_files_only
+        ),
+    )
 
 
 def get_github_connection_repository() -> GitHubConnectionRepository:
@@ -631,6 +660,77 @@ def get_implementation_rule_detections(
     except (StandaloneServiceError, UploadStorageError):
         return _rule_detection_error(503, "Rule detection unavailable", "Rule-detection storage is unavailable")
     return SuccessResponse(message="Rule-based artifact detections retrieved", data=result)
+
+
+def _zero_shot_error(
+    status_code: int, message: str, detail: str
+) -> JSONResponse:
+    return _error(status_code, message, "zero_shot_detections", detail)
+
+
+@router.post(
+    "/{agent_project_id}/input-files/{upload_id}/zero-shot-detections",
+    response_model=SuccessResponse[DocumentZeroShotDetectionResult],
+)
+def build_implementation_zero_shot_detections(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[
+        ZeroShotDetectionService, Depends(get_zero_shot_detection_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    force: Annotated[bool, Query()] = False,
+) -> SuccessResponse[DocumentZeroShotDetectionResult] | JSONResponse:
+    try:
+        result = service.build(
+            agent_project_id, upload_id, current_user, force=force
+        )
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before running zero-shot classification")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _zero_shot_error(404, "Upload not found", "Staged upload not found")
+    except (ExtractionNotFoundError, ChunkingNotFoundError):
+        return _zero_shot_error(409, "Zero-shot classification unavailable", "Current trusted semantic chunks must exist before zero-shot classification")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _zero_shot_error(422, "Zero-shot classification unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError, ZeroShotDetectionStorageError):
+        return _zero_shot_error(503, "Zero-shot classification unavailable", "Zero-shot result storage is unavailable")
+    return SuccessResponse(message="Zero-shot artifact classification completed", data=result)
+
+
+@router.get(
+    "/{agent_project_id}/input-files/{upload_id}/zero-shot-detections",
+    response_model=SuccessResponse[DocumentZeroShotDetectionResult],
+)
+def get_implementation_zero_shot_detections(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[
+        ZeroShotDetectionService, Depends(get_zero_shot_detection_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[DocumentZeroShotDetectionResult] | JSONResponse:
+    try:
+        result = service.get_existing(agent_project_id, upload_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before reviewing zero-shot classification")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _zero_shot_error(404, "Upload not found", "Staged upload not found")
+    except (ExtractionNotFoundError, ChunkingNotFoundError, ZeroShotDetectionNotFoundError):
+        return _zero_shot_error(404, "Zero-shot detections not found", "No current zero-shot result exists for this upload")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _zero_shot_error(422, "Zero-shot classification unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError):
+        return _zero_shot_error(503, "Zero-shot classification unavailable", "Zero-shot result storage is unavailable")
+    return SuccessResponse(message="Zero-shot artifact classifications retrieved", data=result)
 
 
 @router.post(

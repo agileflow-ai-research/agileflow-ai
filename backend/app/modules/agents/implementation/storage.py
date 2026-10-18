@@ -66,6 +66,8 @@ class StagedUpload:
     chunks_partial_path: Path
     rule_detections_path: Path
     rule_detections_partial_path: Path
+    zero_shot_detections_path: Path
+    zero_shot_detections_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -206,6 +208,12 @@ class ImplementationUploadStorage:
         rule_detections_partial_path = self._contained(
             project_directory, f"{upload_id}.rule-detections.json.part"
         )
+        zero_shot_detections_path = self._contained(
+            project_directory, f"{upload_id}.zero-shot-detections.json"
+        )
+        zero_shot_detections_partial_path = self._contained(
+            project_directory, f"{upload_id}.zero-shot-detections.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
             extraction_path.unlink(missing_ok=True)
@@ -214,6 +222,8 @@ class ImplementationUploadStorage:
             chunks_partial_path.unlink(missing_ok=True)
             rule_detections_path.unlink(missing_ok=True)
             rule_detections_partial_path.unlink(missing_ok=True)
+            zero_shot_detections_path.unlink(missing_ok=True)
+            zero_shot_detections_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise UploadNotFoundError(upload_id) from exc
@@ -259,6 +269,12 @@ class ImplementationUploadStorage:
         rule_detections_partial_path = self._contained(
             project_directory, f"{upload_id}.rule-detections.json.part"
         )
+        zero_shot_detections_path = self._contained(
+            project_directory, f"{upload_id}.zero-shot-detections.json"
+        )
+        zero_shot_detections_partial_path = self._contained(
+            project_directory, f"{upload_id}.zero-shot-detections.json.part"
+        )
         try:
             if not stored_path.is_file():
                 raise UploadNotFoundError(upload_id)
@@ -281,6 +297,8 @@ class ImplementationUploadStorage:
             chunks_partial_path=chunks_partial_path,
             rule_detections_path=rule_detections_path,
             rule_detections_partial_path=rule_detections_partial_path,
+            zero_shot_detections_path=zero_shot_detections_path,
+            zero_shot_detections_partial_path=zero_shot_detections_partial_path,
         )
 
     @staticmethod

@@ -11,9 +11,11 @@ import {
   getImplementationDocumentChunks,
   getImplementationDocumentExtraction,
   getImplementationRuleDetections,
+  getImplementationZeroShotDetections,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
+  runImplementationZeroShotClassifier,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 
@@ -123,6 +125,26 @@ describe('implementationAgentService', () => {
     runImplementationRuleDetector('AGP-003', 'A3UP-abc', { force: true })
     expect(apiClient.post).toHaveBeenLastCalledWith(
       '/agents/implementation/AGP-003/input-files/A3UP-abc/rule-detections?force=true',
+      undefined,
+      { authenticated: true },
+    )
+  })
+
+  it('uses read-only and explicit zero-shot classification endpoints', () => {
+    runImplementationZeroShotClassifier('AGP-003', 'A3UP-abc')
+    getImplementationZeroShotDetections('AGP-003', 'A3UP-abc')
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/zero-shot-detections',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/zero-shot-detections',
+      { authenticated: true },
+    )
+    runImplementationZeroShotClassifier('AGP-003', 'A3UP-abc', { force: true })
+    expect(apiClient.post).toHaveBeenLastCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/zero-shot-detections?force=true',
       undefined,
       { authenticated: true },
     )

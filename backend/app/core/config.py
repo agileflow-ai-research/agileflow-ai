@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     agent3_upload_root: Path = (
         BACKEND_DIR / "storage" / "standalone" / "implementation"
     )
+    agent3_zero_shot_local_files_only: bool = False
     github_app_id: str | None = None
     github_app_client_id: str | None = None
     github_app_client_secret: str | None = None
