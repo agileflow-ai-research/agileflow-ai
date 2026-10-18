@@ -208,4 +208,21 @@ describe('apiClient response contract', () => {
     expect(options.body).toBe(body)
     expect(options.headers.has('Content-Type')).toBe(false)
   })
+
+  it('sends JSON through the centralized PUT helper', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ success: true, message: 'Saved', data: {} }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const { apiClient } = await import('./apiClient.js')
+
+    await apiClient.put('/reviews/CHK-001', { action: 'ACCEPT' }, { authenticated: true })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://api.test/api/v1/reviews/CHK-001',
+      expect.objectContaining({
+        method: 'PUT', body: JSON.stringify({ action: 'ACCEPT' }),
+      }),
+    )
+  })
 })

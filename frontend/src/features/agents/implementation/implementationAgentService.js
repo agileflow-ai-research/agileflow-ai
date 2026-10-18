@@ -101,6 +101,21 @@ export function getImplementationHybridDetections(agentProjectId, uploadId) {
   )
 }
 
+export function getImplementationHumanReviews(agentProjectId, uploadId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/human-reviews`,
+    { authenticated: true },
+  )
+}
+
+export function saveImplementationHumanReview(agentProjectId, uploadId, chunkId, request) {
+  return apiClient.put(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/human-reviews/${encodeURIComponent(chunkId)}`,
+    request,
+    { authenticated: true },
+  )
+}
+
 export function evaluateImplementationReadiness(agentProjectId, request) {
   return apiClient.post(
     `/agents/implementation/${encodeURIComponent(agentProjectId)}/readiness/evaluate`,

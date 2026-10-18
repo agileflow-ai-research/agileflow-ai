@@ -14,15 +14,17 @@ import {
   getImplementationRuleDetections,
   getImplementationZeroShotDetections,
   getImplementationHybridDetections,
+  getImplementationHumanReviews,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
+  saveImplementationHumanReview,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 
 vi.mock('../../../services/apiClient.js', () => ({
-  apiClient: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
+  apiClient: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
 }))
 
 describe('implementationAgentService', () => {
@@ -168,6 +170,24 @@ describe('implementationAgentService', () => {
     expect(apiClient.post).toHaveBeenLastCalledWith(
       '/agents/implementation/AGP-003/input-files/A3UP-abc/hybrid-detections?force=true',
       undefined,
+      { authenticated: true },
+    )
+  })
+
+  it('gets review state and incrementally saves decisions', () => {
+    const request = {
+      expected_review_fingerprint: 'a'.repeat(64),
+      decisions: [{ action: 'ACCEPT', source_candidate_label: 'API_SPECIFICATION', final_label: 'API_SPECIFICATION', note: null }],
+    }
+    getImplementationHumanReviews('AGP-003', 'A3UP-abc')
+    saveImplementationHumanReview('AGP-003', 'A3UP-abc', 'CHK-ABC', request)
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/human-reviews',
+      { authenticated: true },
+    )
+    expect(apiClient.put).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/human-reviews/CHK-ABC',
+      request,
       { authenticated: true },
     )
   })

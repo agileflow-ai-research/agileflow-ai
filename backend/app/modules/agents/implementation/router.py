@@ -109,6 +109,17 @@ from app.modules.agents.implementation.semantic_discovery.hybrid.service import 
     StaleClassificationInputError,
     ZeroShotDetectionRequiredError,
 )
+from app.modules.agents.implementation.semantic_discovery.human_review.schemas import (
+    ChunkHumanReviewUpdate,
+    HumanReviewStateResponse,
+)
+from app.modules.agents.implementation.semantic_discovery.human_review.service import (
+    HumanReviewService,
+    HumanReviewStorageError,
+    HumanReviewValidationError,
+    HybridReviewRequiredError,
+    StaleHumanReviewError,
+)
 from app.modules.agents.implementation.storage import (
     ImplementationUploadStorage,
     UploadNotFoundError,
@@ -213,6 +224,18 @@ def get_hybrid_detection_service(
     ],
 ) -> HybridDetectionService:
     return HybridDetectionService(standalone_service, storage)
+
+
+def get_human_review_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+) -> HumanReviewService:
+    return HumanReviewService(standalone_service, storage)
 
 
 def get_github_connection_repository() -> GitHubConnectionRepository:
@@ -829,6 +852,92 @@ def get_implementation_hybrid_detections(
     except (StandaloneServiceError, UploadStorageError):
         return _hybrid_error(503, "Hybrid detection unavailable", "Hybrid result storage is unavailable")
     return SuccessResponse(message="Hybrid artifact candidates retrieved", data=result)
+
+
+def _human_review_error(status_code: int, message: str, detail: str) -> JSONResponse:
+    return _error(status_code, message, "human_reviews", detail)
+
+
+@router.get(
+    "/{agent_project_id}/input-files/{upload_id}/human-reviews",
+    response_model=SuccessResponse[HumanReviewStateResponse],
+)
+def get_implementation_human_reviews(
+    agent_project_id: str,
+    upload_id: str,
+    service: Annotated[HumanReviewService, Depends(get_human_review_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[HumanReviewStateResponse] | JSONResponse:
+    try:
+        result = service.get_state(agent_project_id, upload_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before human verification")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _human_review_error(404, "Upload not found", "Staged upload not found")
+    except HybridReviewRequiredError:
+        return _human_review_error(409, "Human verification unavailable", "HYBRID_DETECTION_REQUIRED")
+    except RuleDetectionRequiredError:
+        return _human_review_error(409, "Human verification unavailable", "RULE_DETECTION_REQUIRED")
+    except ZeroShotDetectionRequiredError:
+        return _human_review_error(409, "Human verification unavailable", "ZERO_SHOT_DETECTION_REQUIRED")
+    except StaleClassificationInputError:
+        return _human_review_error(409, "Human verification unavailable", "STALE_CLASSIFICATION_INPUT")
+    except (ExtractionNotFoundError, ChunkingNotFoundError):
+        return _human_review_error(409, "Human verification unavailable", "Current trusted semantic chunks are required")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _human_review_error(422, "Human verification unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError, HumanReviewStorageError):
+        return _human_review_error(503, "Human verification unavailable", "Human-review storage is unavailable")
+    return SuccessResponse(message="Human artifact verification state retrieved", data=result)
+
+
+@router.put(
+    "/{agent_project_id}/input-files/{upload_id}/human-reviews/{chunk_id}",
+    response_model=SuccessResponse[HumanReviewStateResponse],
+)
+def save_implementation_human_review(
+    agent_project_id: str,
+    upload_id: str,
+    chunk_id: str,
+    request: ChunkHumanReviewUpdate,
+    service: Annotated[HumanReviewService, Depends(get_human_review_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[HumanReviewStateResponse] | JSONResponse:
+    try:
+        result = service.save_chunk(
+            agent_project_id, upload_id, chunk_id, request, current_user
+        )
+    except AgentProjectNotFoundError:
+        return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(409, "Agent project is archived", "agent_project_id", "Reactivate the agent project before human verification")
+    except WrongAgentProjectTypeError as exc:
+        return _error(422, "Wrong agent project type", "agent_project_id", str(exc))
+    except UploadNotFoundError:
+        return _human_review_error(404, "Upload not found", "Staged upload not found")
+    except HybridReviewRequiredError:
+        return _human_review_error(409, "Human verification unavailable", "HYBRID_DETECTION_REQUIRED")
+    except RuleDetectionRequiredError:
+        return _human_review_error(409, "Human verification unavailable", "RULE_DETECTION_REQUIRED")
+    except ZeroShotDetectionRequiredError:
+        return _human_review_error(409, "Human verification unavailable", "ZERO_SHOT_DETECTION_REQUIRED")
+    except StaleClassificationInputError:
+        return _human_review_error(409, "Human verification unavailable", "STALE_CLASSIFICATION_INPUT")
+    except StaleHumanReviewError:
+        return _human_review_error(409, "Human verification is stale", "STALE_HUMAN_REVIEW")
+    except HumanReviewValidationError as exc:
+        return _human_review_error(422, "Invalid human-review decision", str(exc))
+    except (ExtractionNotFoundError, ChunkingNotFoundError):
+        return _human_review_error(409, "Human verification unavailable", "Current trusted semantic chunks are required")
+    except (UnsupportedExtractionSourceError, ChunkingUnavailableError) as exc:
+        return _human_review_error(422, "Human verification unavailable", str(exc))
+    except (StandaloneServiceError, UploadStorageError, HumanReviewStorageError):
+        return _human_review_error(503, "Human verification unavailable", "Human-review storage is unavailable")
+    return SuccessResponse(message="Human artifact verification saved", data=result)
 
 
 @router.post(

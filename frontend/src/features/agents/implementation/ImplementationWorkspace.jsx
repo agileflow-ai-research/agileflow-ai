@@ -13,10 +13,12 @@ import {
   getImplementationRuleDetections,
   getImplementationZeroShotDetections,
   getImplementationHybridDetections,
+  getImplementationHumanReviews,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
+  saveImplementationHumanReview,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 import { navigateToGitHub } from './githubNavigation.js'
@@ -31,6 +33,13 @@ import Textarea from '../../../components/ui/Textarea.jsx'
 
 const DOCUMENT_ACCEPT = '.pdf,.docx,.txt,.md,.json,.yaml,.yml'
 const IMAGE_ACCEPT = '.png,.jpg,.jpeg,.webp'
+
+const reviewTaxonomy = [
+  'FUNCTIONAL_REQUIREMENTS', 'NON_FUNCTIONAL_REQUIREMENTS', 'USER_STORIES',
+  'ACCEPTANCE_CRITERIA', 'SYSTEM_ARCHITECTURE', 'DATABASE_SCHEMA',
+  'API_SPECIFICATION', 'UI_FLOW', 'TECHNOLOGY_STACK', 'TECHNICAL_CONSTRAINTS',
+  'IMPLEMENTATION_TASKS', 'TEST_CASES', 'OTHER_CONTEXT',
+]
 
 const artifactOptions = [
   { value: '__requirements', label: 'Requirements', disabled: true },
@@ -103,6 +112,7 @@ function emptyInput() {
     ruleDetections: null,
     zeroShotDetections: null,
     hybridDetections: null,
+    humanReviews: null,
     error: '',
   }
 }
@@ -495,6 +505,161 @@ function HybridDetectionReview({ result, chunks }) {
   )
 }
 
+function HumanReviewChunk({ item, fingerprint, saving, onSave }) {
+  const [decisions, setDecisions] = useState(() => item.review.decisions.map((decision) => ({
+    action: decision.action,
+    source_candidate_label: decision.source_candidate_label,
+    final_label: decision.final_label,
+    note: decision.note,
+  })))
+  const [relabeled, setRelabeled] = useState({})
+  const [addedLabel, setAddedLabel] = useState('')
+  const [note, setNote] = useState('')
+
+  function decideCandidate(label, action, finalLabel = null) {
+    setDecisions((current) => [
+      ...current.filter((decision) => decision.source_candidate_label !== label),
+      {
+        action,
+        source_candidate_label: label,
+        final_label: action === 'ACCEPT' ? label : finalLabel,
+        note: note.trim() || null,
+      },
+    ])
+  }
+
+  function addMissingLabel() {
+    if (!addedLabel) return
+    setDecisions((current) => [
+      ...current.filter((decision) => !(decision.action === 'ADD_LABEL' && decision.final_label === addedLabel)),
+      { action: 'ADD_LABEL', source_candidate_label: null, final_label: addedLabel, note: note.trim() || null },
+    ])
+    setAddedLabel('')
+  }
+
+  const candidateLabels = new Set(item.hybrid.candidates.map((candidate) => candidate.label))
+  const selectedLabels = new Set(decisions.filter((decision) => decision.final_label).map((decision) => decision.final_label))
+  const addOptions = reviewTaxonomy.filter((label) => !candidateLabels.has(label) && !selectedLabels.has(label))
+  const previewLabels = [...selectedLabels].sort()
+
+  return (
+    <article className="space-y-5 rounded-control border border-default p-4" aria-label={`Human verification chunk ${item.chunk.chunk_index + 1}`}>
+      <div>
+        <h6 className="font-semibold text-content-primary">Chunk {item.chunk.chunk_index + 1}</h6>
+        <p className="text-sm text-content-secondary">Priority {item.priority} of 6</p>
+        <p className="text-sm text-content-secondary">Source: {item.chunk.provenance.original_filename}</p>
+        <p className="text-sm text-content-secondary">{chunkSource(item.chunk)}</p>
+        {item.chunk.context.section_title && <p className="text-sm text-content-secondary">Section: {item.chunk.context.section_title}</p>}
+      </div>
+      <section aria-label="Source Text">
+        <p className="text-sm font-semibold text-content-primary">Source Text</p>
+        <pre className="mt-2 whitespace-pre-wrap text-sm text-content-secondary">{item.chunk.text}</pre>
+      </section>
+      <section aria-label="Machine Analysis" className="space-y-3">
+        <p className="text-sm font-semibold text-content-primary">Machine Suggested</p>
+        <div>
+          <p className="text-sm font-medium text-content-primary">Rule baseline</p>
+          {item.rule.predictions.map((prediction) => (
+            <div key={prediction.label} className="text-sm text-content-secondary">
+              <p>{detectionLabel(prediction.label)} — {detectionLabel(prediction.strength)}</p>
+              {prediction.evidence.map((evidence) => <p key={`${evidence.rule_id}-${evidence.matched_text}`}>Evidence: {evidence.matched_text}</p>)}
+            </div>
+          ))}
+        </div>
+        <div>
+          <p className="text-sm font-medium text-content-primary">Zero-Shot DeBERTa</p>
+          <ul className="text-sm text-content-secondary">
+            {[...item.model.scores].sort((left, right) => right.score - left.score).slice(0, 4).map((score) => (
+              <li key={score.label}>{detectionLabel(score.label)} {score.score.toFixed(4)}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="text-sm font-medium text-content-primary">Hybrid recommendation</p>
+          {item.hybrid.candidates.map((candidate) => (
+            <p key={candidate.label} className="text-sm text-content-secondary">
+              {detectionLabel(candidate.label)} — {detectionLabel(candidate.decision)} — {detectionLabel(candidate.evidence_state)}
+            </p>
+          ))}
+        </div>
+      </section>
+      <section aria-label="Human Verification" className="space-y-4">
+        <p className="text-sm font-semibold text-content-primary">Human Verification</p>
+        <Textarea label="Optional review note" rows={2} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
+        {item.hybrid.candidates.map((candidate) => {
+          const current = decisions.find((decision) => decision.source_candidate_label === candidate.label)
+          return (
+            <div key={candidate.label} className="space-y-2 rounded-control border border-default p-3">
+              <p className="text-sm font-medium text-content-primary">Machine candidate: {detectionLabel(candidate.label)}</p>
+              {current && <p className="text-sm text-state-success">Selected action: {detectionLabel(current.action)}{current.final_label ? ` → ${detectionLabel(current.final_label)}` : ''}</p>}
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="small" onClick={() => decideCandidate(candidate.label, 'ACCEPT')}>Accept {detectionLabel(candidate.label)}</Button>
+                <Button variant="outline" size="small" onClick={() => decideCandidate(candidate.label, 'EXCLUDE')}>Exclude {detectionLabel(candidate.label)}</Button>
+              </div>
+              <Select
+                label={`Relabel ${detectionLabel(candidate.label)}`}
+                value={relabeled[candidate.label] || ''}
+                options={reviewTaxonomy.filter((label) => label !== candidate.label).map((label) => ({ value: label, label: detectionLabel(label) }))}
+                onChange={(event) => setRelabeled((currentValues) => ({ ...currentValues, [candidate.label]: event.target.value }))}
+              />
+              <Button variant="outline" size="small" disabled={!relabeled[candidate.label]} onClick={() => decideCandidate(candidate.label, 'RELABEL', relabeled[candidate.label])}>Relabel Candidate</Button>
+            </div>
+          )
+        })}
+        <div className="space-y-2">
+          <Select
+            label="Add Missing Artifact Type"
+            value={addedLabel}
+            options={addOptions.map((label) => ({ value: label, label: detectionLabel(label) }))}
+            onChange={(event) => setAddedLabel(event.target.value)}
+          />
+          <Button variant="outline" size="small" disabled={!addedLabel} onClick={addMissingLabel}>Add Missing Artifact Type</Button>
+        </div>
+        <div>
+          <p className="text-sm font-medium text-content-primary">Human Verified Artifact Types:</p>
+          {previewLabels.length > 0
+            ? <ul className="mt-1 text-sm text-content-secondary">{previewLabels.map((label) => <li key={label}>✓ {detectionLabel(label)}</li>)}</ul>
+            : <p className="text-sm text-content-secondary">No final labels selected yet.</p>}
+        </div>
+        <Button
+          loading={saving}
+          loadingLabel="Saving human verification"
+          disabled={decisions.length === 0}
+          onClick={() => onSave(
+            item.chunk.chunk_id,
+            fingerprint,
+            decisions.map((decision) => ({
+              ...decision,
+              note: note.trim() || decision.note || null,
+            })),
+          )}
+        >Save Chunk Verification</Button>
+      </section>
+    </article>
+  )
+}
+
+function HumanReviewWorkspace({ state, onSave }) {
+  const [position, setPosition] = useState(0)
+  const result = state.result
+  if (!result) return null
+  const queue = result.review_queue
+  const item = queue[position] || queue[0]
+  const metrics = result.review.metrics
+  return (
+    <section className="mt-4 space-y-4 border-t border-default pt-4" aria-label="Human Artifact Verification Review">
+      {result.stale && <p role="alert" className="text-sm text-state-warning">{result.stale_message}</p>}
+      <p className="text-sm text-content-secondary">Reviewing chunk {position + 1} of {queue.length} in risk-prioritized order.</p>
+      {item && <HumanReviewChunk key={`${item.chunk.chunk_id}-${item.review.reviewed_at || 'new'}`} item={item} fingerprint={result.review.review_fingerprint} saving={state.status === 'saving'} onSave={onSave} />}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="small" disabled={position === 0} onClick={() => setPosition((current) => current - 1)}>Previous Chunk</Button>
+        <Button variant="outline" size="small" disabled={position >= queue.length - 1} onClick={() => setPosition((current) => current + 1)}>Next Chunk</Button>
+      </div>
+      <p className="text-sm text-content-secondary">Verified {metrics.verified_chunks} / {metrics.total_chunks} chunks</p>
+    </section>
+  )
+}
+
 function ImplementationWorkspace({ project }) {
   const [step, setStep] = useState(0)
   const [inputs, setInputs] = useState([emptyInput()])
@@ -522,6 +687,9 @@ function ImplementationWorkspace({ project }) {
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [hybridReview, setHybridReview] = useState({
+    uploadId: null, status: 'idle', result: null, error: '',
+  })
+  const [humanReviewWorkspace, setHumanReviewWorkspace] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
   const [readinessState, setReadinessState] = useState({
@@ -654,6 +822,9 @@ function ImplementationWorkspace({ project }) {
   }
 
   async function runDocumentExtraction(index, file, { force = false } = {}) {
+    if (humanReviewWorkspace.uploadId === file.upload_id) {
+      setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
+    }
     updateInput(index, { extraction: { status: 'extracting' }, error: '' })
     try {
       const response = await extractImplementationDocument(
@@ -668,6 +839,7 @@ function ImplementationWorkspace({ project }) {
         ruleDetections: null,
         zeroShotDetections: null,
         hybridDetections: null,
+        humanReviews: null,
         error: '',
       })
     } catch (error) {
@@ -708,8 +880,11 @@ function ImplementationWorkspace({ project }) {
     if (zeroShotReview.uploadId === file.upload_id) {
       setZeroShotReview({ uploadId: null, status: 'idle', result: null, error: '' })
     }
+    if (humanReviewWorkspace.uploadId === file.upload_id) {
+      setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
+    }
     updateInput(index, {
-      chunks: { status: 'preparing' }, ruleDetections: null, zeroShotDetections: null, hybridDetections: null, error: '',
+      chunks: { status: 'preparing' }, ruleDetections: null, zeroShotDetections: null, hybridDetections: null, humanReviews: null, error: '',
     })
     try {
       const response = await prepareImplementationDocumentChunks(
@@ -751,7 +926,10 @@ function ImplementationWorkspace({ project }) {
   }
 
   async function runRuleDetector(index, file, { force = false } = {}) {
-    updateInput(index, { ruleDetections: { status: 'running' }, hybridDetections: null, error: '' })
+    if (humanReviewWorkspace.uploadId === file.upload_id) {
+      setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
+    }
+    updateInput(index, { ruleDetections: { status: 'running' }, hybridDetections: null, humanReviews: null, error: '' })
     try {
       const response = await runImplementationRuleDetector(
         project.agent_project_id,
@@ -802,7 +980,10 @@ function ImplementationWorkspace({ project }) {
   }
 
   async function runZeroShotClassifier(index, file, { force = false } = {}) {
-    updateInput(index, { zeroShotDetections: { status: 'running' }, hybridDetections: null, error: '' })
+    if (humanReviewWorkspace.uploadId === file.upload_id) {
+      setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
+    }
+    updateInput(index, { zeroShotDetections: { status: 'running' }, hybridDetections: null, humanReviews: null, error: '' })
     try {
       const response = await runImplementationZeroShotClassifier(
         project.agent_project_id,
@@ -847,7 +1028,10 @@ function ImplementationWorkspace({ project }) {
   }
 
   async function buildHybridDetections(index, file, { force = false } = {}) {
-    updateInput(index, { hybridDetections: { status: 'running' }, error: '' })
+    if (humanReviewWorkspace.uploadId === file.upload_id) {
+      setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
+    }
+    updateInput(index, { hybridDetections: { status: 'running' }, humanReviews: null, error: '' })
     try {
       const response = await buildImplementationHybridDetections(
         project.agent_project_id, file.upload_id, { force },
@@ -881,6 +1065,43 @@ function ImplementationWorkspace({ project }) {
     }
   }
 
+  async function openHumanReviews(index, file) {
+    if (humanReviewWorkspace.uploadId === file.upload_id && humanReviewWorkspace.result) {
+      setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
+      return
+    }
+    setHumanReviewWorkspace({ uploadId: file.upload_id, status: 'loading', result: null, error: '' })
+    try {
+      const response = await getImplementationHumanReviews(project.agent_project_id, file.upload_id)
+      if (!response?.data?.review || !Array.isArray(response.data.review_queue)) throw new Error('Invalid human-review response')
+      updateInput(index, { humanReviews: response.data, error: '' })
+      setHumanReviewWorkspace({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+    } catch (error) {
+      setHumanReviewWorkspace({
+        uploadId: file.upload_id, status: 'error', result: null,
+        error: error?.errors?.[0]?.message || error?.message || 'Human verification could not be loaded.',
+      })
+    }
+  }
+
+  async function saveHumanReview(index, file, chunkId, fingerprint, decisions) {
+    setHumanReviewWorkspace((current) => ({ ...current, status: 'saving', error: '' }))
+    try {
+      const response = await saveImplementationHumanReview(
+        project.agent_project_id, file.upload_id, chunkId,
+        { expected_review_fingerprint: fingerprint, decisions },
+      )
+      if (!response?.data?.review || !Array.isArray(response.data.review_queue)) throw new Error('Invalid human-review response')
+      updateInput(index, { humanReviews: response.data, error: '' })
+      setHumanReviewWorkspace({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+    } catch (error) {
+      setHumanReviewWorkspace((current) => ({
+        ...current, status: 'error',
+        error: error?.errors?.[0]?.message || error?.message || 'Human verification could not be saved.',
+      }))
+    }
+  }
+
   async function removeInput(index) {
     const item = inputs[index]
     if (!item.file) {
@@ -907,6 +1128,9 @@ function ImplementationWorkspace({ project }) {
       }
       if (zeroShotReview.uploadId === item.file.upload_id) {
         setZeroShotReview({ uploadId: null, status: 'idle', result: null, error: '' })
+      }
+      if (humanReviewWorkspace.uploadId === item.file.upload_id) {
+        setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
       }
       setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
       setReadinessState((current) => (
@@ -1375,6 +1599,34 @@ function ImplementationWorkspace({ project }) {
                                   {hybridReview.uploadId === item.file.upload_id && hybridReview.error && <p role="alert" className="text-sm text-state-danger">{hybridReview.error}</p>}
                                   {hybridReview.uploadId === item.file.upload_id && hybridReview.result && (
                                     <HybridDetectionReview result={hybridReview.result} chunks={item.chunks.chunks} />
+                                  )}
+                                  {item.hybridDetections?.metrics && (
+                                    <section className="mt-4 space-y-3 border-t border-default pt-4" aria-label="Human Artifact Verification">
+                                      <div>
+                                        <p className="text-sm font-medium text-content-primary">Human Artifact Verification</p>
+                                        <p className="text-sm text-content-secondary">
+                                          Status: {item.humanReviews ? detectionLabel(item.humanReviews.review.review_status) : 'Not Started'}
+                                        </p>
+                                      </div>
+                                      <div className="text-sm text-content-secondary">
+                                        <p>Chunks: {item.humanReviews?.review.metrics.total_chunks ?? item.hybridDetections.metrics.chunk_count} total</p>
+                                        <p>{item.humanReviews?.review.metrics.verified_chunks ?? 0} verified</p>
+                                        <p>{item.humanReviews?.review.metrics.remaining_chunks ?? item.hybridDetections.metrics.chunk_count} remaining</p>
+                                      </div>
+                                      <p className="text-sm text-content-secondary">Machine suggestions are not considered ground truth until reviewed.</p>
+                                      <p className="text-sm text-content-secondary">All chunks are reviewed in the research workflow so classifier predictions can later be compared with human-verified labels.</p>
+                                      <Button variant="outline" size="small" onClick={() => openHumanReviews(index, item.file)}>
+                                        {item.humanReviews?.review.review_status === 'NOT_STARTED' || !item.humanReviews ? 'Start Review' : 'Continue Review'}
+                                      </Button>
+                                      {humanReviewWorkspace.uploadId === item.file.upload_id && humanReviewWorkspace.status === 'loading' && <p role="status" className="text-sm text-content-secondary">Loading human verification...</p>}
+                                      {humanReviewWorkspace.uploadId === item.file.upload_id && humanReviewWorkspace.error && <p role="alert" className="text-sm text-state-danger">{humanReviewWorkspace.error}</p>}
+                                      {humanReviewWorkspace.uploadId === item.file.upload_id && humanReviewWorkspace.result && (
+                                        <HumanReviewWorkspace
+                                          state={humanReviewWorkspace}
+                                          onSave={(chunkId, fingerprint, decisions) => saveHumanReview(index, item.file, chunkId, fingerprint, decisions)}
+                                        />
+                                      )}
+                                    </section>
                                   )}
                                 </section>
                               )}

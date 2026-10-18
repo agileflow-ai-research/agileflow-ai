@@ -70,6 +70,8 @@ class StagedUpload:
     zero_shot_detections_partial_path: Path
     hybrid_detections_path: Path
     hybrid_detections_partial_path: Path
+    human_reviews_path: Path
+    human_reviews_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -222,6 +224,12 @@ class ImplementationUploadStorage:
         hybrid_detections_partial_path = self._contained(
             project_directory, f"{upload_id}.hybrid-detections.json.part"
         )
+        human_reviews_path = self._contained(
+            project_directory, f"{upload_id}.human-reviews.json"
+        )
+        human_reviews_partial_path = self._contained(
+            project_directory, f"{upload_id}.human-reviews.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
             extraction_path.unlink(missing_ok=True)
@@ -234,6 +242,8 @@ class ImplementationUploadStorage:
             zero_shot_detections_partial_path.unlink(missing_ok=True)
             hybrid_detections_path.unlink(missing_ok=True)
             hybrid_detections_partial_path.unlink(missing_ok=True)
+            human_reviews_path.unlink(missing_ok=True)
+            human_reviews_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise UploadNotFoundError(upload_id) from exc
@@ -291,6 +301,12 @@ class ImplementationUploadStorage:
         hybrid_detections_partial_path = self._contained(
             project_directory, f"{upload_id}.hybrid-detections.json.part"
         )
+        human_reviews_path = self._contained(
+            project_directory, f"{upload_id}.human-reviews.json"
+        )
+        human_reviews_partial_path = self._contained(
+            project_directory, f"{upload_id}.human-reviews.json.part"
+        )
         try:
             if not stored_path.is_file():
                 raise UploadNotFoundError(upload_id)
@@ -317,6 +333,8 @@ class ImplementationUploadStorage:
             zero_shot_detections_partial_path=zero_shot_detections_partial_path,
             hybrid_detections_path=hybrid_detections_path,
             hybrid_detections_partial_path=hybrid_detections_partial_path,
+            human_reviews_path=human_reviews_path,
+            human_reviews_partial_path=human_reviews_partial_path,
         )
 
     @staticmethod

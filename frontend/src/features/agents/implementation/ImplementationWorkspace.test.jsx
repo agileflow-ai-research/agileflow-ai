@@ -15,10 +15,12 @@ import {
   getImplementationRuleDetections,
   getImplementationZeroShotDetections,
   getImplementationHybridDetections,
+  getImplementationHumanReviews,
   getGitHubRepository,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
+  saveImplementationHumanReview,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
 import { navigateToGitHub } from './githubNavigation.js'
@@ -27,6 +29,8 @@ import ImplementationWorkspace from './ImplementationWorkspace.jsx'
 vi.mock('./implementationAgentService.js', () => ({
   buildImplementationHybridDetections: vi.fn(),
   getImplementationHybridDetections: vi.fn(),
+  getImplementationHumanReviews: vi.fn(),
+  saveImplementationHumanReview: vi.fn(),
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
   evaluateImplementationReadiness: vi.fn(),
@@ -234,6 +238,53 @@ function hybridDetectionResult(overrides = {}) {
   }
 }
 
+function humanReviewState({ complete = false, stale = false } = {}) {
+  const chunk = chunkResult().chunks[0]
+  const candidate = hybridDetectionResult().chunks[0].candidates[0]
+  const decision = {
+    action: 'ACCEPT', source_candidate_label: candidate.label,
+    final_label: candidate.label, note: 'Verified against source.',
+    reviewer_owner_id: 'USR-001', reviewed_at: '2026-10-18T12:00:00Z',
+  }
+  const chunkReview = {
+    chunk_id: chunk.chunk_id, chunk_index: chunk.chunk_index,
+    text_hash: chunk.text_hash, provenance: chunk.provenance,
+    machine_snapshot: { hybrid_result_digest: 'c'.repeat(64), candidate_labels: [candidate.label] },
+    decisions: complete ? [decision] : [],
+    verified_labels: complete ? [candidate.label] : [],
+    review_status: complete ? 'VERIFIED' : 'UNREVIEWED',
+    reviewed_at: complete ? '2026-10-18T12:00:00Z' : null,
+  }
+  return {
+    review: {
+      upload_id: metadata().upload_id, agent_project_id: 'AGP-003',
+      original_filename: metadata().original_filename, source_sha256: 'a'.repeat(64),
+      document_type: 'PDF', pipeline: {}, rule_result_digest: 'a'.repeat(64),
+      zero_shot_result_digest: 'b'.repeat(64), hybrid_result_digest: 'c'.repeat(64),
+      review_fingerprint: 'd'.repeat(64), reviewer_owner_id: complete ? 'USR-001' : null,
+      review_status: complete ? 'COMPLETE' : 'NOT_STARTED', chunks: [chunkReview],
+      metrics: {
+        total_chunks: 1, verified_chunks: complete ? 1 : 0,
+        remaining_chunks: complete ? 0 : 1,
+        accepted_candidate_count: complete ? 1 : 0,
+        relabeled_candidate_count: 0, excluded_candidate_count: 0,
+        added_label_count: 0, review_completion_percentage: complete ? 100 : 0,
+      },
+      created_at: complete ? '2026-10-18T12:00:00Z' : null,
+      updated_at: complete ? '2026-10-18T12:00:00Z' : null,
+    },
+    review_queue: [{
+      priority: 1, chunk,
+      rule: ruleDetectionResult().detections[0],
+      model: zeroShotResult().chunks[0],
+      hybrid: { ...hybridDetectionResult().chunks[0], candidates: [candidate] },
+      review: chunkReview,
+    }],
+    stale,
+    stale_message: stale ? 'Artifact analysis changed. Human verification must be performed again.' : null,
+  }
+}
+
 function zeroShotResult(overrides = {}) {
   const labels = [
     'FUNCTIONAL_REQUIREMENTS', 'NON_FUNCTIONAL_REQUIREMENTS', 'USER_STORIES',
@@ -369,6 +420,8 @@ describe('ImplementationWorkspace', () => {
     getImplementationZeroShotDetections.mockResolvedValue({ data: zeroShotResult() })
     buildImplementationHybridDetections.mockResolvedValue({ data: hybridDetectionResult() })
     getImplementationHybridDetections.mockResolvedValue({ data: hybridDetectionResult() })
+    getImplementationHumanReviews.mockResolvedValue({ data: humanReviewState() })
+    saveImplementationHumanReview.mockResolvedValue({ data: humanReviewState({ complete: true }) })
     evaluateImplementationReadiness.mockResolvedValue({ data: readinessResult() })
   })
 
@@ -500,6 +553,65 @@ describe('ImplementationWorkspace', () => {
     expect(within(hybrid).queryByRole('button', { name: /accept|relabel|exclude/i })).not.toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Artifact Detection Baseline' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Zero-Shot Model Baseline' })).toBeInTheDocument()
+  })
+
+  it('supports research-mode human accept, relabel, exclude, add-label, notes, and progress', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationWorkspace project={project} />)
+    await attachAndPrepareDocument(user)
+    await user.click(screen.getByRole('button', { name: 'Run Rule Detector' }))
+    await user.click(screen.getByRole('button', { name: 'Run Zero-Shot Classifier' }))
+    await user.click(await screen.findByRole('button', { name: 'Build Hybrid Candidates' }))
+    const verification = await screen.findByRole('region', { name: 'Human Artifact Verification' })
+    expect(within(verification).getByText('Status: Not Started')).toBeInTheDocument()
+    expect(within(verification).getByText('0 verified')).toBeInTheDocument()
+    expect(within(verification).getByText(/Machine suggestions are not considered ground truth/)).toBeInTheDocument()
+    expect(within(verification).getByText(/All chunks are reviewed in the research workflow/)).toBeInTheDocument()
+    await user.click(within(verification).getByRole('button', { name: 'Start Review' }))
+    const review = await screen.findByRole('region', { name: 'Human Artifact Verification Review' })
+    expect(within(review).getByText('Source: bookease-api.pdf')).toBeInTheDocument()
+    expect(within(review).getByText('POST /bookings creates a booking.')).toBeInTheDocument()
+    expect(within(review).getByText('Evidence: POST /bookings')).toBeInTheDocument()
+    expect(within(review).getByText(/API Specification 0.9400/)).toBeInTheDocument()
+    expect(within(review).getByText(/API Specification — Auto Candidate — Rule And Model/)).toBeInTheDocument()
+    expect(within(review).getByText('Machine Suggested')).toBeInTheDocument()
+    expect(within(review).getByText('Human Verification')).toBeInTheDocument()
+
+    await user.type(within(review).getByLabelText('Optional review note'), 'Status behavior is also a criterion.')
+    await user.click(within(review).getByRole('button', { name: 'Exclude API Specification' }))
+    expect(within(review).getByText('Selected action: Exclude')).toBeInTheDocument()
+    await user.selectOptions(within(review).getByLabelText('Relabel API Specification'), 'TECHNICAL_CONSTRAINTS')
+    await user.click(within(review).getByRole('button', { name: 'Relabel Candidate' }))
+    expect(within(review).getByText(/Selected action: Relabel → Technical Constraints/)).toBeInTheDocument()
+    await user.click(within(review).getByRole('button', { name: 'Accept API Specification' }))
+    await user.selectOptions(within(review).getByLabelText('Add Missing Artifact Type'), 'ACCEPTANCE_CRITERIA')
+    await user.click(within(review).getByRole('button', { name: 'Add Missing Artifact Type' }))
+    expect(within(review).getByText('✓ API Specification')).toBeInTheDocument()
+    expect(within(review).getByText('✓ Acceptance Criteria')).toBeInTheDocument()
+    await user.click(within(review).getByRole('button', { name: 'Save Chunk Verification' }))
+    await waitFor(() => expect(saveImplementationHumanReview).toHaveBeenCalledWith(
+      'AGP-003', metadata().upload_id, chunkResult().chunks[0].chunk_id,
+      expect.objectContaining({ expected_review_fingerprint: 'd'.repeat(64) }),
+    ))
+    expect(await within(verification).findByText('Status: Complete')).toBeInTheDocument()
+    expect(within(verification).getByText('1 verified')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Artifact Detection Baseline' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Zero-Shot Model Baseline' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Hybrid Artifact Analysis' })).toBeInTheDocument()
+    expect(screen.queryByText(/dataset export|fine-tuning/i)).not.toBeInTheDocument()
+  })
+
+  it('shows stale human verification without applying prior labels', async () => {
+    const user = userEvent.setup()
+    getImplementationHumanReviews.mockResolvedValue({ data: humanReviewState({ stale: true }) })
+    render(<ImplementationWorkspace project={project} />)
+    await attachAndPrepareDocument(user)
+    await user.click(screen.getByRole('button', { name: 'Run Rule Detector' }))
+    await user.click(screen.getByRole('button', { name: 'Run Zero-Shot Classifier' }))
+    await user.click(await screen.findByRole('button', { name: 'Build Hybrid Candidates' }))
+    await user.click(await screen.findByRole('button', { name: 'Start Review' }))
+    expect(await screen.findByText('Artifact analysis changed. Human verification must be performed again.')).toBeInTheDocument()
+    expect(screen.getByText('No final labels selected yet.')).toBeInTheDocument()
   })
 
   it('renders OTHER_CONTEXT and re-runs with force=true', async () => {
