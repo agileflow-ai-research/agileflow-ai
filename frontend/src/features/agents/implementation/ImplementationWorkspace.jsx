@@ -47,7 +47,7 @@ import {
 } from './utils/workspace.js'
 import { extractionSummary } from './utils/presentation.js'
 
-function ImplementationWorkspace({ project }) {
+function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentationChange }) {
   const [step, setStep] = useState(0)
   const [inputs, setInputs] = useState([emptyInput()])
   const [selectedOutputs, setSelectedOutputs] = useState([])
@@ -154,6 +154,16 @@ function ImplementationWorkspace({ project }) {
     loadGitHubState()
     return () => { active = false }
   }, [project.agent_project_id])
+
+  useEffect(() => {
+    onPresentationChange?.({
+      inputs,
+      selectedOutputs,
+      readinessState,
+      githubState,
+      repositoryState,
+    })
+  }, [githubState, inputs, onPresentationChange, readinessState, repositoryState, selectedOutputs])
 
   function updateInput(index, changes) {
     setInputs((current) => current.map((item, itemIndex) => (
@@ -814,9 +824,8 @@ function ImplementationWorkspace({ project }) {
     </div>
   ) : 'Not connected. No repository has been created.'
 
-  return (
-    <div className="space-y-5">
-      <AgentInputWizard
+  const workspaceWizard = (
+    <AgentInputWizard
         steps={steps}
         currentStep={step}
         onBack={step > 0 ? () => setStep((current) => current - 1) : undefined}
@@ -908,23 +917,52 @@ function ImplementationWorkspace({ project }) {
             {readinessState.error && <p role="alert" className="text-sm text-state-danger">{readinessState.error}</p>}
           </div>
         )}
-      </AgentInputWizard>
+    </AgentInputWizard>
+  )
 
-      <ReadinessReview
-        state={readinessState}
-        onAdapt={adaptToSupportedStack}
-        onBack={() => setStep(0)}
-      />
+  const showsPreparationWorkspace = [
+    'ALL',
+    'PROJECT_SOURCES',
+    'INPUT_ANALYSIS',
+    'SPECIFICATION_VERIFICATION',
+  ].includes(activeSection)
+  const showsResearchDetails = ['INPUT_ANALYSIS', 'SPECIFICATION_VERIFICATION'].includes(activeSection)
 
-      <GitHubIntegration
-        githubState={githubState}
-        repositoryForm={repositoryForm}
-        repositoryState={repositoryState}
-        setRepositoryForm={setRepositoryForm}
-        setRepositoryState={setRepositoryState}
-        onConnect={handleGitHubConnect}
-        onCreateRepository={handleRepositoryCreate}
-      />
+  return (
+    <div className="space-y-5">
+      {showsPreparationWorkspace && (showsResearchDetails ? (
+        <details open className="rounded-control border border-default bg-surface p-4">
+          <summary className="cursor-pointer font-semibold text-content-primary">Research Details</summary>
+          <div className="mt-4">{workspaceWizard}</div>
+        </details>
+      ) : workspaceWizard)}
+
+      {['ALL', 'IMPLEMENTATION_READINESS'].includes(activeSection) && (
+        <>
+          <ReadinessReview
+            state={readinessState}
+            onAdapt={adaptToSupportedStack}
+            onBack={() => setStep(0)}
+          />
+          {activeSection === 'IMPLEMENTATION_READINESS' && !readinessState.result && readinessState.status !== 'evaluating' && !readinessState.error && (
+            <p className="rounded-control border border-default bg-elevated p-4 text-sm text-content-secondary">
+              No readiness evaluation exists yet. Open Project &amp; Sources to review inputs and run the existing readiness check.
+            </p>
+          )}
+        </>
+      )}
+
+      {['ALL', 'DELIVERY_SETUP'].includes(activeSection) && (
+        <GitHubIntegration
+          githubState={githubState}
+          repositoryForm={repositoryForm}
+          repositoryState={repositoryState}
+          setRepositoryForm={setRepositoryForm}
+          setRepositoryState={setRepositoryState}
+          onConnect={handleGitHubConnect}
+          onCreateRepository={handleRepositoryCreate}
+        />
+      )}
     </div>
   )
 }

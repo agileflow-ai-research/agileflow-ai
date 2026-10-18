@@ -1416,4 +1416,22 @@ describe('ImplementationWorkspace', () => {
     expect(screen.queryByText('Connected')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Connect GitHub' })).toBeEnabled()
   })
+
+  it('reuses the existing GitHub UI for the delivery setup canvas panel', async () => {
+    render(<ImplementationWorkspace project={project} activeSection="DELIVERY_SETUP" />)
+    expect(await screen.findByRole('button', { name: 'Connect GitHub' })).toBeEnabled()
+    expect(screen.queryByRole('heading', { name: 'Implementation Inputs' })).not.toBeInTheDocument()
+  })
+
+  it('keeps research controls reachable in the analysis panel', async () => {
+    render(<ImplementationWorkspace project={project} activeSection="INPUT_ANALYSIS" />)
+    expect(await screen.findByText('Research Details')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Implementation Inputs' })).toBeInTheDocument()
+  })
+
+  it('shows an honest empty readiness panel until the existing evaluation has run', async () => {
+    render(<ImplementationWorkspace project={project} activeSection="IMPLEMENTATION_READINESS" />)
+    expect(await screen.findByText(/No readiness evaluation exists yet/)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Implementation Inputs' })).not.toBeInTheDocument()
+  })
 })

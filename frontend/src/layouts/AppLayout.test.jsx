@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import AppLayout from './AppLayout.jsx'
+import { getAgentProjects } from '../services/agentProjectService.js'
+import { getProjects } from '../services/projectService.js'
 
 const logout = vi.fn()
 
@@ -18,6 +20,9 @@ vi.mock('../features/auth/useAuth.js', () => ({
     logout,
   }),
 }))
+
+vi.mock('../services/projectService.js', () => ({ getProjects: vi.fn() }))
+vi.mock('../services/agentProjectService.js', () => ({ getAgentProjects: vi.fn() }))
 
 function renderLayout(path = '/projects') {
   return render(
@@ -37,26 +42,28 @@ function renderLayout(path = '/projects') {
 describe('AppLayout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getProjects.mockResolvedValue({ data: [] })
+    getAgentProjects.mockResolvedValue({ data: [] })
   })
 
-  it('renders the reusable shell, brand, active Projects link, and real user', () => {
+  it('renders the reusable shell, two navigation groups, and real user', async () => {
     renderLayout('/projects/new')
 
     expect(screen.getAllByRole('img', { name: 'AgileFlow AI' }).length).toBeGreaterThan(0)
-    const projectsLink = screen.getByRole('link', { name: 'Projects' })
-    expect(projectsLink).toHaveAttribute('href', '/projects')
-    expect(projectsLink).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('link', { name: 'AI Agents' })).toHaveAttribute('href', '/agents')
+    expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Standalone Agents' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '+ New Project' })).toHaveAttribute('href', '/projects/new')
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument()
     expect(screen.getByText('ada@example.com')).toBeInTheDocument()
     expect(screen.queryByText(/reviewer|administrator|role/i)).not.toBeInTheDocument()
   })
 
-  it('marks AI Agents active for standalone project workspaces without changing Projects', () => {
+  it('shows all four standalone agent groups for project workspaces', async () => {
     renderLayout('/agent-projects/AGP-001')
-
-    expect(screen.getByRole('link', { name: 'AI Agents' })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByRole('link', { name: 'Projects' })).not.toHaveAttribute('aria-current')
+    expect(await screen.findByRole('button', { name: 'Agent 1 — Requirements & Analysis' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Agent 2 — Design & Planning' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Agent 3 — Implementation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Agent 4 — Testing & Validation' })).toBeInTheDocument()
   })
 
   it('uses AuthContext logout from the visible logout control', async () => {
@@ -68,13 +75,12 @@ describe('AppLayout', () => {
     expect(logout).toHaveBeenCalledOnce()
   })
 
-  it('does not expose unsupported feature destinations', () => {
+  it('supports desktop collapse without creating another navigation system', async () => {
+    const user = userEvent.setup()
     renderLayout()
-
-    expect(screen.queryByRole('link', { name: /requirements/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /design/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /testing/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: /reports/i })).not.toBeInTheDocument()
+    const collapse = screen.getByRole('button', { name: 'Collapse sidebar' })
+    await user.click(collapse)
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
   })
 
   it('keeps mobile navigation out of the accessibility tree while closed', () => {
@@ -112,7 +118,7 @@ describe('AppLayout', () => {
     expect(trigger).toHaveFocus()
   })
 
-  it('closes mobile navigation after selecting Projects', async () => {
+  it('closes mobile navigation after selecting the existing new-project route', async () => {
     const user = userEvent.setup()
     renderLayout('/projects/new')
 
@@ -120,9 +126,9 @@ describe('AppLayout', () => {
     const mobileNavigation = screen.getByRole('complementary', {
       name: 'Mobile navigation',
     })
-    await user.click(within(mobileNavigation).getByRole('link', { name: 'Projects' }))
+    await user.click(within(mobileNavigation).getByRole('link', { name: '+ New Project' }))
 
-    expect(screen.getByRole('heading', { name: 'Protected projects' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Create project' })).toBeInTheDocument()
     expect(
       screen.queryByRole('complementary', { name: 'Mobile navigation' }),
     ).not.toBeInTheDocument()

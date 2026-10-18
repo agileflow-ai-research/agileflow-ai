@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import AgentWorkspaceShell from '../components/agents/AgentWorkspaceShell.jsx'
 import RequirementsWorkspace from '../features/agents/requirements/RequirementsWorkspace.jsx'
 import DesignPlanningWorkspace from '../features/agents/designPlanning/DesignPlanningWorkspace.jsx'
-import ImplementationWorkspace from '../features/agents/implementation/ImplementationWorkspace.jsx'
+import ImplementationProjectPage from '../features/agents/implementation/pages/ImplementationProjectPage.jsx'
 import TestingValidationWorkspace from '../features/agents/testingValidation/TestingValidationWorkspace.jsx'
 import RunDetail from '../components/agents/RunDetail.jsx'
 import RunHistory from '../components/agents/RunHistory.jsx'
@@ -130,6 +130,42 @@ function AgentProjectOverviewPage() {
   const agent = getAgentPresentationByType(project.agent_type)
   const status = getAgentProjectStatusPresentation(project.status)
   const agentListPath = agent ? `/agents/${agent.slug}` : '/agents'
+  const statusAction = (
+    <Button
+      variant={project.status === 'ARCHIVED' ? 'primary' : 'outline'}
+      loading={statusUpdate === 'updating'}
+      loadingLabel={project.status === 'ARCHIVED' ? 'Reactivating project' : 'Archiving project'}
+      onClick={handleStatusChange}
+    >
+      {project.status === 'ARCHIVED' ? 'Reactivate Project' : 'Archive Project'}
+    </Button>
+  )
+
+  if (project.agent_type === 'IMPLEMENTATION' && project.status !== 'ARCHIVED') {
+    return (
+      <main className="mx-auto w-full max-w-[96rem] space-y-8 px-page py-8 sm:py-10">
+        <Button variant="ghost" size="small" onClick={() => navigate(agentListPath)}>Back to projects</Button>
+        {statusError && <ErrorState title="Status update failed" message={statusError} onRetry={handleStatusChange} />}
+        <ImplementationProjectPage
+          project={project}
+          projectStatus={status}
+          projectActions={statusAction}
+        />
+        <section aria-label="Run History" className="space-y-4">
+          <SectionHeader title="Run History" description="Persisted runs returned by the standalone project API." />
+          <RunHistory runs={runs} onViewRun={setSelectedRunId} />
+        </section>
+        {selectedRunId && (
+          <RunDetail
+            key={selectedRunId}
+            agentProjectId={agentProjectId}
+            runId={selectedRunId}
+            onClose={() => setSelectedRunId(null)}
+          />
+        )}
+      </main>
+    )
+  }
 
   return (
     <main className="mx-auto w-full max-w-content space-y-8 px-page py-8 sm:py-10">
@@ -140,14 +176,7 @@ function AgentProjectOverviewPage() {
         actions={(
           <>
             <StatusBadge label={status.label} tone={status.tone} />
-            <Button
-              variant={project.status === 'ARCHIVED' ? 'primary' : 'outline'}
-              loading={statusUpdate === 'updating'}
-              loadingLabel={project.status === 'ARCHIVED' ? 'Reactivating project' : 'Archiving project'}
-              onClick={handleStatusChange}
-            >
-              {project.status === 'ARCHIVED' ? 'Reactivate Project' : 'Archive Project'}
-            </Button>
+            {statusAction}
           </>
         )}
       />
@@ -175,8 +204,6 @@ function AgentProjectOverviewPage() {
           <RequirementsWorkspace project={project} onRunCompleted={handleRunCompleted} />
         ) : project.agent_type === 'DESIGN_PLANNING' ? (
           <DesignPlanningWorkspace project={project} onRunCompleted={handleRunCompleted} />
-        ) : project.agent_type === 'IMPLEMENTATION' ? (
-          <ImplementationWorkspace project={project} />
         ) : project.agent_type === 'TESTING_VALIDATION' ? (
           <TestingValidationWorkspace project={project} onRunCompleted={handleRunCompleted} />
         ) : (

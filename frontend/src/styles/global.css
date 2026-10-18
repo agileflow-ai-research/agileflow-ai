@@ -39,6 +39,33 @@ body {
   outline-offset: 3px;
 }
 
+.react-flow__controls {
+  overflow: hidden;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-surface);
+}
+
+.react-flow__controls-button {
+  border-color: var(--color-border-default);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+}
+
+.react-flow__controls-button:hover {
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow__edge-path {
+  stroke: var(--color-border-accent);
+  stroke-width: 1.5;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

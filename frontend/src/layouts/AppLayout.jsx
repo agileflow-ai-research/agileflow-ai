@@ -7,6 +7,7 @@ import { useAuth } from '../features/auth/useAuth.js'
 
 function AppLayout() {
   const [isNavigationOpen, setIsNavigationOpen] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const navigationTriggerRef = useRef(null)
   const { user, logout } = useAuth()
 
@@ -30,8 +31,10 @@ function AppLayout() {
     <div className="min-h-screen bg-canvas text-content-primary lg:flex">
       <Sidebar
         isOpen={isNavigationOpen}
+        isCollapsed={isSidebarCollapsed}
         onClose={() => closeNavigation(true)}
         onNavigate={() => closeNavigation(false)}
+        onToggleCollapse={() => setIsSidebarCollapsed((current) => !current)}
         user={user}
         onLogout={logout}
       />

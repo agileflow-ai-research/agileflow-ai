@@ -17,6 +17,14 @@ vi.mock('../services/agentProjectService.js', () => ({
   getAgentProjectById: vi.fn(), getAgentProjectRuns: vi.fn(), getAgentProjectRun: vi.fn(), updateAgentProject: vi.fn(),
 }))
 vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({ runRequirementsAgent: vi.fn() }))
+vi.mock('../features/agents/implementation/pages/ImplementationProjectPage.jsx', () => ({
+  default: ({ project }) => (
+    <section aria-label="Agent 3 implementation project">
+      <h1>{project.name}</h1>
+      <div aria-label="Agent 3 implementation workflow canvas" />
+    </section>
+  ),
+}))
 vi.mock('../features/agents/implementation/services/implementationAgentService.js', () => ({
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
@@ -81,7 +89,7 @@ describe('AgentProjectOverviewPage', () => {
     expect(await screen.findByText('No runs yet.')).toBeInTheDocument()
   })
 
-  it('mounts the Agent 3 workspace for an IMPLEMENTATION project', async () => {
+  it('mounts the Agent 3 canvas at the compatible project URL', async () => {
     getAgentProjectById.mockResolvedValue({ data: {
       ...project,
       agent_type: 'IMPLEMENTATION',
@@ -92,9 +100,8 @@ describe('AgentProjectOverviewPage', () => {
 
     renderOverview()
 
-    expect(await screen.findByRole('heading', { level: 2, name: 'Implementation and Git Automation' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Implementation Inputs' })).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: 'Connect GitHub' })).toBeEnabled()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Delivery Portal' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Agent 3 implementation workflow canvas')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
   })
 

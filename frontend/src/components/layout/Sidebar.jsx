@@ -1,134 +1,94 @@
-import { Link, useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 
-import { cn } from '../../utils/cn.js'
+import { getAgentProjects } from '../../services/agentProjectService.js'
+import { getProjects } from '../../services/projectService.js'
 import Button from '../ui/Button.jsx'
 import Brand from './Brand.jsx'
+import ProjectNavigation from './sidebar/ProjectNavigation.jsx'
+import StandaloneAgentNavigation from './sidebar/StandaloneAgentNavigation.jsx'
 
 function userInitials(name) {
   if (typeof name !== 'string' || !name.trim()) return 'AF'
-
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join('')
+  return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0].toUpperCase()).join('')
 }
 
-function SidebarContent({ onNavigate, user, onLogout, showBrand = true }) {
-  const location = useLocation()
-  const projectsActive =
-    location.pathname === '/projects' || location.pathname.startsWith('/projects/')
-  const agentsActive =
-    location.pathname === '/agents' ||
-    location.pathname.startsWith('/agents/') ||
-    location.pathname.startsWith('/agent-projects/')
-
+function SidebarContent({ projectsState, agentProjectsState, onNavigate, user, onLogout, showBrand = true }) {
+  const { pathname } = useLocation()
   return (
     <>
       {showBrand ? <Brand /> : null}
-
-      <nav className="mt-10" aria-label="Primary navigation">
-        <p className="mb-3 text-helper-copy font-semibold uppercase tracking-wider text-content-muted">
-          Workspace
-        </p>
-        <Link
-          to="/projects"
-          onClick={onNavigate}
-          aria-current={projectsActive ? 'page' : undefined}
-          className={cn(
-            'flex min-h-11 items-center rounded-button px-4 py-2.5 text-sm font-semibold transition-colors',
-            projectsActive
-              ? 'bg-brand-soft text-content-primary'
-              : 'text-content-secondary hover:bg-elevated hover:text-content-primary',
-          )}
-        >
-          Projects
-        </Link>
-        <Link
-          to="/agents"
-          onClick={onNavigate}
-          aria-current={agentsActive ? 'page' : undefined}
-          className={cn(
-            'mt-1 flex min-h-11 items-center rounded-button px-4 py-2.5 text-sm font-semibold transition-colors',
-            agentsActive
-              ? 'bg-brand-soft text-content-primary'
-              : 'text-content-secondary hover:bg-elevated hover:text-content-primary',
-          )}
-        >
-          AI Agents
-        </Link>
+      <nav className="mt-8 min-h-0 flex-1 space-y-7 overflow-y-auto pr-1" aria-label="Primary navigation">
+        <ProjectNavigation projects={projectsState.data} loadStatus={projectsState.status} pathname={pathname} onNavigate={onNavigate} />
+        <StandaloneAgentNavigation projects={agentProjectsState.data} loadStatus={agentProjectsState.status} pathname={pathname} onNavigate={onNavigate} />
       </nav>
-
-      <div className="mt-auto border-t border-default pt-5">
+      <div className="mt-5 border-t border-default pt-5">
         <div className="flex min-w-0 items-center gap-3">
-          <span
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-content-primary"
-            aria-hidden="true"
-          >
-            {userInitials(user?.name)}
-          </span>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-content-primary" aria-hidden="true">{userInitials(user?.name)}</span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-content-primary">
-              {user?.name}
-            </p>
-            <p className="truncate text-helper-copy text-content-muted">
-              {user?.email}
-            </p>
+            <p className="truncate text-sm font-semibold text-content-primary">{user?.name}</p>
+            <p className="truncate text-helper-copy text-content-muted">{user?.email}</p>
           </div>
         </div>
-        <Button
-          className="mt-4 w-full"
-          variant="ghost"
-          size="small"
-          onClick={onLogout}
-        >
-          Log out
-        </Button>
+        <Button className="mt-4 w-full" variant="ghost" size="small" onClick={onLogout}>Log out</Button>
       </div>
     </>
   )
 }
 
-function Sidebar({ isOpen, onClose, onNavigate, user, onLogout }) {
+function Sidebar({ isOpen, isCollapsed, onClose, onNavigate, onToggleCollapse, user, onLogout }) {
+  const [projectsState, setProjectsState] = useState({ status: 'loading', data: [] })
+  const [agentProjectsState, setAgentProjectsState] = useState({ status: 'loading', data: [] })
+
+  useEffect(() => {
+    let active = true
+    Promise.allSettled([getProjects(), getAgentProjects()]).then(([projectsResult, agentProjectsResult]) => {
+      if (!active) return
+      setProjectsState(
+        projectsResult.status === 'fulfilled' && Array.isArray(projectsResult.value?.data)
+          ? { status: 'success', data: projectsResult.value.data }
+          : { status: 'error', data: [] },
+      )
+      setAgentProjectsState(
+        agentProjectsResult.status === 'fulfilled' && Array.isArray(agentProjectsResult.value?.data)
+          ? { status: 'success', data: agentProjectsResult.value.data }
+          : { status: 'error', data: [] },
+      )
+    })
+    return () => { active = false }
+  }, [])
+
+  const contentProps = { projectsState, agentProjectsState, user, onLogout }
   return (
     <>
-      <aside
-        className="sticky top-0 hidden h-screen w-72 shrink-0 flex-col border-r border-default bg-sidebar p-6 lg:flex"
-        aria-label="Application sidebar"
-      >
-        <SidebarContent user={user} onLogout={onLogout} />
+      <aside className={`sticky top-0 hidden h-screen shrink-0 flex-col border-r border-default bg-sidebar transition-[width] lg:flex ${isCollapsed ? 'w-20 p-3' : 'w-80 p-5'}`} aria-label="Application sidebar">
+        <button
+          type="button"
+          className="mb-3 min-h-9 rounded-control border border-default text-xs font-semibold text-content-secondary hover:bg-elevated hover:text-content-primary"
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!isCollapsed}
+          onClick={onToggleCollapse}
+        >
+          {isCollapsed ? '›' : 'Collapse'}
+        </button>
+        {isCollapsed ? (
+          <div className="flex flex-1 flex-col items-center gap-5 pt-2">
+            <Brand mode="mark" size="small" />
+            <span className="text-center text-xs font-semibold text-content-muted">Projects</span>
+            <span className="text-center text-xs font-semibold text-content-muted">Agents</span>
+          </div>
+        ) : <SidebarContent {...contentProps} />}
       </aside>
 
       {isOpen ? (
         <>
-          <button
-            type="button"
-            className="fixed inset-0 z-30 bg-canvas/80 lg:hidden"
-            aria-label="Close navigation"
-            onClick={onClose}
-          />
-          <aside
-            className="fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-default bg-sidebar p-6 lg:hidden"
-            aria-label="Mobile navigation"
-          >
+          <button type="button" className="fixed inset-0 z-30 bg-canvas/80 lg:hidden" aria-label="Close navigation" onClick={onClose} />
+          <aside className="fixed inset-y-0 left-0 z-40 flex w-80 flex-col border-r border-default bg-sidebar p-5 lg:hidden" aria-label="Mobile navigation">
             <div className="flex items-center justify-between gap-4">
               <Brand />
-              <button
-                type="button"
-                className="ml-auto rounded-control px-2 py-1 text-content-secondary hover:bg-elevated hover:text-content-primary"
-                aria-label="Close navigation"
-                onClick={onClose}
-              >
-                Close
-              </button>
+              <button type="button" className="rounded-control px-2 py-1 text-content-secondary hover:bg-elevated" aria-label="Close navigation" onClick={onClose}>Close</button>
             </div>
-            <SidebarContent
-              user={user}
-              onLogout={onLogout}
-              onNavigate={onNavigate}
-              showBrand={false}
-            />
+            <SidebarContent {...contentProps} onNavigate={onNavigate} showBrand={false} />
           </aside>
         </>
       ) : null}
