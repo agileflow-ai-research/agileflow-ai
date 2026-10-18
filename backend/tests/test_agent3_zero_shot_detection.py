@@ -5,29 +5,29 @@ from types import SimpleNamespace
 import pytest
 
 from app.main import app
-from app.modules.agents.implementation.extraction.schemas import DocumentType
-from app.modules.agents.implementation.router import (
+from app.modules.agents.implementation.inputs.extraction.schemas import DocumentType
+from app.modules.agents.implementation.api.router import (
     get_implementation_upload_storage,
     get_zero_shot_detection_service,
 )
-from app.modules.agents.implementation.semantic_discovery.schemas import (
+from app.modules.agents.implementation.preparation.schemas import (
     ArtifactDetectionLabel,
     ChunkContext,
     ChunkProvenance,
     SemanticChunk,
 )
-from app.modules.agents.implementation.semantic_discovery.zero_shot import constants
-from app.modules.agents.implementation.semantic_discovery.zero_shot import service as service_module
-from app.modules.agents.implementation.semantic_discovery.zero_shot.classifier import (
+from app.modules.agents.implementation.preparation.classification.zero_shot import constants
+from app.modules.agents.implementation.preparation.classification.zero_shot import service as service_module
+from app.modules.agents.implementation.preparation.classification.zero_shot.classifier import (
     ClassificationOutcome,
     ZeroShotClassifier,
 )
-from app.modules.agents.implementation.semantic_discovery.zero_shot.model_loader import (
+from app.modules.agents.implementation.preparation.classification.zero_shot.model_loader import (
     LoadedZeroShotModel,
     ZeroShotModelUnavailableError,
 )
-from app.modules.agents.implementation.semantic_discovery.zero_shot.schemas import ZeroShotScore
-from app.modules.agents.implementation.semantic_discovery.zero_shot.service import (
+from app.modules.agents.implementation.preparation.classification.zero_shot.schemas import ZeroShotScore
+from app.modules.agents.implementation.preparation.classification.zero_shot.service import (
     ZeroShotDetectionService,
 )
 from app.modules.standalone.router import get_agent_run_repository

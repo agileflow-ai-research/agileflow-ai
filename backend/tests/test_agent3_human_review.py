@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from app.main import app
-from app.modules.agents.implementation.semantic_discovery.human_review import constants
-from app.modules.agents.implementation.semantic_discovery.human_review.service import HumanReviewService
+from app.modules.agents.implementation.preparation.human_review import constants
+from app.modules.agents.implementation.preparation.human_review.service import HumanReviewService
 from test_agent3_document_extraction import create_project, extraction_context, upload_dir
 from test_agent3_hybrid_detection import hybrid_url
 from test_agent3_rule_detection import run_detector
@@ -240,7 +240,7 @@ def test_fingerprint_changes_for_chunk_hash():
         "hybrid_policy_version": "1", "human_review_schema_version": "1",
         "human_review_policy_version": "1",
     }
-    from app.modules.agents.implementation.semantic_discovery.human_review.schemas import HumanReviewPipelineIdentity
+    from app.modules.agents.implementation.preparation.human_review.schemas import HumanReviewPipelineIdentity
     identity = HumanReviewPipelineIdentity(**pipeline)
     first = HumanReviewService._fingerprint("a" * 64, identity, "b" * 64, "c" * 64, "d" * 64, [Chunk("e" * 64)])
     second = HumanReviewService._fingerprint("a" * 64, identity, "b" * 64, "c" * 64, "d" * 64, [Chunk("f" * 64)])
@@ -248,7 +248,7 @@ def test_fingerprint_changes_for_chunk_hash():
 
 
 def test_research_review_priority_order_is_deterministic():
-    from app.modules.agents.implementation.semantic_discovery.hybrid.schemas import HybridDecisionState, HybridEvidenceState
+    from app.modules.agents.implementation.preparation.hybrid.schemas import HybridDecisionState, HybridEvidenceState
 
     def hybrid(*, evidence=HybridEvidenceState.RULE_AND_MODEL,
                decision=HybridDecisionState.AUTO_CANDIDATE,

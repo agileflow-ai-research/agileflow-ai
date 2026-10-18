@@ -26,11 +26,11 @@ import {
   runImplementationZeroShotClassifier,
   saveImplementationHumanReview,
   uploadImplementationInputFile,
-} from './implementationAgentService.js'
-import { navigateToGitHub } from './githubNavigation.js'
+} from './services/implementationAgentService.js'
+import { navigateToGitHub } from './utils/githubNavigation.js'
 import ImplementationWorkspace from './ImplementationWorkspace.jsx'
 
-vi.mock('./implementationAgentService.js', () => ({
+vi.mock('./services/implementationAgentService.js', () => ({
   buildImplementationCanonicalArtifacts: vi.fn(),
   buildImplementationSemanticArtifacts: vi.fn(),
   buildImplementationHybridDetections: vi.fn(),
@@ -55,7 +55,7 @@ vi.mock('./implementationAgentService.js', () => ({
   getGitHubConnection: vi.fn(),
   getGitHubRepository: vi.fn(),
 }))
-vi.mock('./githubNavigation.js', () => ({ navigateToGitHub: vi.fn() }))
+vi.mock('./utils/githubNavigation.js', () => ({ navigateToGitHub: vi.fn() }))
 
 const project = {
   agent_project_id: 'AGP-003', agent_type: 'IMPLEMENTATION',

@@ -7,7 +7,7 @@ Generate disposable manual-test documents outside the repository:
 
 ```powershell
 cd backend
-.\.venv\Scripts\python.exe scripts\generate_agent3_extraction_uat_samples.py `
+.\.venv\Scripts\python.exe scripts\agent3\extraction_uat_samples.py `
   --output-dir "$env:TEMP\agileflow-agent3-extraction-uat"
 ```
 

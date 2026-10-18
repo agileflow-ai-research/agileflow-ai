@@ -6,11 +6,11 @@ import pytest
 from docx import Document
 
 from app.main import app
-from app.modules.agents.implementation.extraction import constants
-from app.modules.agents.implementation.extraction import service as extraction_service_module
-from app.modules.agents.implementation.extraction.schemas import ExtractionStatus
-from app.modules.agents.implementation.router import get_implementation_upload_storage
-from app.modules.agents.implementation.storage import ImplementationUploadStorage
+from app.modules.agents.implementation.inputs.extraction import constants
+from app.modules.agents.implementation.inputs.extraction import service as extraction_service_module
+from app.modules.agents.implementation.inputs.extraction.schemas import ExtractionStatus
+from app.modules.agents.implementation.api.router import get_implementation_upload_storage
+from app.modules.agents.implementation.infrastructure.storage import ImplementationUploadStorage
 from app.modules.standalone.router import (
     get_agent_project_repository,
     get_agent_run_repository,

@@ -3,13 +3,13 @@ import json
 import pytest
 
 from app.main import app
-from app.modules.agents.implementation.semantic_discovery.hybrid import constants
-from app.modules.agents.implementation.semantic_discovery.hybrid.policy import decide_chunk
-from app.modules.agents.implementation.semantic_discovery.schemas import (
+from app.modules.agents.implementation.preparation.hybrid import constants
+from app.modules.agents.implementation.preparation.hybrid.policy import decide_chunk
+from app.modules.agents.implementation.preparation.schemas import (
     ArtifactDetectionLabel as Label, ChunkRuleDetection, RuleEvidence,
     RuleEvidenceSource, RulePrediction, RuleStrength,
 )
-from app.modules.agents.implementation.semantic_discovery.zero_shot.schemas import (
+from app.modules.agents.implementation.preparation.classification.zero_shot.schemas import (
     ChunkZeroShotDetection, ZeroShotScore,
 )
 from test_agent3_rule_detection import run_detector

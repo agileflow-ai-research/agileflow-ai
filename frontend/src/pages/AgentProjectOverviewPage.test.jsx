@@ -10,14 +10,14 @@ import {
   updateAgentProject,
 } from '../services/agentProjectService.js'
 import { runRequirementsAgent } from '../features/agents/requirements/requirementsAgentService.js'
-import { getGitHubConnection } from '../features/agents/implementation/implementationAgentService.js'
+import { getGitHubConnection } from '../features/agents/implementation/services/implementationAgentService.js'
 import AgentProjectOverviewPage from './AgentProjectOverviewPage.jsx'
 
 vi.mock('../services/agentProjectService.js', () => ({
   getAgentProjectById: vi.fn(), getAgentProjectRuns: vi.fn(), getAgentProjectRun: vi.fn(), updateAgentProject: vi.fn(),
 }))
 vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({ runRequirementsAgent: vi.fn() }))
-vi.mock('../features/agents/implementation/implementationAgentService.js', () => ({
+vi.mock('../features/agents/implementation/services/implementationAgentService.js', () => ({
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
   evaluateImplementationReadiness: vi.fn(),

@@ -18,5 +18,5 @@ Automated tests mock the inference boundary and never download the model. Run th
 separate real-model smoke check from this directory with:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\run_agent3_zero_shot_smoke.py --local-files-only
+.\.venv\Scripts\python.exe scripts\agent3\zero_shot_smoke.py --local-files-only
 ```

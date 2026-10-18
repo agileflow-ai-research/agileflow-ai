@@ -5,10 +5,10 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pytest
 
 from app.main import app
-from app.modules.agents.implementation.router import (
+from app.modules.agents.implementation.api.router import (
     get_implementation_upload_storage,
 )
-from app.modules.agents.implementation.storage import (
+from app.modules.agents.implementation.infrastructure.storage import (
     DOCUMENT_MAX_SIZE,
     IMAGE_MAX_SIZE,
     ImplementationUploadStorage,

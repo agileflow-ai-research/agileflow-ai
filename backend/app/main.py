@@ -12,7 +12,7 @@ from app.modules.auth.dependencies import (
 from app.modules.auth.router import router as auth_router
 from app.modules.approvals.router import router as approvals_router
 from app.modules.agents.design_planning.router import router as agent2_router
-from app.modules.agents.implementation.router import router as agent3_router
+from app.modules.agents.implementation.api.router import router as agent3_router
 from app.modules.agents.requirements.router import router as agent1_router
 from app.modules.agents.testing_validation.router import router as testing_validation_router
 from app.modules.orchestrator.router import router as orchestrator_router

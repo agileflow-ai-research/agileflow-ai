@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from app.modules.agents.implementation.schemas import (
+from app.modules.agents.implementation.contracts.schemas import (
     Agent3WorkspaceRequest,
     ImplementationArtifactType,
     ImplementationInputSourceType,

@@ -6,7 +6,7 @@ import pytest
 
 from app.core.config import settings
 from app.main import app
-from app.modules.agents.implementation.github import (
+from app.modules.agents.implementation.github.connection_service import (
     GitHubApiClient,
     GitHubApiError,
     GitHubAuthorizationError,
@@ -18,7 +18,7 @@ from app.modules.agents.implementation.github import (
     GitHubStateStore,
     OrganizationInstallationError,
 )
-from app.modules.agents.implementation.router import (
+from app.modules.agents.implementation.api.router import (
     get_github_connection_repository,
     get_github_connection_service,
 )

@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.core.config import settings
 from app.main import app
-from app.modules.agents.implementation.github_auth import (
+from app.modules.agents.implementation.github.auth import (
     GitHubAppAuthenticationError,
     GitHubAppAuthenticator,
     GitHubAppPermissionError,
@@ -17,7 +17,7 @@ from app.modules.agents.implementation.github_auth import (
     GitHubInstallationRevokedError,
     GitHubPrivateKeyError,
 )
-from app.modules.agents.implementation.github_repository_service import (
+from app.modules.agents.implementation.github.repository_service import (
     GitHubRepositoryAlreadyBoundError,
     GitHubRepositoryAuthenticationError,
     GitHubRepositoryClient,
@@ -28,11 +28,11 @@ from app.modules.agents.implementation.github_repository_service import (
     GitHubRepositoryService,
     GitHubRepositoryValidationError,
 )
-from app.modules.agents.implementation.repository import (
+from app.modules.agents.implementation.github.repository import (
     GitHubRepositoryBindingRepositoryError,
 )
-from app.modules.agents.implementation.router import get_github_repository_service
-from app.modules.agents.implementation.schemas import (
+from app.modules.agents.implementation.api.router import get_github_repository_service
+from app.modules.agents.implementation.contracts.schemas import (
     GitHubRepositoryCreateRequest,
 )
 from app.modules.auth.schemas import UserPublicResponse

@@ -3,9 +3,9 @@ import json
 import pytest
 
 from app.main import app
-from app.modules.agents.implementation.semantic_discovery import constants
-from app.modules.agents.implementation.semantic_discovery.schemas import ChunkingStatus
-from app.modules.agents.implementation.semantic_discovery.tokenizer import count_tokens
+from app.modules.agents.implementation.preparation import constants
+from app.modules.agents.implementation.preparation.schemas import ChunkingStatus
+from app.modules.agents.implementation.preparation.chunking.tokenizer import count_tokens
 from test_agent3_document_extraction import (
     PNG,
     create_project,

@@ -3,20 +3,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.modules.agents.implementation.semantic_discovery.schemas import (
+from app.modules.agents.implementation.preparation.schemas import (
     ArtifactDetectionLabel,
 )
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.local_model import constants
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.local_model.adapter import (
+from app.modules.agents.implementation.preparation.semantic_extraction.local_model import constants
+from app.modules.agents.implementation.preparation.semantic_extraction.local_model.adapter import (
     LocalSemanticExtractorAdapter, SemanticModelOutputInvalidError,
 )
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.local_model.json_parser import (
+from app.modules.agents.implementation.preparation.semantic_extraction.local_model.json_parser import (
     SemanticModelJsonError, parse_single_json_object,
 )
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.local_model.model_loader import (
+from app.modules.agents.implementation.preparation.semantic_extraction.local_model.model_loader import (
     LoadedSemanticModel, SemanticModelLoader,
 )
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.local_model.prompt_builder import (
+from app.modules.agents.implementation.preparation.semantic_extraction.local_model.prompt_builder import (
     build_prompt,
 )
 from test_agent3_semantic_extraction_contract import CHUNK_ID, api_proposal, request

@@ -5,11 +5,11 @@ import pytest
 from pydantic import ValidationError
 
 from app.main import app
-from app.modules.agents.implementation.semantic_discovery.canonical import constants
-from app.modules.agents.implementation.semantic_discovery.canonical.extractors import (
+from app.modules.agents.implementation.preparation.canonical import constants
+from app.modules.agents.implementation.preparation.canonical.extractors import (
     api, architecture, database, other, requirements, tasks, technology, tests, ui_flow,
 )
-from app.modules.agents.implementation.semantic_discovery.canonical.schemas import (
+from app.modules.agents.implementation.preparation.canonical.schemas import (
     CanonicalSourceRef, CanonicalStatus, RequirementItem,
 )
 from test_agent3_document_extraction import create_project, extraction_context, upload_dir

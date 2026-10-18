@@ -5,23 +5,23 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from app.modules.agents.implementation.semantic_discovery.canonical.schemas import (
+from app.modules.agents.implementation.preparation.canonical.schemas import (
     ApiEndpointItem, ApiSpecificationData, CanonicalArtifact,
     CanonicalSourceRef, CanonicalStatus, DatabaseSchemaData,
     FunctionalRequirementsData, OtherContextData, OtherContextItem,
     TechnologyStackData, UserStoriesData, UserStoryItem,
 )
-from app.modules.agents.implementation.semantic_discovery.schemas import (
+from app.modules.agents.implementation.preparation.schemas import (
     ArtifactDetectionLabel,
 )
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction import constants
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.evidence import (
+from app.modules.agents.implementation.preparation.semantic_extraction import constants
+from app.modules.agents.implementation.preparation.semantic_extraction.evidence import (
     validate_evidence,
 )
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.schemas import (
+from app.modules.agents.implementation.preparation.semantic_extraction.schemas import (
     EvidenceSpan, SemanticExtractionProposal, SemanticExtractionRequest,
 )
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.service import (
+from app.modules.agents.implementation.preparation.semantic_extraction.service import (
     SemanticExtractionContractError, SemanticExtractionService,
 )
 
@@ -185,7 +185,7 @@ def test_invented_performance_target_is_rejected():
             "measurable_target": "below 2 seconds", "evidence": [span(text)],
         }],
     }
-    from app.modules.agents.implementation.semantic_discovery.canonical.schemas import NonFunctionalRequirementsData
+    from app.modules.agents.implementation.preparation.canonical.schemas import NonFunctionalRequirementsData
     result = SemanticExtractionService().run(
         request(text, ArtifactDetectionLabel.NON_FUNCTIONAL_REQUIREMENTS,
                 CanonicalStatus.UNRESOLVED, NonFunctionalRequirementsData(requirements=[])),
@@ -270,7 +270,7 @@ def test_source_backed_technology_and_natural_language_ui_steps_are_accepted():
     )
     assert technology_result.merged_artifact.data["frontend"] == ["React"]
 
-    from app.modules.agents.implementation.semantic_discovery.canonical.schemas import UiFlowData
+    from app.modules.agents.implementation.preparation.canonical.schemas import UiFlowData
     ui_text = "The user opens Home and then selects Booking Form."
     ui_result = SemanticExtractionService().run(
         request(ui_text, ArtifactDetectionLabel.UI_FLOW,
@@ -400,7 +400,7 @@ def test_total_item_limit_and_trusted_source_hash_are_enforced():
             {"statement": text, "evidence": [span(text)]}
         ],
     }
-    from app.modules.agents.implementation.semantic_discovery.canonical.schemas import SystemArchitectureData
+    from app.modules.agents.implementation.preparation.canonical.schemas import SystemArchitectureData
     architecture_request = request(
         text, ArtifactDetectionLabel.SYSTEM_ARCHITECTURE,
         CanonicalStatus.UNRESOLVED,

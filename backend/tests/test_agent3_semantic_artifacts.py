@@ -5,21 +5,21 @@ from dataclasses import replace
 import pytest
 
 from app.main import app
-from app.modules.agents.implementation.router import (
+from app.modules.agents.implementation.api.router import (
     get_implementation_upload_storage, get_semantic_artifact_service,
 )
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction import constants
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.artifact_service import (
+from app.modules.agents.implementation.preparation.semantic_extraction import constants
+from app.modules.agents.implementation.preparation.semantic_extraction.artifact_service import (
     SemanticArtifactService,
 )
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.local_model import constants as model_constants
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.local_model.adapter import (
+from app.modules.agents.implementation.preparation.semantic_extraction.local_model import constants as model_constants
+from app.modules.agents.implementation.preparation.semantic_extraction.local_model.adapter import (
     SemanticGenerationMetadata,
 )
-from app.modules.agents.implementation.semantic_discovery.semantic_extraction.local_model.model_loader import (
+from app.modules.agents.implementation.preparation.semantic_extraction.local_model.model_loader import (
     SemanticModelUnavailableError,
 )
-from app.modules.agents.implementation.semantic_discovery.schemas import ArtifactDetectionLabel
+from app.modules.agents.implementation.preparation.schemas import ArtifactDetectionLabel
 from app.modules.standalone.service import StandaloneService
 from app.modules.standalone.router import get_agent_run_repository
 from test_agent3_canonical_artifacts import _complete_review, canonical_url

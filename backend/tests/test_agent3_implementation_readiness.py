@@ -6,19 +6,19 @@ import pytest
 from docx import Document
 
 from app.main import app
-from app.modules.agents.implementation.readiness.normalizer import (
+from app.modules.agents.implementation.preparation.readiness.normalizer import (
     normalize_text_input,
 )
-from app.modules.agents.implementation.readiness.schemas import (
+from app.modules.agents.implementation.preparation.readiness.schemas import (
     FindingSeverity,
     ReadinessStatus,
     ReadinessTextInput,
 )
-from app.modules.agents.implementation.router import (
+from app.modules.agents.implementation.api.router import (
     get_github_repository_binding_repository,
     get_implementation_upload_storage,
 )
-from app.modules.agents.implementation.storage import ImplementationUploadStorage
+from app.modules.agents.implementation.infrastructure.storage import ImplementationUploadStorage
 from app.modules.standalone.router import (
     get_agent_project_repository,
     get_agent_run_repository,

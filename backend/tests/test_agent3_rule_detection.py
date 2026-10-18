@@ -3,20 +3,20 @@ import json
 import pytest
 
 from app.main import app
-from app.modules.agents.implementation.extraction.schemas import DocumentType
-from app.modules.agents.implementation.semantic_discovery import constants
-from app.modules.agents.implementation.semantic_discovery.rule_detector import (
+from app.modules.agents.implementation.inputs.extraction.schemas import DocumentType
+from app.modules.agents.implementation.preparation import constants
+from app.modules.agents.implementation.preparation.classification.rule_based.detector import (
     detect_chunk,
     strength_for_score,
 )
-from app.modules.agents.implementation.semantic_discovery.schemas import (
+from app.modules.agents.implementation.preparation.schemas import (
     ArtifactDetectionLabel,
     ChunkContext,
     ChunkProvenance,
     RuleStrength,
     SemanticChunk,
 )
-from app.modules.agents.implementation.semantic_discovery import service as service_module
+from app.modules.agents.implementation.preparation import service as service_module
 from test_agent3_document_extraction import (
     PNG,
     create_project,
