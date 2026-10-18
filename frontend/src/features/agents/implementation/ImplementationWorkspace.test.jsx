@@ -633,9 +633,10 @@ describe('ImplementationWorkspace', () => {
     expect(screen.getByRole('region', { name: 'Zero-Shot Model Baseline' })).toBeInTheDocument()
   })
 
-  it('supports research-mode human accept, relabel, exclude, add-label, notes, and progress', async () => {
+  it('supports specification-panel human accept, relabel, exclude, add-label, notes, and progress', async () => {
     const user = userEvent.setup()
-    render(<ImplementationWorkspace project={project} />)
+    render(<ImplementationWorkspace project={project} activeSection="SPECIFICATION_VERIFICATION" />)
+    await user.click(screen.getByText('Research Details'))
     await attachAndPrepareDocument(user)
     await user.click(screen.getByRole('button', { name: 'Run Rule Detector' }))
     await user.click(screen.getByRole('button', { name: 'Run Zero-Shot Classifier' }))

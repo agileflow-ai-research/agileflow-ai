@@ -12,6 +12,7 @@ function WorkflowNodePanel({ node, open, onClose, children }) {
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-content-muted">Agent 3 workflow</p>
           <h2 className="mt-1 text-section-heading font-semibold text-content-primary">{node?.title}</h2>
+          {node?.purpose ? <p className="mt-2 max-w-xl text-sm text-content-secondary">{node.purpose}</p> : null}
           <div className="mt-2"><StatusBadge label={status.label} tone={status.tone} /></div>
         </div>
         <button type="button" className="rounded-control px-3 py-2 text-sm font-semibold text-content-secondary hover:bg-elevated hover:text-content-primary" aria-label="Close workflow details" onClick={onClose}>Close</button>

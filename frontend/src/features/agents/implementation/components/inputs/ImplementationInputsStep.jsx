@@ -22,6 +22,9 @@ export default function ImplementationInputsStep({
   inputs,
   onAddInput,
   reviews,
+  showEmbeddedHumanReview = true,
+  showResearchDetails = true,
+  showVerificationDetails = true,
   workspaceBusy,
 }) {
   const {
@@ -100,7 +103,7 @@ export default function ImplementationInputsStep({
                       <p className="mt-1 text-sm text-content-secondary">{item.file.mime_type} · {formatBytes(item.file.size_bytes)}</p>
                       <p className="mt-2 text-sm text-state-success">Uploaded / Attached</p>
                       <p className="text-sm text-content-secondary">Upload: Complete</p>
-                      {item.source_type === 'DOCUMENT' && (
+                      {item.source_type === 'DOCUMENT' && showResearchDetails && (
                         <div className="mt-4 space-y-2 border-t border-default pt-4">
                           <p className="text-sm font-medium text-content-primary">Extraction</p>
                           {item.extraction?.status === 'extracting' && <p role="status" className="text-sm text-content-secondary">Extracting...</p>}
@@ -320,8 +323,10 @@ export default function ImplementationInputsStep({
                                   {hybridReview.uploadId === item.file.upload_id && hybridReview.result && (
                                     <HybridDetectionReview result={hybridReview.result} chunks={item.chunks.chunks} />
                                   )}
-                                  {item.hybridDetections?.metrics && (
-                                    <section className="mt-4 space-y-3 border-t border-default pt-4" aria-label="Human Artifact Verification">
+                                  {showVerificationDetails && (
+                                    <>
+                                      {item.hybridDetections?.metrics && (
+                                        <section className="mt-4 space-y-3 border-t border-default pt-4" aria-label="Human Artifact Verification">
                                       <div>
                                         <p className="text-sm font-medium text-content-primary">Human Artifact Verification</p>
                                         <p className="text-sm text-content-secondary">
@@ -340,16 +345,16 @@ export default function ImplementationInputsStep({
                                       </Button>
                                       {humanReviewWorkspace.uploadId === item.file.upload_id && humanReviewWorkspace.status === 'loading' && <p role="status" className="text-sm text-content-secondary">Loading human verification...</p>}
                                       {humanReviewWorkspace.uploadId === item.file.upload_id && humanReviewWorkspace.error && <p role="alert" className="text-sm text-state-danger">{humanReviewWorkspace.error}</p>}
-                                      {humanReviewWorkspace.uploadId === item.file.upload_id && humanReviewWorkspace.result && (
+                                      {showEmbeddedHumanReview && humanReviewWorkspace.uploadId === item.file.upload_id && humanReviewWorkspace.result && (
                                         <HumanReviewWorkspace
                                           state={humanReviewWorkspace}
                                           onSave={(chunkId, fingerprint, decisions) => saveHumanReview(index, item.file, chunkId, fingerprint, decisions)}
                                         />
                                       )}
-                                    </section>
-                                  )}
-                                  {item.humanReviews?.review.review_status === 'COMPLETE' && (
-                                    <section className="mt-4 space-y-3 border-t border-default pt-4" aria-label="Canonical Artifact Preparation">
+                                        </section>
+                                      )}
+                                      {item.humanReviews?.review.review_status === 'COMPLETE' && (
+                                        <section className="mt-4 space-y-3 border-t border-default pt-4" aria-label="Canonical Artifact Preparation">
                                       <p className="text-sm font-medium text-content-primary">Canonical Artifact Preparation</p>
                                       {!item.canonicalArtifacts && <p className="text-sm text-content-secondary">Not prepared</p>}
                                       {item.canonicalArtifacts?.status === 'building' && <p role="status" className="text-sm text-content-secondary">Building canonical artifacts...</p>}
@@ -413,7 +418,9 @@ export default function ImplementationInputsStep({
                                           {semanticReview.uploadId === item.file.upload_id && semanticReview.result && <SemanticArtifactReview result={semanticReview.result} />}
                                         </section>
                                       )}
-                                    </section>
+                                        </section>
+                                      )}
+                                    </>
                                   )}
                                 </section>
                               )}

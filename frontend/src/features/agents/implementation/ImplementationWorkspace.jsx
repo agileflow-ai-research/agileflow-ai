@@ -34,6 +34,12 @@ import Button from '../../../components/ui/Button.jsx'
 import ReadinessReview from './components/readiness/ReadinessReview.jsx'
 import GitHubIntegration from './components/github/GitHubIntegration.jsx'
 import ImplementationInputsStep from './components/inputs/ImplementationInputsStep.jsx'
+import HumanReviewWorkspace from './components/review/HumanReviewWorkspace.jsx'
+import DeliverySetupPanel from './panels/DeliverySetupPanel.jsx'
+import ImplementationReadinessPanel from './panels/ImplementationReadinessPanel.jsx'
+import InputAnalysisPanel from './panels/InputAnalysisPanel.jsx'
+import ProjectSourcesPanel from './panels/ProjectSourcesPanel.jsx'
+import SpecificationVerificationPanel from './panels/SpecificationVerificationPanel.jsx'
 import {
   outputOptions,
   steps,
@@ -748,32 +754,46 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     checkReadiness(resolutions, readinessState.result.input_fingerprint)
   }
 
-  function next() {
-    if (step === 0) {
-      if (inputs.length === 0) {
-        setErrors({ inputs: 'Add at least one implementation input.' })
-        return
-      }
-      const invalid = inputs.some((item) => (
-        item.status === 'uploading'
-        || item.status === 'deleting'
-        || item.extraction?.status === 'extracting'
-        || item.chunks?.status === 'preparing'
-        || item.ruleDetections?.status === 'running'
-        || item.zeroShotDetections?.status === 'running'
-        || (item.source_type === 'TEXT' ? !item.content.trim() : !item.file)
-      ))
-      if (invalid) {
-        setErrors({ inputs: 'Enter text or attach a file for every implementation input, and wait for document extraction to finish.' })
-        return
-      }
+  function inputsAreValid() {
+    if (inputs.length === 0) {
+      setErrors({ inputs: 'Add at least one implementation input.' })
+      return false
     }
-    if (step === 1 && selectedOutputs.length === 0) {
+    const invalid = inputs.some((item) => (
+      item.status === 'uploading'
+      || item.status === 'deleting'
+      || item.extraction?.status === 'extracting'
+      || item.chunks?.status === 'preparing'
+      || item.ruleDetections?.status === 'running'
+      || item.zeroShotDetections?.status === 'running'
+      || (item.source_type === 'TEXT' ? !item.content.trim() : !item.file)
+    ))
+    if (invalid) {
+      setErrors({ inputs: 'Enter text or attach a file for every implementation input, and wait for document extraction to finish.' })
+      return false
+    }
+    return true
+  }
+
+  function outputsAreValid() {
+    if (selectedOutputs.length === 0) {
       setErrors({ outputs: 'Select at least one output.' })
-      return
+      return false
     }
+    return true
+  }
+
+  function next() {
+    if (step === 0 && !inputsAreValid()) return
+    if (step === 1 && !outputsAreValid()) return
     setErrors({})
     setStep((current) => Math.min(current + 1, 2))
+  }
+
+  function checkReadinessFromPanel() {
+    if (!inputsAreValid() || !outputsAreValid()) return
+    setErrors({})
+    checkReadiness()
   }
 
   const workspaceBusy = inputs.some((item) => (
@@ -824,6 +844,80 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     </div>
   ) : 'Not connected. No repository has been created.'
 
+  const workspaceActions = {
+    buildCanonicalArtifacts,
+    buildSemanticArtifacts,
+    changeSource,
+    prepareChunks,
+    removeInput,
+    reviewCanonicalArtifacts,
+    reviewChunks,
+    reviewDocumentExtraction,
+    openHumanReviews,
+    reviewHybridDetections,
+    reviewRuleDetections,
+    reviewSemanticArtifacts,
+    reviewZeroShotDetections,
+    runDocumentExtraction,
+    buildHybridDetections,
+    runRuleDetector,
+    runZeroShotClassifier,
+    saveHumanReview,
+    updateInput,
+    uploadFile,
+  }
+  const workspaceReviews = {
+    canonicalReview,
+    chunkReview,
+    detectionReview,
+    extractionReview,
+    humanReviewWorkspace,
+    hybridReview,
+    semanticReview,
+    zeroShotReview,
+  }
+  const addInput = () => {
+    setInputs((current) => [...current, emptyInput()])
+    setReadinessState((current) => (
+      current.result ? { ...current, stale: true } : current
+    ))
+  }
+  const changeOutputs = (values) => {
+    setSelectedOutputs(values)
+    setErrors((current) => ({ ...current, outputs: '' }))
+    setReadinessState((current) => (
+      current.result ? { ...current, stale: true } : current
+    ))
+  }
+  const inputStepProps = {
+    actions: workspaceActions,
+    error: errors.inputs,
+    onAddInput: addInput,
+    reviews: workspaceReviews,
+    workspaceBusy,
+  }
+  const analysisResearchContent = (
+    <ImplementationInputsStep
+      {...inputStepProps}
+      inputs={inputs}
+      showVerificationDetails={false}
+    />
+  )
+  const specificationResearchContent = (
+    <ImplementationInputsStep
+      {...inputStepProps}
+      inputs={inputs}
+      showEmbeddedHumanReview={false}
+    />
+  )
+  const humanReviewIndex = inputs.findIndex((item) => item.file?.upload_id === humanReviewWorkspace.uploadId)
+  const humanReviewContent = humanReviewWorkspace.result && humanReviewIndex >= 0 ? (
+    <HumanReviewWorkspace
+      state={humanReviewWorkspace}
+      onSave={(...args) => saveHumanReview(humanReviewIndex, inputs[humanReviewIndex].file, ...args)}
+    />
+  ) : null
+
   const workspaceWizard = (
     <AgentInputWizard
         steps={steps}
@@ -834,47 +928,8 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       >
         {step === 0 && (
           <ImplementationInputsStep
+            {...inputStepProps}
             inputs={inputs}
-            error={errors.inputs}
-            workspaceBusy={workspaceBusy}
-            actions={{
-              buildCanonicalArtifacts,
-              buildSemanticArtifacts,
-              changeSource,
-              prepareChunks,
-              removeInput,
-              reviewCanonicalArtifacts,
-              reviewChunks,
-              reviewDocumentExtraction,
-              openHumanReviews,
-              reviewHybridDetections,
-              reviewRuleDetections,
-              reviewSemanticArtifacts,
-              reviewZeroShotDetections,
-              runDocumentExtraction,
-              buildHybridDetections,
-              runRuleDetector,
-              runZeroShotClassifier,
-              saveHumanReview,
-              updateInput,
-              uploadFile,
-            }}
-            reviews={{
-              canonicalReview,
-              chunkReview,
-              detectionReview,
-              extractionReview,
-              humanReviewWorkspace,
-              hybridReview,
-              semanticReview,
-              zeroShotReview,
-            }}
-            onAddInput={() => {
-              setInputs((current) => [...current, emptyInput()])
-              setReadinessState((current) => (
-                current.result ? { ...current, stale: true } : current
-              ))
-            }}
           />
         )}
 
@@ -884,13 +939,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
               label="Implementation Outputs"
               options={outputOptions}
               selectedValues={selectedOutputs}
-              onChange={(values) => {
-                setSelectedOutputs(values)
-                setErrors((current) => ({ ...current, outputs: '' }))
-                setReadinessState((current) => (
-                  current.result ? { ...current, stale: true } : current
-                ))
-              }}
+              onChange={changeOutputs}
             />
             {errors.outputs && <p role="alert" className="mt-3 text-sm text-state-danger">{errors.outputs}</p>}
           </section>
@@ -920,39 +969,45 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     </AgentInputWizard>
   )
 
-  const showsPreparationWorkspace = [
-    'ALL',
-    'PROJECT_SOURCES',
-    'INPUT_ANALYSIS',
-    'SPECIFICATION_VERIFICATION',
-  ].includes(activeSection)
-  const showsResearchDetails = ['INPUT_ANALYSIS', 'SPECIFICATION_VERIFICATION'].includes(activeSection)
-
   return (
     <div className="space-y-5">
-      {showsPreparationWorkspace && (showsResearchDetails ? (
-        <details open className="rounded-control border border-default bg-surface p-4">
-          <summary className="cursor-pointer font-semibold text-content-primary">Research Details</summary>
-          <div className="mt-4">{workspaceWizard}</div>
-        </details>
-      ) : workspaceWizard)}
+      {activeSection === 'ALL' ? workspaceWizard : null}
+      {activeSection === 'PROJECT_SOURCES' ? (
+        <ProjectSourcesPanel
+          project={project}
+          inputs={inputs}
+          selectedOutputs={selectedOutputs}
+          onOutputsChange={changeOutputs}
+          outputError={errors.outputs}
+          inputStepProps={inputStepProps}
+        />
+      ) : null}
+      {activeSection === 'INPUT_ANALYSIS' ? <InputAnalysisPanel inputs={inputs} researchContent={analysisResearchContent} /> : null}
+      {activeSection === 'SPECIFICATION_VERIFICATION' ? (
+        <SpecificationVerificationPanel inputs={inputs} humanReviewContent={humanReviewContent} researchContent={specificationResearchContent} />
+      ) : null}
 
-      {['ALL', 'IMPLEMENTATION_READINESS'].includes(activeSection) && (
+      {activeSection === 'ALL' && (
         <>
           <ReadinessReview
             state={readinessState}
             onAdapt={adaptToSupportedStack}
             onBack={() => setStep(0)}
           />
-          {activeSection === 'IMPLEMENTATION_READINESS' && !readinessState.result && readinessState.status !== 'evaluating' && !readinessState.error && (
-            <p className="rounded-control border border-default bg-elevated p-4 text-sm text-content-secondary">
-              No readiness evaluation exists yet. Open Project &amp; Sources to review inputs and run the existing readiness check.
-            </p>
-          )}
         </>
       )}
+      {activeSection === 'IMPLEMENTATION_READINESS' ? (
+        <ImplementationReadinessPanel
+          state={readinessState}
+          workspaceBusy={workspaceBusy}
+          errors={errors}
+          onCheck={checkReadinessFromPanel}
+          onAdapt={adaptToSupportedStack}
+          onBack={() => setStep(0)}
+        />
+      ) : null}
 
-      {['ALL', 'DELIVERY_SETUP'].includes(activeSection) && (
+      {activeSection === 'ALL' && (
         <GitHubIntegration
           githubState={githubState}
           repositoryForm={repositoryForm}
@@ -963,6 +1018,21 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
           onCreateRepository={handleRepositoryCreate}
         />
       )}
+      {activeSection === 'DELIVERY_SETUP' ? (
+        <DeliverySetupPanel
+          githubState={githubState}
+          repositoryState={repositoryState}
+          integrationProps={{
+            githubState,
+            repositoryForm,
+            repositoryState,
+            setRepositoryForm,
+            setRepositoryState,
+            onConnect: handleGitHubConnect,
+            onCreateRepository: handleRepositoryCreate,
+          }}
+        />
+      ) : null}
     </div>
   )
 }

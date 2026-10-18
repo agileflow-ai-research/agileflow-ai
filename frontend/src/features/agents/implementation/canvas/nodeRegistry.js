@@ -4,15 +4,15 @@ import { WORKFLOW_NODE_STATES } from '../constants/workflow.js'
 import { DEFAULT_NODE_POSITIONS } from './layout.js'
 
 export const IMPLEMENTATION_NODE_REGISTRY = Object.freeze([
-  { id: 'PROJECT_SOURCES', title: 'Project & Sources', active: true, summary: 'Add trusted implementation inputs.' },
-  { id: 'INPUT_ANALYSIS', title: 'Input Analysis', active: true, summary: 'Prepare and classify supplied sources.' },
-  { id: 'SPECIFICATION_VERIFICATION', title: 'Specification Verification', active: true, summary: 'Review and verify extracted specifications.' },
-  { id: 'IMPLEMENTATION_READINESS', title: 'Implementation Readiness', active: true, summary: 'Evaluate whether implementation can proceed.' },
-  { id: 'DELIVERY_SETUP', title: 'Delivery Setup', active: true, summary: 'Connect GitHub and prepare a repository.' },
-  { id: 'GENERATE_IMPLEMENTATION', title: 'Generate Implementation', active: false, summary: 'Not implemented yet.' },
-  { id: 'BUILD_EXECUTE', title: 'Build & Execute', active: false, summary: 'Not implemented yet.' },
-  { id: 'CORRECTION_VALIDATION', title: 'Correction & Validation', active: false, summary: 'Not implemented yet.' },
-  { id: 'DELIVERY', title: 'Delivery', active: false, summary: 'Not implemented yet.' },
+  { id: 'PROJECT_SOURCES', title: 'Project & Sources', active: true, purpose: 'What information and outputs define this implementation project?', summary: 'Add trusted implementation inputs.' },
+  { id: 'INPUT_ANALYSIS', title: 'Input Analysis', active: true, purpose: 'How well have this project’s input sources been analyzed?', summary: 'Prepare and classify supplied sources.' },
+  { id: 'SPECIFICATION_VERIFICATION', title: 'Specification Verification', active: true, purpose: 'What should be implemented, and what still requires human confirmation?', summary: 'Review and verify extracted specifications.' },
+  { id: 'IMPLEMENTATION_READINESS', title: 'Implementation Readiness', active: true, purpose: 'Is there enough trusted information to implement the selected outputs?', summary: 'Evaluate whether implementation can proceed.' },
+  { id: 'DELIVERY_SETUP', title: 'Delivery Setup', active: true, purpose: 'Where should the generated implementation eventually be delivered?', summary: 'Connect GitHub and prepare a repository.' },
+  { id: 'GENERATE_IMPLEMENTATION', title: 'Generate Implementation', active: false, purpose: 'This stage is not implemented yet.', summary: 'Not implemented yet.' },
+  { id: 'BUILD_EXECUTE', title: 'Build & Execute', active: false, purpose: 'This stage is not implemented yet.', summary: 'Not implemented yet.' },
+  { id: 'CORRECTION_VALIDATION', title: 'Correction & Validation', active: false, purpose: 'This stage is not implemented yet.', summary: 'Not implemented yet.' },
+  { id: 'DELIVERY', title: 'Delivery', active: false, purpose: 'This stage is not implemented yet.', summary: 'Not implemented yet.' },
 ])
 
 const edgePairs = [
@@ -44,7 +44,7 @@ export function deriveWorkflowPresentation(snapshot) {
   const inputs = snapshot?.inputs ?? []
   const sourceCount = inputs.filter(inputHasSource).length
   const preparedCount = inputs.filter((item) => ['SUCCESS', 'PARTIAL'].includes(item.chunks?.status)).length
-  const verifiedCount = inputs.filter((item) => item.humanReviews?.review?.review_status === 'COMPLETE').length
+  const verifiedSourceCount = inputs.filter((item) => item.humanReviews?.review?.review_status === 'COMPLETE').length
   const attentionCount = inputs.filter((item) => item.error || item.extraction?.status === 'FAILED' || item.chunks?.status === 'FAILED').length
   const outputCount = snapshot?.selectedOutputs?.length ?? 0
   const readiness = snapshot?.readinessState
@@ -76,8 +76,8 @@ export function deriveWorkflowPresentation(snapshot) {
       attentionCount,
     },
     SPECIFICATION_VERIFICATION: {
-      status: verifiedCount > 0 ? WORKFLOW_NODE_STATES.RUNNING : preparedCount > 0 ? WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN : WORKFLOW_NODE_STATES.NOT_STARTED,
-      summary: `${verifiedCount} verified · ${Math.max(preparedCount - verifiedCount, 0)} awaiting review`,
+      status: verifiedSourceCount > 0 ? WORKFLOW_NODE_STATES.RUNNING : preparedCount > 0 ? WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN : WORKFLOW_NODE_STATES.NOT_STARTED,
+      summary: `${verifiedSourceCount} ${verifiedSourceCount === 1 ? 'source' : 'sources'} verified · ${Math.max(preparedCount - verifiedSourceCount, 0)} awaiting review`,
     },
     IMPLEMENTATION_READINESS: {
       status: readinessStatus,
