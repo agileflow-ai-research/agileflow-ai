@@ -113,7 +113,13 @@ function RunDetail({ agentProjectId, runId, onClose }) {
       {run.agent_type === 'REQUIREMENTS' ? (
         <RequirementsResults outputs={manifest} title="Persisted requirements outputs" />
       ) : run.agent_type === 'DESIGN_PLANNING' ? (
-        <DesignPlanningResults outputs={manifest} title="Persisted design and planning outputs" />
+        <DesignPlanningResults
+          outputs={manifest}
+          status={run.status}
+          warnings={run.warnings}
+          errors={run.errors}
+          title="Persisted design and planning outputs"
+        />
       ) : (
         <ArtifactViewer heading="Output manifest" metadata="Persisted manifest metadata">
           {Object.keys(manifest).length > 0 ? (
