@@ -22,11 +22,15 @@ import {
   getImplementationSemanticArtifacts,
   getGitHubRepository,
   getPreparationStatus,
+  getSemanticReviews,
+  getSpecificationStatus,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
   saveImplementationHumanReview,
+  saveSemanticDecision,
   startPreparation,
+  startSpecificationPreparation,
   uploadImplementationInputFile,
 } from './services/implementationAgentService.js'
 import { navigateToGitHub } from './utils/githubNavigation.js'
@@ -57,7 +61,11 @@ vi.mock('./services/implementationAgentService.js', () => ({
   getGitHubConnection: vi.fn(),
   getGitHubRepository: vi.fn(),
   getPreparationStatus: vi.fn(),
+  getSpecificationStatus: vi.fn(),
+  getSemanticReviews: vi.fn(),
+  saveSemanticDecision: vi.fn(),
   startPreparation: vi.fn(),
+  startSpecificationPreparation: vi.fn(),
 }))
 vi.mock('./utils/githubNavigation.js', () => ({ navigateToGitHub: vi.fn() }))
 
@@ -494,6 +502,24 @@ describe('ImplementationWorkspace', () => {
         processed_source_count: 0, completed_source_count: 0,
         active_source_count: 0, failed_source_count: 0, sources: [],
         requires_human_review: false, human_review_source_count: 0,
+      },
+    })
+    getSpecificationStatus.mockResolvedValue({
+      data: {
+        status: 'NOT_STARTED', source_count: 0, applicable_source_count: 0,
+        ready_source_count: 0, waiting_artifact_review_count: 0,
+        waiting_semantic_review_count: 0, failed_source_count: 0,
+        pending_semantic_decision_count: 0, sources: [],
+      },
+    })
+    getSemanticReviews.mockResolvedValue({ data: { review_fingerprint: 'a'.repeat(64), items: [] } })
+    saveSemanticDecision.mockResolvedValue({ data: { review_fingerprint: 'a'.repeat(64), items: [] } })
+    startSpecificationPreparation.mockResolvedValue({
+      data: {
+        status: 'WAITING_FOR_ARTIFACT_REVIEW', source_count: 0,
+        applicable_source_count: 0, ready_source_count: 0,
+        waiting_artifact_review_count: 0, waiting_semantic_review_count: 0,
+        failed_source_count: 0, pending_semantic_decision_count: 0, sources: [],
       },
     })
     startPreparation.mockResolvedValue({
@@ -1469,6 +1495,9 @@ describe('ImplementationWorkspace', () => {
 
     expect(await screen.findByText('requirements.pdf')).toBeInTheDocument()
     expect(screen.getByText('Waiting for You')).toBeInTheDocument()
+    await waitFor(() => expect(startSpecificationPreparation).toHaveBeenCalledWith(
+      project.agent_project_id,
+    ))
     await user.click(screen.getByRole('button', { name: 'Analyze Project Inputs' }))
     expect(startPreparation).toHaveBeenCalledOnce()
     expect(startPreparation).toHaveBeenCalledWith(project.agent_project_id, [])
@@ -1502,6 +1531,48 @@ describe('ImplementationWorkspace', () => {
     await new Promise((resolve) => window.setTimeout(resolve, 2200))
     expect(getPreparationStatus).toHaveBeenCalledTimes(2)
   }, 7000)
+
+  it('loads semantic approvals and submits a server-identified decision', async () => {
+    const user = userEvent.setup()
+    const fingerprint = 'b'.repeat(64)
+    getSpecificationStatus.mockResolvedValue({
+      data: {
+        status: 'WAITING_FOR_SEMANTIC_REVIEW', source_count: 1,
+        applicable_source_count: 1, ready_source_count: 0,
+        waiting_artifact_review_count: 0, waiting_semantic_review_count: 1,
+        failed_source_count: 0, pending_semantic_decision_count: 1,
+        sources: [{ source_id: 'A3UP-1', filename: 'api-spec.docx', status: 'WAITING_FOR_SEMANTIC_REVIEW' }],
+      },
+    })
+    getSemanticReviews.mockResolvedValue({
+      data: {
+        upload_id: 'A3UP-1', original_filename: 'api-spec.docx',
+        review_fingerprint: fingerprint,
+        items: [{
+          decision_id: 'SRD-1', artifact_type: 'API_SPECIFICATION', kind: 'ADDITION',
+          field_path: 'endpoints[0].response_statuses[1]', deterministic_value: null,
+          semantic_value: 409, evidence: [{ chunk_id: 'CHK-1', quote: 'Returns 409.' }],
+          allowed_actions: ['APPROVE_ADDITION', 'REJECT_ADDITION'], decision: null,
+        }],
+      },
+    })
+    saveSemanticDecision.mockResolvedValue({
+      data: {
+        upload_id: 'A3UP-1', original_filename: 'api-spec.docx',
+        review_fingerprint: fingerprint, status: 'COMPLETE', items: [],
+      },
+    })
+
+    render(<ImplementationWorkspace project={project} activeSection="SPECIFICATION_VERIFICATION" />)
+    expect(await screen.findByText(/Returns 409\./)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Approve' }))
+    expect(saveSemanticDecision).toHaveBeenCalledWith(
+      project.agent_project_id,
+      'A3UP-1',
+      'SRD-1',
+      { action: 'APPROVE_ADDITION', expected_review_fingerprint: fingerprint },
+    )
+  })
 
   it('shows an honest empty readiness panel until the existing evaluation has run', async () => {
     render(<ImplementationWorkspace project={project} activeSection="IMPLEMENTATION_READINESS" />)

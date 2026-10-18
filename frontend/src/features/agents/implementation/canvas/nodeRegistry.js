@@ -2,6 +2,7 @@ import { MarkerType } from '@xyflow/react'
 
 import { WORKFLOW_NODE_STATES } from '../constants/workflow.js'
 import { preparationToWorkflowState } from '../constants/preparation.js'
+import { specificationToWorkflowState } from '../constants/specification.js'
 import { DEFAULT_NODE_POSITIONS } from './layout.js'
 
 export const IMPLEMENTATION_NODE_REGISTRY = Object.freeze([
@@ -52,6 +53,7 @@ export function deriveWorkflowPresentation(snapshot) {
   const github = snapshot?.githubState
   const repository = snapshot?.repositoryState
   const preparation = snapshot?.preparationState?.result
+  const specification = snapshot?.specificationState?.result
 
   let readinessStatus = WORKFLOW_NODE_STATES.NOT_STARTED
   if (readiness?.status === 'evaluating') readinessStatus = WORKFLOW_NODE_STATES.RUNNING
@@ -80,12 +82,19 @@ export function deriveWorkflowPresentation(snapshot) {
       attentionCount: preparation?.failed_source_count ?? attentionCount,
     },
     SPECIFICATION_VERIFICATION: {
-      status: preparation?.requires_human_review
+      status: specification
+        ? specificationToWorkflowState(specification.status)
+        : preparation?.requires_human_review
         ? WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
         : verifiedSourceCount > 0 ? WORKFLOW_NODE_STATES.RUNNING : preparedCount > 0 ? WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN : WORKFLOW_NODE_STATES.NOT_STARTED,
-      summary: preparation?.requires_human_review
+      summary: specification
+        ? specification.status === 'WAITING_FOR_SEMANTIC_REVIEW'
+          ? `${specification.pending_semantic_decision_count} semantic ${specification.pending_semantic_decision_count === 1 ? 'decision' : 'decisions'} required`
+          : `${specification.ready_source_count} / ${specification.applicable_source_count} source specifications prepared${specification.failed_source_count ? ` · ${specification.failed_source_count} failed` : ''}`
+        : preparation?.requires_human_review
         ? `${preparation.human_review_source_count} ${preparation.human_review_source_count === 1 ? 'source' : 'sources'} awaiting verification`
         : `${verifiedSourceCount} ${verifiedSourceCount === 1 ? 'source' : 'sources'} verified · ${Math.max(preparedCount - verifiedSourceCount, 0)} awaiting review`,
+      attentionCount: specification?.pending_semantic_decision_count || specification?.failed_source_count,
     },
     IMPLEMENTATION_READINESS: {
       status: readinessStatus,

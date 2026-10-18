@@ -169,6 +169,56 @@ describe('Agent 3 workflow panels', () => {
     expect(within(research).getByText(/Source provenance/)).toBeInTheDocument()
   })
 
+  it('presents grounded additions and conflicts as human semantic decisions', async () => {
+    const user = userEvent.setup()
+    const onSemanticDecision = vi.fn()
+    const fingerprint = 'a'.repeat(64)
+    render(
+      <SpecificationVerificationPanel
+        inputs={[]}
+        specificationState={{
+          status: 'loaded', error: '', savingDecisionId: null,
+          result: {
+            status: 'WAITING_FOR_SEMANTIC_REVIEW', ready_source_count: 0,
+            applicable_source_count: 1, pending_semantic_decision_count: 2,
+          },
+          reviews: {
+            'UP-1': {
+              upload_id: 'UP-1', original_filename: 'api-spec.docx',
+              review_fingerprint: fingerprint,
+              items: [{
+                decision_id: 'SRD-ADD', artifact_type: 'API_SPECIFICATION',
+                kind: 'ADDITION', field_path: 'endpoints[0].request_fields',
+                deterministic_value: null, semantic_value: ['name', 'email'],
+                evidence: [{ chunk_id: 'CHK-1', quote: 'Requires name and email.' }],
+                allowed_actions: ['APPROVE_ADDITION', 'REJECT_ADDITION'], decision: null,
+              }, {
+                decision_id: 'SRD-CONFLICT', artifact_type: 'TECHNOLOGY_STACK',
+                kind: 'CONFLICT', field_path: 'stack.database[0]',
+                deterministic_value: 'MySQL', semantic_value: 'PostgreSQL',
+                evidence: [{ chunk_id: 'CHK-2', quote: 'Use PostgreSQL.' }],
+                allowed_actions: ['KEEP_DETERMINISTIC', 'ACCEPT_SEMANTIC_OVERRIDE'], decision: null,
+              }],
+            },
+          },
+        }}
+        onSemanticDecision={onSemanticDecision}
+        researchContent={<button type="button">Run Semantic Fallback</button>}
+      />,
+    )
+
+    expect(screen.getByText('Semantic Review Required')).toBeInTheDocument()
+    expect(screen.getByText(/Requires name and email\./)).toBeInTheDocument()
+    expect(screen.getByText('MySQL')).toBeInTheDocument()
+    expect(screen.getByText('PostgreSQL')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Approve' }))
+    expect(onSemanticDecision).toHaveBeenCalledWith('UP-1', 'SRD-ADD', {
+      action: 'APPROVE_ADDITION', expected_review_fingerprint: fingerprint,
+    })
+    const research = screen.getByText('Research Details').closest('details')
+    expect(within(research).getByRole('button', { name: 'Run Semantic Fallback' })).toBeInTheDocument()
+  })
+
   it('renders real readiness findings and keeps the existing evaluation action', async () => {
     const user = userEvent.setup()
     const onCheck = vi.fn()

@@ -15,6 +15,43 @@ export function getPreparationStatus(agentProjectId) {
   )
 }
 
+export function startSpecificationPreparation(agentProjectId) {
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/specification/start`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getSpecificationStatus(agentProjectId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/specification/status`,
+    { authenticated: true },
+  )
+}
+
+export function getSemanticReviews(agentProjectId, uploadId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/semantic-reviews`,
+    { authenticated: true },
+  )
+}
+
+export function saveSemanticDecision(agentProjectId, uploadId, decisionId, request) {
+  return apiClient.put(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/semantic-reviews/${encodeURIComponent(decisionId)}`,
+    request,
+    { authenticated: true },
+  )
+}
+
+export function getFinalTrustedArtifacts(agentProjectId, uploadId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/input-files/${encodeURIComponent(uploadId)}/trusted-artifacts`,
+    { authenticated: true },
+  )
+}
+
 export function uploadImplementationInputFile(agentProjectId, input) {
   const formData = new FormData()
   formData.append('source_type', input.source_type)

@@ -21,10 +21,15 @@ import {
   getImplementationSemanticArtifacts,
   getGitHubRepository,
   getPreparationStatus,
+  getFinalTrustedArtifacts,
+  getSemanticReviews,
+  getSpecificationStatus,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
   saveImplementationHumanReview,
+  saveSemanticDecision,
+  startSpecificationPreparation,
   startPreparation,
   uploadImplementationInputFile,
 } from './implementationAgentService.js'
@@ -49,6 +54,39 @@ describe('implementationAgentService', () => {
     )
     expect(apiClient.get).toHaveBeenCalledWith(
       '/agents/implementation/AGP-003/preparation/status',
+      { authenticated: true },
+    )
+  })
+
+  it('uses project and source scoped specification review endpoints', () => {
+    startSpecificationPreparation('AGP-003')
+    getSpecificationStatus('AGP-003')
+    getSemanticReviews('AGP-003', 'A3UP-abc')
+    saveSemanticDecision('AGP-003', 'A3UP-abc', 'SRD-123', {
+      action: 'APPROVE_ADDITION', expected_review_fingerprint: 'a'.repeat(64),
+    })
+    getFinalTrustedArtifacts('AGP-003', 'A3UP-abc')
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/specification/start',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/specification/status',
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/semantic-reviews',
+      { authenticated: true },
+    )
+    expect(apiClient.put).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/semantic-reviews/SRD-123',
+      { action: 'APPROVE_ADDITION', expected_review_fingerprint: 'a'.repeat(64) },
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/input-files/A3UP-abc/trusted-artifacts',
       { authenticated: true },
     )
   })

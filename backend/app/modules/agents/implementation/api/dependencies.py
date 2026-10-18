@@ -110,6 +110,15 @@ from app.modules.agents.implementation.preparation.semantic_extraction.artifact_
 from app.modules.agents.implementation.preparation.semantic_extraction.local_model.adapter import (
     LocalSemanticExtractorAdapter,
 )
+from app.modules.agents.implementation.preparation.specification.review_service import (
+    SemanticReviewService,
+)
+from app.modules.agents.implementation.preparation.specification.service import (
+    ProjectSpecificationService,
+)
+from app.modules.agents.implementation.preparation.specification.storage import (
+    ProjectSpecificationStorage,
+)
 from app.modules.agents.implementation.infrastructure.storage import (
     ImplementationUploadStorage,
     UploadNotFoundError,
@@ -305,6 +314,67 @@ def get_semantic_artifact_service(
         device=settings.agent3_semantic_device,
     )
     return SemanticArtifactService(standalone_service, storage, adapter)
+
+
+def get_semantic_review_service(
+    storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+    canonical_service: Annotated[
+        CanonicalArtifactService,
+        Depends(get_canonical_artifact_service),
+    ],
+    semantic_service: Annotated[
+        SemanticArtifactService,
+        Depends(get_semantic_artifact_service),
+    ],
+) -> SemanticReviewService:
+    return SemanticReviewService(storage, canonical_service, semantic_service)
+
+
+def get_project_specification_storage() -> ProjectSpecificationStorage:
+    return ProjectSpecificationStorage(settings.agent3_upload_root)
+
+
+def get_project_specification_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    upload_storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+    state_storage: Annotated[
+        ProjectSpecificationStorage,
+        Depends(get_project_specification_storage),
+    ],
+    human_review_service: Annotated[
+        HumanReviewService,
+        Depends(get_human_review_service),
+    ],
+    canonical_service: Annotated[
+        CanonicalArtifactService,
+        Depends(get_canonical_artifact_service),
+    ],
+    semantic_service: Annotated[
+        SemanticArtifactService,
+        Depends(get_semantic_artifact_service),
+    ],
+    semantic_review_service: Annotated[
+        SemanticReviewService,
+        Depends(get_semantic_review_service),
+    ],
+) -> ProjectSpecificationService:
+    return ProjectSpecificationService(
+        standalone_service,
+        upload_storage,
+        state_storage,
+        human_review_service,
+        canonical_service,
+        semantic_service,
+        semantic_review_service,
+    )
 
 
 def get_github_connection_repository() -> GitHubConnectionRepository:

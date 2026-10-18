@@ -565,6 +565,26 @@ def test_openapi_exposes_only_implemented_agent3_routes():
             "GET",
             "/api/v1/agents/implementation/{agent_project_id}/preparation/status",
         ),
+            (
+                "POST",
+                "/api/v1/agents/implementation/{agent_project_id}/specification/start",
+            ),
+            (
+                "GET",
+                "/api/v1/agents/implementation/{agent_project_id}/specification/status",
+            ),
+            (
+                "GET",
+                "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/semantic-reviews",
+            ),
+            (
+                "PUT",
+                "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/semantic-reviews/{decision_id}",
+            ),
+            (
+                "GET",
+                "/api/v1/agents/implementation/{agent_project_id}/input-files/{upload_id}/trusted-artifacts",
+            ),
         (
             "POST",
             "/api/v1/agents/implementation/{agent_project_id}/github/connect",

@@ -20,10 +20,14 @@ import {
   getImplementationSemanticArtifacts,
   getGitHubRepository,
   getPreparationStatus,
+  getSemanticReviews,
+  getSpecificationStatus,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
   saveImplementationHumanReview,
+  saveSemanticDecision,
+  startSpecificationPreparation,
   startPreparation,
   uploadImplementationInputFile,
 } from './services/implementationAgentService.js'
@@ -99,6 +103,9 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
   const [preparationState, setPreparationState] = useState({
     status: 'loading', result: null, error: '',
   })
+  const [specificationState, setSpecificationState] = useState({
+    status: 'loading', result: null, reviews: {}, savingDecisionId: null, error: '',
+  })
 
   useEffect(() => {
     let active = true
@@ -122,6 +129,35 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
   }, [project.agent_project_id])
 
   useEffect(() => {
+    const preparationStatus = preparationState.result?.status
+    if (
+      specificationState.status !== 'loaded'
+      || specificationState.result?.status !== 'NOT_STARTED'
+      || !['WAITING_FOR_HUMAN', 'ANALYSIS_READY', 'PARTIAL_FAILURE'].includes(preparationStatus)
+    ) return
+    let active = true
+    setSpecificationState((current) => ({ ...current, status: 'starting', error: '' }))
+    startSpecificationPreparation(project.agent_project_id)
+      .then((response) => {
+        if (!active) return
+        if (!response?.data?.status || !Array.isArray(response.data.sources)) {
+          throw new Error('Invalid project specification response')
+        }
+        setSpecificationState((current) => ({
+          ...current, status: 'loaded', result: response.data, error: '',
+        }))
+      })
+      .catch((error) => {
+        if (!active || error?.status === 401) return
+        setSpecificationState((current) => ({
+          ...current, status: 'error',
+          error: error?.errors?.[0]?.message || error?.message || 'Specification preparation could not be started.',
+        }))
+      })
+    return () => { active = false }
+  }, [preparationState.result?.status, project.agent_project_id, specificationState.result?.status, specificationState.status])
+
+  useEffect(() => {
     if (preparationState.result?.status !== 'RUNNING') return undefined
     let active = true
     const timer = window.setInterval(async () => {
@@ -142,6 +178,84 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       window.clearInterval(timer)
     }
   }, [preparationState.result?.status, project.agent_project_id])
+
+  useEffect(() => {
+    let active = true
+    setSpecificationState({
+      status: 'loading', result: null, reviews: {}, savingDecisionId: null, error: '',
+    })
+    getSpecificationStatus(project.agent_project_id)
+      .then((response) => {
+        if (!active) return
+        if (!response?.data?.status || !Array.isArray(response.data.sources)) {
+          throw new Error('Invalid project specification response')
+        }
+        setSpecificationState((current) => ({
+          ...current, status: 'loaded', result: response.data, error: '',
+        }))
+      })
+      .catch((error) => {
+        if (!active || error?.status === 401) return
+        setSpecificationState((current) => ({
+          ...current, status: 'error',
+          error: error?.errors?.[0]?.message || error?.message || 'Specification status could not be loaded.',
+        }))
+      })
+    return () => { active = false }
+  }, [project.agent_project_id])
+
+  useEffect(() => {
+    if (specificationState.result?.status !== 'PREPARING_SPECIFICATION') return undefined
+    let active = true
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await getSpecificationStatus(project.agent_project_id)
+        if (!active || !response?.data?.status || !Array.isArray(response.data.sources)) return
+        setSpecificationState((current) => ({
+          ...current, status: 'loaded', result: response.data, error: '',
+        }))
+      } catch (error) {
+        if (!active || error?.status === 401) return
+        setSpecificationState((current) => ({
+          ...current, status: 'error',
+          error: error?.errors?.[0]?.message || error?.message || 'Specification status could not be refreshed.',
+        }))
+      }
+    }, 2000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [project.agent_project_id, specificationState.result?.status])
+
+  useEffect(() => {
+    if (specificationState.result?.status !== 'WAITING_FOR_SEMANTIC_REVIEW') return undefined
+    let active = true
+    const sources = specificationState.result.sources.filter(
+      (source) => source.status === 'WAITING_FOR_SEMANTIC_REVIEW',
+    )
+    Promise.all(sources.map(async (source) => {
+      const response = await getSemanticReviews(project.agent_project_id, source.source_id)
+      if (!response?.data?.review_fingerprint || !Array.isArray(response.data.items)) {
+        throw new Error('Invalid semantic review response')
+      }
+      return [source.source_id, response.data]
+    }))
+      .then((entries) => {
+        if (!active) return
+        setSpecificationState((current) => ({
+          ...current, reviews: Object.fromEntries(entries), error: '',
+        }))
+      })
+      .catch((error) => {
+        if (!active || error?.status === 401) return
+        setSpecificationState((current) => ({
+          ...current,
+          error: error?.errors?.[0]?.message || error?.message || 'Semantic decisions could not be loaded.',
+        }))
+      })
+    return () => { active = false }
+  }, [project.agent_project_id, specificationState.result?.sources, specificationState.result?.status])
 
   useEffect(() => {
     let active = true
@@ -217,8 +331,9 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       githubState,
       repositoryState,
       preparationState,
+      specificationState,
     })
-  }, [githubState, inputs, onPresentationChange, preparationState, readinessState, repositoryState, selectedOutputs])
+  }, [githubState, inputs, onPresentationChange, preparationState, readinessState, repositoryState, selectedOutputs, specificationState])
 
   async function analyzeProjectInputs() {
     setPreparationState((current) => ({ ...current, status: 'starting', error: '' }))
@@ -569,6 +684,50 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     }
   }
 
+  async function refreshSpecificationStatus() {
+    try {
+      const response = await getSpecificationStatus(project.agent_project_id)
+      if (!response?.data?.status || !Array.isArray(response.data.sources)) {
+        throw new Error('Invalid project specification response')
+      }
+      setSpecificationState((current) => ({
+        ...current, status: 'loaded', result: response.data, error: '',
+      }))
+    } catch (error) {
+      if (error?.status === 401) return
+      setSpecificationState((current) => ({
+        ...current, status: 'error',
+        error: error?.errors?.[0]?.message || error?.message || 'Specification status could not be refreshed.',
+      }))
+    }
+  }
+
+  async function submitSemanticDecision(uploadId, decisionId, request) {
+    setSpecificationState((current) => ({
+      ...current, savingDecisionId: decisionId, error: '',
+    }))
+    try {
+      const response = await saveSemanticDecision(
+        project.agent_project_id, uploadId, decisionId, request,
+      )
+      if (!response?.data?.review_fingerprint || !Array.isArray(response.data.items)) {
+        throw new Error('Invalid semantic review response')
+      }
+      setSpecificationState((current) => ({
+        ...current,
+        savingDecisionId: null,
+        reviews: { ...current.reviews, [uploadId]: response.data },
+      }))
+      await refreshSpecificationStatus()
+    } catch (error) {
+      if (error?.status === 401) return
+      setSpecificationState((current) => ({
+        ...current, savingDecisionId: null, status: 'error',
+        error: error?.errors?.[0]?.message || error?.message || 'Semantic decision could not be saved.',
+      }))
+    }
+  }
+
   async function saveHumanReview(index, file, chunkId, fingerprint, decisions) {
     setHumanReviewWorkspace((current) => ({ ...current, status: 'saving', error: '' }))
     try {
@@ -582,6 +741,9 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         setCanonicalReview({ uploadId: null, status: 'idle', result: null, error: '' })
       }
       setHumanReviewWorkspace({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
+      if (response.data.review.review_status === 'COMPLETE') {
+        await refreshSpecificationStatus()
+      }
     } catch (error) {
       setHumanReviewWorkspace((current) => ({
         ...current, status: 'error',
@@ -1065,7 +1227,13 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         />
       ) : null}
       {activeSection === 'SPECIFICATION_VERIFICATION' ? (
-        <SpecificationVerificationPanel inputs={inputs} humanReviewContent={humanReviewContent} researchContent={specificationResearchContent} />
+        <SpecificationVerificationPanel
+          inputs={inputs}
+          humanReviewContent={humanReviewContent}
+          researchContent={specificationResearchContent}
+          specificationState={specificationState}
+          onSemanticDecision={submitSemanticDecision}
+        />
       ) : null}
 
       {activeSection === 'ALL' && (

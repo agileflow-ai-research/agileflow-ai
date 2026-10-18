@@ -76,6 +76,10 @@ class StagedUpload:
     canonical_artifacts_partial_path: Path
     semantic_artifacts_path: Path
     semantic_artifacts_partial_path: Path
+    semantic_reviews_path: Path
+    semantic_reviews_partial_path: Path
+    trusted_artifacts_path: Path
+    trusted_artifacts_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -246,6 +250,18 @@ class ImplementationUploadStorage:
         semantic_artifacts_partial_path = self._contained(
             project_directory, f"{upload_id}.semantic-artifacts.json.part"
         )
+        semantic_reviews_path = self._contained(
+            project_directory, f"{upload_id}.semantic-reviews.json"
+        )
+        semantic_reviews_partial_path = self._contained(
+            project_directory, f"{upload_id}.semantic-reviews.json.part"
+        )
+        trusted_artifacts_path = self._contained(
+            project_directory, f"{upload_id}.trusted-artifacts.json"
+        )
+        trusted_artifacts_partial_path = self._contained(
+            project_directory, f"{upload_id}.trusted-artifacts.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
             extraction_path.unlink(missing_ok=True)
@@ -264,6 +280,10 @@ class ImplementationUploadStorage:
             canonical_artifacts_partial_path.unlink(missing_ok=True)
             semantic_artifacts_path.unlink(missing_ok=True)
             semantic_artifacts_partial_path.unlink(missing_ok=True)
+            semantic_reviews_path.unlink(missing_ok=True)
+            semantic_reviews_partial_path.unlink(missing_ok=True)
+            trusted_artifacts_path.unlink(missing_ok=True)
+            trusted_artifacts_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise UploadNotFoundError(upload_id) from exc
@@ -339,6 +359,18 @@ class ImplementationUploadStorage:
         semantic_artifacts_partial_path = self._contained(
             project_directory, f"{upload_id}.semantic-artifacts.json.part"
         )
+        semantic_reviews_path = self._contained(
+            project_directory, f"{upload_id}.semantic-reviews.json"
+        )
+        semantic_reviews_partial_path = self._contained(
+            project_directory, f"{upload_id}.semantic-reviews.json.part"
+        )
+        trusted_artifacts_path = self._contained(
+            project_directory, f"{upload_id}.trusted-artifacts.json"
+        )
+        trusted_artifacts_partial_path = self._contained(
+            project_directory, f"{upload_id}.trusted-artifacts.json.part"
+        )
         try:
             if not stored_path.is_file():
                 raise UploadNotFoundError(upload_id)
@@ -371,6 +403,10 @@ class ImplementationUploadStorage:
             canonical_artifacts_partial_path=canonical_artifacts_partial_path,
             semantic_artifacts_path=semantic_artifacts_path,
             semantic_artifacts_partial_path=semantic_artifacts_partial_path,
+            semantic_reviews_path=semantic_reviews_path,
+            semantic_reviews_partial_path=semantic_reviews_partial_path,
+            trusted_artifacts_path=trusted_artifacts_path,
+            trusted_artifacts_partial_path=trusted_artifacts_partial_path,
         )
 
     def list_for_project(

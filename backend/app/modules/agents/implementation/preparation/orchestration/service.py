@@ -1,4 +1,4 @@
-from concurrent.futures import Executor, ThreadPoolExecutor
+from concurrent.futures import Executor
 from datetime import datetime, timezone
 from threading import Lock, RLock
 
@@ -46,6 +46,7 @@ from .constants import (
     ProjectPreparationStatus,
     SourcePreparationStatus,
 )
+from .executor import AGENT3_PREPARATION_EXECUTOR
 from .schemas import (
     PersistedPreparationSource,
     PreparationSourceError,
@@ -62,9 +63,7 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-_PREPARATION_EXECUTOR = ThreadPoolExecutor(
-    max_workers=1, thread_name_prefix="agent3-preparation"
-)
+_PREPARATION_EXECUTOR = AGENT3_PREPARATION_EXECUTOR
 
 
 class ProjectPreparationService:

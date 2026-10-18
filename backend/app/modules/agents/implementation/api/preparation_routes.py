@@ -48,7 +48,14 @@ from app.modules.agents.implementation.preparation.hybrid.service import (
 )
 from app.modules.agents.implementation.preparation.human_review.schemas import (
     ChunkHumanReviewUpdate,
+    DocumentReviewStatus,
     HumanReviewStateResponse,
+)
+from app.modules.agents.implementation.preparation.specification.service import (
+    ProjectSpecificationService,
+)
+from app.modules.agents.implementation.preparation.orchestration.storage import (
+    ProjectPreparationStorage,
 )
 from app.modules.agents.implementation.preparation.human_review.service import (
     HumanReviewService,
@@ -86,6 +93,8 @@ from app.modules.agents.implementation.api.dependencies import (
     get_canonical_artifact_service,
     get_human_review_service,
     get_hybrid_detection_service,
+    get_project_specification_service,
+    get_project_preparation_storage,
     get_rule_detection_service,
     get_semantic_chunking_service,
     get_zero_shot_detection_service,
@@ -433,12 +442,29 @@ def save_implementation_human_review(
     chunk_id: str,
     request: ChunkHumanReviewUpdate,
     service: Annotated[HumanReviewService, Depends(get_human_review_service)],
+    specification_service: Annotated[
+        ProjectSpecificationService,
+        Depends(get_project_specification_service),
+    ],
+    preparation_storage: Annotated[
+        ProjectPreparationStorage,
+        Depends(get_project_preparation_storage),
+    ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[HumanReviewStateResponse] | JSONResponse:
     try:
         result = service.save_chunk(
             agent_project_id, upload_id, chunk_id, request, current_user
         )
+        preparation = preparation_storage.load(
+            agent_project_id=agent_project_id,
+            owner_user_id=current_user.user_id,
+        )
+        if (
+            preparation is not None
+            and result.review.review_status is DocumentReviewStatus.COMPLETE
+        ):
+            specification_service.start(agent_project_id, current_user)
     except AgentProjectNotFoundError:
         return _error(404, "Agent project not found", "agent_project_id", "Agent project not found")
     except ArchivedAgentProjectError:

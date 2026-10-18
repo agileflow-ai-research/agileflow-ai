@@ -74,4 +74,23 @@ describe('implementation workflow registry', () => {
       status: 'WAITING_FOR_HUMAN', summary: '2 sources awaiting verification',
     })
   })
+
+  it('maps authoritative specification preparation and semantic decisions', () => {
+    const presentation = deriveWorkflowPresentation({
+      inputs: [],
+      selectedOutputs: [],
+      specificationState: {
+        result: {
+          status: 'WAITING_FOR_SEMANTIC_REVIEW', ready_source_count: 2,
+          applicable_source_count: 3, failed_source_count: 0,
+          pending_semantic_decision_count: 3,
+        },
+      },
+    })
+    expect(presentation.SPECIFICATION_VERIFICATION).toMatchObject({
+      status: 'WAITING_FOR_HUMAN',
+      summary: '3 semantic decisions required',
+      attentionCount: 3,
+    })
+  })
 })

@@ -266,6 +266,8 @@ def test_openapi_exposes_upload_and_delete_input_file_routes():
             and "/human-reviews" not in path
             and "/canonical-artifacts" not in path
             and "/semantic-artifacts" not in path
+                and "/semantic-reviews" not in path
+                and not path.endswith("/trusted-artifacts")
         for method in operations
     }
     assert agent3 == {

@@ -1,5 +1,8 @@
 import ArtifactGroup from '../components/common/ArtifactGroup.jsx'
 import ResearchDetails from '../components/common/ResearchDetails.jsx'
+import SemanticReviewCards from '../components/review/SemanticReviewCards.jsx'
+import { specificationPresentation } from '../constants/specification.js'
+import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import { reviewTaxonomy } from '../constants/workspace.js'
 import { sourceName } from '../utils/sourcePresentation.js'
 
@@ -53,16 +56,60 @@ function aggregateArtifacts(inputs) {
   return { groups: ordered, machineSuggestions, verifiedReferences }
 }
 
-export default function SpecificationVerificationPanel({ inputs, humanReviewContent, researchContent }) {
+export default function SpecificationVerificationPanel({
+  inputs,
+  humanReviewContent,
+  researchContent,
+  specificationState,
+  onSemanticDecision,
+}) {
   const { groups, machineSuggestions, verifiedReferences } = aggregateArtifacts(inputs)
   const semanticMetrics = inputs.reduce((summary, input) => ({
     grounded: summary.grounded + (input.semanticArtifacts?.metrics?.accepted_fact_count ?? 0),
     rejected: summary.rejected + (input.semanticArtifacts?.metrics?.rejected_fact_count ?? 0),
     conflicts: summary.conflicts + (input.semanticArtifacts?.metrics?.conflict_count ?? 0),
   }), { grounded: 0, rejected: 0, conflicts: 0 })
+  const specification = specificationState?.result
+  const presentation = specificationPresentation(specification?.status)
 
   return (
     <div className="space-y-6">
+      <section aria-labelledby="specification-preparation-title" className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 id="specification-preparation-title" className="font-semibold text-content-primary">Structured Specification</h3>
+            <p className="mt-1 text-sm text-content-secondary">Deterministic extraction and grounded semantic fallback continue automatically after artifact verification.</p>
+          </div>
+          <StatusBadge label={presentation.label} tone={presentation.tone} />
+        </div>
+        {specification ? (
+          <p className="text-sm text-content-secondary">
+            {specification.ready_source_count} / {specification.applicable_source_count} sources prepared
+            {specification.pending_semantic_decision_count > 0 ? ` · ${specification.pending_semantic_decision_count} decisions required` : ''}
+          </p>
+        ) : null}
+        {specificationState?.status === 'loading' ? <p className="text-sm text-content-secondary">Loading specification status...</p> : null}
+        {specificationState?.error ? <p role="alert" className="text-sm text-state-danger">{specificationState.error}</p> : null}
+      </section>
+
+      {specification?.status === 'WAITING_FOR_SEMANTIC_REVIEW' ? (
+        <section aria-labelledby="semantic-review-title" className="space-y-3">
+          <div>
+            <h3 id="semantic-review-title" className="font-semibold text-content-primary">Semantic Review</h3>
+            <p className="mt-1 text-sm text-content-secondary">Approve only grounded additions, or resolve conflicts between the verified deterministic value and a grounded semantic interpretation.</p>
+          </div>
+          <SemanticReviewCards
+            reviews={specificationState.reviews}
+            savingDecisionId={specificationState.savingDecisionId}
+            onDecision={onSemanticDecision}
+          />
+        </section>
+      ) : null}
+
+      {specification?.status === 'SPECIFICATION_READY' ? (
+        <p className="rounded-control border border-state-success p-4 text-sm text-content-primary">Final trusted artifacts are prepared for every applicable source.</p>
+      ) : null}
+
       <section aria-labelledby="verification-summary-title">
         <h3 id="verification-summary-title" className="font-semibold text-content-primary">Specification summary</h3>
         <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
