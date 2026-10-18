@@ -98,6 +98,7 @@ def test_run_uses_shared_lifecycle_snapshot_and_selected_outputs(agent2_context)
     assert result["status"] == "COMPLETED"
     assert result["agent_type"] == "DESIGN_PLANNING"
     assert result["run_mode"] == "DEFAULT"
+    assert result["correction_attempts"] == 0
     assert set(result["outputs"]) == {"EPICS"}
     persisted = runs.documents[result["run_id"]]
     assert persisted["started_at"] and persisted["completed_at"]
@@ -219,6 +220,7 @@ def test_successful_correction_is_visible_in_persisted_run(agent2_context):
         json={"requirements": "A valid requirement", "selected_outputs": ["EPICS"]},
     ).json()["data"]
     assert result["status"] == "COMPLETED"
+    assert result["correction_attempts"] == 1
     correction = next(item for item in result["warnings"] if item["code"] == "OUTPUT_CORRECTED")
     assert correction["details"]["correction_attempts"] == 1
     assert runs.documents[result["run_id"]]["status"].value == "COMPLETED"
@@ -424,3 +426,61 @@ def test_assignment_without_details_uses_generic_team_slots():
     assignment = result["TASK_ASSIGNMENT"][0]
     assert assignment["team_slot"] == "Team member 1"
     assert "No named developer" in assignment["rationale"]
+
+
+def test_historical_agent2_run_retrieval(agent2_context):
+    authentication, _, _, provider = agent2_context
+    provider.response = {
+        "SYSTEM_ARCHITECTURE": {
+            "style": "Layered",
+            "components": [{
+                "id": "COMP-001",
+                "name": "Booking Service",
+                "responsibility": "Manage reservations",
+                "dependencies": [],
+                "source_refs": ["SPEC-001"],
+            }],
+            "boundaries": ["API boundary"],
+            "interactions": ["REST"],
+            "constraints": ["Single region"],
+            "assumptions": ["PostgreSQL backing store"],
+        },
+        "EPICS": EPICS,
+    }
+    client = authentication.client()
+    project = create_project(client)
+    run_response = client.post(
+        f"/api/v1/agents/design-planning/{project['agent_project_id']}/run",
+        json={
+            "requirements": "Guests need to reserve rooms online.",
+            "selected_outputs": ["SYSTEM_ARCHITECTURE", "EPICS"],
+        },
+    )
+    assert run_response.status_code == 200
+    completed_run = run_response.json()["data"]
+    assert completed_run["status"] == "COMPLETED"
+    assert completed_run["correction_attempts"] == 0
+    run_id = completed_run["run_id"]
+    agent_project_id = project["agent_project_id"]
+
+    # Retrieve historical run via shared standalone endpoint
+    retrieval_response = client.get(
+        f"/api/v1/agent-projects/{agent_project_id}/runs/{run_id}"
+    )
+    assert retrieval_response.status_code == 200
+    retrieved_data = retrieval_response.json()["data"]
+
+    # Verify fields match the completed run and historical requirements
+    assert retrieved_data["run_id"] == run_id
+    assert retrieved_data["agent_project_id"] == agent_project_id
+    assert retrieved_data["agent_type"] == "DESIGN_PLANNING"
+    assert retrieved_data["run_mode"] == "DEFAULT"
+    assert retrieved_data["status"] == "COMPLETED"
+    assert set(retrieved_data["selected_outputs"]) == {"SYSTEM_ARCHITECTURE", "EPICS"}
+    assert retrieved_data["output_manifest"] == completed_run["outputs"]
+    assert "SYSTEM_ARCHITECTURE" in retrieved_data["output_manifest"]
+    assert "EPICS" in retrieved_data["output_manifest"]
+    assert retrieved_data["warnings"] == completed_run["warnings"]
+    assert retrieved_data["errors"] == []
+    assert retrieved_data["started_at"] == completed_run["started_at"]
+    assert retrieved_data["completed_at"] == completed_run["completed_at"]

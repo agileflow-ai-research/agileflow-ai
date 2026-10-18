@@ -375,3 +375,4 @@ class Agent2RunResult(BaseModel):
     outputs: dict[str, Any]
     warnings: list[AgentRunMessage]
     errors: list[AgentRunMessage]
+    correction_attempts: int = 0
