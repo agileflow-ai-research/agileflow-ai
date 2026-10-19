@@ -64,6 +64,7 @@ function JiraPlan({
   onViewPlanningHierarchy,
   onViewSprintPlan,
   onViewTaskAssignment,
+  onViewValidationHistory,
 }) {
   const safeOutputs =
     outputs && typeof outputs === 'object'
@@ -305,6 +306,11 @@ function JiraPlan({
           {onViewTaskAssignment && hasTaskAssignment && (
             <Button variant="outline" size="small" onClick={onViewTaskAssignment}>
               Task Assignments
+            </Button>
+          )}
+          {onViewValidationHistory && (
+            <Button variant="outline" size="small" onClick={onViewValidationHistory}>
+              Validation & History
             </Button>
           )}
         </div>

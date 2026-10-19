@@ -41,6 +41,7 @@ function TaskAssignment({
   onViewPlanningHierarchy,
   onViewSprintPlan,
   onViewJiraPlan,
+  onViewValidationHistory,
 }) {
   const safeOutputs = outputs && typeof outputs === 'object' ? outputs : {}
   const assignments = Array.isArray(safeOutputs.TASK_ASSIGNMENT) ? safeOutputs.TASK_ASSIGNMENT : []
@@ -193,6 +194,11 @@ function TaskAssignment({
           {onViewJiraPlan && hasJiraPlan && (
             <Button variant="outline" size="small" onClick={onViewJiraPlan}>
               Jira Plan
+            </Button>
+          )}
+          {onViewValidationHistory && (
+            <Button variant="outline" size="small" onClick={onViewValidationHistory}>
+              Validation & History
             </Button>
           )}
         </div>

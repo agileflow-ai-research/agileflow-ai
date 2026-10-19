@@ -43,6 +43,7 @@ function SprintPlan({
   onViewPlanningHierarchy,
   onViewTaskAssignment,
   onViewJiraPlan,
+  onViewValidationHistory,
 }) {
   const safeOutputs = outputs && typeof outputs === 'object' ? outputs : {}
   const sprints = Array.isArray(safeOutputs.SPRINT_PLAN) ? safeOutputs.SPRINT_PLAN : []
@@ -228,6 +229,11 @@ function SprintPlan({
           {onViewJiraPlan && hasJiraPlan && (
             <Button variant="outline" size="small" onClick={onViewJiraPlan}>
               Jira Plan
+            </Button>
+          )}
+          {onViewValidationHistory && (
+            <Button variant="outline" size="small" onClick={onViewValidationHistory}>
+              Validation & History
             </Button>
           )}
         </div>
