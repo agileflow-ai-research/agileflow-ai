@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -1757,6 +1757,242 @@ describe('DesignPlanningResults · S2-06 Results Overview', () => {
 
       expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
       expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('S2-11 Jira-compatible Plan View', () => {
+    it('renders S2-11 with title, subtitle, NOT SYNCHRONIZED badge, and synchronization banner matching PNG', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{ JIRA_PLAN: jiraPlan }}
+        />,
+      )
+
+      expect(screen.getByRole('button', { name: 'View Jira plan' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'View Jira plan' }))
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+      expect(
+        screen.getByText('Structured export for Progress Presentation 1 — no Jira Cloud dependency'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('NOT SYNCHRONIZED')).toBeInTheDocument()
+      expect(screen.getByText(/Synchronization:\s*NOT_PERFORMED/)).toBeInTheDocument()
+      expect(
+        screen.getByText('No Jira credentials or remote API calls are used in the standalone MVP.'),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/Jira Cloud synchronization/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/connected to Jira/i)).not.toBeInTheDocument()
+    })
+
+    it('renders truthful summary metrics for epics, stories, tasks, sprints, and assignments', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{ JIRA_PLAN: jiraPlan }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View Jira plan' }))
+
+      const metricsGroup = screen.getByLabelText('Jira plan metrics')
+      expect(metricsGroup).toBeInTheDocument()
+      expect(within(metricsGroup).getByText('Epics')).toBeInTheDocument()
+      expect(within(metricsGroup).getByText('Stories')).toBeInTheDocument()
+      expect(within(metricsGroup).getByText('Tasks')).toBeInTheDocument()
+      expect(within(metricsGroup).getByText('Sprints')).toBeInTheDocument()
+      expect(within(metricsGroup).getByText('Assignments')).toBeInTheDocument()
+    })
+
+    it('renders the Jira-ready structure table with real issue hierarchy, priorities, and sprint refs', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{ JIRA_PLAN: jiraPlan }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View Jira plan' }))
+
+      const table = screen.getByLabelText('Jira-ready structure table')
+      expect(table).toBeInTheDocument()
+
+      // Headers
+      expect(within(table).getByText('Type')).toBeInTheDocument()
+      expect(within(table).getByText('Key')).toBeInTheDocument()
+      expect(within(table).getByText('Summary')).toBeInTheDocument()
+      expect(within(table).getByText('Priority / Sprint')).toBeInTheDocument()
+
+      // Rows
+      expect(within(table).getByText('Epic')).toBeInTheDocument()
+      expect(within(table).getByText('EPIC-001')).toBeInTheDocument()
+      expect(within(table).getByText('Booking')).toBeInTheDocument()
+
+      expect(within(table).getByText('Story')).toBeInTheDocument()
+      expect(within(table).getByText('STORY-001')).toBeInTheDocument()
+      expect(within(table).getByText('guest · book')).toBeInTheDocument()
+
+      expect(within(table).getByText('Task')).toBeInTheDocument()
+      expect(within(table).getByText('TASK-001')).toBeInTheDocument()
+      expect(within(table).getByText('Build API')).toBeInTheDocument()
+      expect(within(table).getAllByText(/High · Sprint 1/).length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('downloads the exact returned JIRA_PLAN as JSON without Jira sync or network calls', async () => {
+      const user = userEvent.setup()
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{ JIRA_PLAN: jiraPlan }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View Jira plan' }))
+
+      const downloadBtn = screen.getByRole('button', { name: 'Download Jira-compatible JSON' })
+      expect(downloadBtn).toBeInTheDocument()
+
+      await user.click(downloadBtn)
+      expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+      expect(clickSpy).toHaveBeenCalled()
+      expect(URL.revokeObjectURL).toHaveBeenCalled()
+
+      clickSpy.mockRestore()
+    })
+
+    it('shows truthful empty state when JIRA_PLAN is not generated and does not display Jira navigation', async () => {
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{
+            EPICS: [{ id: 'EPIC-001', title: 'Epic One' }],
+          }}
+        />,
+      )
+
+      // Button to view Jira plan must NOT exist on Results Overview when JIRA_PLAN was not generated
+      expect(screen.queryByRole('button', { name: 'View Jira plan' })).not.toBeInTheDocument()
+    })
+
+    it('supports multi-view navigation across Overview, Planning Hierarchy, Sprint Plan, Task Assignment, and Jira Plan', async () => {
+      const user = userEvent.setup()
+      const fullOutputs = {
+        EPICS: [{ id: 'EPIC-001', title: 'Epic One' }],
+        FEATURES: [{ id: 'FEATURE-001', epic_id: 'EPIC-001', title: 'Feature One' }],
+        USER_STORIES: [{ id: 'STORY-001', epic_id: 'EPIC-001', feature_id: 'FEATURE-001', title: 'Story One' }],
+        TASKS: [{ id: 'TASK-001', story_id: 'STORY-001', title: 'Task One' }],
+        SPRINT_PLAN: [
+          {
+            id: 'SPRINT-001',
+            name: 'Sprint 1',
+            duration_days: 14,
+            capacity_points: 30,
+            planned_points: 5,
+            utilization_percent: 16.7,
+            item_refs: ['TASK-001'],
+          },
+        ],
+        TASK_ASSIGNMENT: [
+          {
+            task_id: 'TASK-001',
+            team_slot: 'Developer 1',
+            role: 'Backend Developer',
+            rationale: 'Skill fit',
+            matching_reasons: ['Skill match'],
+            confidence_score: 85,
+          },
+        ],
+        JIRA_PLAN: jiraPlan,
+      }
+
+      render(<DesignPlanningResults project={{ name: 'BookEase' }} outputs={fullOutputs} />)
+
+      // 1. Overview -> Jira Plan
+      await user.click(screen.getByRole('button', { name: 'View Jira plan' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+
+      // 2. Jira Plan -> Task Assignment
+      const taskAssignButtons = screen.getAllByRole('button', { name: /Task Assignment/i })
+      await user.click(taskAssignButtons[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+
+      // 3. Task Assignment -> Jira Plan
+      const jiraPlanFromAssign = screen.getAllByRole('button', { name: /Jira Plan/i })
+      await user.click(jiraPlanFromAssign[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+
+      // 4. Jira Plan -> Sprint Plan
+      const sprintPlanButtons = screen.getAllByRole('button', { name: /Sprint Plan/i })
+      await user.click(sprintPlanButtons[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Sprint Plan' })).toBeInTheDocument()
+
+      // 5. Sprint Plan -> Jira Plan
+      const jiraFromSprint = screen.getAllByRole('button', { name: /Jira Plan/i })
+      await user.click(jiraFromSprint[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+
+      // 6. Jira Plan -> Planning Hierarchy
+      await user.click(screen.getByRole('button', { name: 'Planning Hierarchy' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+
+      // 7. Planning Hierarchy -> Jira Plan
+      const jiraFromHierarchy = screen.getAllByRole('button', { name: /Jira Plan/i })
+      await user.click(jiraFromHierarchy[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+
+      // 8. Jira Plan -> Overview via "View persisted run"
+      await user.click(screen.getByRole('button', { name: 'View persisted run' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+    })
+
+    it('navigates to S2-11 and exports JSON in historical RunDetail view without extra API requests', async () => {
+      const user = userEvent.setup()
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+      getAgentProjectRun.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-HIST-011',
+          agent_type: 'DESIGN_PLANNING',
+          run_mode: 'DEFAULT',
+          status: 'COMPLETED',
+          selected_outputs: ['JIRA_PLAN'],
+          created_at: '2026-10-14T10:00:00Z',
+          started_at: '2026-10-14T10:00:01Z',
+          completed_at: '2026-10-14T10:00:02Z',
+          warnings: [],
+          errors: [],
+          output_manifest: { JIRA_PLAN: jiraPlan },
+        },
+      })
+
+      render(<RunDetail agentProjectId="AGP-002" runId="RUN-HIST-011" />)
+      expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Open S2-11
+      const viewJiraBtn = screen.getByRole('button', { name: 'View Jira plan' })
+      await user.click(viewJiraBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+      expect(screen.getByText('NOT SYNCHRONIZED')).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Test JSON export in historical view
+      await user.click(screen.getByRole('button', { name: 'Download Jira-compatible JSON' }))
+      expect(clickSpy).toHaveBeenCalled()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Back to Overview
+      const backButtons = screen.getAllByRole('button', { name: /Back to Results Overview|View persisted run/ })
+      await user.click(backButtons[0])
+
+      expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      clickSpy.mockRestore()
     })
   })
 })

@@ -42,6 +42,7 @@ function PlanningHierarchy({
   onBackToOverview,
   onViewSprintPlan,
   onViewTaskAssignment,
+  onViewJiraPlan,
 }) {
   const safeOutputs =
     outputs && typeof outputs === 'object'
@@ -55,6 +56,7 @@ function PlanningHierarchy({
     safeOutputs.TASK_ASSIGNMENT &&
       (!Array.isArray(safeOutputs.TASK_ASSIGNMENT) || safeOutputs.TASK_ASSIGNMENT.length > 0),
   )
+  const hasJiraPlan = Boolean(safeOutputs.JIRA_PLAN)
 
   const hasErrors = Array.isArray(errors) && errors.length > 0
   const isFailed = status === 'FAILED' || hasErrors
@@ -181,6 +183,11 @@ function PlanningHierarchy({
           {hasTaskAssignment && onViewTaskAssignment && (
             <Button variant="outline" size="small" onClick={onViewTaskAssignment}>
               Task Assignments
+            </Button>
+          )}
+          {hasJiraPlan && onViewJiraPlan && (
+            <Button variant="outline" size="small" onClick={onViewJiraPlan}>
+              Jira Plan
             </Button>
           )}
         </div>

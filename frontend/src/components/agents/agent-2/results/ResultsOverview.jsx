@@ -208,6 +208,7 @@ function ResultsOverview({
   onViewPlanningHierarchy,
   onViewSprintPlan,
   onViewTaskAssignment,
+  onViewJiraPlan,
   actions,
 }) {
   const safeOutputs = outputs && typeof outputs === 'object' ? outputs : result?.outputs || {}
@@ -477,6 +478,15 @@ function ResultsOverview({
             onClick={onViewTaskAssignment}
           >
             View task assignments
+          </Button>
+        )}
+        {jiraPlan && (
+          <Button
+            variant="outline"
+            disabled={!onViewJiraPlan}
+            onClick={onViewJiraPlan}
+          >
+            View Jira plan
           </Button>
         )}
         <Button variant="outline" onClick={handleOpenRunHistory}>

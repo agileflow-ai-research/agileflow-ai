@@ -8,6 +8,7 @@ import DesignArtifacts from './results/DesignArtifacts.jsx'
 import PlanningHierarchy from './results/PlanningHierarchy.jsx'
 import SprintPlanView from './results/SprintPlan.jsx'
 import TaskAssignmentView from './results/TaskAssignment.jsx'
+import JiraPlanView from './results/JiraPlan.jsx'
 
 const outputLabels = {
   SYSTEM_ARCHITECTURE: 'System Architecture',
@@ -491,6 +492,10 @@ function DesignPlanningResults(props) {
           setActiveView('task-assignment')
           props.onViewTaskAssignment?.()
         }}
+        onViewJiraPlan={() => {
+          setActiveView('jira-plan')
+          props.onViewJiraPlan?.()
+        }}
       />
     )
   }
@@ -515,6 +520,10 @@ function DesignPlanningResults(props) {
         onViewTaskAssignment={() => {
           setActiveView('task-assignment')
           props.onViewTaskAssignment?.()
+        }}
+        onViewJiraPlan={() => {
+          setActiveView('jira-plan')
+          props.onViewJiraPlan?.()
         }}
       />
     )
@@ -541,6 +550,39 @@ function DesignPlanningResults(props) {
           setActiveView('sprint-plan')
           props.onViewSprintPlan?.()
         }}
+        onViewJiraPlan={() => {
+          setActiveView('jira-plan')
+          props.onViewJiraPlan?.()
+        }}
+      />
+    )
+  }
+
+  if (currentView === 'jira-plan') {
+    return (
+      <JiraPlanView
+        {...props}
+        title={props.jiraPlanTitle || 'Jira-compatible Plan'}
+        subtitle={
+          props.jiraPlanSubtitle ||
+          'Structured export for Progress Presentation 1 — no Jira Cloud dependency'
+        }
+        onBackToOverview={() => {
+          setActiveView('overview')
+          props.onBackToOverview?.()
+        }}
+        onViewPlanningHierarchy={() => {
+          setActiveView('planning-hierarchy')
+          props.onViewPlanningHierarchy?.()
+        }}
+        onViewSprintPlan={() => {
+          setActiveView('sprint-plan')
+          props.onViewSprintPlan?.()
+        }}
+        onViewTaskAssignment={() => {
+          setActiveView('task-assignment')
+          props.onViewTaskAssignment?.()
+        }}
       />
     )
   }
@@ -563,6 +605,10 @@ function DesignPlanningResults(props) {
       onViewTaskAssignment={() => {
         setActiveView('task-assignment')
         props.onViewTaskAssignment?.()
+      }}
+      onViewJiraPlan={() => {
+        setActiveView('jira-plan')
+        props.onViewJiraPlan?.()
       }}
     />
   )

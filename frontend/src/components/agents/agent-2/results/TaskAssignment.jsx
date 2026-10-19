@@ -40,6 +40,7 @@ function TaskAssignment({
   onBackToOverview,
   onViewPlanningHierarchy,
   onViewSprintPlan,
+  onViewJiraPlan,
 }) {
   const safeOutputs = outputs && typeof outputs === 'object' ? outputs : {}
   const assignments = Array.isArray(safeOutputs.TASK_ASSIGNMENT) ? safeOutputs.TASK_ASSIGNMENT : []
@@ -55,6 +56,7 @@ function TaskAssignment({
   const hasSprintPlan = Boolean(
     safeOutputs.SPRINT_PLAN && (!Array.isArray(safeOutputs.SPRINT_PLAN) || safeOutputs.SPRINT_PLAN.length > 0),
   )
+  const hasJiraPlan = Boolean(safeOutputs.JIRA_PLAN)
 
   if (assignments.length === 0) {
     return (
@@ -186,6 +188,11 @@ function TaskAssignment({
           {onViewSprintPlan && hasSprintPlan && (
             <Button variant="outline" size="small" onClick={onViewSprintPlan}>
               Sprint Plan
+            </Button>
+          )}
+          {onViewJiraPlan && hasJiraPlan && (
+            <Button variant="outline" size="small" onClick={onViewJiraPlan}>
+              Jira Plan
             </Button>
           )}
         </div>
