@@ -800,7 +800,7 @@ describe('ImplementationWorkspace', () => {
     expect(within(review).getByText('Evidence: POST /bookings')).toBeInTheDocument()
     expect(within(review).getByText(/API Specification 0.9400/)).toBeInTheDocument()
     expect(within(review).getByText(/API Specification — Auto Candidate — Rule And Model/)).toBeInTheDocument()
-    expect(within(review).getByText('Machine Suggested')).toBeInTheDocument()
+    expect(within(review).getByText('Classification analysis')).toBeInTheDocument()
     expect(within(review).getByText('Human Verification')).toBeInTheDocument()
 
     await user.type(within(review).getByLabelText('Optional review note'), 'Status behavior is also a criterion.')
@@ -825,6 +825,123 @@ describe('ImplementationWorkspace', () => {
     expect(screen.getByRole('region', { name: 'Zero-Shot Model Baseline' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Hybrid Artifact Analysis' })).toBeInTheDocument()
     expect(screen.queryByText(/dataset export|fine-tuning/i)).not.toBeInTheDocument()
+  })
+
+  it('opens the authoritative pending source in focused review from Review Now', async () => {
+    const user = userEvent.setup()
+    const pendingPreparation = {
+      status: 'WAITING_FOR_HUMAN', source_count: 1, eligible_source_count: 1,
+      processed_source_count: 1, completed_source_count: 1,
+      active_source_count: 0, failed_source_count: 0,
+      sources: [{
+        source_id: metadata().upload_id, source_kind: 'DOCUMENT',
+        artifact_type: 'API_SPECIFICATION', filename: metadata().original_filename,
+        status: 'WAITING_FOR_HUMAN', current_stage: 'HUMAN_REVIEW', error: null,
+      }],
+      requires_human_review: true, human_review_source_count: 1,
+    }
+    getPreparationStatus.mockResolvedValue({ data: pendingPreparation })
+    const view = render(<ImplementationWorkspace project={project} activeSection="PROJECT_SOURCES" />)
+    await attachFile(
+      user,
+      'DOCUMENT',
+      new File(['document'], metadata().original_filename, { type: 'application/pdf' }),
+      metadata(),
+    )
+    view.rerender(<ImplementationWorkspace project={project} activeSection="SPECIFICATION_VERIFICATION" />)
+
+    await user.click(await screen.findByRole('button', { name: 'Review Now' }))
+    expect(await screen.findByTestId('focused-source-review')).toBeInTheDocument()
+    expect(getImplementationHumanReviews).toHaveBeenCalledWith(project.agent_project_id, metadata().upload_id)
+    const review = await screen.findByRole('region', { name: 'Human Artifact Verification Review' })
+    expect(within(review).getByText(`Source: ${metadata().original_filename}`)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Back to Review List' })).toBeInTheDocument()
+  })
+
+  it('reopens a persisted source review even when local upload state was remounted', async () => {
+    const user = userEvent.setup()
+    getPreparationStatus.mockResolvedValue({
+      data: {
+        status: 'WAITING_FOR_HUMAN', source_count: 1, eligible_source_count: 1,
+        processed_source_count: 1, completed_source_count: 1,
+        active_source_count: 0, failed_source_count: 0,
+        sources: [{
+          source_id: metadata().upload_id, source_kind: 'DOCUMENT',
+          artifact_type: 'API_SPECIFICATION', filename: metadata().original_filename,
+          status: 'WAITING_FOR_HUMAN', current_stage: 'HUMAN_REVIEW', error: null,
+        }],
+        requires_human_review: true, human_review_source_count: 1,
+      },
+    })
+    render(<ImplementationWorkspace project={project} activeSection="SPECIFICATION_VERIFICATION" />)
+
+    await user.click(await screen.findByRole('button', { name: 'Review Now' }))
+    expect(getImplementationHumanReviews).toHaveBeenCalledWith(project.agent_project_id, metadata().upload_id)
+    expect(await screen.findByRole('region', { name: 'Human Artifact Verification Review' })).toBeInTheDocument()
+  })
+
+  it('continues specification preparation only after the backend completes the final review', async () => {
+    const user = userEvent.setup()
+    const source = {
+      source_id: metadata().upload_id, source_kind: 'DOCUMENT',
+      artifact_type: 'API_SPECIFICATION', filename: metadata().original_filename,
+      status: 'WAITING_FOR_HUMAN', current_stage: 'HUMAN_REVIEW', error: null,
+    }
+    const waiting = {
+      status: 'WAITING_FOR_HUMAN', source_count: 1, eligible_source_count: 1,
+      processed_source_count: 1, completed_source_count: 1,
+      active_source_count: 0, failed_source_count: 0, sources: [source],
+      requires_human_review: true, human_review_source_count: 1,
+    }
+    const ready = {
+      ...waiting, status: 'ANALYSIS_READY',
+      sources: [{ ...source, status: 'READY' }],
+      requires_human_review: false, human_review_source_count: 0,
+    }
+    getPreparationStatus.mockResolvedValueOnce({ data: waiting }).mockResolvedValue({ data: ready })
+    render(<ImplementationWorkspace project={project} activeSection="SPECIFICATION_VERIFICATION" />)
+    await user.click(await screen.findByRole('button', { name: 'Review Now' }))
+    expect(startSpecificationPreparation).not.toHaveBeenCalled()
+    const review = await screen.findByRole('region', { name: 'Human Artifact Verification Review' })
+    await user.click(within(review).getByRole('button', { name: 'Accept API Specification' }))
+    await user.click(within(review).getByRole('button', { name: 'Save Chunk Verification' }))
+
+    expect(await screen.findByText('✓ Classification review complete')).toBeInTheDocument()
+    await waitFor(() => expect(startSpecificationPreparation).toHaveBeenCalledWith(project.agent_project_id))
+  })
+
+  it('keeps a failed guided-review save focused and does not advance the queue', async () => {
+    const user = userEvent.setup()
+    const pendingPreparation = {
+      status: 'WAITING_FOR_HUMAN', source_count: 1, eligible_source_count: 1,
+      processed_source_count: 1, completed_source_count: 1,
+      active_source_count: 0, failed_source_count: 0,
+      sources: [{
+        source_id: metadata().upload_id, source_kind: 'DOCUMENT',
+        artifact_type: 'API_SPECIFICATION', filename: metadata().original_filename,
+        status: 'WAITING_FOR_HUMAN', current_stage: 'HUMAN_REVIEW', error: null,
+      }],
+      requires_human_review: true, human_review_source_count: 1,
+    }
+    getPreparationStatus.mockResolvedValue({ data: pendingPreparation })
+    saveImplementationHumanReview.mockRejectedValue(new Error('Review service unavailable.'))
+    const view = render(<ImplementationWorkspace project={project} activeSection="PROJECT_SOURCES" />)
+    await attachFile(
+      user,
+      'DOCUMENT',
+      new File(['document'], metadata().original_filename, { type: 'application/pdf' }),
+      metadata(),
+    )
+    view.rerender(<ImplementationWorkspace project={project} activeSection="SPECIFICATION_VERIFICATION" />)
+    await user.click(await screen.findByRole('button', { name: 'Review Now' }))
+    const review = await screen.findByRole('region', { name: 'Human Artifact Verification Review' })
+    await user.click(within(review).getByRole('button', { name: 'Accept API Specification' }))
+    await user.click(within(review).getByRole('button', { name: 'Save Chunk Verification' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Review service unavailable.')
+    expect(screen.getByTestId('focused-source-review')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Review Next Source' })).not.toBeInTheDocument()
+    expect(startSpecificationPreparation).not.toHaveBeenCalled()
   })
 
   it('shows stale human verification without applying prior labels', async () => {

@@ -11,6 +11,7 @@ vi.mock('../canvas/ImplementationCanvas.jsx', () => ({
     return (
       <div aria-label="Agent 3 implementation workflow canvas">
         <button type="button" onClick={() => onSelectNode('PROJECT_SOURCES')}>Select sources</button>
+        <button type="button" onClick={() => onSelectNode('SPECIFICATION_VERIFICATION')}>Select specification</button>
         <button type="button" onClick={() => onSelectNode('IMPLEMENTATION_READINESS')}>Select readiness</button>
         <button type="button" onClick={() => onSelectNode('DELIVERY_SETUP')}>Select delivery setup</button>
         <button type="button" onClick={() => onSelectNode('GENERATE_IMPLEMENTATION')}>Select final approval</button>
@@ -21,13 +22,15 @@ vi.mock('../canvas/ImplementationCanvas.jsx', () => ({
 }))
 
 vi.mock('../ImplementationWorkspace.jsx', () => ({
-  default: ({ activeSection, onPresentationChange }) => (
+  default: ({ activeSection, initialArtifactReviewQueue, onPresentationChange }) => (
     <div data-testid="implementation-workspace">
       Workspace section: {activeSection}
+      <span>Review queue size: {initialArtifactReviewQueue.length}</span>
       <button
         type="button"
         onClick={() => onPresentationChange({
           preparationState: { result: { status: 'WAITING_FOR_HUMAN' } },
+          artifactReviewQueue: [{ source_id: 'UP-1', status: 'WAITING_FOR_HUMAN' }],
         })}
       >
         Emit review transition
@@ -124,5 +127,18 @@ describe('ImplementationProjectPage', () => {
     await user.click(screen.getByRole('button', { name: 'Emit review transition' }))
     expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('PROJECT_SOURCES')
     expect(canvasActions.focusNode).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves the review queue when the modal closes and reopens at the overview', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationProjectPage project={project} projectStatus={projectStatus} />)
+
+    await user.click(screen.getByRole('button', { name: 'Emit review transition' }))
+    expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('Review queue size: 1')
+    await user.click(screen.getByRole('button', { name: 'Close workflow modal' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Select specification' }))
+    expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('Review queue size: 1')
+    expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('SPECIFICATION_VERIFICATION')
   })
 })

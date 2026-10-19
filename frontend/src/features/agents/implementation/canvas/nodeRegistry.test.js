@@ -98,7 +98,7 @@ describe('implementation workflow registry', () => {
       status: 'COMPLETE', summary: '3 / 3 eligible sources processed',
     })
     expect(presentation.SPECIFICATION_VERIFICATION).toMatchObject({
-      status: 'WAITING_FOR_HUMAN', summary: '2 sources awaiting verification',
+      status: 'WAITING_FOR_HUMAN', summary: '2 sources need review',
     })
     expect(presentation.IMPLEMENTATION_READINESS.status).toBe('BLOCKED')
     expect(presentation.DELIVERY_SETUP.status).toBe('BLOCKED')

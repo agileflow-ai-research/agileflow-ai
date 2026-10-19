@@ -91,8 +91,9 @@ describe('Agent 3 workflow panels', () => {
 
     const overview = screen.getByRole('heading', { name: 'Source analysis overview' }).closest('section')
     expect(within(overview).getByText('Sources').nextSibling).toHaveTextContent('3')
-    expect(within(overview).getByText('Prepared').nextSibling).toHaveTextContent('1')
-    expect(within(overview).getByText('Needs Attention').nextSibling).toHaveTextContent('1')
+    expect(within(overview).getByText('Analyzed').nextSibling).toHaveTextContent('1')
+    expect(within(overview).getByText('Needs Review').nextSibling).toHaveTextContent('0')
+    expect(within(overview).getByText('Failed').nextSibling).toHaveTextContent('1')
     expect(screen.getByText('Pending notes').closest('div').parentElement).toHaveTextContent('Available')
     const disclosure = screen.getByText('Research Details').closest('details')
     expect(disclosure).not.toHaveAttribute('open')
@@ -123,12 +124,46 @@ describe('Agent 3 workflow panels', () => {
       />,
     )
 
-    expect(screen.getAllByText('Needs Attention')).toHaveLength(2)
+    expect(screen.getByText('Needs Review').nextSibling).toHaveTextContent('1')
+    const overview = screen.getByRole('heading', { name: 'Source analysis overview' }).closest('section')
+    expect(within(overview).getByText('Failed').nextSibling).toHaveTextContent('1')
     expect(screen.getByText('requirements.pdf').closest('div').parentElement).toHaveTextContent('Complete')
     expect(screen.getByText('api-spec.docx').closest('div').parentElement).toHaveTextContent('Needs your review')
     expect(screen.getByText('broken.yaml').closest('div').parentElement).toHaveTextContent('The document could not be extracted.')
     await user.click(screen.getByRole('button', { name: 'Retry Input Analysis' }))
     expect(onAnalyze).toHaveBeenCalledOnce()
+  })
+
+  it('presents completed analysis as a handoff with accurate review counters', async () => {
+    const user = userEvent.setup()
+    const onGoToVerification = vi.fn()
+    render(
+      <InputAnalysisPanel
+        inputs={[]}
+        preparationState={{
+          status: 'loaded', error: '',
+          result: {
+            status: 'WAITING_FOR_HUMAN', source_count: 3,
+            completed_source_count: 3, failed_source_count: 0,
+            human_review_source_count: 3,
+            sources: [1, 2, 3].map((index) => ({
+              source_id: `UP-${index}`, filename: `source-${index}.pdf`,
+              source_kind: 'DOCUMENT', status: 'WAITING_FOR_HUMAN',
+            })),
+          },
+        }}
+        onGoToVerification={onGoToVerification}
+      />,
+    )
+
+    const overview = screen.getByRole('heading', { name: 'Source analysis overview' }).closest('section')
+    expect(within(overview).getByText('Complete')).toBeInTheDocument()
+    expect(within(overview).getByText('Analyzed').nextSibling).toHaveTextContent('3')
+    expect(within(overview).getByText('Needs Review').nextSibling).toHaveTextContent('3')
+    expect(screen.getByText('Analysis complete. 3 sources need confirmation.')).toBeInTheDocument()
+    expect(screen.queryByText('Needs Attention 0')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Go to Specification Verification' }))
+    expect(onGoToVerification).toHaveBeenCalledOnce()
   })
 
   it('groups loaded specification layers by artifact and preserves source identity and advanced access', () => {
@@ -242,12 +277,100 @@ describe('Agent 3 workflow panels', () => {
     )
 
     expect(screen.getByRole('heading', { name: 'Input Classification Review' })).toBeInTheDocument()
-    expect(screen.getByText('How should this information be classified?')).toBeInTheDocument()
+    expect(screen.getByText('1 decision required')).toBeInTheDocument()
     expect(screen.getAllByText(/requirements\.pdf/).length).toBeGreaterThan(0)
-    const action = screen.getByRole('button', { name: 'Review Source' })
+    const action = screen.getByRole('button', { name: 'Review Now' })
     expect(action.closest('details')).toBeNull()
     await user.click(action)
     expect(onOpenArtifactReview).toHaveBeenCalledWith('UP-REVIEW')
+  })
+
+  it('shows a three-source queue at zero reviewed without fabricating labels', () => {
+    const sources = [
+      { source_id: 'UP-1', filename: 'requirements.txt', artifact_type: 'FUNCTIONAL_REQUIREMENTS', status: 'WAITING_FOR_HUMAN' },
+      { source_id: 'UP-2', filename: 'api.pdf', artifact_type: 'API_SPECIFICATION', status: 'WAITING_FOR_HUMAN' },
+      { source_id: 'UP-3', filename: 'flow.md', artifact_type: 'UI_FLOW', status: 'WAITING_FOR_HUMAN' },
+    ]
+    render(
+      <SpecificationVerificationPanel
+        inputs={[]}
+        preparationState={{ result: { status: 'WAITING_FOR_HUMAN', sources } }}
+        artifactReviewQueue={sources}
+      />,
+    )
+
+    expect(screen.getByText('3 decisions required')).toBeInTheDocument()
+    expect(screen.getAllByText(/0 \/ 3 reviewed/).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: 'Review Now' })).toHaveLength(3)
+    expect(screen.getByText('Suggested: Functional Requirements')).toBeInTheDocument()
+    expect(screen.getByText('Suggested: API Specification')).toBeInTheDocument()
+    expect(screen.getByText('Suggested: UI Flow')).toBeInTheDocument()
+  })
+
+  it('switches the same surface into focused source review and returns to the queue', async () => {
+    const user = userEvent.setup()
+    const onBack = vi.fn()
+    const source = {
+      source_id: 'UP-REVIEW', filename: 'requirements.pdf',
+      artifact_type: 'FUNCTIONAL_REQUIREMENTS', status: 'WAITING_FOR_HUMAN',
+    }
+    render(
+      <SpecificationVerificationPanel
+        inputs={[]}
+        preparationState={{ result: { status: 'WAITING_FOR_HUMAN', sources: [source] } }}
+        artifactReviewQueue={[source]}
+        selectedArtifactReviewSourceId="UP-REVIEW"
+        artifactReviewState={{
+          uploadId: 'UP-REVIEW', status: 'loaded',
+          result: {
+            review: { review_status: 'NOT_STARTED' },
+            review_queue: [{
+              chunk: { text: 'Users can create bookings.' },
+              review: { review_status: 'UNREVIEWED' },
+              hybrid: { candidates: [{ label: 'FUNCTIONAL_REQUIREMENTS', decision: 'REVIEW_REQUIRED' }] },
+            }],
+          },
+        }}
+        humanReviewContent={<section aria-label="Human Artifact Verification Review">Existing review controls</section>}
+        onBackToArtifactReviewList={onBack}
+      />,
+    )
+
+    expect(screen.getByTestId('focused-source-review')).toBeInTheDocument()
+    expect(screen.getByText('Source 1 of 1')).toBeInTheDocument()
+    expect(screen.getByText('How should this information be classified?')).toBeInTheDocument()
+    expect(screen.getByText(/Suggested classification: Functional Requirements/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Human Artifact Verification Review' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Back to Review List' }))
+    expect(onBack).toHaveBeenCalledOnce()
+  })
+
+  it('marks a backend-complete source reviewed and offers the next pending source', async () => {
+    const user = userEvent.setup()
+    const onOpen = vi.fn()
+    const sources = [
+      { source_id: 'UP-1', filename: 'requirements.txt', status: 'READY' },
+      { source_id: 'UP-2', filename: 'api.pdf', status: 'WAITING_FOR_HUMAN' },
+      { source_id: 'UP-3', filename: 'flow.md', status: 'WAITING_FOR_HUMAN' },
+    ]
+    render(
+      <SpecificationVerificationPanel
+        inputs={[]}
+        preparationState={{ result: { status: 'WAITING_FOR_HUMAN', sources } }}
+        artifactReviewQueue={sources}
+        selectedArtifactReviewSourceId="UP-1"
+        artifactReviewState={{
+          uploadId: 'UP-1', status: 'loaded',
+          result: { review: { review_status: 'COMPLETE' }, review_queue: [] },
+        }}
+        onOpenArtifactReview={onOpen}
+      />,
+    )
+
+    expect(screen.getByText('✓ Classification review complete')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Review Next Source' }))
+    expect(onOpen).toHaveBeenCalledWith('UP-2')
   })
 
   it('renders cross-source evidence, submits stored choices, and shows the final specification by category', async () => {

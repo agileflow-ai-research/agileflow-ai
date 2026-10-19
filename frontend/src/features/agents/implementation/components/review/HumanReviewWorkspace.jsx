@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Button from '../../../../../components/ui/Button.jsx'
 import Select from '../../../../../components/ui/Select.jsx'
 import Textarea from '../../../../../components/ui/Textarea.jsx'
+import ResearchDetails from '../common/ResearchDetails.jsx'
 import { reviewTaxonomy } from '../../constants/workspace.js'
 import { chunkSource, detectionLabel } from '../../utils/presentation.js'
 
@@ -56,8 +57,9 @@ function HumanReviewChunk({ item, fingerprint, saving, onSave }) {
         <p className="text-sm font-semibold text-content-primary">Source Text</p>
         <pre className="mt-2 whitespace-pre-wrap text-sm text-content-secondary">{item.chunk.text}</pre>
       </section>
-      <section aria-label="Machine Analysis" className="space-y-3">
-        <p className="text-sm font-semibold text-content-primary">Machine Suggested</p>
+      <ResearchDetails summary="Classification research details" description="Inspect the rule baseline, model scores, and hybrid recommendation used to prepare this question.">
+        <section aria-label="Machine Analysis" className="space-y-3">
+        <p className="text-sm font-semibold text-content-primary">Classification analysis</p>
         <div>
           <p className="text-sm font-medium text-content-primary">Rule baseline</p>
           {item.rule.predictions.map((prediction) => (
@@ -83,7 +85,8 @@ function HumanReviewChunk({ item, fingerprint, saving, onSave }) {
             </p>
           ))}
         </div>
-      </section>
+        </section>
+      </ResearchDetails>
       <section aria-label="Human Verification" className="space-y-4">
         <p className="text-sm font-semibold text-content-primary">Human Verification</p>
         <Textarea label="Optional review note" rows={2} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} />
@@ -143,14 +146,20 @@ function HumanReviewChunk({ item, fingerprint, saving, onSave }) {
 export default function HumanReviewWorkspace({ state, onSave }) {
   const [position, setPosition] = useState(0)
   const result = state.result
-  if (!result) return null
-  const queue = result.review_queue
+  if (!result) {
+    if (state.status === 'loading') return <p role="status" className="mt-4 text-sm text-content-secondary">Loading review questions...</p>
+    if (state.error) return <p role="alert" className="mt-4 text-sm text-state-danger">{state.error}</p>
+    return null
+  }
+  const pendingQueue = result.review_queue.filter((entry) => entry.review?.review_status !== 'VERIFIED')
+  const queue = pendingQueue.length > 0 ? pendingQueue : result.review_queue
   const item = queue[position] || queue[0]
   const metrics = result.review.metrics
   return (
     <section className="mt-4 space-y-4 border-t border-default pt-4" aria-label="Human Artifact Verification Review">
       {result.stale && <p role="alert" className="text-sm text-state-warning">{result.stale_message}</p>}
-      <p className="text-sm text-content-secondary">Reviewing chunk {position + 1} of {queue.length} in risk-prioritized order.</p>
+      {state.error ? <p role="alert" className="text-sm text-state-danger">{state.error}</p> : null}
+      <p className="text-sm text-content-secondary">Chunk {position + 1} of {queue.length} · {metrics.remaining_chunks} {metrics.remaining_chunks === 1 ? 'decision' : 'decisions'} remaining</p>
       {item && <HumanReviewChunk key={`${item.chunk.chunk_id}-${item.review.reviewed_at || 'new'}`} item={item} fingerprint={result.review.review_fingerprint} saving={state.status === 'saving'} onSave={onSave} />}
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="small" disabled={position === 0} onClick={() => setPosition((current) => current - 1)}>Previous Chunk</Button>

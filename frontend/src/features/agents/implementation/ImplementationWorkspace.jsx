@@ -88,7 +88,13 @@ function WorkflowBarrier({ gate, onNavigate }) {
   )
 }
 
-function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentationChange, onNavigateNode }) {
+function ImplementationWorkspace({
+  project,
+  activeSection = 'ALL',
+  initialArtifactReviewQueue = [],
+  onPresentationChange,
+  onNavigateNode,
+}) {
   const [step, setStep] = useState(0)
   const [inputs, setInputs] = useState([emptyInput()])
   const [selectedOutputs, setSelectedOutputs] = useState([])
@@ -120,6 +126,8 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
   const [humanReviewWorkspace, setHumanReviewWorkspace] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
+  const [artifactReviewQueue, setArtifactReviewQueue] = useState(initialArtifactReviewQueue)
+  const [selectedArtifactReviewSourceId, setSelectedArtifactReviewSourceId] = useState(null)
   const [canonicalReview, setCanonicalReview] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
@@ -151,6 +159,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
   const approvalIdempotencyRef = useRef(null)
   const readinessStateRef = useRef(readinessState)
   const activeProjectRef = useRef(project.agent_project_id)
+  const artifactQueueProjectRef = useRef(project.agent_project_id)
 
   const consolidatedSpecificationId = consolidationState.specification?.project_specification_id
   const workflowGates = useMemo(() => deriveWorkflowGates({
@@ -172,10 +181,42 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
   useEffect(() => {
     activeProjectRef.current = project.agent_project_id
     setDeliveryDecision('PENDING')
+    if (artifactQueueProjectRef.current !== project.agent_project_id) {
+      artifactQueueProjectRef.current = project.agent_project_id
+      setArtifactReviewQueue([])
+    }
+    setSelectedArtifactReviewSourceId(null)
     return () => {
       if (activeProjectRef.current === project.agent_project_id) activeProjectRef.current = null
     }
   }, [project.agent_project_id])
+
+  useEffect(() => {
+    const result = preparationState.result
+    if (!result) return
+    if (['NOT_STARTED', 'RUNNING'].includes(result.status)) {
+      setArtifactReviewQueue([])
+      setSelectedArtifactReviewSourceId(null)
+      return
+    }
+    const pending = result.sources.filter((source) => source.status === 'WAITING_FOR_HUMAN')
+    if (pending.length === 0) {
+      setArtifactReviewQueue((current) => current.map((source) => {
+        const authoritative = result.sources.find((item) => item.source_id === source.source_id)
+        return authoritative ? { ...source, ...authoritative } : source
+      }))
+      return
+    }
+    setArtifactReviewQueue((current) => {
+      const known = new Map(current.map((source) => [source.source_id, source]))
+      result.sources.forEach((source) => {
+        if (known.has(source.source_id) || source.status === 'WAITING_FOR_HUMAN') {
+          known.set(source.source_id, { ...known.get(source.source_id), ...source })
+        }
+      })
+      return [...known.values()]
+    })
+  }, [preparationState.result])
 
   useEffect(() => {
     let active = true
@@ -564,12 +605,15 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       consolidationState,
       runState,
       deliveryDecision,
+      artifactReviewQueue,
     })
-  }, [consolidationState, deliveryDecision, githubState, inputs, onPresentationChange, preparationState, readinessState, repositoryState, runState, selectedOutputs, specificationState])
+  }, [artifactReviewQueue, consolidationState, deliveryDecision, githubState, inputs, onPresentationChange, preparationState, readinessState, repositoryState, runState, selectedOutputs, specificationState])
 
   async function analyzeProjectInputs() {
     if (preparationSubmittingRef.current) return false
     preparationSubmittingRef.current = true
+    setArtifactReviewQueue([])
+    setSelectedArtifactReviewSourceId(null)
     setPreparationState((current) => ({ ...current, status: 'starting', error: '' }))
     const textInputs = inputs
       .filter((item) => item.source_type === 'TEXT' && item.content.trim())
@@ -906,8 +950,8 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     }
   }
 
-  async function openHumanReviews(index, file) {
-    if (humanReviewWorkspace.uploadId === file.upload_id && humanReviewWorkspace.result) {
+  async function openHumanReviews(index, file, { toggle = true } = {}) {
+    if (toggle && humanReviewWorkspace.uploadId === file.upload_id && humanReviewWorkspace.result) {
       setHumanReviewWorkspace({ uploadId: null, status: 'idle', result: null, error: '' })
       return
     }
@@ -915,7 +959,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     try {
       const response = await getImplementationHumanReviews(project.agent_project_id, file.upload_id)
       if (!response?.data?.review || !Array.isArray(response.data.review_queue)) throw new Error('Invalid human-review response')
-      updateInput(index, { humanReviews: response.data, error: '' })
+      if (index >= 0) updateInput(index, { humanReviews: response.data, error: '' })
       setHumanReviewWorkspace({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
     } catch (error) {
       setHumanReviewWorkspace({
@@ -1036,7 +1080,9 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         { expected_review_fingerprint: fingerprint, decisions },
       )
       if (!response?.data?.review || !Array.isArray(response.data.review_queue)) throw new Error('Invalid human-review response')
-      updateInput(index, { humanReviews: response.data, canonicalArtifacts: null, semanticArtifacts: null, error: '' })
+      if (index >= 0) {
+        updateInput(index, { humanReviews: response.data, canonicalArtifacts: null, semanticArtifacts: null, error: '' })
+      }
       if (canonicalReview.uploadId === file.upload_id) {
         setCanonicalReview({ uploadId: null, status: 'idle', result: null, error: '' })
       }
@@ -1524,12 +1570,32 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     />
   )
   const humanReviewIndex = inputs.findIndex((item) => item.file?.upload_id === humanReviewWorkspace.uploadId)
-  const humanReviewContent = humanReviewWorkspace.result && humanReviewIndex >= 0 ? (
+  const embeddedHumanReviewContent = humanReviewWorkspace.result && humanReviewIndex >= 0 ? (
     <HumanReviewWorkspace
       state={humanReviewWorkspace}
       onSave={(...args) => saveHumanReview(humanReviewIndex, inputs[humanReviewIndex].file, ...args)}
     />
   ) : null
+  const focusedHumanReviewContent = selectedArtifactReviewSourceId ? (
+    <HumanReviewWorkspace
+      key={selectedArtifactReviewSourceId}
+      state={humanReviewWorkspace}
+      onSave={(...args) => saveHumanReview(
+        humanReviewIndex,
+        humanReviewIndex >= 0 ? inputs[humanReviewIndex].file : { upload_id: selectedArtifactReviewSourceId },
+        ...args,
+      )}
+    />
+  ) : null
+
+  function openArtifactReview(sourceId) {
+    setSelectedArtifactReviewSourceId(sourceId)
+    const inputIndex = inputs.findIndex((input) => (
+      input.file?.upload_id === sourceId || input.input_id === sourceId
+    ))
+    const file = inputIndex >= 0 ? inputs[inputIndex].file : { upload_id: sourceId }
+    openHumanReviews(inputIndex, file, { toggle: false })
+  }
 
   const workspaceWizard = (
     <AgentInputWizard
@@ -1607,6 +1673,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
           inputs={inputs}
           preparationState={preparationState}
           onAnalyze={analyzeProjectInputs}
+          onGoToVerification={() => onNavigateNode?.('SPECIFICATION_VERIFICATION')}
           researchContent={analysisResearchContent}
         />
       ) : null}
@@ -1614,16 +1681,17 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         <SpecificationVerificationPanel
           inputs={inputs}
           preparationState={preparationState}
-          humanReviewContent={humanReviewContent}
+          humanReviewContent={selectedArtifactReviewSourceId ? focusedHumanReviewContent : embeddedHumanReviewContent}
+          artifactReviewState={humanReviewWorkspace}
+          artifactReviewQueue={artifactReviewQueue}
+          selectedArtifactReviewSourceId={selectedArtifactReviewSourceId}
           researchContent={specificationResearchContent}
           specificationState={specificationState}
           consolidationState={consolidationState}
           onSemanticDecision={submitSemanticDecision}
           onProjectConflictDecision={submitProjectConflictDecision}
-          onOpenArtifactReview={(sourceId) => {
-            const inputIndex = inputs.findIndex((input) => input.file?.upload_id === sourceId)
-            if (inputIndex >= 0) openHumanReviews(inputIndex, inputs[inputIndex].file)
-          }}
+          onOpenArtifactReview={openArtifactReview}
+          onBackToArtifactReviewList={() => setSelectedArtifactReviewSourceId(null)}
         />
       ) : null}
 

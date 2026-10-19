@@ -18,14 +18,14 @@ export function deriveWorkflowTransition(snapshot) {
   if (preparation === 'RUNNING') {
     return transition('INPUT_ANALYSIS', 'preparation:RUNNING')
   }
-  if (gates.pending.conflictReviewPending) {
-    return transition('SPECIFICATION_VERIFICATION', 'review:consolidation')
+  if (gates.pending.artifactReviewPending) {
+    return transition('SPECIFICATION_VERIFICATION', 'review:artifact')
   }
   if (gates.pending.semanticReviewPending) {
     return transition('SPECIFICATION_VERIFICATION', 'review:semantic')
   }
-  if (gates.pending.artifactReviewPending) {
-    return transition('SPECIFICATION_VERIFICATION', 'review:artifact')
+  if (gates.pending.conflictReviewPending) {
+    return transition('SPECIFICATION_VERIFICATION', 'review:consolidation')
   }
   if (
     specification === 'PREPARING_SPECIFICATION'

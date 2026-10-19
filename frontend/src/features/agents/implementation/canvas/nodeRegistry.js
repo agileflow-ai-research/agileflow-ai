@@ -115,7 +115,9 @@ export function deriveWorkflowPresentation(snapshot) {
     },
     SPECIFICATION_VERIFICATION: {
       status: specificationStatus,
-      summary: consolidation?.status === 'READY'
+      summary: preparation?.status === 'WAITING_FOR_HUMAN'
+        ? `${preparation.human_review_source_count} ${preparation.human_review_source_count === 1 ? 'source needs' : 'sources need'} review`
+        : consolidation?.status === 'READY'
         ? 'Project specification ready'
         : consolidation?.status === 'WAITING_FOR_HUMAN'
           ? `${consolidation.pending_conflict_count} cross-source ${consolidation.pending_conflict_count === 1 ? 'decision' : 'decisions'} required`
@@ -130,7 +132,8 @@ export function deriveWorkflowPresentation(snapshot) {
         : preparation?.requires_human_review
         ? `${preparation.human_review_source_count} ${preparation.human_review_source_count === 1 ? 'source' : 'sources'} awaiting verification`
         : `${verifiedSourceCount} ${verifiedSourceCount === 1 ? 'source' : 'sources'} verified · ${Math.max(preparedCount - verifiedSourceCount, 0)} awaiting review`,
-      attentionCount: consolidation?.pending_conflict_count || consolidation?.issue_count
+      attentionCount: preparation?.human_review_source_count
+        || consolidation?.pending_conflict_count || consolidation?.issue_count
         || specification?.pending_semantic_decision_count || specification?.failed_source_count,
     },
     IMPLEMENTATION_READINESS: {

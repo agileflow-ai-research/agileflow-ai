@@ -82,6 +82,7 @@ function ImplementationProjectPage({ project, projectStatus, projectActions }) {
               <ImplementationWorkspace
                 project={project}
                 activeSection={selectedDefinition?.active ? selectedDefinition.id : 'PROJECT_SOURCES'}
+                initialArtifactReviewQueue={workspaceSnapshot?.artifactReviewQueue ?? []}
                 onPresentationChange={handlePresentationChange}
                 onNavigateNode={setSelectedNodeId}
               />
