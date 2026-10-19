@@ -40,11 +40,16 @@ function PlanningHierarchy({
   errors = [],
   project,
   onBackToOverview,
+  onViewSprintPlan,
 }) {
   const safeOutputs =
     outputs && typeof outputs === 'object'
       ? outputs
       : result?.outputs || run?.output_manifest || {}
+
+  const hasSprintPlan = Boolean(
+    safeOutputs.SPRINT_PLAN && (!Array.isArray(safeOutputs.SPRINT_PLAN) || safeOutputs.SPRINT_PLAN.length > 0),
+  )
 
   const hasErrors = Array.isArray(errors) && errors.length > 0
   const isFailed = status === 'FAILED' || hasErrors
@@ -153,7 +158,7 @@ function PlanningHierarchy({
           </h2>
           <p className="mt-1 text-sm text-content-muted">{subtitle}</p>
         </div>
-        <div>
+        <div className="flex items-center gap-3">
           <span
             className={`inline-flex items-center rounded-control border px-3 py-1 text-xs font-medium ${
               isFailed
@@ -163,6 +168,11 @@ function PlanningHierarchy({
           >
             {isFailed ? 'Validation findings' : 'Hierarchy valid'}
           </span>
+          {hasSprintPlan && onViewSprintPlan && (
+            <Button variant="outline" size="small" onClick={onViewSprintPlan}>
+              Sprint Plan
+            </Button>
+          )}
         </div>
       </div>
 
@@ -814,6 +824,11 @@ function PlanningHierarchy({
         {onBackToOverview && (
           <Button variant="primary" onClick={onBackToOverview}>
             Back to Results Overview
+          </Button>
+        )}
+        {hasSprintPlan && onViewSprintPlan && (
+          <Button variant="outline" onClick={onViewSprintPlan}>
+            View sprint plan
           </Button>
         )}
       </div>

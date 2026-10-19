@@ -206,11 +206,15 @@ function ResultsOverview({
   onOpenRunHistory,
   onViewDesignArtifacts,
   onViewPlanningHierarchy,
+  onViewSprintPlan,
   actions,
 }) {
   const safeOutputs = outputs && typeof outputs === 'object' ? outputs : result?.outputs || {}
   const effectiveStatus = status || result?.status || (errors.length > 0 ? 'FAILED' : 'COMPLETED')
   const jiraPlan = safeOutputs.JIRA_PLAN
+  const hasSprintPlan = Boolean(
+    safeOutputs.SPRINT_PLAN && (!Array.isArray(safeOutputs.SPRINT_PLAN) || safeOutputs.SPRINT_PLAN.length > 0),
+  )
 
   // Derive summary metrics dynamically
   const outputCount = Object.keys(safeOutputs).length
@@ -452,6 +456,15 @@ function ResultsOverview({
         >
           View planning hierarchy
         </Button>
+        {hasSprintPlan && (
+          <Button
+            variant="outline"
+            disabled={!onViewSprintPlan}
+            onClick={onViewSprintPlan}
+          >
+            View sprint plan
+          </Button>
+        )}
         <Button variant="outline" onClick={handleOpenRunHistory}>
           Open run history
         </Button>

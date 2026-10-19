@@ -6,6 +6,7 @@ import ResultsWorkspace from '../ResultsWorkspace.jsx'
 import ResultsOverview from './results/ResultsOverview.jsx'
 import DesignArtifacts from './results/DesignArtifacts.jsx'
 import PlanningHierarchy from './results/PlanningHierarchy.jsx'
+import SprintPlanView from './results/SprintPlan.jsx'
 
 const outputLabels = {
   SYSTEM_ARCHITECTURE: 'System Architecture',
@@ -481,6 +482,31 @@ function DesignPlanningResults(props) {
           setActiveView('overview')
           props.onBackToOverview?.()
         }}
+        onViewSprintPlan={() => {
+          setActiveView('sprint-plan')
+          props.onViewSprintPlan?.()
+        }}
+      />
+    )
+  }
+
+  if (currentView === 'sprint-plan') {
+    return (
+      <SprintPlanView
+        {...props}
+        title={props.sprintPlanTitle || 'Sprint Plan'}
+        subtitle={
+          props.sprintPlanSubtitle ||
+          'Heuristic recommendation using team count, duration, dependencies and estimated workload'
+        }
+        onBackToOverview={() => {
+          setActiveView('overview')
+          props.onBackToOverview?.()
+        }}
+        onViewPlanningHierarchy={() => {
+          setActiveView('planning-hierarchy')
+          props.onViewPlanningHierarchy?.()
+        }}
       />
     )
   }
@@ -495,6 +521,10 @@ function DesignPlanningResults(props) {
       onViewPlanningHierarchy={() => {
         setActiveView('planning-hierarchy')
         props.onViewPlanningHierarchy?.()
+      }}
+      onViewSprintPlan={() => {
+        setActiveView('sprint-plan')
+        props.onViewSprintPlan?.()
       }}
     />
   )
