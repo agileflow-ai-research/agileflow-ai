@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     agent3_upload_root: Path = (
         BACKEND_DIR / "storage" / "standalone" / "implementation"
     )
+    agent4_upload_root: Path = (
+        BACKEND_DIR / "storage" / "standalone" / "testing_validation"
+    )
     agent3_zero_shot_local_files_only: bool = False
     agent3_semantic_model_id: str = "Qwen/Qwen3-1.7B"
     agent3_semantic_model_revision: str = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"

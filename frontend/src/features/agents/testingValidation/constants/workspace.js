@@ -1,7 +1,7 @@
-import { agentRunModePresentation } from '../../../../utils/agentPresentation.js'
-
 // Mode-first workspace configuration for Agent 4. Modes are shown before any mode-specific content.
 // Mode labels come from the shared presentation module so every screen names a mode the same way.
+import { agentRunModePresentation } from '../../../../utils/agentPresentation.js'
+
 export const AGENT4_MODES = {
   TEST_GENERATION: {
     value: 'TEST_GENERATION',
@@ -16,13 +16,14 @@ export const AGENT4_MODES = {
 }
 
 export const WORKFLOW_STATUS_LABELS = {
+  ACTIVE: 'Active',
   COMING_NEXT: 'Coming next',
   NOT_AVAILABLE: 'Not available yet',
 }
 
-// Terminology follows contract v1.1. These stages are a shell only; none is functional yet.
+// Terminology follows contract v1.1. Only Inputs is functional in this step.
 export const TEST_GENERATION_WORKFLOW = [
-  { id: 'inputs', label: 'Inputs', status: 'COMING_NEXT' },
+  { id: 'inputs', label: 'Inputs', status: 'ACTIVE' },
   { id: 'processing', label: 'Processing', status: 'NOT_AVAILABLE' },
   { id: 'testability', label: 'Testability', status: 'NOT_AVAILABLE' },
   { id: 'test-case-plan', label: 'Test Case Plan', status: 'NOT_AVAILABLE' },

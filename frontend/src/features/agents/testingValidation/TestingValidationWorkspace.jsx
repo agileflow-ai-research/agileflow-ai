@@ -1,11 +1,13 @@
 import { useState } from 'react'
 
 import Button from '../../../components/ui/Button.jsx'
+import TestGenerationInputsStep from './components/inputs/TestGenerationInputsStep.jsx'
 import ModeSelectionStep from './components/mode/ModeSelectionStep.jsx'
 import ModeWorkflowPreview from './components/mode/ModeWorkflowPreview.jsx'
 import { AGENT4_MODES } from './constants/workspace.js'
 
-// Mode-first shell. Choosing a mode performs no request and creates no run.
+// Mode-first workspace. Choosing a mode performs no request and creates no run.
+// TEST_GENERATION opens its Inputs stage, which collects project-level sources only.
 // Project name and domain come from the shared AgentProject, never from this workspace.
 function TestingValidationWorkspace({ project }) {
   const [mode, setMode] = useState(null)
@@ -24,7 +26,7 @@ function TestingValidationWorkspace({ project }) {
       </dl>
 
       {mode ? (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-content-secondary">
               Mode: <span className="font-semibold text-content-primary">{AGENT4_MODES[mode].label}</span>
@@ -34,6 +36,7 @@ function TestingValidationWorkspace({ project }) {
             </Button>
           </div>
           <ModeWorkflowPreview mode={mode} />
+          {mode === 'TEST_GENERATION' && <TestGenerationInputsStep agentProjectId={project.agent_project_id} />}
         </div>
       ) : (
         <ModeSelectionStep onSelect={setMode} />

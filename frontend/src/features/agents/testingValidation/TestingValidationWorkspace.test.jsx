@@ -4,11 +4,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TEST_GENERATION_OUTPUT_CODES } from './constants/testGeneration.js'
 import { VALIDATION_OUTPUT_CODES } from './constants/validation.js'
-import { runTestingValidationAgent } from './services/testingValidationAgentService.js'
+import {
+  createTestGenerationTextInput,
+  deleteTestGenerationInput,
+  listTestGenerationInputs,
+  runTestingValidationAgent,
+  uploadTestGenerationInputFile,
+} from './services/testingValidationAgentService.js'
 import TestingValidationWorkspace from './TestingValidationWorkspace.jsx'
 
 vi.mock('./services/testingValidationAgentService.js', () => ({
   runTestingValidationAgent: vi.fn(),
+  listTestGenerationInputs: vi.fn(),
+  createTestGenerationTextInput: vi.fn(),
+  uploadTestGenerationInputFile: vi.fn(),
+  deleteTestGenerationInput: vi.fn(),
 }))
 
 const project = {
@@ -24,6 +34,7 @@ describe('TestingValidationWorkspace', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    listTestGenerationInputs.mockResolvedValue({ data: [] })
     fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
   })
@@ -47,31 +58,25 @@ describe('TestingValidationWorkspace', () => {
     expect(validationButton()).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
     expect(screen.queryByRole('list', { name: /workflow preview/ })).not.toBeInTheDocument()
+    expect(listTestGenerationInputs).not.toHaveBeenCalled()
   })
 
-  it('shows the TEST_GENERATION workflow preview after selecting it, without any request or run', async () => {
+  it('opens the TEST_GENERATION Inputs stage without starting a run or any direct fetch', async () => {
     const user = userEvent.setup()
     render(<TestingValidationWorkspace project={project} />)
 
     await user.click(testGenerationButton())
 
     const preview = screen.getByRole('list', { name: 'Test Case Generation workflow preview' })
-    const stages = within(preview).getAllByRole('listitem')
-    expect(stages.map((item) => item.textContent)).toEqual([
-      expect.stringContaining('Inputs'),
-      expect.stringContaining('Processing'),
-      expect.stringContaining('Testability'),
-      expect.stringContaining('Test Case Plan'),
-      expect.stringContaining('Human Review'),
-      expect.stringContaining('Test Generation'),
-      expect.stringContaining('Results'),
-    ])
-    expect(screen.queryByRole('button', { name: /run/i })).not.toBeInTheDocument()
+    expect(within(preview).getAllByRole('listitem')).toHaveLength(7)
+    expect(within(preview).getByText('Active')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Add Source' })).toBeInTheDocument()
+    expect(listTestGenerationInputs).toHaveBeenCalledWith('AGP-004')
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('shows the VALIDATION workflow preview separately and starts no execution', async () => {
+  it('shows the VALIDATION workflow preview separately and starts no execution or input collection', async () => {
     const user = userEvent.setup()
     render(<TestingValidationWorkspace project={project} />)
 
@@ -81,6 +86,8 @@ describe('TestingValidationWorkspace', () => {
     expect(within(preview).getAllByRole('listitem')).toHaveLength(6)
     expect(within(preview).getByText('Test Execution')).toBeInTheDocument()
     expect(within(preview).queryByText('Test Case Plan')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Source' })).not.toBeInTheDocument()
+    expect(listTestGenerationInputs).not.toHaveBeenCalled()
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -95,6 +102,7 @@ describe('TestingValidationWorkspace', () => {
     expect(testGenerationButton()).toBeInTheDocument()
     expect(validationButton()).toBeInTheDocument()
     expect(screen.queryByRole('list', { name: /workflow preview/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Source' })).not.toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -109,5 +117,8 @@ describe('TestingValidationWorkspace', () => {
       'CODE_QUALITY_REPORT', 'ACCEPTANCE_CRITERIA_VALIDATION', 'FINAL_VALIDATION_REPORT',
     ])
     expect(TEST_GENERATION_OUTPUT_CODES.filter((code) => VALIDATION_OUTPUT_CODES.includes(code))).toEqual([])
+    expect(uploadTestGenerationInputFile).not.toHaveBeenCalled()
+    expect(createTestGenerationTextInput).not.toHaveBeenCalled()
+    expect(deleteTestGenerationInput).not.toHaveBeenCalled()
   })
 })

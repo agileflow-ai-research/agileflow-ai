@@ -40,3 +40,56 @@ class TestExecutionStatus(StrEnum):
     """Generated tests are never executed in TEST_GENERATION. Execution belongs to VALIDATION."""
 
     NOT_EXECUTED = "NOT_EXECUTED"
+
+
+class Agent4ArtifactType(StrEnum):
+    """Upstream artifact identities accepted as TEST_GENERATION inputs (contract v1.1 §2.4–2.5).
+
+    Names are the canonical Agent 1 and Agent 2 output codes. Other agents' aliases
+    (for example Agent 3's UI_WIREFRAMES) are never used here.
+    """
+
+    # Normally supplied by Agent 1
+    FUNCTIONAL_REQUIREMENTS = "FUNCTIONAL_REQUIREMENTS"
+    NON_FUNCTIONAL_REQUIREMENTS = "NON_FUNCTIONAL_REQUIREMENTS"
+    USER_STORIES = "USER_STORIES"
+    ACCEPTANCE_CRITERIA = "ACCEPTANCE_CRITERIA"
+    PERSONAS = "PERSONAS"
+    QUALITY_FINDINGS = "QUALITY_FINDINGS"
+    CLARIFICATION_QUESTIONS = "CLARIFICATION_QUESTIONS"
+    SRS = "SRS"
+    # Normally supplied by Agent 2
+    SYSTEM_ARCHITECTURE = "SYSTEM_ARCHITECTURE"
+    UML_DIAGRAMS = "UML_DIAGRAMS"
+    DATABASE_SCHEMA = "DATABASE_SCHEMA"
+    API_SPECIFICATION = "API_SPECIFICATION"
+    WIREFRAMES = "WIREFRAMES"
+    UI_FLOW = "UI_FLOW"
+    FEATURES = "FEATURES"
+
+
+class Agent4InputSourceType(StrEnum):
+    """How an artifact was supplied. Kept separate from the artifact type."""
+
+    TEXT = "TEXT"
+    DOCUMENT = "DOCUMENT"
+    IMAGE = "IMAGE"
+
+
+class InputOriginAgent(StrEnum):
+    """The upstream agent an artifact is normally produced by. Recorded honestly, never as execution."""
+
+    AGENT_1 = "AGENT_1"
+    AGENT_2 = "AGENT_2"
+
+
+class SuppliedVia(StrEnum):
+    STANDALONE_MANUAL_INPUT = "STANDALONE_MANUAL_INPUT"
+
+
+class InputProcessingStatus(StrEnum):
+    """Collection state only. Extraction, normalization, and analysis are later steps."""
+
+    COLLECTED = "COLLECTED"
+    UPLOADED = "UPLOADED"
+    PENDING_ANALYSIS = "PENDING_ANALYSIS"
