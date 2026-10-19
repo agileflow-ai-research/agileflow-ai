@@ -54,6 +54,7 @@ export function deriveWorkflowPresentation(snapshot) {
   const repository = snapshot?.repositoryState
   const preparation = snapshot?.preparationState?.result
   const specification = snapshot?.specificationState?.result
+  const consolidation = snapshot?.consolidationState?.result
 
   let readinessStatus = WORKFLOW_NODE_STATES.NOT_STARTED
   if (readiness?.status === 'evaluating') readinessStatus = WORKFLOW_NODE_STATES.RUNNING
@@ -82,19 +83,35 @@ export function deriveWorkflowPresentation(snapshot) {
       attentionCount: preparation?.failed_source_count ?? attentionCount,
     },
     SPECIFICATION_VERIFICATION: {
-      status: specification
+      status: consolidation
+        ? consolidation.status === 'READY' ? WORKFLOW_NODE_STATES.COMPLETE
+          : consolidation.status === 'WAITING_FOR_HUMAN' ? WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
+            : ['FAILED'].includes(consolidation.status) ? WORKFLOW_NODE_STATES.FAILED
+              : ['STALE', 'PARTIAL_FAILURE'].includes(consolidation.status) ? WORKFLOW_NODE_STATES.NEEDS_ATTENTION
+                : consolidation.status === 'CONSOLIDATING' ? WORKFLOW_NODE_STATES.RUNNING
+                  : specification ? specificationToWorkflowState(specification.status) : WORKFLOW_NODE_STATES.NOT_STARTED
+        : specification
         ? specificationToWorkflowState(specification.status)
         : preparation?.requires_human_review
         ? WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
         : verifiedSourceCount > 0 ? WORKFLOW_NODE_STATES.RUNNING : preparedCount > 0 ? WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN : WORKFLOW_NODE_STATES.NOT_STARTED,
-      summary: specification
+      summary: consolidation?.status === 'READY'
+        ? 'Project specification ready'
+        : consolidation?.status === 'WAITING_FOR_HUMAN'
+          ? `${consolidation.pending_conflict_count} cross-source ${consolidation.pending_conflict_count === 1 ? 'decision' : 'decisions'} required`
+          : consolidation?.status === 'CONSOLIDATING'
+            ? 'Consolidating trusted project sources'
+            : consolidation?.status === 'STALE'
+              ? 'Trusted sources changed · consolidation is stale'
+              : specification
         ? specification.status === 'WAITING_FOR_SEMANTIC_REVIEW'
           ? `${specification.pending_semantic_decision_count} semantic ${specification.pending_semantic_decision_count === 1 ? 'decision' : 'decisions'} required`
           : `${specification.ready_source_count} / ${specification.applicable_source_count} source specifications prepared${specification.failed_source_count ? ` · ${specification.failed_source_count} failed` : ''}`
         : preparation?.requires_human_review
         ? `${preparation.human_review_source_count} ${preparation.human_review_source_count === 1 ? 'source' : 'sources'} awaiting verification`
         : `${verifiedSourceCount} ${verifiedSourceCount === 1 ? 'source' : 'sources'} verified · ${Math.max(preparedCount - verifiedSourceCount, 0)} awaiting review`,
-      attentionCount: specification?.pending_semantic_decision_count || specification?.failed_source_count,
+      attentionCount: consolidation?.pending_conflict_count || consolidation?.issue_count
+        || specification?.pending_semantic_decision_count || specification?.failed_source_count,
     },
     IMPLEMENTATION_READINESS: {
       status: readinessStatus,

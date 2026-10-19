@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   connectGitHub,
@@ -22,11 +22,16 @@ import {
   getPreparationStatus,
   getSemanticReviews,
   getSpecificationStatus,
+  getProjectConsolidationStatus,
+  getProjectConflicts,
+  getTrustedProjectSpecification,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
   saveImplementationHumanReview,
   saveSemanticDecision,
+  saveProjectConflictDecision,
+  startProjectConsolidation,
   startSpecificationPreparation,
   startPreparation,
   uploadImplementationInputFile,
@@ -106,9 +111,15 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
   const [specificationState, setSpecificationState] = useState({
     status: 'loading', result: null, reviews: {}, savingDecisionId: null, error: '',
   })
+  const [consolidationState, setConsolidationState] = useState({
+    status: 'loading', result: null, conflicts: [], specification: null,
+    savingConflictId: null, error: '',
+  })
+  const consolidationStartRef = useRef(null)
 
   useEffect(() => {
     let active = true
+    consolidationStartRef.current = null
     setPreparationState({ status: 'loading', result: null, error: '' })
     getPreparationStatus(project.agent_project_id)
       .then((response) => {
@@ -127,6 +138,84 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       })
     return () => { active = false }
   }, [project.agent_project_id])
+
+  useEffect(() => {
+    let active = true
+    setConsolidationState({
+      status: 'loading', result: null, conflicts: [], specification: null,
+      savingConflictId: null, error: '',
+    })
+    getProjectConsolidationStatus(project.agent_project_id)
+      .then((response) => {
+        if (!active) return
+        if (!response?.data?.status) throw new Error('Invalid project consolidation response')
+        setConsolidationState((current) => ({ ...current, status: 'loaded', result: response.data, error: '' }))
+      })
+      .catch((error) => {
+        if (!active || error?.status === 401) return
+        setConsolidationState((current) => ({
+          ...current, status: 'error',
+          error: error?.errors?.[0]?.message || error?.message || 'Project consolidation status could not be loaded.',
+        }))
+      })
+    return () => { active = false }
+  }, [project.agent_project_id])
+
+  useEffect(() => {
+    if (
+      specificationState.result?.status !== 'SPECIFICATION_READY'
+      || !['NOT_STARTED', 'STALE'].includes(consolidationState.result?.status)
+    ) return undefined
+    const startKey = [
+      project.agent_project_id,
+      consolidationState.result.status,
+      consolidationState.result.source_set_digest || '',
+    ].join(':')
+    if (consolidationStartRef.current === startKey) return undefined
+    consolidationStartRef.current = startKey
+    let active = true
+    setConsolidationState((current) => ({ ...current, status: 'starting', error: '' }))
+    startProjectConsolidation(project.agent_project_id)
+      .then((response) => {
+        if (!active) return
+        if (!response?.data?.status) throw new Error('Invalid project consolidation response')
+        setConsolidationState((current) => ({ ...current, status: 'loaded', result: response.data, error: '' }))
+      })
+      .catch((error) => {
+        if (!active || error?.status === 401) return
+        setConsolidationState((current) => ({
+          ...current, status: 'error',
+          error: error?.errors?.[0]?.message || error?.message || 'Project consolidation could not be started.',
+        }))
+      })
+    return () => { active = false }
+  }, [consolidationState.result?.source_set_digest, consolidationState.result?.status, project.agent_project_id, specificationState.result?.status])
+
+  useEffect(() => {
+    const state = consolidationState.result?.status
+    if (!['WAITING_FOR_HUMAN', 'READY'].includes(state)) return undefined
+    let active = true
+    const request = state === 'WAITING_FOR_HUMAN'
+      ? getProjectConflicts(project.agent_project_id)
+      : getTrustedProjectSpecification(project.agent_project_id)
+    request.then((response) => {
+      if (!active) return
+      if (state === 'WAITING_FOR_HUMAN') {
+        if (!Array.isArray(response?.data)) throw new Error('Invalid project conflicts response')
+        setConsolidationState((current) => ({ ...current, conflicts: response.data, error: '' }))
+      } else {
+        if (!response?.data?.project_specification_id) throw new Error('Invalid trusted project specification response')
+        setConsolidationState((current) => ({ ...current, specification: response.data, error: '' }))
+      }
+    }).catch((error) => {
+      if (!active || error?.status === 401) return
+      setConsolidationState((current) => ({
+        ...current,
+        error: error?.errors?.[0]?.message || error?.message || 'Project specification details could not be loaded.',
+      }))
+    })
+    return () => { active = false }
+  }, [consolidationState.result?.status, project.agent_project_id])
 
   useEffect(() => {
     const preparationStatus = preparationState.result?.status
@@ -332,8 +421,9 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       repositoryState,
       preparationState,
       specificationState,
+      consolidationState,
     })
-  }, [githubState, inputs, onPresentationChange, preparationState, readinessState, repositoryState, selectedOutputs, specificationState])
+  }, [consolidationState, githubState, inputs, onPresentationChange, preparationState, readinessState, repositoryState, selectedOutputs, specificationState])
 
   async function analyzeProjectInputs() {
     setPreparationState((current) => ({ ...current, status: 'starting', error: '' }))
@@ -724,6 +814,49 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       setSpecificationState((current) => ({
         ...current, savingDecisionId: null, status: 'error',
         error: error?.errors?.[0]?.message || error?.message || 'Semantic decision could not be saved.',
+      }))
+    }
+  }
+
+  async function submitProjectConflictDecision(conflict, action, candidateId = undefined) {
+    setConsolidationState((current) => ({
+      ...current, savingConflictId: conflict.conflict_id, error: '',
+    }))
+    try {
+      await saveProjectConflictDecision(
+        project.agent_project_id,
+        conflict.conflict_id,
+        {
+          expected_fingerprint: conflict.fingerprint,
+          action,
+          ...(candidateId ? { candidate_id: candidateId } : {}),
+        },
+      )
+      const statusResponse = await getProjectConsolidationStatus(project.agent_project_id)
+      if (!statusResponse?.data?.status) throw new Error('Invalid project consolidation response')
+      let final = null
+      let conflicts = consolidationState.conflicts
+      if (statusResponse.data.status === 'READY') {
+        const finalResponse = await getTrustedProjectSpecification(project.agent_project_id)
+        final = finalResponse?.data
+      } else {
+        const conflictResponse = await getProjectConflicts(project.agent_project_id)
+        conflicts = conflictResponse?.data ?? []
+      }
+      setConsolidationState((current) => ({
+        ...current, status: 'loaded', result: statusResponse.data,
+        conflicts, specification: final ?? current.specification,
+        savingConflictId: null, error: '',
+      }))
+    } catch (error) {
+      if (error?.status === 401) return
+      const stale = error?.status === 409
+      setConsolidationState((current) => ({
+        ...current, savingConflictId: null,
+        result: stale && current.result ? { ...current.result, status: 'STALE' } : current.result,
+        error: stale
+          ? 'The trusted source set changed. Consolidation will be rebuilt before another decision.'
+          : error?.errors?.[0]?.message || error?.message || 'Cross-source decision could not be saved.',
       }))
     }
   }
@@ -1232,7 +1365,9 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
           humanReviewContent={humanReviewContent}
           researchContent={specificationResearchContent}
           specificationState={specificationState}
+          consolidationState={consolidationState}
           onSemanticDecision={submitSemanticDecision}
+          onProjectConflictDecision={submitProjectConflictDecision}
         />
       ) : null}
 

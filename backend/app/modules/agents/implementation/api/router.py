@@ -20,6 +20,9 @@ from app.modules.agents.implementation.api.semantic_routes import (
 from app.modules.agents.implementation.api.specification_routes import (
     router as specification_router,
 )
+from app.modules.agents.implementation.api.consolidation_routes import (
+    router as consolidation_router,
+)
 from app.modules.agents.implementation.api.dependencies import (
     get_canonical_artifact_service,
     get_document_extraction_service,
@@ -50,6 +53,7 @@ router.include_router(preparation_router)
 router.include_router(project_preparation_router)
 router.include_router(semantic_router)
 router.include_router(specification_router)
+router.include_router(consolidation_router)
 router.include_router(github_router)
 
 

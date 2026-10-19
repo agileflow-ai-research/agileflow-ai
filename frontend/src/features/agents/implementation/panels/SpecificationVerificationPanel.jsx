@@ -5,6 +5,11 @@ import { specificationPresentation } from '../constants/specification.js'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import { reviewTaxonomy } from '../constants/workspace.js'
 import { sourceName } from '../utils/sourcePresentation.js'
+import {
+  ConsolidationResearchDetails,
+  CrossSourceReview,
+  FinalProjectSpecification,
+} from '../components/review/ProjectSpecificationReview.jsx'
 
 function aggregateArtifacts(inputs) {
   const groups = new Map()
@@ -61,7 +66,9 @@ export default function SpecificationVerificationPanel({
   humanReviewContent,
   researchContent,
   specificationState,
+  consolidationState,
   onSemanticDecision,
+  onProjectConflictDecision,
 }) {
   const { groups, machineSuggestions, verifiedReferences } = aggregateArtifacts(inputs)
   const semanticMetrics = inputs.reduce((summary, input) => ({
@@ -71,6 +78,16 @@ export default function SpecificationVerificationPanel({
   }), { grounded: 0, rejected: 0, conflicts: 0 })
   const specification = specificationState?.result
   const presentation = specificationPresentation(specification?.status)
+  const consolidation = consolidationState?.result
+  const consolidationLabel = {
+    NOT_STARTED: 'Awaiting trusted source artifacts',
+    CONSOLIDATING: 'Processing',
+    WAITING_FOR_HUMAN: 'Cross-source review required',
+    READY: 'Project Specification Ready',
+    PARTIAL_FAILURE: 'Incomplete source set',
+    FAILED: 'Consolidation failed',
+    STALE: 'Source set changed',
+  }[consolidation?.status] ?? 'Not started'
 
   return (
     <div className="space-y-6">
@@ -110,6 +127,37 @@ export default function SpecificationVerificationPanel({
         <p className="rounded-control border border-state-success p-4 text-sm text-content-primary">Final trusted artifacts are prepared for every applicable source.</p>
       ) : null}
 
+      <section aria-labelledby="project-consolidation-title" className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 id="project-consolidation-title" className="font-semibold text-content-primary">Project Consolidation</h3>
+            <p className="mt-1 text-sm text-content-secondary">Trusted source artifacts are consolidated deterministically; interpretation remains under human control.</p>
+          </div>
+          <StatusBadge
+            label={consolidationLabel}
+            tone={consolidation?.status === 'READY' ? 'success'
+              : ['WAITING_FOR_HUMAN', 'STALE', 'PARTIAL_FAILURE'].includes(consolidation?.status) ? 'warning'
+                : consolidation?.status === 'FAILED' ? 'danger' : 'neutral'}
+          />
+        </div>
+        {consolidation?.status === 'WAITING_FOR_HUMAN' ? (
+          <p className="text-sm text-state-warning">{consolidation.pending_conflict_count} cross-source {consolidation.pending_conflict_count === 1 ? 'decision' : 'decisions'} required</p>
+        ) : null}
+        {consolidation?.issues?.map((issue) => (
+          <p key={`${issue.source_id}-${issue.error_code}`} role="alert" className="text-sm text-state-warning">{issue.message}</p>
+        ))}
+        {consolidationState?.status === 'starting' ? <p className="text-sm text-content-secondary">Consolidating the current trusted source set...</p> : null}
+        {consolidationState?.error ? <p role="alert" className="text-sm text-state-danger">{consolidationState.error}</p> : null}
+      </section>
+
+      <CrossSourceReview
+        conflicts={consolidationState?.conflicts ?? []}
+        savingConflictId={consolidationState?.savingConflictId}
+        onDecision={onProjectConflictDecision}
+      />
+
+      <FinalProjectSpecification specification={consolidationState?.specification} />
+
       <section aria-labelledby="verification-summary-title">
         <h3 id="verification-summary-title" className="font-semibold text-content-primary">Specification summary</h3>
         <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
@@ -148,7 +196,14 @@ export default function SpecificationVerificationPanel({
       ) : null}
 
       <ResearchDetails description="Access file-level extraction, rule baseline, DeBERTa, hybrid analysis, human review controls, deterministic canonical details, semantic/Qwen previews, metrics, and provenance.">
-        {researchContent}
+        <div className="space-y-5">
+          <ConsolidationResearchDetails
+            status={consolidation}
+            conflicts={consolidationState?.conflicts ?? []}
+            specification={consolidationState?.specification}
+          />
+          {researchContent}
+        </div>
       </ResearchDetails>
     </div>
   )

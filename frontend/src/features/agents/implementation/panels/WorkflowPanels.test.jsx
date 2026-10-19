@@ -219,6 +219,69 @@ describe('Agent 3 workflow panels', () => {
     expect(within(research).getByRole('button', { name: 'Run Semantic Fallback' })).toBeInTheDocument()
   })
 
+  it('renders cross-source evidence, submits stored choices, and shows the final specification by category', async () => {
+    const user = userEvent.setup()
+    const onDecision = vi.fn()
+    const sourceA = { source_id: 'UP-A', label: 'constraints.pdf' }
+    const sourceB = { source_id: 'UP-B', label: 'architecture.docx' }
+    const conflict = {
+      conflict_id: 'PCF-1', conflict_type: 'TECHNOLOGY_SELECTION',
+      artifact_type: 'TECHNOLOGY_STACK', status: 'PENDING',
+      fingerprint: 'a'.repeat(64),
+      allowed_actions: ['SELECT_CANDIDATE', 'KEEP_BOTH', 'MARK_NOT_CONFLICTING'],
+      candidates: [
+        { candidate_id: 'PCC-1', label: 'MySQL', value: 'MySQL', supporting_sources: [sourceA] },
+        { candidate_id: 'PCC-2', label: 'PostgreSQL', value: 'PostgreSQL', supporting_sources: [sourceB] },
+      ],
+    }
+    const projectItem = {
+      project_item_id: 'PSI-1', data: { statement: 'Create booking' },
+      supporting_sources: [sourceA, sourceB],
+    }
+    const { rerender } = render(
+      <SpecificationVerificationPanel
+        inputs={[]}
+        specificationState={{ result: { status: 'SPECIFICATION_READY', ready_source_count: 2, applicable_source_count: 2 } }}
+        consolidationState={{
+          status: 'loaded', result: { status: 'WAITING_FOR_HUMAN', pending_conflict_count: 1, issues: [], source_set_digest: 'b'.repeat(64) },
+          conflicts: [conflict], specification: null, savingConflictId: null,
+        }}
+        onProjectConflictDecision={onDecision}
+      />,
+    )
+
+    expect(screen.getByText('Cross-source review required')).toBeInTheDocument()
+    const conflictCard = screen.getByText('Technology Conflict').closest('article')
+    expect(within(conflictCard).getByText(/constraints\.pdf/)).toBeInTheDocument()
+    expect(within(conflictCard).getByText(/architecture\.docx/)).toBeInTheDocument()
+    expect(within(conflictCard).queryByText('TECHNOLOGY_SELECTION')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Use MySQL' }))
+    expect(onDecision).toHaveBeenCalledWith(conflict, 'SELECT_CANDIDATE', 'PCC-1')
+
+    rerender(
+      <SpecificationVerificationPanel
+        inputs={[]}
+        specificationState={{ result: { status: 'SPECIFICATION_READY', ready_source_count: 2, applicable_source_count: 2 } }}
+        consolidationState={{
+          status: 'loaded', result: { status: 'READY', pending_conflict_count: 0, issues: [], source_set_digest: 'b'.repeat(64) },
+          conflicts: [conflict], savingConflictId: null,
+          specification: {
+            project_specification_id: 'TPS-1', decision_digest: 'c'.repeat(64),
+            categories: { FUNCTIONAL_REQUIREMENTS: [projectItem] },
+          },
+        }}
+        onProjectConflictDecision={onDecision}
+      />,
+    )
+    expect(screen.getByText('Project Specification Ready')).toBeInTheDocument()
+    expect(screen.getByText('Functional Requirements').nextSibling).toHaveTextContent('1')
+    expect(screen.getByText(/Supported by:/)).toHaveTextContent('constraints.pdf, architecture.docx')
+    const research = screen.getByText('Research Details').closest('details')
+    expect(research).not.toHaveAttribute('open')
+    expect(within(research).getByText(/TPS-1/)).toBeInTheDocument()
+    expect(within(research).getByText(/TECHNOLOGY_SELECTION/)).toBeInTheDocument()
+  })
+
   it('renders real readiness findings and keeps the existing evaluation action', async () => {
     const user = userEvent.setup()
     const onCheck = vi.fn()

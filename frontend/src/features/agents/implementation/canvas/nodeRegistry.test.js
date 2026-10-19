@@ -93,4 +93,21 @@ describe('implementation workflow registry', () => {
       attentionCount: 3,
     })
   })
+
+  it('maps real consolidation states onto the existing specification node', () => {
+    const review = deriveWorkflowPresentation({
+      inputs: [], selectedOutputs: [],
+      consolidationState: { result: { status: 'WAITING_FOR_HUMAN', pending_conflict_count: 2, issue_count: 0 } },
+    })
+    expect(review.SPECIFICATION_VERIFICATION).toMatchObject({
+      status: 'WAITING_FOR_HUMAN', summary: '2 cross-source decisions required', attentionCount: 2,
+    })
+
+    const ready = deriveWorkflowPresentation({
+      inputs: [], selectedOutputs: [], consolidationState: { result: { status: 'READY', pending_conflict_count: 0, issue_count: 0 } },
+    })
+    expect(ready.SPECIFICATION_VERIFICATION).toMatchObject({
+      status: 'COMPLETE', summary: 'Project specification ready',
+    })
+  })
 })

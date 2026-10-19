@@ -24,11 +24,16 @@ import {
   getPreparationStatus,
   getSemanticReviews,
   getSpecificationStatus,
+  getProjectConsolidationStatus,
+  getProjectConflicts,
+  getTrustedProjectSpecification,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
   saveImplementationHumanReview,
   saveSemanticDecision,
+  saveProjectConflictDecision,
+  startProjectConsolidation,
   startPreparation,
   startSpecificationPreparation,
   uploadImplementationInputFile,
@@ -62,8 +67,13 @@ vi.mock('./services/implementationAgentService.js', () => ({
   getGitHubRepository: vi.fn(),
   getPreparationStatus: vi.fn(),
   getSpecificationStatus: vi.fn(),
+  getProjectConsolidationStatus: vi.fn(),
+  getProjectConflicts: vi.fn(),
+  getTrustedProjectSpecification: vi.fn(),
   getSemanticReviews: vi.fn(),
   saveSemanticDecision: vi.fn(),
+  saveProjectConflictDecision: vi.fn(),
+  startProjectConsolidation: vi.fn(),
   startPreparation: vi.fn(),
   startSpecificationPreparation: vi.fn(),
 }))
@@ -510,6 +520,28 @@ describe('ImplementationWorkspace', () => {
         ready_source_count: 0, waiting_artifact_review_count: 0,
         waiting_semantic_review_count: 0, failed_source_count: 0,
         pending_semantic_decision_count: 0, sources: [],
+      },
+    })
+    getProjectConsolidationStatus.mockResolvedValue({
+      data: {
+        status: 'NOT_STARTED', source_count: 0, item_count: 0,
+        conflict_count: 0, pending_conflict_count: 0, issue_count: 0,
+        issues: [],
+      },
+    })
+    getProjectConflicts.mockResolvedValue({ data: [] })
+    getTrustedProjectSpecification.mockResolvedValue({
+      data: {
+        project_specification_id: 'TPS-000000000000000000000000',
+        status: 'READY', categories: {}, relationships: [], traceability: {},
+      },
+    })
+    saveProjectConflictDecision.mockResolvedValue({ data: {} })
+    startProjectConsolidation.mockResolvedValue({
+      data: {
+        status: 'READY', source_count: 1, item_count: 1,
+        conflict_count: 0, pending_conflict_count: 0, issue_count: 0,
+        issues: [],
       },
     })
     getSemanticReviews.mockResolvedValue({ data: { review_fingerprint: 'a'.repeat(64), items: [] } })
@@ -1572,6 +1604,132 @@ describe('ImplementationWorkspace', () => {
       'SRD-1',
       { action: 'APPROVE_ADDITION', expected_review_fingerprint: fingerprint },
     )
+  })
+
+  it.each(['CONSOLIDATING', 'WAITING_FOR_HUMAN', 'READY', 'FAILED', 'PARTIAL_FAILURE'])(
+    'does not auto-start consolidation from %s',
+    async (status) => {
+      getSpecificationStatus.mockResolvedValue({
+        data: {
+          status: 'SPECIFICATION_READY', source_count: 1, applicable_source_count: 1,
+          ready_source_count: 1, waiting_artifact_review_count: 0,
+          waiting_semantic_review_count: 0, failed_source_count: 0,
+          pending_semantic_decision_count: 0, sources: [],
+        },
+      })
+      getProjectConsolidationStatus.mockResolvedValue({
+        data: {
+          status, source_count: 1, item_count: 1, conflict_count: 0,
+          pending_conflict_count: 0, issue_count: 0, issues: [],
+        },
+      })
+      render(<ImplementationWorkspace project={project} />)
+      await waitFor(() => expect(getProjectConsolidationStatus).toHaveBeenCalledTimes(1))
+      await waitFor(() => expect(getSpecificationStatus).toHaveBeenCalled())
+      expect(startProjectConsolidation).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['NOT_STARTED', 'STALE'])(
+    'auto-starts %s exactly once across rerenders and unchanged responses',
+    async (status) => {
+      getSpecificationStatus.mockResolvedValue({
+        data: {
+          status: 'SPECIFICATION_READY', source_count: 1, applicable_source_count: 1,
+          ready_source_count: 1, waiting_artifact_review_count: 0,
+          waiting_semantic_review_count: 0, failed_source_count: 0,
+          pending_semantic_decision_count: 0, sources: [],
+        },
+      })
+      const consolidation = {
+        status, source_count: 1, item_count: 1, conflict_count: 0,
+        pending_conflict_count: 0, issue_count: 0,
+        source_set_digest: status === 'STALE' ? 'e'.repeat(64) : null,
+        issues: [],
+      }
+      getProjectConsolidationStatus.mockResolvedValue({ data: consolidation })
+      startProjectConsolidation.mockResolvedValue({ data: consolidation })
+      const view = render(<ImplementationWorkspace project={project} />)
+      await waitFor(() => expect(startProjectConsolidation).toHaveBeenCalledTimes(1))
+      view.rerender(<ImplementationWorkspace project={project} />)
+      await new Promise((resolve) => window.setTimeout(resolve, 25))
+      expect(startProjectConsolidation).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('cleans up a pending consolidation start when the project changes', async () => {
+    getSpecificationStatus.mockResolvedValue({
+      data: {
+        status: 'SPECIFICATION_READY', source_count: 1, applicable_source_count: 1,
+        ready_source_count: 1, waiting_artifact_review_count: 0,
+        waiting_semantic_review_count: 0, failed_source_count: 0,
+        pending_semantic_decision_count: 0, sources: [],
+      },
+    })
+    getProjectConsolidationStatus.mockResolvedValue({
+      data: {
+        status: 'NOT_STARTED', source_count: 1, item_count: 0,
+        conflict_count: 0, pending_conflict_count: 0, issue_count: 0, issues: [],
+      },
+    })
+    let resolveStart
+    startProjectConsolidation.mockReturnValue(
+      new Promise((resolve) => { resolveStart = resolve }),
+    )
+    const view = render(<ImplementationWorkspace project={project} />)
+    await waitFor(() => expect(startProjectConsolidation).toHaveBeenCalledWith('AGP-003'))
+    view.rerender(<ImplementationWorkspace
+      project={{ ...project, agent_project_id: 'AGP-004' }}
+    />)
+    resolveStart({ data: { status: 'READY' } })
+    await waitFor(() => expect(getProjectConsolidationStatus).toHaveBeenCalledWith('AGP-004'))
+    await waitFor(() => expect(startProjectConsolidation).toHaveBeenCalledTimes(2))
+  })
+
+  it('handles a stale cross-source decision without trusting or resubmitting client facts', async () => {
+    const user = userEvent.setup()
+    const fingerprint = 'c'.repeat(64)
+    getSpecificationStatus.mockResolvedValue({
+      data: {
+        status: 'SPECIFICATION_READY', source_count: 2, applicable_source_count: 2,
+        ready_source_count: 2, waiting_artifact_review_count: 0,
+        waiting_semantic_review_count: 0, failed_source_count: 0,
+        pending_semantic_decision_count: 0, sources: [],
+      },
+    })
+    getProjectConsolidationStatus.mockResolvedValue({
+      data: {
+        status: 'WAITING_FOR_HUMAN', source_count: 2, item_count: 2,
+        conflict_count: 1, pending_conflict_count: 1, issue_count: 0,
+        source_set_digest: 'd'.repeat(64), issues: [],
+      },
+    })
+    getProjectConflicts.mockResolvedValue({
+      data: [{
+        conflict_id: 'PCF-1', conflict_type: 'TECHNOLOGY_SELECTION',
+        artifact_type: 'TECHNOLOGY_STACK', status: 'PENDING', fingerprint,
+        allowed_actions: ['SELECT_CANDIDATE'],
+        candidates: [{
+          candidate_id: 'PCC-1', label: 'MySQL', value: 'MySQL',
+          supporting_sources: [{ source_id: 'UP-1', label: 'constraints.pdf' }],
+        }, {
+          candidate_id: 'PCC-2', label: 'PostgreSQL', value: 'PostgreSQL',
+          supporting_sources: [{ source_id: 'UP-2', label: 'architecture.pdf' }],
+        }],
+      }],
+    })
+    saveProjectConflictDecision.mockRejectedValue({ status: 409 })
+
+    render(<ImplementationWorkspace project={project} activeSection="SPECIFICATION_VERIFICATION" />)
+    await user.click(await screen.findByRole('button', { name: 'Use MySQL' }))
+    expect(saveProjectConflictDecision).toHaveBeenCalledWith(
+      'AGP-003', 'PCF-1', {
+        expected_fingerprint: fingerprint,
+        action: 'SELECT_CANDIDATE', candidate_id: 'PCC-1',
+      },
+    )
+    await waitFor(() => expect(startProjectConsolidation).toHaveBeenCalledWith('AGP-003'))
+    expect(await screen.findByText('Project Specification Ready')).toBeInTheDocument()
   })
 
   it('shows an honest empty readiness panel until the existing evaluation has run', async () => {

@@ -119,6 +119,12 @@ from app.modules.agents.implementation.preparation.specification.service import 
 from app.modules.agents.implementation.preparation.specification.storage import (
     ProjectSpecificationStorage,
 )
+from app.modules.agents.implementation.preparation.consolidation.service import (
+    ProjectConsolidationService,
+)
+from app.modules.agents.implementation.preparation.consolidation.storage import (
+    ConsolidationStorage,
+)
 from app.modules.agents.implementation.infrastructure.storage import (
     ImplementationUploadStorage,
     UploadNotFoundError,
@@ -374,6 +380,40 @@ def get_project_specification_service(
         canonical_service,
         semantic_service,
         semantic_review_service,
+    )
+
+
+def get_consolidation_storage() -> ConsolidationStorage:
+    return ConsolidationStorage(settings.agent3_upload_root)
+
+
+def get_project_consolidation_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    upload_storage: Annotated[
+        ImplementationUploadStorage,
+        Depends(get_implementation_upload_storage),
+    ],
+    preparation_storage: Annotated[
+        ProjectPreparationStorage,
+        Depends(get_project_preparation_storage),
+    ],
+    semantic_review_service: Annotated[
+        SemanticReviewService,
+        Depends(get_semantic_review_service),
+    ],
+    consolidation_storage: Annotated[
+        ConsolidationStorage,
+        Depends(get_consolidation_storage),
+    ],
+) -> ProjectConsolidationService:
+    return ProjectConsolidationService(
+        standalone_service,
+        upload_storage,
+        preparation_storage,
+        semantic_review_service,
+        consolidation_storage,
     )
 
 

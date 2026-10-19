@@ -1,0 +1,31 @@
+from enum import StrEnum
+
+
+PROJECT_SPECIFICATION_SCHEMA_VERSION = "1"
+
+
+class ConsolidationStatus(StrEnum):
+    NOT_STARTED = "NOT_STARTED"
+    CONSOLIDATING = "CONSOLIDATING"
+    WAITING_FOR_HUMAN = "WAITING_FOR_HUMAN"
+    READY = "READY"
+    PARTIAL_FAILURE = "PARTIAL_FAILURE"
+    FAILED = "FAILED"
+    STALE = "STALE"
+
+
+class ConflictStatus(StrEnum):
+    PENDING = "PENDING"
+    RESOLVED = "RESOLVED"
+
+
+class ConflictAction(StrEnum):
+    SELECT_CANDIDATE = "SELECT_CANDIDATE"
+    KEEP_BOTH = "KEEP_BOTH"
+    MARK_NOT_CONFLICTING = "MARK_NOT_CONFLICTING"
+    EXCLUDE_CANDIDATE = "EXCLUDE_CANDIDATE"
+
+
+class ConsolidationSourceKind(StrEnum):
+    UPLOAD = "UPLOAD"
+    TEXT = "TEXT"

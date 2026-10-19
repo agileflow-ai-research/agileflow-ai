@@ -24,11 +24,16 @@ import {
   getFinalTrustedArtifacts,
   getSemanticReviews,
   getSpecificationStatus,
+  getProjectConsolidationStatus,
+  getProjectConflicts,
+  getTrustedProjectSpecification,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
   saveImplementationHumanReview,
   saveSemanticDecision,
+  saveProjectConflictDecision,
+  startProjectConsolidation,
   startSpecificationPreparation,
   startPreparation,
   uploadImplementationInputFile,
@@ -106,6 +111,39 @@ describe('implementationAgentService', () => {
     expect(body.get('file')).toBe(file)
     expect(options).toEqual({ authenticated: true })
     expect(options.headers).toBeUndefined()
+  })
+
+  it('uses project-scoped consolidation and candidate decision endpoints', () => {
+    startProjectConsolidation('AGP-003')
+    getProjectConsolidationStatus('AGP-003')
+    getProjectConflicts('AGP-003')
+    saveProjectConflictDecision('AGP-003', 'PCF-123', {
+      action: 'KEEP_BOTH', expected_fingerprint: 'a'.repeat(64),
+    })
+    getTrustedProjectSpecification('AGP-003')
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/project-specification/start',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/project-specification/status',
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/project-specification/conflicts',
+      { authenticated: true },
+    )
+    expect(apiClient.put).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/project-specification/conflicts/PCF-123',
+      { action: 'KEEP_BOTH', expected_fingerprint: 'a'.repeat(64) },
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/project-specification',
+      { authenticated: true },
+    )
   })
 
   it('uses the authenticated scoped delete endpoint', () => {

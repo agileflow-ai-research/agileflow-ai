@@ -52,6 +52,43 @@ export function getFinalTrustedArtifacts(agentProjectId, uploadId) {
   )
 }
 
+export function startProjectConsolidation(agentProjectId) {
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/project-specification/start`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getProjectConsolidationStatus(agentProjectId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/project-specification/status`,
+    { authenticated: true },
+  )
+}
+
+export function getProjectConflicts(agentProjectId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/project-specification/conflicts`,
+    { authenticated: true },
+  )
+}
+
+export function saveProjectConflictDecision(agentProjectId, conflictId, request) {
+  return apiClient.put(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/project-specification/conflicts/${encodeURIComponent(conflictId)}`,
+    request,
+    { authenticated: true },
+  )
+}
+
+export function getTrustedProjectSpecification(agentProjectId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/project-specification`,
+    { authenticated: true },
+  )
+}
+
 export function uploadImplementationInputFile(agentProjectId, input) {
   const formData = new FormData()
   formData.append('source_type', input.source_type)
