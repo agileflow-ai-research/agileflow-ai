@@ -43,6 +43,7 @@ function PlanningHierarchy({
   onViewSprintPlan,
   onViewTaskAssignment,
   onViewJiraPlan,
+  onViewValidationHistory,
 }) {
   const safeOutputs =
     outputs && typeof outputs === 'object'
@@ -188,6 +189,11 @@ function PlanningHierarchy({
           {hasJiraPlan && onViewJiraPlan && (
             <Button variant="outline" size="small" onClick={onViewJiraPlan}>
               Jira Plan
+            </Button>
+          )}
+          {onViewValidationHistory && (
+            <Button variant="outline" size="small" onClick={onViewValidationHistory}>
+              Validation & History
             </Button>
           )}
         </div>

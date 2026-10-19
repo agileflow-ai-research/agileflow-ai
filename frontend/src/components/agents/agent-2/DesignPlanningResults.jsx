@@ -9,6 +9,7 @@ import PlanningHierarchy from './results/PlanningHierarchy.jsx'
 import SprintPlanView from './results/SprintPlan.jsx'
 import TaskAssignmentView from './results/TaskAssignment.jsx'
 import JiraPlanView from './results/JiraPlan.jsx'
+import ValidationTraceabilityHistoryView from './results/ValidationTraceabilityHistory.jsx'
 
 const outputLabels = {
   SYSTEM_ARCHITECTURE: 'System Architecture',
@@ -496,6 +497,10 @@ function DesignPlanningResults(props) {
           setActiveView('jira-plan')
           props.onViewJiraPlan?.()
         }}
+        onViewValidationHistory={() => {
+          setActiveView('validation-history')
+          props.onViewValidationHistory?.()
+        }}
       />
     )
   }
@@ -524,6 +529,10 @@ function DesignPlanningResults(props) {
         onViewJiraPlan={() => {
           setActiveView('jira-plan')
           props.onViewJiraPlan?.()
+        }}
+        onViewValidationHistory={() => {
+          setActiveView('validation-history')
+          props.onViewValidationHistory?.()
         }}
       />
     )
@@ -554,6 +563,10 @@ function DesignPlanningResults(props) {
           setActiveView('jira-plan')
           props.onViewJiraPlan?.()
         }}
+        onViewValidationHistory={() => {
+          setActiveView('validation-history')
+          props.onViewValidationHistory?.()
+        }}
       />
     )
   }
@@ -583,6 +596,27 @@ function DesignPlanningResults(props) {
           setActiveView('task-assignment')
           props.onViewTaskAssignment?.()
         }}
+        onViewValidationHistory={() => {
+          setActiveView('validation-history')
+          props.onViewValidationHistory?.()
+        }}
+      />
+    )
+  }
+
+  if (currentView === 'validation-history') {
+    return (
+      <ValidationTraceabilityHistoryView
+        {...props}
+        title={props.validationHistoryTitle || 'Validation, Traceability & Run History'}
+        subtitle={
+          props.validationHistorySubtitle ||
+          'Evidence for human review and research evaluation'
+        }
+        onBackToOverview={() => {
+          setActiveView('overview')
+          props.onBackToOverview?.()
+        }}
       />
     )
   }
@@ -609,6 +643,10 @@ function DesignPlanningResults(props) {
       onViewJiraPlan={() => {
         setActiveView('jira-plan')
         props.onViewJiraPlan?.()
+      }}
+      onViewValidationHistory={() => {
+        setActiveView('validation-history')
+        props.onViewValidationHistory?.()
       }}
     />
   )

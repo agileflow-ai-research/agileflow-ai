@@ -1995,4 +1995,212 @@ describe('DesignPlanningResults · S2-06 Results Overview', () => {
       clickSpy.mockRestore()
     })
   })
+
+  describe('S2-12 Validation, Traceability & Run History View', () => {
+    it('renders S2-12 with title, subtitle, Evidence available badge, and scope disclaimer matching PNG', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{
+            EPICS: [{ id: 'EPIC-001', title: 'Booking', source_refs: ['SPEC-003'] }],
+          }}
+        />,
+      )
+
+      const validationBtn = screen.getByRole('button', { name: 'Validation & history' })
+      expect(validationBtn).toBeInTheDocument()
+      await user.click(validationBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Validation, Traceability & Run History' })).toBeInTheDocument()
+      expect(
+        screen.getByText('Evidence for human review and research evaluation'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('Evidence available')).toBeInTheDocument()
+      expect(
+        screen.getByText(
+          'Standalone scope: no Agent 1/3/4 execution · no Orchestrator · no H2 · no integrated SKB write · no Jira Cloud sync · no RAG.',
+        ),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText('Human reviewer can inspect validation and traceability evidence.'),
+      ).toBeInTheDocument()
+    })
+
+    it('renders clean completed run with 0 corrections and no findings without claiming fake checks', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          status="COMPLETED"
+          correction_attempts={0}
+          warnings={[]}
+          errors={[]}
+          outputs={{
+            EPICS: [{ id: 'EPIC-001', title: 'Booking', source_refs: ['SPEC-003'] }],
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Validation & history' }))
+
+      expect(screen.getByText('Run completed after Agent 2 validation')).toBeInTheDocument()
+      expect(screen.getByText(/Correction attempts:\s*0/)).toBeInTheDocument()
+      expect(screen.getByText('No validation findings recorded. Clean execution passed.')).toBeInTheDocument()
+      expect(screen.queryByText(/H2 approved/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/Signed off/i)).not.toBeInTheDocument()
+    })
+
+    it('renders corrected run with real correction attempt count and OUTPUT_CORRECTED warning details', async () => {
+      const user = userEvent.setup()
+      const warningObj = {
+        code: 'OUTPUT_CORRECTED',
+        message: 'Schema auto-corrected by engine repair logic',
+        details: { correction_attempts: 2 },
+      }
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          status="COMPLETED"
+          correction_attempts={2}
+          warnings={[warningObj]}
+          outputs={{
+            EPICS: [{ id: 'EPIC-001', title: 'Booking', source_refs: ['SPEC-003'] }],
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Validation & history' }))
+
+      expect(screen.getByText('Initial validation: findings detected')).toBeInTheDocument()
+      expect(screen.getByText(/Correction attempts:\s*2/)).toBeInTheDocument()
+      expect(screen.getByText(/Automatic correction applied bounded repair/)).toBeInTheDocument()
+      expect(screen.getByText(/OUTPUT_CORRECTED:\s*Schema auto-corrected/)).toBeInTheDocument()
+    })
+
+    it('renders failed run with errors and does not claim validation passed', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          status="FAILED"
+          errors={[{ code: 'INVALID_TASK_PARENT', message: 'Task references non-existent story' }]}
+          outputs={{}}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Validation & history' }))
+
+      expect(
+        screen.getByText('Run failed validation/execution. Review persisted findings.'),
+      ).toBeInTheDocument()
+      expect(screen.queryByText('Run completed after Agent 2 validation')).not.toBeInTheDocument()
+      expect(screen.getByText(/INVALID_TASK_PARENT:\s*Task references non-existent story/)).toBeInTheDocument()
+    })
+
+    it('renders real traceability references and groups incomplete references safely without fabricating a chain', async () => {
+      const user = userEvent.setup()
+      const outputsWithRefs = {
+        EPICS: [{ id: 'EPIC-001', title: 'Booking', source_refs: ['SPEC-003'] }],
+        TASKS: [{ id: 'TASK-001', title: 'Unlinked Task', source_refs: ['SPEC-004'] }],
+      }
+
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={outputsWithRefs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Validation & history' }))
+
+      // Displays real source refs
+      expect(screen.getAllByText(/SPEC-003/).length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText(/SPEC-004/).length).toBeGreaterThanOrEqual(1)
+      // Displays real planning refs
+      expect(screen.getAllByText(/EPIC-001/).length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText(/TASK-001/).length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('renders historical Agent 2 runs table from real AgentRun data without regeneration', async () => {
+      const user = userEvent.setup()
+      const onViewRunMock = vi.fn()
+      const mockRuns = [
+        {
+          run_id: 'RUN-A2-003',
+          created_at: '2026-10-15T18:24:00Z',
+          status: 'COMPLETED',
+          selected_outputs: ['EPICS', 'FEATURES', 'USER_STORIES', 'TASKS', 'SPRINT_PLAN'],
+        },
+        {
+          run_id: 'RUN-A2-002',
+          created_at: '2026-10-15T17:51:00Z',
+          status: 'FAILED',
+          errors: [{ message: 'Structured output invalid' }],
+        },
+      ]
+
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          runs={mockRuns}
+          onViewRun={onViewRunMock}
+          outputs={{ EPICS: [{ id: 'EPIC-001', title: 'Booking' }] }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Validation & history' }))
+
+      const table = screen.getByLabelText('Historical Agent 2 runs table')
+      expect(table).toBeInTheDocument()
+      expect(within(table).getByText('RUN-A2-003')).toBeInTheDocument()
+      expect(within(table).getByText('RUN-A2-002')).toBeInTheDocument()
+      expect(within(table).getByText('Structured output invalid')).toBeInTheDocument()
+
+      const openButtons = within(table).getAllByRole('button', { name: /Open/i })
+      await user.click(openButtons[0])
+      expect(onViewRunMock).toHaveBeenCalledWith('RUN-A2-003')
+    })
+
+    it('navigates to S2-12 and back to Results Overview in historical RunDetail view without extra API requests', async () => {
+      const user = userEvent.setup()
+      getAgentProjectRun.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-HIST-012',
+          agent_type: 'DESIGN_PLANNING',
+          run_mode: 'DEFAULT',
+          status: 'COMPLETED',
+          selected_outputs: ['EPICS', 'TASKS'],
+          created_at: '2026-10-14T10:00:00Z',
+          started_at: '2026-10-14T10:00:01Z',
+          completed_at: '2026-10-14T10:00:02Z',
+          warnings: [{ code: 'OUTPUT_CORRECTED', details: { correction_attempts: 1 } }],
+          errors: [],
+          output_manifest: {
+            EPICS: [{ id: 'EPIC-001', title: 'Historical Booking', source_refs: ['SPEC-003'] }],
+          },
+        },
+      })
+
+      render(<RunDetail agentProjectId="AGP-002" runId="RUN-HIST-012" />)
+      expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Open S2-12
+      const validationBtn = screen.getByRole('button', { name: 'Validation & history' })
+      await user.click(validationBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Validation, Traceability & Run History' })).toBeInTheDocument()
+      expect(screen.getByText('Evidence available')).toBeInTheDocument()
+      expect(screen.getByText(/Correction attempts:\s*1/)).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Back to Overview
+      const backButtons = screen.getAllByRole('button', { name: /Back to Results Overview/ })
+      await user.click(backButtons[0])
+
+      expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+    })
+  })
 })
