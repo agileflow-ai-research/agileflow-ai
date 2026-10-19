@@ -1733,6 +1733,7 @@ function ImplementationWorkspace({
         workflowGates.READINESS_GATE.satisfied ? <DeliverySetupPanel
           githubState={githubState}
           repositoryState={repositoryState}
+          deliveryDecision={deliveryDecision}
           integrationProps={{
             githubState,
             repositoryForm,
@@ -1744,7 +1745,6 @@ function ImplementationWorkspace({
           }}
           onContinue={() => {
             if (repositoryState.status !== 'created') setDeliveryDecision('SKIPPED')
-            onNavigateNode?.('GENERATE_IMPLEMENTATION')
           }}
         /> : <WorkflowBarrier gate={workflowGates.DELIVERY_GATE} onNavigate={onNavigateNode} />
       ) : null}

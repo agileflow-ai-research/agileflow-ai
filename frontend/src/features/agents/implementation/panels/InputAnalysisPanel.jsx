@@ -93,6 +93,12 @@ export default function InputAnalysisPanel({ inputs, preparationState, onAnalyze
           {onGoToVerification ? <Button variant="outline" onClick={onGoToVerification}>Go to Specification Verification</Button> : null}
         </div>
       ) : null}
+      {result?.status === 'ANALYSIS_READY' ? (
+        <div className="rounded-control border border-state-success/40 bg-state-success/10 p-4" role="status">
+          <p className="font-medium text-content-primary">✓ Analysis complete</p>
+          <p className="mt-2 text-sm text-content-secondary">{prepared} {prepared === 1 ? 'source' : 'sources'} analyzed.</p>
+        </div>
+      ) : null}
       <ResearchDetails>{researchContent}</ResearchDetails>
     </div>
   )

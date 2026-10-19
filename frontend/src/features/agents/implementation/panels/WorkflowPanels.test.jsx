@@ -166,6 +166,24 @@ describe('Agent 3 workflow panels', () => {
     expect(onGoToVerification).toHaveBeenCalledOnce()
   })
 
+  it('keeps a completed Input Analysis panel truthful while the next stage progresses', () => {
+    render(
+      <InputAnalysisPanel
+        inputs={[]}
+        preparationState={{
+          status: 'loaded', error: '',
+          result: {
+            status: 'ANALYSIS_READY', source_count: 3,
+            completed_source_count: 3, failed_source_count: 0, sources: [],
+          },
+        }}
+      />,
+    )
+
+    expect(screen.getByText('✓ Analysis complete')).toBeInTheDocument()
+    expect(screen.getByText('3 sources analyzed.')).toBeInTheDocument()
+  })
+
   it('groups loaded specification layers by artifact and preserves source identity and advanced access', () => {
     const verifiedInput = input({
       label: '',
@@ -497,5 +515,26 @@ describe('Agent 3 workflow panels', () => {
     expect(onConnect).toHaveBeenCalledOnce()
     await user.click(screen.getByRole('button', { name: 'Continue Without Repository Delivery' }))
     expect(onContinue).toHaveBeenCalledOnce()
+  })
+
+  it('shows completed delivery without repeating its decision action', () => {
+    const githubState = { status: 'disconnected', connection: null, notice: '', error: '' }
+    const repositoryState = { status: 'idle', repository: null, error: '' }
+    render(
+      <DeliverySetupPanel
+        githubState={githubState}
+        repositoryState={repositoryState}
+        deliveryDecision="SKIPPED"
+        integrationProps={{
+          githubState, repositoryState, repositoryForm: { name: '', description: '', visibility: 'PRIVATE' },
+          setRepositoryForm: vi.fn(), setRepositoryState: vi.fn(), onConnect: vi.fn(), onCreateRepository: vi.fn(),
+        }}
+        onContinue={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByText('✓ Delivery setup complete')).toBeInTheDocument()
+    expect(screen.getByText('The implementation plan is ready for final approval.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Continue Without Repository Delivery' })).not.toBeInTheDocument()
   })
 })

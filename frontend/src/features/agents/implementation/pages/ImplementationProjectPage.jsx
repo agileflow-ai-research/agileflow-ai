@@ -5,6 +5,7 @@ import ImplementationCanvas from '../canvas/ImplementationCanvas.jsx'
 import WorkflowControls from '../canvas/WorkflowControls.jsx'
 import ImplementationWorkspace from '../ImplementationWorkspace.jsx'
 import WorkflowNodeModal from '../panels/WorkflowNodeModal.jsx'
+import WorkflowNextStepNotice from '../components/common/WorkflowNextStepNotice.jsx'
 import {
   deriveWorkflowPresentation,
   getWorkflowNodeDefinition,
@@ -13,11 +14,18 @@ import { deriveWorkflowTransition } from '../utils/workflowProgression.js'
 
 function ImplementationProjectPage({ project, projectStatus, projectActions }) {
   const canvasRef = useRef(null)
-  const [selectedNodeId, setSelectedNodeId] = useState('PROJECT_SOURCES')
+  const [visibleModal, setVisibleModal] = useState({ nodeId: 'PROJECT_SOURCES', origin: 'AUTO' })
   const [workspaceSnapshot, setWorkspaceSnapshot] = useState(null)
-  const handledTransitionRef = useRef(null)
+  const visibleModalRef = useRef(visibleModal)
+  const lastAutoPresentedTransitionKeyRef = useRef(null)
   const presentation = useMemo(() => deriveWorkflowPresentation(workspaceSnapshot), [workspaceSnapshot])
-  const selectedDefinition = getWorkflowNodeDefinition(selectedNodeId)
+  const activeWorkflowTransition = useMemo(
+    () => deriveWorkflowTransition(workspaceSnapshot),
+    [workspaceSnapshot],
+  )
+  const activeWorkflowNodeId = activeWorkflowTransition?.nodeId ?? null
+  const visibleModalNodeId = visibleModal?.nodeId ?? null
+  const selectedDefinition = getWorkflowNodeDefinition(visibleModalNodeId)
   const selectedPresentation = selectedDefinition
     ? {
         ...selectedDefinition,
@@ -27,21 +35,52 @@ function ImplementationProjectPage({ project, projectStatus, projectActions }) {
           : 'LOCKED',
       }
     : null
-  const handlePresentationChange = useCallback((snapshot) => setWorkspaceSnapshot(snapshot), [])
-  const handleCloseModal = useCallback(() => setSelectedNodeId(null), [])
+  const handlePresentationChange = useCallback((snapshot) => {
+    setWorkspaceSnapshot(snapshot)
+    const next = deriveWorkflowTransition(snapshot)
+    if (!next || lastAutoPresentedTransitionKeyRef.current === next.key) return
+    lastAutoPresentedTransitionKeyRef.current = next.key
+    if (visibleModalRef.current) return
+    canvasRef.current?.focusNode(next.nodeId)
+    if (next.requiresUserAction) {
+      const nextModal = { nodeId: next.nodeId, origin: 'AUTO' }
+      visibleModalRef.current = nextModal
+      setVisibleModal(nextModal)
+    }
+  }, [])
+  const handleCloseModal = useCallback(() => {
+    visibleModalRef.current = null
+    setVisibleModal(null)
+  }, [])
+  const handleManualNavigation = useCallback((nodeId) => {
+    const nextModal = { nodeId, origin: 'MANUAL' }
+    visibleModalRef.current = nextModal
+    setVisibleModal(nextModal)
+  }, [])
 
   useEffect(() => {
-    handledTransitionRef.current = null
+    lastAutoPresentedTransitionKeyRef.current = null
     canvasRef.current?.focusNode('PROJECT_SOURCES')
   }, [project.agent_project_id])
 
-  useEffect(() => {
-    const next = deriveWorkflowTransition(workspaceSnapshot)
-    if (!next || handledTransitionRef.current === next.key) return
-    handledTransitionRef.current = next.key
-    setSelectedNodeId(next.nodeId)
-    canvasRef.current?.focusNode(next.nodeId)
-  }, [workspaceSnapshot])
+  const nextStepNotice = useMemo(() => {
+    if (!activeWorkflowNodeId || activeWorkflowNodeId === visibleModalNodeId) return null
+    const target = getWorkflowNodeDefinition(activeWorkflowNodeId)
+    if (!target) return null
+    const targetState = presentation[activeWorkflowNodeId]?.status
+    const needsAttention = activeWorkflowTransition?.requiresUserAction
+    const description = needsAttention
+      ? `${target.title} needs your attention.`
+      : `${target.title} is continuing automatically.`
+    const actionLabel = {
+      SPECIFICATION_VERIFICATION: 'Go to Specification Verification',
+      IMPLEMENTATION_READINESS: targetState === 'WAITING_FOR_HUMAN' ? 'Review Readiness' : 'Go to Implementation Readiness',
+      DELIVERY_SETUP: 'Go to Delivery Setup',
+      GENERATE_IMPLEMENTATION: 'Review Implementation Plan',
+      INPUT_ANALYSIS: 'Go to Input Analysis',
+    }[activeWorkflowNodeId] ?? `Go to ${target.title}`
+    return { description, actionLabel, targetNodeId: activeWorkflowNodeId }
+  }, [activeWorkflowNodeId, activeWorkflowTransition?.requiresUserAction, presentation, visibleModalNodeId])
 
   return (
     <section className="min-w-0 space-y-4" aria-labelledby="implementation-canvas-title">
@@ -67,11 +106,14 @@ function ImplementationProjectPage({ project, projectStatus, projectActions }) {
           <ImplementationCanvas
             ref={canvasRef}
             presentation={presentation}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={setSelectedNodeId}
+            selectedNodeId={visibleModalNodeId}
+            onSelectNode={handleManualNavigation}
           />
         </div>
           <WorkflowNodeModal node={selectedPresentation} open={Boolean(selectedDefinition)} onClose={handleCloseModal}>
+            {nextStepNotice ? (
+              <WorkflowNextStepNotice {...nextStepNotice} onNavigate={handleManualNavigation} />
+            ) : null}
             {selectedDefinition?.active ? null : (
               <div className="rounded-control border border-default bg-elevated p-4">
                 <p className="font-semibold text-content-primary">Not implemented yet</p>
@@ -84,7 +126,7 @@ function ImplementationProjectPage({ project, projectStatus, projectActions }) {
                 activeSection={selectedDefinition?.active ? selectedDefinition.id : 'PROJECT_SOURCES'}
                 initialArtifactReviewQueue={workspaceSnapshot?.artifactReviewQueue ?? []}
                 onPresentationChange={handlePresentationChange}
-                onNavigateNode={setSelectedNodeId}
+                onNavigateNode={handleManualNavigation}
               />
             </div>
           </WorkflowNodeModal>
