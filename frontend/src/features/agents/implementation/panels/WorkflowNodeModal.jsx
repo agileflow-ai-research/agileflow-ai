@@ -37,12 +37,11 @@ function WorkflowNodeModal({ node, open, onClose, children, footer }) {
     }
   }, [open, onClose])
 
-  if (!open) return null
   const status = getWorkflowStatePresentation(node?.status)
   const titleId = `workflow-modal-${node?.id ?? 'details'}-title`
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-2 sm:p-5" data-testid="workflow-modal-backdrop">
+    <div hidden={!open} aria-hidden={!open || undefined} className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-2 sm:p-5" data-testid="workflow-modal-backdrop">
       <section
         ref={dialogRef}
         role="dialog"

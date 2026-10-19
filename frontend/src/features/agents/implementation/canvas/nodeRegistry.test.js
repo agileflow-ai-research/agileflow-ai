@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_NODE_POSITIONS } from './layout.js'
 import {
@@ -23,19 +23,23 @@ describe('implementation workflow registry', () => {
       ['CORRECTION_VALIDATION', 'DELIVERY'],
     ])
     expect(IMPLEMENTATION_WORKFLOW_EDGES.every((edge) => edge.selectable === false)).toBe(true)
+    expect(IMPLEMENTATION_WORKFLOW_EDGES.every((edge) => (
+      edge.type === 'floating'
+      && edge.deletable === false
+      && edge.reconnectable === false
+      && edge.markerEnd?.type
+    ))).toBe(true)
   })
 
   it('creates reusable nodes with default visual positions and locks future stages', () => {
-    const openNode = vi.fn()
-    const nodes = createWorkflowNodes(deriveWorkflowPresentation(null), openNode)
+    const nodes = createWorkflowNodes(deriveWorkflowPresentation(null))
 
     expect(nodes).toHaveLength(9)
     expect(nodes.map((node) => node.id)).toEqual(IMPLEMENTATION_NODE_REGISTRY.map((node) => node.id))
     expect(nodes[0].position).toEqual(DEFAULT_NODE_POSITIONS.PROJECT_SOURCES)
+    expect(nodes.every((node) => node.draggable === true && node.parentId === undefined)).toBe(true)
     expect(nodes[5].data).toMatchObject({ status: 'BLOCKED', locked: false })
     expect(nodes.slice(6).every((node) => node.data.status === 'LOCKED' && node.data.locked)).toBe(true)
-    nodes[0].data.onOpen()
-    expect(openNode).toHaveBeenCalledWith('PROJECT_SOURCES')
   })
 
   it('derives only conservative summaries from existing workspace state', () => {

@@ -52,7 +52,7 @@ import ImplementationCanvas from './ImplementationCanvas.jsx'
 
 const emptyPresentation = {}
 
-function CanvasHarness({ onSelectNode = vi.fn(), onLayoutChange = vi.fn(), apiRef = createRef() }) {
+function CanvasHarness({ presentation = emptyPresentation, onSelectNode = vi.fn(), onLayoutChange = vi.fn(), apiRef = createRef() }) {
   const [selectedNodeId, setSelectedNodeId] = useState(null)
   const selectNode = (nodeId) => {
     setSelectedNodeId(nodeId)
@@ -61,7 +61,7 @@ function CanvasHarness({ onSelectNode = vi.fn(), onLayoutChange = vi.fn(), apiRe
   return (
     <ImplementationCanvas
       ref={apiRef}
-      presentation={emptyPresentation}
+      presentation={presentation}
       selectedNodeId={selectedNodeId}
       onSelectNode={selectNode}
       onLayoutChange={onLayoutChange}
@@ -76,11 +76,66 @@ describe('ImplementationCanvas', () => {
     expect(flow.latestProps.nodes).toHaveLength(9)
     expect(flow.latestProps.edges).toHaveLength(8)
     expect(flow.latestProps.nodesConnectable).toBe(false)
+    expect(flow.latestProps.connectOnClick).toBe(false)
     expect(flow.latestProps.edgesReconnectable).toBe(false)
     expect(flow.latestProps.deleteKeyCode).toBeNull()
     expect(flow.latestProps.nodesDraggable).toBe(true)
+    expect(flow.latestProps.panOnDrag).toBe(true)
+    expect(flow.latestProps.selectionOnDrag).toBe(false)
+    expect(flow.latestProps.nodeClickDistance).toBe(4)
+    expect(flow.latestProps.nodes.every((node) => node.draggable === true)).toBe(true)
+    expect(flow.latestProps.nodes.every((node) => node.parentId === undefined)).toBe(true)
     expect(screen.getByRole('button', { name: 'Project & Sources' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Delivery' })).toBeInTheDocument()
+  })
+
+  it('moves one controlled node independently without changing neighbors or opening a modal', () => {
+    const selectNode = vi.fn()
+    render(<CanvasHarness onSelectNode={selectNode} />)
+    const projectBefore = flow.latestProps.nodes.find((node) => node.id === 'PROJECT_SOURCES').position
+    const specificationBefore = flow.latestProps.nodes.find((node) => node.id === 'SPECIFICATION_VERIFICATION').position
+
+    act(() => flow.latestProps.onNodesChange([{
+      id: 'INPUT_ANALYSIS', type: 'position', position: { x: 420, y: 360 }, dragging: true,
+    }]))
+
+    expect(flow.latestProps.nodes.find((node) => node.id === 'INPUT_ANALYSIS').position).toEqual({ x: 420, y: 360 })
+    expect(flow.latestProps.nodes.find((node) => node.id === 'PROJECT_SOURCES').position).toEqual(projectBefore)
+    expect(flow.latestProps.nodes.find((node) => node.id === 'SPECIFICATION_VERIFICATION').position).toEqual(specificationBefore)
+    expect(selectNode).not.toHaveBeenCalled()
+  })
+
+  it('preserves a dragged position while workflow data changes through polling', async () => {
+    const view = render(<CanvasHarness presentation={{
+      INPUT_ANALYSIS: { status: 'WAITING_FOR_HUMAN', summary: 'Needs review' },
+    }} />)
+    act(() => flow.latestProps.onNodesChange([{
+      id: 'INPUT_ANALYSIS', type: 'position', position: { x: 455, y: 390 }, dragging: true,
+    }]))
+
+    view.rerender(<CanvasHarness presentation={{
+      INPUT_ANALYSIS: { status: 'COMPLETE', summary: 'Analysis complete' },
+    }} />)
+
+    await waitFor(() => {
+      const analysis = flow.latestProps.nodes.find((node) => node.id === 'INPUT_ANALYSIS')
+      expect(analysis.position).toEqual({ x: 455, y: 390 })
+      expect(analysis.data).toMatchObject({ status: 'COMPLETE', summary: 'Analysis complete' })
+    })
+  })
+
+  it('accepts independent positions for all nine top-level nodes', () => {
+    render(<CanvasHarness />)
+    const changes = flow.latestProps.nodes.map((node, index) => ({
+      id: node.id,
+      type: 'position',
+      position: { x: 100 + index * 37, y: 200 + index * 29 },
+      dragging: true,
+    }))
+    act(() => flow.latestProps.onNodesChange(changes))
+
+    expect(flow.latestProps.nodes.map((node) => node.position)).toEqual(changes.map((change) => change.position))
+    expect(flow.latestProps.edges).toHaveLength(8)
   })
 
   it('selects nodes by click and reports drag as visual layout state only', async () => {
@@ -97,6 +152,16 @@ describe('ImplementationCanvas', () => {
     ])
     expect(flow.latestProps.edges).toHaveLength(8)
     expect(flow.latestProps.nodes.find((node) => node.id === 'PROJECT_SOURCES').position).toEqual({ x: 777, y: 555 })
+    expect(flow.latestProps.edges.map((edge) => edge.id)).toEqual([
+      'PROJECT_SOURCES-INPUT_ANALYSIS',
+      'INPUT_ANALYSIS-SPECIFICATION_VERIFICATION',
+      'SPECIFICATION_VERIFICATION-IMPLEMENTATION_READINESS',
+      'IMPLEMENTATION_READINESS-DELIVERY_SETUP',
+      'DELIVERY_SETUP-GENERATE_IMPLEMENTATION',
+      'GENERATE_IMPLEMENTATION-BUILD_EXECUTE',
+      'BUILD_EXECUTE-CORRECTION_VALIDATION',
+      'CORRECTION_VALIDATION-DELIVERY',
+    ])
   })
 
   it('auto-arranges and resets to defaults through its accessible control API', async () => {

@@ -28,10 +28,11 @@ function readySnapshot({ readinessStatus = 'evaluating', readiness = null, conti
 }
 
 vi.mock('../canvas/ImplementationCanvas.jsx', () => ({
-  default: forwardRef(function TestCanvas({ onSelectNode }, ref) {
+  default: forwardRef(function TestCanvas({ onSelectNode, presentation }, ref) {
     useImperativeHandle(ref, () => canvasActions)
     return (
       <div aria-label="Agent 3 implementation workflow canvas">
+        <span data-testid="specification-canvas-status">{presentation.SPECIFICATION_VERIFICATION?.status ?? 'NOT_STARTED'}</span>
         <button type="button" onClick={() => onSelectNode('PROJECT_SOURCES')}>Select sources</button>
         <button type="button" onClick={() => onSelectNode('INPUT_ANALYSIS')}>Select analysis</button>
         <button type="button" onClick={() => onSelectNode('SPECIFICATION_VERIFICATION')}>Select specification</button>
@@ -64,7 +65,10 @@ vi.mock('../ImplementationWorkspace.jsx', () => ({
 
 import ImplementationProjectPage from './ImplementationProjectPage.jsx'
 
-const project = { agent_project_id: 'AGP-003', name: 'Delivery Portal', status: 'ACTIVE' }
+const project = {
+  agent_project_id: 'AGP-003', name: 'Delivery Portal', status: 'ACTIVE',
+  created_at: '2026-10-13T08:00:00Z',
+}
 const projectStatus = { label: 'Active', tone: 'success' }
 
 describe('ImplementationProjectPage', () => {
@@ -79,6 +83,78 @@ describe('ImplementationProjectPage', () => {
     expect(screen.getByRole('heading', { name: 'Project & Sources' })).toBeInTheDocument()
     expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('PROJECT_SOURCES')
     expect(canvasActions.focusNode).toHaveBeenCalledWith('PROJECT_SOURCES')
+  })
+
+  it('opens an existing project in Project Overview without forcing a workflow modal', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationProjectPage project={project} projectStatus={projectStatus} entryMode="existing" />)
+
+    const overview = screen.getByRole('dialog', { name: 'Delivery Portal' })
+    expect(overview).toHaveTextContent('AGP-003')
+    expect(overview).toHaveTextContent('Agent 3 — Implementation')
+    expect(overview).toHaveTextContent('Project & Sources')
+    expect(overview).toHaveTextContent('0 of 9 stages complete')
+    expect(screen.queryByRole('dialog', { name: 'Project & Sources' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Agent 3 implementation workflow canvas')).toBeInTheDocument()
+    expect(canvasActions.focusNode).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'View Canvas' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Select sources' }))
+    expect(screen.getByRole('dialog', { name: 'Project & Sources' })).toBeInTheDocument()
+  })
+
+  it('pins Project Overview through polling and consumes its initial HITL transition', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationProjectPage project={project} projectStatus={projectStatus} entryMode="existing" />)
+
+    act(() => workspaceActions.emit({
+      ...reviewSnapshot,
+      inputs: [
+        { source_type: 'TEXT', content: 'Requirement one' },
+        { source_type: 'DOCUMENT', file: { upload_id: 'UP-2' } },
+        { source_type: 'DOCUMENT', file: { upload_id: 'UP-3' } },
+      ],
+      selectedOutputs: ['BACKEND_CODE'],
+      preparationState: { result: {
+        status: 'WAITING_FOR_HUMAN', source_count: 3, completed_source_count: 3,
+        processed_source_count: 3, eligible_source_count: 3,
+        human_review_source_count: 3,
+      } },
+    }))
+
+    const overview = screen.getByRole('dialog', { name: 'Delivery Portal' })
+    expect(overview).toHaveTextContent('Specification Verification')
+    expect(overview).toHaveTextContent('Waiting for Specification Verification')
+    expect(overview).toHaveTextContent('2 of 9 stages complete')
+    expect(overview).toHaveTextContent('Sources3')
+    expect(overview).toHaveTextContent('Analyzed3')
+    expect(overview).toHaveTextContent('BACKEND_CODE')
+    expect(screen.getByTestId('specification-canvas-status')).toHaveTextContent('WAITING_FOR_HUMAN')
+
+    act(() => workspaceActions.emit({ ...reviewSnapshot }))
+    expect(screen.getByRole('dialog', { name: 'Delivery Portal' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close project overview' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    act(() => workspaceActions.emit({ ...reviewSnapshot }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Select specification' }))
+    expect(screen.getByRole('dialog', { name: 'Specification Verification' })).toBeInTheDocument()
+  })
+
+  it('allows a genuinely later human transition to use the existing auto-open policy', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationProjectPage project={project} projectStatus={projectStatus} entryMode="existing" />)
+    act(() => workspaceActions.emit(reviewSnapshot))
+    await user.click(screen.getByRole('button', { name: 'View Canvas' }))
+
+    act(() => workspaceActions.emit(readySnapshot()))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    act(() => workspaceActions.emit(readySnapshot({
+      readiness: 'READY_WITH_WARNINGS', readinessStatus: 'complete',
+    })))
+    expect(screen.getByRole('dialog', { name: 'Implementation Readiness' })).toBeInTheDocument()
   })
 
   it('opens active node details, closes them, and exposes the existing workspace by section', async () => {
