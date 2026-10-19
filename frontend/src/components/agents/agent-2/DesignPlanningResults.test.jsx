@@ -394,10 +394,9 @@ describe('DesignPlanningResults · S2-06 Results Overview', () => {
       />,
     )
 
-    // S2-07 & S2-08 deferred buttons are present and disabled
+    // S2-07 action is enabled, S2-08 deferred button remains disabled
     const viewDesignBtn = screen.getByRole('button', { name: 'View design artifacts' })
-    expect(viewDesignBtn).toBeDisabled()
-    expect(viewDesignBtn).toHaveAttribute('title', 'Design artifact detail view will be available in S2-07')
+    expect(viewDesignBtn).toBeEnabled()
 
     const viewPlanningBtn = screen.getByRole('button', { name: 'View planning hierarchy' })
     expect(viewPlanningBtn).toBeDisabled()
@@ -564,6 +563,325 @@ describe('DesignPlanningResults · S2-06 Results Overview', () => {
           errors: ['Some error'],
         }),
       ).toBe('Not available')
+    })
+  })
+
+  describe('S2-07 Design Artifacts View', () => {
+    const designOutputs = {
+      SYSTEM_ARCHITECTURE: {
+        style: 'Modular web application',
+        components: [
+          {
+            id: 'CMP-WEB',
+            name: 'React Web Application',
+            responsibility: 'Provides client-facing UI and state',
+            dependencies: ['API Gateway'],
+            source_refs: ['SPEC-001'],
+          },
+        ],
+        boundaries: ['Browser sandbox', 'DMZ'],
+        interactions: ['HTTPS/JSON over REST'],
+        constraints: ['Node 20+ runtime'],
+        assumptions: ['Modern evergreen browsers'],
+      },
+      DATABASE_SCHEMA: {
+        technology: 'PostgreSQL',
+        entities: [
+          {
+            id: 'ENTITY-USER',
+            name: 'User',
+            fields: [
+              { name: 'id', data_type: 'UUID', required: true, constraints: ['PRIMARY KEY'] },
+              { name: 'email', data_type: 'VARCHAR(255)', required: true, constraints: ['UNIQUE'] },
+            ],
+            relationships: [
+              { target_entity_id: 'ENTITY-002', relationship_type: 'ONE_TO_MANY', description: 'User bookings' },
+            ],
+            source_refs: ['SPEC-001'],
+          },
+        ],
+        assumptions: ['ACID compliance required'],
+      },
+      API_SPECIFICATION: {
+        base_path: '/api',
+        operations: [
+          {
+            id: 'API-001',
+            method: 'POST',
+            path: '/api/auth/register',
+            summary: 'Register new user account',
+            request: '{"email": "string"}',
+            response: '{"id": "string"}',
+            errors: ['400 Bad Request'],
+            authentication: 'None',
+            source_refs: ['SPEC-001'],
+            component_refs: ['CMP-AUTH'],
+            entity_refs: ['ENTITY-USER'],
+          },
+          {
+            id: 'API-002',
+            method: 'GET',
+            path: '/api/services',
+            summary: 'List available services',
+            request: null,
+            response: '[{"id": "string"}]',
+            errors: [],
+            authentication: 'None',
+            source_refs: ['SPEC-002'],
+            component_refs: ['CMP-API'],
+            entity_refs: ['ENTITY-SERVICE'],
+          },
+          {
+            id: 'API-003',
+            method: 'POST',
+            path: '/api/bookings',
+            summary: 'Create booking',
+            request: '{"serviceId": "string"}',
+            response: '{"bookingId": "string"}',
+            errors: ['409 Conflict'],
+            authentication: 'Bearer',
+            source_refs: ['SPEC-003'],
+            component_refs: ['CMP-BOOKING'],
+            entity_refs: ['ENTITY-BOOKING'],
+          },
+        ],
+        assumptions: ['RESTful semantics'],
+      },
+      UML_DIAGRAMS: {
+        diagrams: [
+          {
+            id: 'UML-001',
+            title: 'System Component Flow',
+            diagram_type: 'COMPONENT_DIAGRAM',
+            notation: 'MERMAID',
+            source: 'flowchart LR  WEB[React Web App] --> API[FastAPI]  API --> AUTH[Auth Module]  API --> BOOK[Booking Module]  BOOK --> DB[(MongoDB)]',
+            source_refs: ['SPEC-001'],
+          },
+        ],
+        assumptions: ['Mermaid syntax'],
+      },
+      WIREFRAMES: {
+        fidelity: 'STRUCTURED_LOW_FIDELITY',
+        screens: [
+          {
+            id: 'WF-001',
+            name: 'Dashboard Screen',
+            purpose: 'Displays overview metrics and navigation shortcuts',
+            regions: ['Sidebar', 'Header', 'Main Content'],
+            interactions: ['Click to expand card'],
+            components: ['MetricCard', 'NavMenu'],
+            source_refs: ['SPEC-001'],
+          },
+        ],
+        assumptions: ['Responsive layout'],
+      },
+      UI_FLOW: {
+        flows: [
+          {
+            id: 'FLOW-001',
+            actor: 'Registered User',
+            goal: 'Complete reservation checkout',
+            steps: ['Select item', 'Review booking', 'Submit payment', 'View confirmation'],
+            alternate_paths: ['Cancel checkout', 'Payment failure retry'],
+            source_refs: ['SPEC-001'],
+            screen_refs: ['WF-001', 'WF-002'],
+          },
+        ],
+      },
+    }
+
+    it('navigates from S2-06 to S2-07 via "View design artifacts" without extra API requests', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={designOutputs}
+        />,
+      )
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+      const viewDesignBtn = screen.getByRole('button', { name: 'View design artifacts' })
+      await user.click(viewDesignBtn)
+
+      // S2-07 rendered
+      expect(screen.getByRole('heading', { level: 2, name: 'Generated Design Artifacts' })).toBeInTheDocument()
+      expect(screen.getByText('Structured architecture, UML, database and API specifications')).toBeInTheDocument()
+      expect(screen.getByText('Validated')).toBeInTheDocument()
+      expect(screen.getByText('BookEase')).toBeInTheDocument()
+      expect(screen.getByText('Standalone Agent 2')).toBeInTheDocument()
+      expect(screen.getByText('Human reviewer')).toBeInTheDocument()
+
+      // Verification: 0 API requests
+      expect(getAgentProjectRun).not.toHaveBeenCalled()
+    })
+
+    it('navigates back to S2-06 from S2-07 and preserves the run result state', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={designOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View design artifacts' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Generated Design Artifacts' })).toBeInTheDocument()
+
+      // Click Back to Results Overview
+      const backButtons = screen.getAllByRole('button', { name: 'Back to Results Overview' })
+      await user.click(backButtons[0])
+
+      // Returns to S2-06
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+      expect(screen.getByText('Generated design and planning artifacts')).toBeInTheDocument()
+    })
+
+    it('renders real architecture, database, API, UML, wireframes, and UI flows with authentic traceability refs matching PNG', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={designOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View design artifacts' }))
+
+      // System Architecture
+      expect(screen.getByRole('heading', { level: 3, name: 'System architecture' })).toBeInTheDocument()
+      expect(screen.getByText(/ARCH-001 · Modular web application/)).toBeInTheDocument()
+      expect(screen.getByText(/CMP-WEB · React Web Application/)).toBeInTheDocument()
+      expect(screen.getByText('Provides client-facing UI and state')).toBeInTheDocument()
+      expect(screen.getByText('API Gateway')).toBeInTheDocument()
+      expect(screen.getAllByText('SPEC-001').length).toBeGreaterThan(0)
+      expect(screen.getByText(/Browser sandbox, DMZ/)).toBeInTheDocument()
+      expect(screen.getByText(/Node 20\+ runtime/)).toBeInTheDocument()
+
+      // Database schema
+      expect(screen.getByRole('heading', { level: 3, name: 'Database schema' })).toBeInTheDocument()
+      expect(screen.getByText(/1 traceable entity/)).toBeInTheDocument()
+      expect(screen.getByText('ENTITY-USER')).toBeInTheDocument()
+      expect(screen.getByText('(User)')).toBeInTheDocument()
+      expect(screen.getByText(/UUID/)).toBeInTheDocument()
+      expect(screen.getByText(/PRIMARY KEY/)).toBeInTheDocument()
+      expect(screen.getByText(/ONE_TO_MANY → ENTITY-002/)).toBeInTheDocument()
+
+      // API specification table
+      expect(screen.getByRole('heading', { level: 3, name: 'API specification' })).toBeInTheDocument()
+      expect(screen.getByText(/Operations reference architecture components and database entities/)).toBeInTheDocument()
+      expect(screen.getByText('/api/auth/register')).toBeInTheDocument()
+      expect(screen.getByText('Register new user account')).toBeInTheDocument()
+      expect(screen.getByText('CMP-AUTH / ENTITY-USER')).toBeInTheDocument()
+      expect(screen.getByText('/api/services')).toBeInTheDocument()
+      expect(screen.getByText('CMP-API / ENTITY-SERVICE')).toBeInTheDocument()
+      expect(screen.getByText('SPEC-002')).toBeInTheDocument()
+      expect(screen.getByText('/api/bookings')).toBeInTheDocument()
+      expect(screen.getByText('CMP-BOOKING / ENTITY-BOOKING')).toBeInTheDocument()
+      expect(screen.getByText('SPEC-003')).toBeInTheDocument()
+
+      // UML diagram source
+      expect(screen.getByRole('heading', { level: 3, name: 'UML diagram source' })).toBeInTheDocument()
+      expect(screen.getByText(/Authoritative structured source — no fake rendered image/)).toBeInTheDocument()
+      expect(screen.getByText(/flowchart LR WEB\[React Web App\] --> API\[FastAPI\]/)).toBeInTheDocument()
+
+      // Wireframes
+      expect(screen.getByRole('heading', { level: 3, name: 'Wireframes' })).toBeInTheDocument()
+      expect(screen.getByText('Dashboard Screen')).toBeInTheDocument()
+      expect(screen.getByText('WF-001')).toBeInTheDocument()
+      expect(screen.getByText(/Displays overview metrics/)).toBeInTheDocument()
+      expect(screen.getByText(/Sidebar, Header, Main Content/)).toBeInTheDocument()
+      expect(screen.getByText(/MetricCard, NavMenu/)).toBeInTheDocument()
+
+      // UI Flow
+      expect(screen.getByRole('heading', { level: 3, name: 'UI flow' })).toBeInTheDocument()
+      expect(screen.getByText(/Registered User/)).toBeInTheDocument()
+      expect(screen.getByText(/Complete reservation checkout/)).toBeInTheDocument()
+      expect(screen.getByText('FLOW-001')).toBeInTheDocument()
+      expect(screen.getByText('Select item')).toBeInTheDocument()
+      expect(screen.getByText(/WF-001, WF-002/)).toBeInTheDocument()
+      expect(screen.getByText(/Cancel checkout, Payment failure retry/)).toBeInTheDocument()
+    })
+
+    it('renders only selected design outputs and omits unreturned sections for partial design packages', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            DATABASE_SCHEMA: designOutputs.DATABASE_SCHEMA,
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View design artifacts' }))
+
+      // Only Database schema is shown
+      expect(screen.getByRole('heading', { level: 3, name: 'Database schema' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'System architecture' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'API specification' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'UML diagram source' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'Wireframes' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'UI flow' })).not.toBeInTheDocument()
+    })
+
+    it('displays truthful empty state when no design artifacts were returned', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            EPICS: [{ id: 'EPIC-001', title: 'Agile Epic' }],
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View design artifacts' }))
+
+      expect(screen.getByText('No design artifacts were generated for this run.')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'System architecture' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'Database schema' })).not.toBeInTheDocument()
+    })
+
+    it('opens S2-07 and navigates back in historical RunDetail view without extra API calls', async () => {
+      const user = userEvent.setup()
+      getAgentProjectRun.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-HIST-007',
+          agent_type: 'DESIGN_PLANNING',
+          run_mode: 'DEFAULT',
+          status: 'COMPLETED',
+          selected_outputs: ['SYSTEM_ARCHITECTURE', 'DATABASE_SCHEMA'],
+          created_at: '2026-10-14T10:00:00Z',
+          started_at: '2026-10-14T10:00:01Z',
+          completed_at: '2026-10-14T10:00:02Z',
+          warnings: [],
+          errors: [],
+          output_manifest: designOutputs,
+        },
+      })
+
+      render(<RunDetail agentProjectId="AGP-002" runId="RUN-HIST-007" />)
+      expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+
+      // Initial call to getAgentProjectRun
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Open S2-07
+      const viewDesignBtn = screen.getByRole('button', { name: 'View design artifacts' })
+      await user.click(viewDesignBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Generated Design Artifacts' })).toBeInTheDocument()
+      expect(screen.getByText(/ARCH-001 · Modular web application/)).toBeInTheDocument()
+
+      // Still only 1 call to getAgentProjectRun
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Back to Overview
+      const backButtons = screen.getAllByRole('button', { name: 'Back to Results Overview' })
+      await user.click(backButtons[0])
+
+      expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
     })
   })
 })

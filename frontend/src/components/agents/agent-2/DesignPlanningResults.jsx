@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import Button from '../../ui/Button.jsx'
 import { downloadJiraPlan } from '../../../services/jiraPlanExport.js'
 import ArtifactViewer from '../ArtifactViewer.jsx'
 import ResultsWorkspace from '../ResultsWorkspace.jsx'
 import ResultsOverview from './results/ResultsOverview.jsx'
+import DesignArtifacts from './results/DesignArtifacts.jsx'
 
 const outputLabels = {
   SYSTEM_ARCHITECTURE: 'System Architecture',
@@ -435,6 +437,8 @@ function DetailedResultsWorkspace({ outputs, title, warnings, errors, actions })
 }
 
 function DesignPlanningResults(props) {
+  const [activeView, setActiveView] = useState('overview')
+
   if (props.mode === 'detail') {
     return (
       <DetailedResultsWorkspace
@@ -447,7 +451,31 @@ function DesignPlanningResults(props) {
     )
   }
 
-  return <ResultsOverview {...props} />
+  const currentView = props.view || activeView
+
+  if (currentView === 'design-artifacts') {
+    return (
+      <DesignArtifacts
+        {...props}
+        title={props.designArtifactsTitle || 'Generated Design Artifacts'}
+        subtitle={props.designArtifactsSubtitle || 'Structured architecture, UML, database and API specifications'}
+        onBackToOverview={() => {
+          setActiveView('overview')
+          props.onBackToOverview?.()
+        }}
+      />
+    )
+  }
+
+  return (
+    <ResultsOverview
+      {...props}
+      onViewDesignArtifacts={() => {
+        setActiveView('design-artifacts')
+        props.onViewDesignArtifacts?.()
+      }}
+    />
+  )
 }
 
 export default DesignPlanningResults

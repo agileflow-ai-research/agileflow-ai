@@ -829,7 +829,7 @@ describe('DesignPlanningWorkspace', () => {
     expect(screen.getByText(/Example trace: SPEC-01 → EPIC-01 → STORY-01/)).toBeInTheDocument()
 
     // Actions
-    expect(screen.getByRole('button', { name: 'View design artifacts' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'View design artifacts' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'View planning hierarchy' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Open run history' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Start another run' })).toBeEnabled()
