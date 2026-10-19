@@ -615,6 +615,18 @@ def test_openapi_exposes_only_implemented_agent3_routes():
             ),
         (
             "POST",
+            "/api/v1/agents/implementation/{agent_project_id}/runs",
+        ),
+        (
+            "GET",
+            "/api/v1/agents/implementation/{agent_project_id}/runs",
+        ),
+        (
+            "GET",
+            "/api/v1/agents/implementation/{agent_project_id}/runs/{run_id}",
+        ),
+        (
+            "POST",
             "/api/v1/agents/implementation/{agent_project_id}/github/connect",
         ),
         (
@@ -638,7 +650,6 @@ def test_openapi_exposes_only_implemented_agent3_routes():
             "/api/v1/agents/implementation/{agent_project_id}/github/repository",
         ),
     }
-    assert not any("/run" in path for _, path in agent3)
     assert not any("/generate" in path for _, path in agent3)
     assert not any("image-analysis" in path for _, path in agent3)
     assert not any(

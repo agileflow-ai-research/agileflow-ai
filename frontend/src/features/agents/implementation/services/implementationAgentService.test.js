@@ -7,6 +7,7 @@ import {
   buildImplementationHybridDetections,
   connectGitHub,
   createGitHubRepository,
+  createImplementationRun,
   deleteImplementationInputFile,
   evaluateImplementationReadiness,
   evaluateTrustedImplementationReadiness,
@@ -29,6 +30,8 @@ import {
   getProjectConflicts,
   getTrustedProjectSpecification,
   getTrustedImplementationReadiness,
+  getImplementationRun,
+  listImplementationRuns,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
@@ -375,6 +378,22 @@ describe('implementationAgentService', () => {
       '/agents/implementation/AGP-003/github/repository',
       { name: 'quickbook', description: 'Booking', visibility: 'PRIVATE' },
       { authenticated: true },
+    )
+  })
+
+  it('uses the Agent 3 final-approval run endpoints through the shared client', () => {
+    const request = { approved: true, idempotency_key: 'request-001' }
+    createImplementationRun('AGP-003', request)
+    listImplementationRuns('AGP-003')
+    getImplementationRun('AGP-003', 'RUN-001')
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/runs', request, { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/runs', { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/runs/RUN-001', { authenticated: true },
     )
   })
 })

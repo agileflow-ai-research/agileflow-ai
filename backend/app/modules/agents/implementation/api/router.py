@@ -23,6 +23,7 @@ from app.modules.agents.implementation.api.specification_routes import (
 from app.modules.agents.implementation.api.trusted_readiness_routes import (
     router as trusted_readiness_router,
 )
+from app.modules.agents.implementation.api.run_routes import router as run_router
 from app.modules.agents.implementation.api.consolidation_routes import (
     router as consolidation_router,
 )
@@ -58,6 +59,7 @@ router.include_router(semantic_router)
 router.include_router(specification_router)
 router.include_router(consolidation_router)
 router.include_router(trusted_readiness_router)
+router.include_router(run_router)
 router.include_router(github_router)
 
 

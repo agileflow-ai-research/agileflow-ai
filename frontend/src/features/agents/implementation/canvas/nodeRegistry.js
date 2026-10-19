@@ -11,7 +11,7 @@ export const IMPLEMENTATION_NODE_REGISTRY = Object.freeze([
   { id: 'SPECIFICATION_VERIFICATION', title: 'Specification Verification', active: true, purpose: 'What should be implemented, and what still requires human confirmation?', summary: 'Review and verify extracted specifications.' },
   { id: 'IMPLEMENTATION_READINESS', title: 'Implementation Readiness', active: true, purpose: 'Is there enough trusted information to implement the selected outputs?', summary: 'Evaluate whether implementation can proceed.' },
   { id: 'DELIVERY_SETUP', title: 'Delivery Setup', active: true, purpose: 'Where should the generated implementation eventually be delivered?', summary: 'Connect GitHub and prepare a repository.' },
-  { id: 'GENERATE_IMPLEMENTATION', title: 'Generate Implementation', active: false, purpose: 'This stage is not implemented yet.', summary: 'Not implemented yet.' },
+  { id: 'GENERATE_IMPLEMENTATION', title: 'Generate Implementation', active: true, purpose: 'Approve the final implementation plan and create an immutable AgentRun.', summary: 'Awaiting final pre-code approval.' },
   { id: 'BUILD_EXECUTE', title: 'Build & Execute', active: false, purpose: 'This stage is not implemented yet.', summary: 'Not implemented yet.' },
   { id: 'CORRECTION_VALIDATION', title: 'Correction & Validation', active: false, purpose: 'This stage is not implemented yet.', summary: 'Not implemented yet.' },
   { id: 'DELIVERY', title: 'Delivery', active: false, purpose: 'This stage is not implemented yet.', summary: 'Not implemented yet.' },
@@ -55,6 +55,7 @@ export function deriveWorkflowPresentation(snapshot) {
   const preparation = snapshot?.preparationState?.result
   const specification = snapshot?.specificationState?.result
   const consolidation = snapshot?.consolidationState?.result
+  const runs = snapshot?.runState
 
   let readinessStatus = WORKFLOW_NODE_STATES.NOT_STARTED
   if (readiness?.status === 'evaluating') readinessStatus = WORKFLOW_NODE_STATES.RUNNING
@@ -70,6 +71,14 @@ export function deriveWorkflowPresentation(snapshot) {
   else if (github?.status === 'error' || repository?.status === 'error') deliveryStatus = WORKFLOW_NODE_STATES.FAILED
   else if (repository?.status === 'created') deliveryStatus = WORKFLOW_NODE_STATES.COMPLETE
   else if (github?.status === 'connected') deliveryStatus = WORKFLOW_NODE_STATES.RUNNING
+
+  let generationStatus = WORKFLOW_NODE_STATES.NOT_STARTED
+  if (runs?.status === 'creating' || runs?.status === 'loading') generationStatus = WORKFLOW_NODE_STATES.QUEUED
+  else if (runs?.runs?.length) generationStatus = WORKFLOW_NODE_STATES.COMPLETE
+  else if (runs?.error) generationStatus = WORKFLOW_NODE_STATES.FAILED
+  else if (consolidation?.status && consolidation.status !== 'READY') generationStatus = WORKFLOW_NODE_STATES.BLOCKED
+  else if (readiness?.stale || readiness?.result?.current === false || readiness?.result?.status === 'NOT_READY') generationStatus = WORKFLOW_NODE_STATES.BLOCKED
+  else if (['READY', 'READY_WITH_WARNINGS'].includes(readiness?.result?.status)) generationStatus = WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
 
   return {
     PROJECT_SOURCES: {
@@ -122,6 +131,16 @@ export function deriveWorkflowPresentation(snapshot) {
     DELIVERY_SETUP: {
       status: deliveryStatus,
       summary: repository?.repository?.full_name ?? (github?.connection?.connected ? 'GitHub connected · repository not created' : 'GitHub is not connected.'),
+    },
+    GENERATE_IMPLEMENTATION: {
+      status: generationStatus,
+      summary: runs?.runs?.length
+        ? `${runs.runs[0].run_id} ready for future generation`
+        : generationStatus === WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
+          ? 'Final implementation approval required'
+          : generationStatus === WORKFLOW_NODE_STATES.BLOCKED
+            ? 'Current implementation readiness is required'
+            : 'No approved implementation run yet.',
     },
   }
 }

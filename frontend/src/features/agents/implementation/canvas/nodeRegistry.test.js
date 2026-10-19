@@ -32,7 +32,8 @@ describe('implementation workflow registry', () => {
     expect(nodes).toHaveLength(9)
     expect(nodes.map((node) => node.id)).toEqual(IMPLEMENTATION_NODE_REGISTRY.map((node) => node.id))
     expect(nodes[0].position).toEqual(DEFAULT_NODE_POSITIONS.PROJECT_SOURCES)
-    expect(nodes.slice(5).every((node) => node.data.status === 'LOCKED' && node.data.locked)).toBe(true)
+    expect(nodes[5].data).toMatchObject({ status: 'NOT_STARTED', locked: false })
+    expect(nodes.slice(6).every((node) => node.data.status === 'LOCKED' && node.data.locked)).toBe(true)
     nodes[0].data.onOpen()
     expect(openNode).toHaveBeenCalledWith('PROJECT_SOURCES')
   })
@@ -51,6 +52,27 @@ describe('implementation workflow registry', () => {
     expect(presentation.SPECIFICATION_VERIFICATION.status).toBe('WAITING_FOR_HUMAN')
     expect(presentation.IMPLEMENTATION_READINESS.status).toBe('NOT_STARTED')
     expect(presentation.DELIVERY_SETUP.status).toBe('RUNNING')
+    expect(presentation.GENERATE_IMPLEMENTATION.status).toBe('NOT_STARTED')
+  })
+
+  it('maps final approval honestly without claiming code generation', () => {
+    const waiting = deriveWorkflowPresentation({
+      consolidationState: { result: { status: 'READY' } },
+      readinessState: { result: { status: 'READY', current: true }, stale: false },
+      runState: { status: 'loaded', runs: [] },
+    })
+    expect(waiting.GENERATE_IMPLEMENTATION).toMatchObject({
+      status: 'WAITING_FOR_HUMAN', summary: 'Final implementation approval required',
+    })
+
+    const approved = deriveWorkflowPresentation({
+      consolidationState: { result: { status: 'STALE' } },
+      readinessState: { result: { status: 'NOT_READY', current: false }, stale: true },
+      runState: { status: 'loaded', runs: [{ run_id: 'RUN-012' }] },
+    })
+    expect(approved.GENERATE_IMPLEMENTATION).toMatchObject({
+      status: 'COMPLETE', summary: 'RUN-012 ready for future generation',
+    })
   })
 
   it('maps authoritative preparation and human-review states into workflow nodes', () => {

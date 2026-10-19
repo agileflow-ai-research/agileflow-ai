@@ -57,6 +57,7 @@ from app.modules.agents.implementation.preparation.readiness.trusted.service imp
 from app.modules.agents.implementation.preparation.readiness.trusted.storage import (
     TrustedReadinessStorage,
 )
+from app.modules.agents.implementation.runs.service import ImplementationRunService
 from app.modules.agents.implementation.inputs.upload.service import (
     ImplementationInputService,
     WrongAgentProjectTypeError,
@@ -491,6 +492,33 @@ def get_trusted_readiness_service(
 ) -> TrustedReadinessService:
     return TrustedReadinessService(
         standalone_service, consolidation_service, storage
+    )
+
+
+def get_implementation_run_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    consolidation_service: Annotated[
+        ProjectConsolidationService, Depends(get_project_consolidation_service)
+    ],
+    readiness_service: Annotated[
+        TrustedReadinessService, Depends(get_trusted_readiness_service)
+    ],
+    connection_repository: Annotated[
+        GitHubConnectionRepository, Depends(get_github_connection_repository)
+    ],
+    binding_repository: Annotated[
+        GitHubRepositoryBindingRepository,
+        Depends(get_github_repository_binding_repository),
+    ],
+) -> ImplementationRunService:
+    return ImplementationRunService(
+        standalone_service,
+        consolidation_service,
+        readiness_service,
+        connection_repository,
+        binding_repository,
     )
 
 

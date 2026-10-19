@@ -8,6 +8,7 @@ import {
   buildImplementationHybridDetections,
   connectGitHub,
   createGitHubRepository,
+  createImplementationRun,
   deleteImplementationInputFile,
   evaluateTrustedImplementationReadiness,
   extractImplementationDocument,
@@ -28,6 +29,7 @@ import {
   getProjectConflicts,
   getTrustedProjectSpecification,
   getTrustedImplementationReadiness,
+  listImplementationRuns,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
@@ -65,6 +67,7 @@ vi.mock('./services/implementationAgentService.js', () => ({
   runImplementationZeroShotClassifier: vi.fn(),
   connectGitHub: vi.fn(),
   createGitHubRepository: vi.fn(),
+  createImplementationRun: vi.fn(),
   getGitHubConnection: vi.fn(),
   getGitHubRepository: vi.fn(),
   getPreparationStatus: vi.fn(),
@@ -72,6 +75,7 @@ vi.mock('./services/implementationAgentService.js', () => ({
   getProjectConsolidationStatus: vi.fn(),
   getProjectConflicts: vi.fn(),
   getTrustedProjectSpecification: vi.fn(),
+  listImplementationRuns: vi.fn(),
   getSemanticReviews: vi.fn(),
   saveSemanticDecision: vi.fn(),
   saveProjectConflictDecision: vi.fn(),
@@ -474,6 +478,19 @@ function readinessResult(overrides = {}) {
   }
 }
 
+function trustedRunReadiness(overrides = {}) {
+  return readinessResult({
+    status: 'READY',
+    current: true,
+    findings: [],
+    readiness_fingerprint: 'e'.repeat(64),
+    project_specification_id: 'TPS-' + 'A'.repeat(24),
+    selected_outputs_digest: 'd'.repeat(64),
+    stack_adaptation: null,
+    ...overrides,
+  })
+}
+
 async function reachWorkspaceReview(user, output = 'Backend Code') {
   await user.type(screen.getByLabelText(/Content/), 'Users can create bookings.')
   await user.click(screen.getByRole('button', { name: 'Next' }))
@@ -512,6 +529,7 @@ describe('ImplementationWorkspace', () => {
     getGitHubConnection.mockResolvedValue({ data: { connected: false } })
     getGitHubRepository.mockResolvedValue({ data: { created: false } })
     getTrustedImplementationReadiness.mockRejectedValue({ status: 404 })
+    listImplementationRuns.mockResolvedValue({ data: [] })
     getPreparationStatus.mockResolvedValue({
       data: {
         status: 'NOT_STARTED', source_count: 0, eligible_source_count: 0,
@@ -1789,5 +1807,79 @@ describe('ImplementationWorkspace', () => {
     render(<ImplementationWorkspace project={project} activeSection="IMPLEMENTATION_READINESS" />)
     expect(await screen.findByText(/No readiness evaluation exists yet/)).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Implementation Inputs' })).not.toBeInTheDocument()
+  })
+
+  it('loads run history on refresh without ever auto-approving', async () => {
+    const currentReadiness = trustedRunReadiness()
+    getTrustedImplementationReadiness.mockResolvedValue({ data: currentReadiness })
+    getProjectConsolidationStatus.mockResolvedValue({
+      data: {
+        status: 'READY', source_count: 1, item_count: 1, conflict_count: 0,
+        pending_conflict_count: 0, issue_count: 0, source_set_digest: 'b'.repeat(64), issues: [],
+      },
+    })
+    getTrustedProjectSpecification.mockResolvedValue({
+      data: { project_specification_id: currentReadiness.project_specification_id, status: 'READY', categories: {}, relationships: [], traceability: {} },
+    })
+    listImplementationRuns.mockResolvedValue({
+      data: [{
+        run_id: 'RUN-007', run_status: 'READY_FOR_GENERATION',
+        created_at: '2026-10-19T07:10:00Z', readiness_status: 'READY',
+        readiness_id: currentReadiness.readiness_id,
+        readiness_fingerprint: currentReadiness.readiness_fingerprint,
+        selected_outputs: ['BACKEND_CODE'], approval_id: 'APR-' + 'a'.repeat(32),
+        delivery_configured: false,
+      }],
+    })
+
+    render(<ImplementationWorkspace project={project} activeSection="GENERATE_IMPLEMENTATION" />)
+    expect((await screen.findAllByText('RUN-007')).length).toBeGreaterThan(0)
+    expect(screen.getByText('Code generation is not implemented yet.')).toBeInTheDocument()
+    expect(createImplementationRun).not.toHaveBeenCalled()
+  })
+
+  it('creates one run for a rapid double approval click and shows the run ID', async () => {
+    const user = userEvent.setup()
+    const currentReadiness = trustedRunReadiness()
+    getTrustedImplementationReadiness.mockResolvedValue({ data: currentReadiness })
+    getProjectConsolidationStatus.mockResolvedValue({
+      data: {
+        status: 'READY', source_count: 1, item_count: 1, conflict_count: 0,
+        pending_conflict_count: 0, issue_count: 0, source_set_digest: 'b'.repeat(64), issues: [],
+      },
+    })
+    getTrustedProjectSpecification.mockResolvedValue({
+      data: { project_specification_id: currentReadiness.project_specification_id, status: 'READY', categories: {}, relationships: [], traceability: {} },
+    })
+    let resolveCreate
+    createImplementationRun.mockReturnValue(new Promise((resolve) => { resolveCreate = resolve }))
+
+    render(<ImplementationWorkspace project={project} activeSection="GENERATE_IMPLEMENTATION" />)
+    const approve = await screen.findByRole('button', { name: 'Approve Implementation' })
+    await user.dblClick(approve)
+    expect(createImplementationRun).toHaveBeenCalledTimes(1)
+    expect(createImplementationRun.mock.calls[0][0]).toBe('AGP-003')
+    expect(createImplementationRun.mock.calls[0][1]).toMatchObject({
+      approved: true,
+      acknowledged_warning_codes: [],
+      expected_project_specification_id: currentReadiness.project_specification_id,
+      expected_readiness_id: currentReadiness.readiness_id,
+      expected_readiness_fingerprint: currentReadiness.readiness_fingerprint,
+      expected_selected_outputs_digest: currentReadiness.selected_outputs_digest,
+    })
+    expect(createImplementationRun.mock.calls[0][1].idempotency_key).toBeTruthy()
+
+    resolveCreate({
+      data: {
+        run_id: 'RUN-008', run_status: 'READY_FOR_GENERATION',
+        created_at: '2026-10-19T07:12:00Z', readiness_status: 'READY',
+        readiness_id: currentReadiness.readiness_id,
+        readiness_fingerprint: currentReadiness.readiness_fingerprint,
+        selected_outputs: ['BACKEND_CODE'], approval_id: 'APR-' + 'b'.repeat(32),
+        delivery_snapshot: { configured: false },
+      },
+    })
+    expect((await screen.findAllByText('RUN-008')).length).toBeGreaterThan(0)
+    expect(screen.getByText('Status: Ready for Generation')).toBeInTheDocument()
   })
 })

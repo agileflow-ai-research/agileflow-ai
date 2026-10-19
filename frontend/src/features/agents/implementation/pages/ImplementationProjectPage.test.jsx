@@ -13,7 +13,8 @@ vi.mock('../canvas/ImplementationCanvas.jsx', () => ({
         <button type="button" onClick={() => onSelectNode('PROJECT_SOURCES')}>Select sources</button>
         <button type="button" onClick={() => onSelectNode('IMPLEMENTATION_READINESS')}>Select readiness</button>
         <button type="button" onClick={() => onSelectNode('DELIVERY_SETUP')}>Select delivery setup</button>
-        <button type="button" onClick={() => onSelectNode('GENERATE_IMPLEMENTATION')}>Select locked stage</button>
+        <button type="button" onClick={() => onSelectNode('GENERATE_IMPLEMENTATION')}>Select final approval</button>
+        <button type="button" onClick={() => onSelectNode('BUILD_EXECUTE')}>Select locked stage</button>
       </div>
     )
   }),
@@ -46,12 +47,17 @@ describe('ImplementationProjectPage', () => {
     expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('DELIVERY_SETUP')
   })
 
-  it('marks future stages as locked without exposing workspace functionality', async () => {
+  it('opens final approval while keeping actual execution stages locked', async () => {
     const user = userEvent.setup()
     render(<ImplementationProjectPage project={project} projectStatus={projectStatus} />)
 
-    await user.click(screen.getByRole('button', { name: 'Select locked stage' }))
+    await user.click(screen.getByRole('button', { name: 'Select final approval' }))
     expect(screen.getByRole('heading', { name: 'Generate Implementation' })).toBeInTheDocument()
+    expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('GENERATE_IMPLEMENTATION')
+    expect(screen.queryByText('Not implemented yet')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Select locked stage' }))
+    expect(screen.getByRole('heading', { name: 'Build & Execute' })).toBeInTheDocument()
     expect(screen.getAllByText('Locked').length).toBeGreaterThan(0)
     expect(screen.getByText('Not implemented yet')).toBeInTheDocument()
     expect(screen.getByTestId('implementation-workspace').parentElement).toHaveClass('hidden')

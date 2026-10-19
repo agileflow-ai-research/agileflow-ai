@@ -260,6 +260,28 @@ export function evaluateTrustedImplementationReadiness(agentProjectId, request) 
   )
 }
 
+export function createImplementationRun(agentProjectId, request) {
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/runs`,
+    request,
+    { authenticated: true },
+  )
+}
+
+export function listImplementationRuns(agentProjectId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/runs`,
+    { authenticated: true },
+  )
+}
+
+export function getImplementationRun(agentProjectId, runId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/runs/${encodeURIComponent(runId)}`,
+    { authenticated: true },
+  )
+}
+
 export function connectGitHub(agentProjectId) {
   return apiClient.post(
     `/agents/implementation/${encodeURIComponent(agentProjectId)}/github/connect`,

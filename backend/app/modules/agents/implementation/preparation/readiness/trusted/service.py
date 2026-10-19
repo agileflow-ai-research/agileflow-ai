@@ -102,6 +102,7 @@ class TrustedReadinessService:
         status = self._consolidation.get_status(project_id, current_user)
         current = (
             result.policy_version == TRUSTED_READINESS_POLICY_VERSION
+            and result.readiness_fingerprint == readiness_fingerprint(result)
             and status.status is ConsolidationStatus.READY
             and status.source_set_digest == result.source_set_digest
         )
@@ -180,7 +181,7 @@ class TrustedReadinessService:
             "policy_version": TRUSTED_READINESS_POLICY_VERSION,
             "evaluated_at": self._clock().isoformat(),
         }
-        return TrustedReadinessSnapshot(
+        snapshot_values = dict(
             readiness_id="RDY-" + digest(identity)[:24].upper(),
             agent_project_id=project_id, status=status,
             selected_outputs=outputs,
@@ -194,3 +195,17 @@ class TrustedReadinessService:
             output_readiness=output_readiness, findings=findings,
             effective_stack=EFFECTIVE_STACK, evaluated_at=self._clock(),
         )
+        snapshot = TrustedReadinessSnapshot(
+            readiness_fingerprint="0" * 64,
+            **snapshot_values,
+        )
+        return snapshot.model_copy(
+            update={"readiness_fingerprint": readiness_fingerprint(snapshot)}
+        )
+
+
+def readiness_fingerprint(snapshot: TrustedReadinessSnapshot) -> str:
+    """Recompute the content fingerprint without trusting the stored value."""
+    return digest(
+        snapshot.model_dump(mode="json", exclude={"readiness_fingerprint", "current"})
+    )

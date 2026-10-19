@@ -6,6 +6,7 @@ import {
   buildImplementationSemanticArtifacts,
   buildImplementationHybridDetections,
   createGitHubRepository,
+  createImplementationRun,
   deleteImplementationInputFile,
   evaluateTrustedImplementationReadiness,
   extractImplementationDocument,
@@ -26,6 +27,7 @@ import {
   getProjectConsolidationStatus,
   getProjectConflicts,
   getTrustedProjectSpecification,
+  listImplementationRuns,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
@@ -49,6 +51,7 @@ import ImplementationInputsStep from './components/inputs/ImplementationInputsSt
 import HumanReviewWorkspace from './components/review/HumanReviewWorkspace.jsx'
 import DeliverySetupPanel from './panels/DeliverySetupPanel.jsx'
 import ImplementationReadinessPanel from './panels/ImplementationReadinessPanel.jsx'
+import GenerateImplementationPanel from './panels/GenerateImplementationPanel.jsx'
 import InputAnalysisPanel from './panels/InputAnalysisPanel.jsx'
 import ProjectSourcesPanel from './panels/ProjectSourcesPanel.jsx'
 import SpecificationVerificationPanel from './panels/SpecificationVerificationPanel.jsx'
@@ -116,8 +119,13 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     status: 'loading', result: null, conflicts: [], specification: null,
     savingConflictId: null, error: '',
   })
+  const [runState, setRunState] = useState({
+    status: 'loading', runs: [], current: null, error: '',
+  })
   const consolidationStartRef = useRef(null)
   const readinessEvaluationRef = useRef(null)
+  const approvalSubmittingRef = useRef(false)
+  const approvalIdempotencyRef = useRef(null)
   const readinessStateRef = useRef(readinessState)
   const activeProjectRef = useRef(project.agent_project_id)
 
@@ -159,6 +167,27 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         setReadinessState({
           status: 'error', result: null, stale: false, resolutions: [],
           error: error?.errors?.[0]?.message || error?.message || 'Trusted readiness could not be loaded.',
+        })
+      })
+    return () => { active = false }
+  }, [project.agent_project_id])
+
+  useEffect(() => {
+    let active = true
+    approvalSubmittingRef.current = false
+    approvalIdempotencyRef.current = null
+    setRunState({ status: 'loading', runs: [], current: null, error: '' })
+    listImplementationRuns(project.agent_project_id)
+      .then((response) => {
+        if (!active) return
+        if (!Array.isArray(response?.data)) throw new Error('Invalid implementation run history response')
+        setRunState({ status: 'loaded', runs: response.data, current: null, error: '' })
+      })
+      .catch((error) => {
+        if (!active || error?.status === 401) return
+        setRunState({
+          status: 'error', runs: [], current: null,
+          error: error?.errors?.[0]?.message || error?.message || 'Implementation run history could not be loaded.',
         })
       })
     return () => { active = false }
@@ -499,8 +528,9 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       preparationState,
       specificationState,
       consolidationState,
+      runState,
     })
-  }, [consolidationState, githubState, inputs, onPresentationChange, preparationState, readinessState, repositoryState, selectedOutputs, specificationState])
+  }, [consolidationState, githubState, inputs, onPresentationChange, preparationState, readinessState, repositoryState, runState, selectedOutputs, specificationState])
 
   async function analyzeProjectInputs() {
     setPreparationState((current) => ({ ...current, status: 'starting', error: '' }))
@@ -1211,6 +1241,60 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     checkReadiness()
   }
 
+  async function approveImplementation(warningCodes) {
+    const readiness = readinessState.result
+    if (approvalSubmittingRef.current || !readiness) return
+    approvalSubmittingRef.current = true
+    const idempotencyKey = approvalIdempotencyRef.current
+      ?? globalThis.crypto?.randomUUID?.()
+      ?? `approval-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    approvalIdempotencyRef.current = idempotencyKey
+    setRunState((current) => ({ ...current, status: 'creating', error: '' }))
+    try {
+      const response = await createImplementationRun(project.agent_project_id, {
+        approved: true,
+        acknowledged_warning_codes: warningCodes,
+        idempotency_key: idempotencyKey,
+        expected_project_specification_id: readiness.project_specification_id,
+        expected_readiness_id: readiness.readiness_id,
+        expected_readiness_fingerprint: readiness.readiness_fingerprint,
+        expected_selected_outputs_digest: readiness.selected_outputs_digest,
+        expected_stack_adaptation_fingerprint: readiness.stack_adaptation?.fingerprint ?? null,
+      })
+      if (!response?.data?.run_id || response.data.run_status !== 'READY_FOR_GENERATION') {
+        throw new Error('Invalid implementation run response')
+      }
+      const run = response.data
+      setRunState((current) => ({
+        status: 'loaded', current: run, error: '',
+        runs: current.runs.some((item) => item.run_id === run.run_id)
+          ? current.runs
+          : [{
+              run_id: run.run_id,
+              run_status: run.run_status,
+              created_at: run.created_at,
+              readiness_status: run.readiness_status,
+              readiness_id: run.readiness_id,
+              readiness_fingerprint: run.readiness_fingerprint,
+              selected_outputs: run.selected_outputs,
+              approval_id: run.approval_id,
+              delivery_configured: run.delivery_snapshot?.configured ?? false,
+            }, ...current.runs],
+      }))
+    } catch (error) {
+      if (error?.status === 401) return
+      if (error?.status === 409) {
+        setReadinessState((current) => ({ ...current, stale: true }))
+      }
+      setRunState((current) => ({
+        ...current, status: 'error',
+        error: error?.errors?.[0]?.message || error?.message || 'Implementation approval could not be completed.',
+      }))
+    } finally {
+      approvalSubmittingRef.current = false
+    }
+  }
+
   const workspaceBusy = inputs.some((item) => (
     item.status === 'uploading'
     || item.status === 'deleting'
@@ -1464,6 +1548,18 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
             onConnect: handleGitHubConnect,
             onCreateRepository: handleRepositoryCreate,
           }}
+        />
+      ) : null}
+      {activeSection === 'GENERATE_IMPLEMENTATION' ? (
+        <GenerateImplementationPanel
+          consolidationState={consolidationState}
+          readinessState={readinessState}
+          selectedOutputs={selectedOutputs}
+          githubState={githubState}
+          repositoryState={repositoryState}
+          runState={runState}
+          onApprove={approveImplementation}
+          onNavigate={onNavigateNode}
         />
       ) : null}
     </div>

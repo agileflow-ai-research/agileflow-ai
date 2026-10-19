@@ -76,6 +76,7 @@ class TrustedStackAdaptation(StrictModel):
 
 class TrustedReadinessSnapshot(StrictModel):
     readiness_id: str = Field(pattern=r"^RDY-[0-9A-F]{24}$")
+    readiness_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     agent_project_id: str
     status: ReadinessStatus
     selected_outputs: list[ImplementationOutputCode]
