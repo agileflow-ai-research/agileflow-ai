@@ -32,10 +32,12 @@ export const IMPLEMENTATION_WORKFLOW_EDGES = Object.freeze(edgePairs.map(([sourc
   id: `${source}-${target}`,
   source,
   target,
-  type: 'smoothstep',
+  type: 'floating',
   selectable: false,
+  deletable: false,
+  reconnectable: false,
   focusable: false,
-  markerEnd: { type: MarkerType.ArrowClosed },
+  markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
 })))
 
 function inputHasSource(input) {
@@ -172,12 +174,13 @@ export function deriveWorkflowPresentation(snapshot) {
   }
 }
 
-export function createWorkflowNodes(presentation, onOpen) {
+export function createWorkflowNodes(presentation) {
   return IMPLEMENTATION_NODE_REGISTRY.map((definition) => {
     const current = presentation[definition.id]
     return {
       id: definition.id,
       type: 'workflow',
+      draggable: true,
       position: { ...DEFAULT_NODE_POSITIONS[definition.id] },
       data: {
         title: definition.title,
@@ -186,7 +189,6 @@ export function createWorkflowNodes(presentation, onOpen) {
         statusLabel: current?.statusLabel,
         attentionCount: current?.attentionCount,
         locked: !definition.active,
-        onOpen: () => onOpen(definition.id),
       },
     }
   })

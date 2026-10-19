@@ -18,12 +18,11 @@ function WorkflowNode({ data, selected }) {
       data-workflow-visual={status.visual}
       data-selected={selected ? 'true' : 'false'}
     >
-      <Handle type="target" position={Position.Left} isConnectable={false} className="!h-2 !w-2 !border-default !bg-content-muted" />
+      <Handle type="target" position={Position.Left} isConnectable={false} className="pointer-events-none !h-px !min-h-0 !w-px !min-w-0 !border-0 !bg-transparent opacity-0" />
       <button
         type="button"
-        className="nodrag w-full rounded-card p-4 text-left"
+        className="w-full cursor-grab rounded-card p-4 text-left active:cursor-grabbing"
         aria-label={`Open ${data.title}`}
-        onClick={data.onOpen}
       >
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-semibold text-content-primary">{data.title}</h3>
@@ -33,7 +32,7 @@ function WorkflowNode({ data, selected }) {
         <p className="mt-3 text-xs leading-5 text-content-secondary">{data.summary}</p>
         {data.locked ? <p className="mt-2 text-xs font-semibold text-content-muted">Not implemented yet</p> : null}
       </button>
-      <Handle type="source" position={Position.Right} isConnectable={false} className="!h-2 !w-2 !border-default !bg-content-muted" />
+      <Handle type="source" position={Position.Right} isConnectable={false} className="pointer-events-none !h-px !min-h-0 !w-px !min-w-0 !border-0 !bg-transparent opacity-0" />
     </div>
   )
 }

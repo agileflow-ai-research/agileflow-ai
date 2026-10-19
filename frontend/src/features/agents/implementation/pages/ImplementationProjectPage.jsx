@@ -6,17 +6,28 @@ import WorkflowControls from '../canvas/WorkflowControls.jsx'
 import ImplementationWorkspace from '../ImplementationWorkspace.jsx'
 import WorkflowNodeModal from '../panels/WorkflowNodeModal.jsx'
 import WorkflowNextStepNotice from '../components/common/WorkflowNextStepNotice.jsx'
+import ProjectOverviewModal from '../components/ProjectOverviewModal.jsx'
 import {
   deriveWorkflowPresentation,
   getWorkflowNodeDefinition,
+  IMPLEMENTATION_NODE_REGISTRY,
 } from '../canvas/nodeRegistry.js'
 import { deriveWorkflowTransition } from '../utils/workflowProgression.js'
 
-function ImplementationProjectPage({ project, projectStatus, projectActions }) {
+function inputHasSource(input) {
+  return input?.source_type === 'TEXT' ? Boolean(input.content?.trim()) : Boolean(input?.file)
+}
+
+function ImplementationProjectPage({ project, projectStatus, projectActions, entryMode = 'created' }) {
   const canvasRef = useRef(null)
-  const [visibleModal, setVisibleModal] = useState({ nodeId: 'PROJECT_SOURCES', origin: 'AUTO' })
+  const enteringExistingProject = entryMode === 'existing'
+  const initialVisibleModal = enteringExistingProject ? null : { nodeId: 'PROJECT_SOURCES', origin: 'AUTO' }
+  const [projectOverviewOpen, setProjectOverviewOpen] = useState(enteringExistingProject)
+  const [visibleModal, setVisibleModal] = useState(initialVisibleModal)
   const [workspaceSnapshot, setWorkspaceSnapshot] = useState(null)
+  const workspaceSnapshotRef = useRef(null)
   const visibleModalRef = useRef(visibleModal)
+  const projectOverviewOpenRef = useRef(enteringExistingProject)
   const lastAutoPresentedTransitionKeyRef = useRef(null)
   const presentation = useMemo(() => deriveWorkflowPresentation(workspaceSnapshot), [workspaceSnapshot])
   const activeWorkflowTransition = useMemo(
@@ -24,6 +35,10 @@ function ImplementationProjectPage({ project, projectStatus, projectActions }) {
     [workspaceSnapshot],
   )
   const activeWorkflowNodeId = activeWorkflowTransition?.nodeId ?? null
+  const currentWorkflowNodeId = activeWorkflowNodeId ?? IMPLEMENTATION_NODE_REGISTRY.find((node) => (
+    node.active && presentation[node.id]?.status !== 'COMPLETE'
+  ))?.id
+  const currentWorkflowNode = getWorkflowNodeDefinition(currentWorkflowNodeId)
   const visibleModalNodeId = visibleModal?.nodeId ?? null
   const selectedDefinition = getWorkflowNodeDefinition(visibleModalNodeId)
   const selectedPresentation = selectedDefinition
@@ -36,10 +51,12 @@ function ImplementationProjectPage({ project, projectStatus, projectActions }) {
       }
     : null
   const handlePresentationChange = useCallback((snapshot) => {
+    workspaceSnapshotRef.current = snapshot
     setWorkspaceSnapshot(snapshot)
     const next = deriveWorkflowTransition(snapshot)
     if (!next || lastAutoPresentedTransitionKeyRef.current === next.key) return
     lastAutoPresentedTransitionKeyRef.current = next.key
+    if (projectOverviewOpenRef.current) return
     if (visibleModalRef.current) return
     canvasRef.current?.focusNode(next.nodeId)
     if (next.requiresUserAction) {
@@ -57,11 +74,19 @@ function ImplementationProjectPage({ project, projectStatus, projectActions }) {
     visibleModalRef.current = nextModal
     setVisibleModal(nextModal)
   }, [])
+  const handleCloseProjectOverview = useCallback(() => {
+    projectOverviewOpenRef.current = false
+    const currentTransition = deriveWorkflowTransition(workspaceSnapshotRef.current)
+    if (currentTransition) lastAutoPresentedTransitionKeyRef.current = currentTransition.key
+    visibleModalRef.current = null
+    setVisibleModal(null)
+    setProjectOverviewOpen(false)
+  }, [])
 
   useEffect(() => {
     lastAutoPresentedTransitionKeyRef.current = null
-    canvasRef.current?.focusNode('PROJECT_SOURCES')
-  }, [project.agent_project_id])
+    if (!enteringExistingProject) canvasRef.current?.focusNode('PROJECT_SOURCES')
+  }, [enteringExistingProject, project.agent_project_id])
 
   const nextStepNotice = useMemo(() => {
     if (!activeWorkflowNodeId || activeWorkflowNodeId === visibleModalNodeId) return null
@@ -131,6 +156,25 @@ function ImplementationProjectPage({ project, projectStatus, projectActions }) {
             </div>
           </WorkflowNodeModal>
       </div>
+
+      <ProjectOverviewModal
+        open={projectOverviewOpen}
+        project={project}
+        projectStatus={projectStatus}
+        currentStage={currentWorkflowNode?.title ?? 'Workflow complete'}
+        currentStatus={activeWorkflowTransition?.requiresUserAction
+          ? `Waiting for ${currentWorkflowNode?.title ?? 'your review'}`
+          : currentWorkflowNode?.title ?? projectStatus.label}
+        completedNodeCount={IMPLEMENTATION_NODE_REGISTRY.filter((node) => presentation[node.id]?.status === 'COMPLETE').length}
+        totalNodeCount={IMPLEMENTATION_NODE_REGISTRY.length}
+        sourceCount={workspaceSnapshot?.preparationState?.result?.source_count
+          ?? (workspaceSnapshot?.inputs ?? []).filter(inputHasSource).length}
+        analyzedCount={workspaceSnapshot?.preparationState?.result?.completed_source_count
+          ?? workspaceSnapshot?.preparationState?.result?.processed_source_count}
+        selectedOutputs={workspaceSnapshot?.selectedOutputs ?? []}
+        repository={workspaceSnapshot?.repositoryState?.repository}
+        onClose={handleCloseProjectOverview}
+      />
 
       <p className="text-xs text-content-muted">Node positions are visual only. Moving a node does not change workflow order, status, or backend behavior.</p>
     </section>

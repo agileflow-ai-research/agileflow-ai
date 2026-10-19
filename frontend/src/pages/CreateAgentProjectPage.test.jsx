@@ -1,12 +1,17 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAgentProject } from '../services/agentProjectService.js'
 import CreateAgentProjectPage from './CreateAgentProjectPage.jsx'
 
 vi.mock('../services/agentProjectService.js', () => ({ createAgentProject: vi.fn() }))
+
+function OverviewDestination() {
+  const location = useLocation()
+  return <h1>Overview destination {location.state?.agentProjectEntry ?? 'existing'}</h1>
+}
 
 function renderCreate(path = '/agents/design-planning/new') {
   return render(
@@ -15,7 +20,7 @@ function renderCreate(path = '/agents/design-planning/new') {
         <Route path="/agents/:agentSlug/new" element={<CreateAgentProjectPage />} />
         <Route path="/agents" element={<h1>Hub</h1>} />
         <Route path="/agents/:agentSlug" element={<h1>List</h1>} />
-        <Route path="/agent-projects/:agentProjectId" element={<h1>Overview destination</h1>} />
+        <Route path="/agent-projects/:agentProjectId" element={<OverviewDestination />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -43,7 +48,7 @@ describe('CreateAgentProjectPage', () => {
     expect(payload).not.toHaveProperty('agent_project_id')
     expect(payload).not.toHaveProperty('owner_user_id')
     expect(payload).not.toHaveProperty('status')
-    expect(await screen.findByRole('heading', { name: 'Overview destination' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Overview destination created' })).toBeInTheDocument()
   })
 
   it('requires only name/domain and prevents duplicate pending submission', async () => {

@@ -78,7 +78,10 @@ function CreateAgentProjectPage() {
       })
       const projectId = response?.data?.agent_project_id
       if (typeof projectId !== 'string' || !projectId.trim()) throw new Error('Missing agent project ID')
-      navigate(`/agent-projects/${encodeURIComponent(projectId.trim())}`, { replace: true })
+      navigate(`/agent-projects/${encodeURIComponent(projectId.trim())}`, {
+        replace: true,
+        state: { agentProjectEntry: 'created' },
+      })
     } catch (error) {
       if (error?.status === 401) return
       const backendErrors = mapFieldErrors(error?.errors)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import AgentWorkspaceShell from '../components/agents/AgentWorkspaceShell.jsx'
 import RequirementsWorkspace from '../features/agents/requirements/RequirementsWorkspace.jsx'
@@ -41,6 +41,7 @@ function InformationRow({ label, children }) {
 
 function AgentProjectOverviewPage() {
   const { agentProjectId } = useParams()
+  const location = useLocation()
   const navigate = useNavigate()
   const requestSequence = useRef(0)
   const [loadStatus, setLoadStatus] = useState('loading')
@@ -147,9 +148,11 @@ function AgentProjectOverviewPage() {
         <Button variant="ghost" size="small" onClick={() => navigate(agentListPath)}>Back to projects</Button>
         {statusError && <ErrorState title="Status update failed" message={statusError} onRetry={handleStatusChange} />}
         <ImplementationProjectPage
+          key={project.agent_project_id}
           project={project}
           projectStatus={status}
           projectActions={statusAction}
+          entryMode={location.state?.agentProjectEntry === 'created' ? 'created' : 'existing'}
         />
         <section aria-label="Run History" className="space-y-4">
           <SectionHeader title="Run History" description="Persisted runs returned by the standalone project API." />

@@ -18,8 +18,8 @@ vi.mock('../services/agentProjectService.js', () => ({
 }))
 vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({ runRequirementsAgent: vi.fn() }))
 vi.mock('../features/agents/implementation/pages/ImplementationProjectPage.jsx', () => ({
-  default: ({ project }) => (
-    <section aria-label="Agent 3 implementation project">
+  default: ({ project, entryMode }) => (
+    <section aria-label="Agent 3 implementation project" data-entry-mode={entryMode}>
       <h1>{project.name}</h1>
       <div aria-label="Agent 3 implementation workflow canvas" />
     </section>
@@ -101,8 +101,23 @@ describe('AgentProjectOverviewPage', () => {
     renderOverview()
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Delivery Portal' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Agent 3 implementation project')).toHaveAttribute('data-entry-mode', 'existing')
     expect(screen.getByLabelText('Agent 3 implementation workflow canvas')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
+  })
+
+  it('passes explicit creation entry state to Agent 3 onboarding', async () => {
+    getAgentProjectById.mockResolvedValue({ data: {
+      ...project, agent_type: 'IMPLEMENTATION', name: 'New Delivery Portal',
+    } })
+    getAgentProjectRuns.mockResolvedValue({ data: [] })
+
+    renderOverview({
+      pathname: '/agent-projects/AGP-001',
+      state: { agentProjectEntry: 'created' },
+    })
+
+    expect(await screen.findByLabelText('Agent 3 implementation project')).toHaveAttribute('data-entry-mode', 'created')
   })
 
   it('archives after confirmation and reactivates archived projects', async () => {

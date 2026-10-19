@@ -10,22 +10,24 @@ import {
 import '@xyflow/react/dist/style.css'
 
 import WorkflowNode from '../nodes/WorkflowNode.jsx'
+import FloatingWorkflowEdge from './FloatingWorkflowEdge.jsx'
 import { positionWorkflowNodes } from './layout.js'
 import { createWorkflowNodes, IMPLEMENTATION_WORKFLOW_EDGES } from './nodeRegistry.js'
 
 const nodeTypes = Object.freeze({ workflow: WorkflowNode })
+const edgeTypes = Object.freeze({ floating: FloatingWorkflowEdge })
 
 const ImplementationCanvasInner = forwardRef(function ImplementationCanvasInner(
   { presentation, selectedNodeId, onSelectNode, onLayoutChange },
   ref,
 ) {
-  const initialNodes = useRef(createWorkflowNodes(presentation, onSelectNode))
+  const initialNodes = useRef(createWorkflowNodes(presentation))
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes.current)
   const flowInstance = useRef(null)
 
   useEffect(() => {
     const updatedNodes = new Map(
-      createWorkflowNodes(presentation, onSelectNode).map((node) => [node.id, node]),
+      createWorkflowNodes(presentation).map((node) => [node.id, node]),
     )
     setNodes((current) => current.map((node) => {
       const definition = updatedNodes.get(node.id)
@@ -35,7 +37,7 @@ const ImplementationCanvasInner = forwardRef(function ImplementationCanvasInner(
         data: definition.data,
       }
     }))
-  }, [onSelectNode, presentation, selectedNodeId, setNodes])
+  }, [presentation, selectedNodeId, setNodes])
 
   function arrange() {
     setNodes((current) => positionWorkflowNodes(current))
@@ -65,6 +67,7 @@ const ImplementationCanvasInner = forwardRef(function ImplementationCanvasInner(
         nodes={nodes}
         edges={IMPLEMENTATION_WORKFLOW_EDGES}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={handleNodesChange}
         onNodeClick={(_, node) => onSelectNode(node.id)}
         onInit={(instance) => { flowInstance.current = instance }}
@@ -73,8 +76,12 @@ const ImplementationCanvasInner = forwardRef(function ImplementationCanvasInner(
         minZoom={0.45}
         maxZoom={1.5}
         nodesConnectable={false}
+        connectOnClick={false}
         edgesReconnectable={false}
         nodesDraggable
+        panOnDrag
+        selectionOnDrag={false}
+        nodeClickDistance={4}
         elementsSelectable
         deleteKeyCode={null}
         colorMode="dark"
