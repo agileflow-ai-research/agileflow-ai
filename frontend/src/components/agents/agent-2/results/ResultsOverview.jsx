@@ -207,6 +207,7 @@ function ResultsOverview({
   onViewDesignArtifacts,
   onViewPlanningHierarchy,
   onViewSprintPlan,
+  onViewTaskAssignment,
   actions,
 }) {
   const safeOutputs = outputs && typeof outputs === 'object' ? outputs : result?.outputs || {}
@@ -214,6 +215,10 @@ function ResultsOverview({
   const jiraPlan = safeOutputs.JIRA_PLAN
   const hasSprintPlan = Boolean(
     safeOutputs.SPRINT_PLAN && (!Array.isArray(safeOutputs.SPRINT_PLAN) || safeOutputs.SPRINT_PLAN.length > 0),
+  )
+  const hasTaskAssignment = Boolean(
+    safeOutputs.TASK_ASSIGNMENT &&
+      (!Array.isArray(safeOutputs.TASK_ASSIGNMENT) || safeOutputs.TASK_ASSIGNMENT.length > 0),
   )
 
   // Derive summary metrics dynamically
@@ -463,6 +468,15 @@ function ResultsOverview({
             onClick={onViewSprintPlan}
           >
             View sprint plan
+          </Button>
+        )}
+        {hasTaskAssignment && (
+          <Button
+            variant="outline"
+            disabled={!onViewTaskAssignment}
+            onClick={onViewTaskAssignment}
+          >
+            View task assignments
           </Button>
         )}
         <Button variant="outline" onClick={handleOpenRunHistory}>

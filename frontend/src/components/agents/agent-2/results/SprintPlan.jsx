@@ -41,17 +41,22 @@ function SprintPlan({
   subtitle = 'Heuristic recommendation using team count, duration, dependencies and estimated workload',
   onBackToOverview,
   onViewPlanningHierarchy,
+  onViewTaskAssignment,
 }) {
   const safeOutputs = outputs && typeof outputs === 'object' ? outputs : {}
   const sprints = Array.isArray(safeOutputs.SPRINT_PLAN) ? safeOutputs.SPRINT_PLAN : []
 
-  // Check if planning hierarchy is available
+  // Check if sibling planning views are available
   const hasPlanningHierarchy = Boolean(
     safeOutputs.PRODUCT_BACKLOG ||
       safeOutputs.EPICS ||
       safeOutputs.FEATURES ||
       safeOutputs.USER_STORIES ||
       safeOutputs.TASKS,
+  )
+  const hasTaskAssignment = Boolean(
+    safeOutputs.TASK_ASSIGNMENT &&
+      (!Array.isArray(safeOutputs.TASK_ASSIGNMENT) || safeOutputs.TASK_ASSIGNMENT.length > 0),
   )
 
   if (sprints.length === 0) {
@@ -211,6 +216,11 @@ function SprintPlan({
           {onViewPlanningHierarchy && hasPlanningHierarchy && (
             <Button variant="outline" size="small" onClick={onViewPlanningHierarchy}>
               Planning Hierarchy
+            </Button>
+          )}
+          {onViewTaskAssignment && hasTaskAssignment && (
+            <Button variant="outline" size="small" onClick={onViewTaskAssignment}>
+              Task Assignments
             </Button>
           )}
         </div>
@@ -432,6 +442,11 @@ function SprintPlan({
         {onViewPlanningHierarchy && hasPlanningHierarchy && (
           <Button variant="outline" onClick={onViewPlanningHierarchy}>
             Back to Planning Hierarchy
+          </Button>
+        )}
+        {onViewTaskAssignment && hasTaskAssignment && (
+          <Button variant="outline" onClick={onViewTaskAssignment}>
+            View task assignments
           </Button>
         )}
       </div>

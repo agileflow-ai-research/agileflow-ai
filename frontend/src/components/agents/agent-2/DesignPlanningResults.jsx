@@ -7,6 +7,7 @@ import ResultsOverview from './results/ResultsOverview.jsx'
 import DesignArtifacts from './results/DesignArtifacts.jsx'
 import PlanningHierarchy from './results/PlanningHierarchy.jsx'
 import SprintPlanView from './results/SprintPlan.jsx'
+import TaskAssignmentView from './results/TaskAssignment.jsx'
 
 const outputLabels = {
   SYSTEM_ARCHITECTURE: 'System Architecture',
@@ -486,6 +487,10 @@ function DesignPlanningResults(props) {
           setActiveView('sprint-plan')
           props.onViewSprintPlan?.()
         }}
+        onViewTaskAssignment={() => {
+          setActiveView('task-assignment')
+          props.onViewTaskAssignment?.()
+        }}
       />
     )
   }
@@ -507,6 +512,35 @@ function DesignPlanningResults(props) {
           setActiveView('planning-hierarchy')
           props.onViewPlanningHierarchy?.()
         }}
+        onViewTaskAssignment={() => {
+          setActiveView('task-assignment')
+          props.onViewTaskAssignment?.()
+        }}
+      />
+    )
+  }
+
+  if (currentView === 'task-assignment') {
+    return (
+      <TaskAssignmentView
+        {...props}
+        title={props.taskAssignmentTitle || 'Task Assignment Recommendations'}
+        subtitle={
+          props.taskAssignmentSubtitle ||
+          'Skill-aware heuristic using supplied roles, skills, dependencies and current workload'
+        }
+        onBackToOverview={() => {
+          setActiveView('overview')
+          props.onBackToOverview?.()
+        }}
+        onViewPlanningHierarchy={() => {
+          setActiveView('planning-hierarchy')
+          props.onViewPlanningHierarchy?.()
+        }}
+        onViewSprintPlan={() => {
+          setActiveView('sprint-plan')
+          props.onViewSprintPlan?.()
+        }}
       />
     )
   }
@@ -525,6 +559,10 @@ function DesignPlanningResults(props) {
       onViewSprintPlan={() => {
         setActiveView('sprint-plan')
         props.onViewSprintPlan?.()
+      }}
+      onViewTaskAssignment={() => {
+        setActiveView('task-assignment')
+        props.onViewTaskAssignment?.()
       }}
     />
   )

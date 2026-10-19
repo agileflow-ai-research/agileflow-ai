@@ -1455,4 +1455,308 @@ describe('DesignPlanningResults · S2-06 Results Overview', () => {
       expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
     })
   })
+
+  describe('S2-10 Task Assignment View', () => {
+    const sampleAssignments = [
+      {
+        task_id: 'TASK-13',
+        team_slot: 'Ravi',
+        role: 'Backend',
+        matching_reasons: ['Backend role', 'FastAPI', 'MongoDB'],
+        role_match: true,
+        skill_matches: ['FastAPI', 'MongoDB'],
+        workload_points_before: 0,
+        confidence_score: 91,
+        confidence: 0.91,
+        rationale: 'Lowest-current-workload consideration: 0 points before assignment. Role matches backend. Matched supplied skills: FastAPI, MongoDB.',
+        sprint_id: 'SPRINT-001',
+      },
+      {
+        task_id: 'TASK-14',
+        team_slot: 'Maya',
+        role: 'Frontend',
+        matching_reasons: ['Frontend role', 'React', 'UI'],
+        role_match: true,
+        skill_matches: ['React', 'UI'],
+        workload_points_before: 0,
+        confidence_score: 88,
+        confidence: 0.88,
+        rationale: 'Role matches frontend. Matched supplied skills: React, UI.',
+        sprint_id: 'SPRINT-001',
+      },
+      {
+        task_id: 'TASK-UNLINKED-99',
+        team_slot: 'Team member 1',
+        role: 'Developer',
+        matching_reasons: ['No named developer details were supplied; this is a team-slot recommendation.'],
+        role_match: false,
+        skill_matches: [],
+        workload_points_before: 5,
+        confidence_score: 50,
+        rationale: 'Generic planning slot recommendation.',
+        sprint_id: 'SPRINT-002',
+      },
+    ]
+
+    const assignmentOutputs = {
+      ...planningOutputs,
+      TASK_ASSIGNMENT: sampleAssignments,
+    }
+
+    it('renders View task assignments action on S2-06 only when TASK_ASSIGNMENT exists in outputs', () => {
+      const { rerender } = render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={planningOutputs}
+        />,
+      )
+
+      expect(screen.queryByRole('button', { name: 'View task assignments' })).not.toBeInTheDocument()
+
+      rerender(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={assignmentOutputs}
+        />,
+      )
+
+      expect(screen.getByRole('button', { name: 'View task assignments' })).toBeInTheDocument()
+    })
+
+    it('navigates to S2-10 locally without extra API requests and renders header, Explainable badge, and table', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={assignmentOutputs}
+          inputs={{ team_composition: 'Ravi: Backend | FastAPI; Maya: Frontend | React' }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View task assignments' }))
+
+      // Header and badge
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+      expect(
+        screen.getByText('Skill-aware heuristic using supplied roles, skills, dependencies and current workload'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('Explainable')).toBeInTheDocument()
+
+      // Card heading and named developer notice
+      expect(screen.getByRole('heading', { level: 3, name: 'Recommended assignments' })).toBeInTheDocument()
+      expect(screen.getByText('Named developers are used only because team_composition was supplied.')).toBeInTheDocument()
+
+      // Table columns
+      expect(screen.getByText('Task')).toBeInTheDocument()
+      expect(screen.getByText('Recommendation')).toBeInTheDocument()
+      expect(screen.getByText('Match reasons')).toBeInTheDocument()
+      expect(screen.getByText('Confidence')).toBeInTheDocument()
+
+      // Real assigned developer rows
+      expect(screen.getByText(/Ravi/)).toBeInTheDocument()
+      expect(screen.getByText(/Maya/)).toBeInTheDocument()
+      expect(screen.getByText('0.91')).toBeInTheDocument()
+      expect(screen.getByText('0.88')).toBeInTheDocument()
+
+      // Safe explainability callouts
+      expect(screen.getByRole('heading', { level: 3, name: 'When names are not supplied' })).toBeInTheDocument()
+      expect(screen.getByText('Agent 2 never fabricates real employees.')).toBeInTheDocument()
+      expect(
+        screen.getByText('These are explainable recommendations, not optimal resource-allocation claims.'),
+      ).toBeInTheDocument()
+
+      // No API requests
+      expect(getAgentProjectRun).not.toHaveBeenCalled()
+    })
+
+    it('enriches task title only when corresponding TASKS output exists, displaying raw ID otherwise', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={assignmentOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View task assignments' }))
+
+      // TASK-13 is in outputs.TASKS -> enriched with title
+      expect(screen.getByText(/TASK-13 · Create booking persistence model/)).toBeInTheDocument()
+
+      // TASK-UNLINKED-99 is not in outputs.TASKS -> raw ID only
+      expect(screen.getByText('TASK-UNLINKED-99')).toBeInTheDocument()
+      expect(screen.queryByText(/TASK-UNLINKED-99 ·/)).not.toBeInTheDocument()
+    })
+
+    it('preserves generic team slots when no named developers were supplied and does not fabricate employee names', async () => {
+      const user = userEvent.setup()
+      const genericAssignments = [
+        {
+          task_id: 'TASK-13',
+          team_slot: 'Team member 1',
+          role: 'Developer',
+          matching_reasons: ['No named developer details were supplied; this is a team-slot recommendation.'],
+          workload_points_before: 0,
+          confidence_score: 50,
+        },
+      ]
+
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            ...planningOutputs,
+            TASK_ASSIGNMENT: genericAssignments,
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View task assignments' }))
+
+      // Subtitle explains generic planning slots
+      expect(screen.getByText('Generic planning slots are used because team_composition was not supplied.')).toBeInTheDocument()
+
+      // Generic team slot displayed truthfully
+      expect(screen.getAllByText(/Team member 1/).length).toBe(2)
+      expect(screen.getByText('50')).toBeInTheDocument()
+    })
+
+    it('renders match reasons, workload info, and dependencies truthfully without claiming optimal allocation', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={assignmentOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View task assignments' }))
+
+      // Match reasons
+      expect(screen.getByText('Backend role · FastAPI · MongoDB')).toBeInTheDocument()
+      expect(screen.getByText('Frontend role · React · UI')).toBeInTheDocument()
+
+      // Workload info
+      expect(screen.getAllByText('Workload before: 0 pts').length).toBe(2)
+      expect(screen.getByText('Workload before: 5 pts')).toBeInTheDocument()
+
+      // Dependencies (TASK-14 depends on TASK-13 in planningOutputs.TASKS)
+      expect(screen.getByText(/Depends on/)).toBeInTheDocument()
+      expect(screen.getByText('TASK-13')).toBeInTheDocument()
+
+      // Research wording check: no optimal resource-allocation claims
+      expect(screen.queryByText(/optimal employee allocation/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/mathematically optimal/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/guaranteed productivity/i)).not.toBeInTheDocument()
+    })
+
+    it('renders truthful empty state when TASK_ASSIGNMENT was not generated', () => {
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          view="task-assignment"
+          outputs={{
+            SYSTEM_ARCHITECTURE: { components: [] },
+          }}
+        />,
+      )
+
+      expect(screen.getByText('No task assignment recommendations were generated for this run.')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'Recommended assignments' })).not.toBeInTheDocument()
+    })
+
+    it('supports multi-view navigation between Overview, Planning Hierarchy, Sprint Plan, and Task Assignment', async () => {
+      const user = userEvent.setup()
+      const multiOutputs = {
+        ...assignmentOutputs,
+        SPRINT_PLAN: [
+          {
+            id: 'SPRINT-001',
+            name: 'Sprint 1 · Foundation',
+            duration_days: 14,
+            capacity_points: 56,
+            planned_points: 40,
+            utilization_percent: 71.4,
+            item_refs: ['TASK-13'],
+            dependency_notes: [],
+            planning_warnings: [],
+            estimate_basis: 'Capacity basis.',
+          },
+        ],
+      }
+
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={multiOutputs}
+        />,
+      )
+
+      // 1. Overview -> Task Assignment
+      await user.click(screen.getByRole('button', { name: 'View task assignments' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+
+      // 2. Task Assignment -> Sprint Plan
+      const sprintPlanButtons = screen.getAllByRole('button', { name: /Sprint Plan/i })
+      await user.click(sprintPlanButtons[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Sprint Plan' })).toBeInTheDocument()
+
+      // 3. Sprint Plan -> Task Assignment
+      const taskAssignButtons = screen.getAllByRole('button', { name: /Task Assignment/i })
+      await user.click(taskAssignButtons[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+
+      // 4. Task Assignment -> Planning Hierarchy
+      await user.click(screen.getByRole('button', { name: 'Planning Hierarchy' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+
+      // 5. Planning Hierarchy -> Task Assignment
+      const taskAssignFromHierarchy = screen.getAllByRole('button', { name: /Task Assignment/i })
+      await user.click(taskAssignFromHierarchy[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+
+      // 6. Task Assignment -> Overview
+      const backToOverviewButtons = screen.getAllByRole('button', { name: /Back to Results Overview/i })
+      await user.click(backToOverviewButtons[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+    })
+
+    it('navigates to S2-10 and back in historical RunDetail view without extra API requests', async () => {
+      const user = userEvent.setup()
+      getAgentProjectRun.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-HIST-010',
+          agent_type: 'DESIGN_PLANNING',
+          run_mode: 'DEFAULT',
+          status: 'COMPLETED',
+          selected_outputs: ['EPICS', 'FEATURES', 'USER_STORIES', 'TASKS', 'TASK_ASSIGNMENT'],
+          created_at: '2026-10-14T10:00:00Z',
+          started_at: '2026-10-14T10:00:01Z',
+          completed_at: '2026-10-14T10:00:02Z',
+          warnings: [],
+          errors: [],
+          output_manifest: assignmentOutputs,
+        },
+      })
+
+      render(<RunDetail agentProjectId="AGP-002" runId="RUN-HIST-010" />)
+      expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Open S2-10
+      const viewAssignBtn = screen.getByRole('button', { name: 'View task assignments' })
+      await user.click(viewAssignBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+      expect(screen.getByText(/Ravi/)).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Back to Overview
+      const backButtons = screen.getAllByRole('button', { name: /Back to Results Overview/ })
+      await user.click(backButtons[0])
+
+      expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+    })
+  })
 })

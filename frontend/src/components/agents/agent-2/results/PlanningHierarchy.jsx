@@ -41,6 +41,7 @@ function PlanningHierarchy({
   project,
   onBackToOverview,
   onViewSprintPlan,
+  onViewTaskAssignment,
 }) {
   const safeOutputs =
     outputs && typeof outputs === 'object'
@@ -49,6 +50,10 @@ function PlanningHierarchy({
 
   const hasSprintPlan = Boolean(
     safeOutputs.SPRINT_PLAN && (!Array.isArray(safeOutputs.SPRINT_PLAN) || safeOutputs.SPRINT_PLAN.length > 0),
+  )
+  const hasTaskAssignment = Boolean(
+    safeOutputs.TASK_ASSIGNMENT &&
+      (!Array.isArray(safeOutputs.TASK_ASSIGNMENT) || safeOutputs.TASK_ASSIGNMENT.length > 0),
   )
 
   const hasErrors = Array.isArray(errors) && errors.length > 0
@@ -171,6 +176,11 @@ function PlanningHierarchy({
           {hasSprintPlan && onViewSprintPlan && (
             <Button variant="outline" size="small" onClick={onViewSprintPlan}>
               Sprint Plan
+            </Button>
+          )}
+          {hasTaskAssignment && onViewTaskAssignment && (
+            <Button variant="outline" size="small" onClick={onViewTaskAssignment}>
+              Task Assignments
             </Button>
           )}
         </div>
@@ -829,6 +839,11 @@ function PlanningHierarchy({
         {hasSprintPlan && onViewSprintPlan && (
           <Button variant="outline" onClick={onViewSprintPlan}>
             View sprint plan
+          </Button>
+        )}
+        {hasTaskAssignment && onViewTaskAssignment && (
+          <Button variant="outline" onClick={onViewTaskAssignment}>
+            View task assignments
           </Button>
         )}
       </div>
