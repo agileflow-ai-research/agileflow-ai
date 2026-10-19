@@ -68,6 +68,7 @@ function ImplementationProjectPage({ project, projectStatus, projectActions }) {
                 project={project}
                 activeSection={selectedDefinition?.active ? selectedDefinition.id : 'PROJECT_SOURCES'}
                 onPresentationChange={handlePresentationChange}
+                onNavigateNode={setSelectedNodeId}
               />
             </div>
           </WorkflowNodePanel>

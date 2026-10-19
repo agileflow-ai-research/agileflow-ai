@@ -7,7 +7,7 @@ import {
   buildImplementationHybridDetections,
   createGitHubRepository,
   deleteImplementationInputFile,
-  evaluateImplementationReadiness,
+  evaluateTrustedImplementationReadiness,
   extractImplementationDocument,
   getGitHubConnection,
   getImplementationDocumentChunks,
@@ -18,6 +18,7 @@ import {
   getImplementationHumanReviews,
   getImplementationCanonicalArtifacts,
   getImplementationSemanticArtifacts,
+  getTrustedImplementationReadiness,
   getGitHubRepository,
   getPreparationStatus,
   getSemanticReviews,
@@ -64,7 +65,7 @@ import {
 } from './utils/workspace.js'
 import { extractionSummary } from './utils/presentation.js'
 
-function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentationChange }) {
+function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentationChange, onNavigateNode }) {
   const [step, setStep] = useState(0)
   const [inputs, setInputs] = useState([emptyInput()])
   const [selectedOutputs, setSelectedOutputs] = useState([])
@@ -116,6 +117,52 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     savingConflictId: null, error: '',
   })
   const consolidationStartRef = useRef(null)
+  const readinessEvaluationRef = useRef(null)
+  const readinessStateRef = useRef(readinessState)
+  const activeProjectRef = useRef(project.agent_project_id)
+
+  const consolidatedSpecificationId = consolidationState.specification?.project_specification_id
+
+  useEffect(() => {
+    readinessStateRef.current = readinessState
+  }, [readinessState])
+
+  useEffect(() => {
+    activeProjectRef.current = project.agent_project_id
+    return () => {
+      if (activeProjectRef.current === project.agent_project_id) activeProjectRef.current = null
+    }
+  }, [project.agent_project_id])
+
+  useEffect(() => {
+    let active = true
+    readinessEvaluationRef.current = null
+    setReadinessState({ status: 'loading', result: null, error: '', stale: false, resolutions: [] })
+    getTrustedImplementationReadiness(project.agent_project_id)
+      .then((response) => {
+        if (!active) return
+        if (!response?.data?.readiness_id || !Array.isArray(response.data.selected_outputs)) {
+          throw new Error('Invalid trusted readiness response')
+        }
+        setSelectedOutputs(response.data.selected_outputs)
+        setReadinessState({
+          status: 'complete', result: response.data, error: '',
+          stale: response.data.current === false, resolutions: [],
+        })
+      })
+      .catch((error) => {
+        if (!active || error?.status === 401) return
+        if (error?.status === 404) {
+          setReadinessState({ status: 'idle', result: null, error: '', stale: false, resolutions: [] })
+          return
+        }
+        setReadinessState({
+          status: 'error', result: null, stale: false, resolutions: [],
+          error: error?.errors?.[0]?.message || error?.message || 'Trusted readiness could not be loaded.',
+        })
+      })
+    return () => { active = false }
+  }, [project.agent_project_id])
 
   useEffect(() => {
     let active = true
@@ -216,6 +263,36 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     })
     return () => { active = false }
   }, [consolidationState.result?.status, project.agent_project_id])
+
+  useEffect(() => {
+    if (consolidationState.result?.status !== 'READY' || selectedOutputs.length === 0) return undefined
+    const currentReadiness = readinessStateRef.current
+    const selectedKey = [...selectedOutputs].sort().join(',')
+    const resultKey = [...(currentReadiness.result?.selected_outputs ?? [])].sort().join(',')
+    const specificationMatches = !consolidatedSpecificationId
+      || currentReadiness.result?.project_specification_id === consolidatedSpecificationId
+    const isCurrent = currentReadiness.result?.current !== false && !currentReadiness.stale
+      && resultKey === selectedKey
+      && specificationMatches
+    if (isCurrent || currentReadiness.status === 'evaluating') return undefined
+    const evaluationKey = [project.agent_project_id, consolidationState.result.source_set_digest || '', selectedKey].join(':')
+    if (readinessEvaluationRef.current === evaluationKey) return undefined
+    readinessEvaluationRef.current = evaluationKey
+    setReadinessState((current) => ({ ...current, status: 'evaluating', error: '' }))
+    evaluateTrustedImplementationReadiness(project.agent_project_id, { selected_outputs: selectedOutputs })
+      .then((response) => {
+        if (activeProjectRef.current !== project.agent_project_id) return
+        if (!response?.data?.readiness_id) throw new Error('Invalid trusted readiness response')
+        setReadinessState({ status: 'complete', result: response.data, error: '', stale: false, resolutions: [] })
+      })
+      .catch((error) => {
+        if (activeProjectRef.current !== project.agent_project_id || error?.status === 401) return
+        setReadinessState((current) => ({
+          ...current, status: 'error',
+          error: error?.errors?.[0]?.message || error?.message || 'Trusted readiness could not be evaluated.',
+        }))
+      })
+  }, [consolidatedSpecificationId, consolidationState.result?.source_set_digest, consolidationState.result?.status, project.agent_project_id, selectedOutputs])
 
   useEffect(() => {
     const preparationStatus = preparationState.result?.status
@@ -461,12 +538,6 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         : item
     )))
     setErrors((current) => ({ ...current, inputs: '' }))
-    if (['source_type', 'artifact_type', 'label', 'content', 'file', 'extraction']
-      .some((field) => Object.hasOwn(changes, field))) {
-      setReadinessState((current) => (
-        current.result ? { ...current, stale: true } : current
-      ))
-    }
   }
 
   function changeSource(index, sourceType) {
@@ -974,9 +1045,6 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     const item = inputs[index]
     if (!item.file) {
       setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
-      setReadinessState((current) => (
-        current.result ? { ...current, stale: true } : current
-      ))
       return
     }
     updateInput(index, { status: 'deleting' })
@@ -1004,6 +1072,10 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         setSemanticReview({ uploadId: null, status: 'idle', result: null, error: '' })
       }
       setInputs((current) => current.filter((_, itemIndex) => itemIndex !== index))
+      setConsolidationState((current) => ({
+        ...current,
+        result: current.result ? { ...current.result, status: 'STALE' } : current.result,
+      }))
       setReadinessState((current) => (
         current.result ? { ...current, stale: true } : current
       ))
@@ -1048,11 +1120,6 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       })
       if (!response?.data?.created) throw new Error('Invalid GitHub repository response')
       setRepositoryState({ status: 'created', repository: response.data, error: '' })
-      if (selectedOutputs.includes('GIT_SUMMARY')) {
-        setReadinessState((current) => (
-          current.result ? { ...current, stale: true } : current
-        ))
-      }
     } catch (error) {
       const partialRepository = error?.data?.repository
       setRepositoryState({
@@ -1063,43 +1130,24 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     }
   }
 
-  function readinessRequest(resolutions = [], fingerprint = undefined) {
-    return {
-      selected_outputs: selectedOutputs,
-      text_inputs: inputs
-        .filter((item) => item.source_type === 'TEXT')
-        .map((item) => ({
-          input_id: item.input_id,
-          artifact_type: item.artifact_type,
-          ...(item.label.trim() ? { label: item.label.trim() } : {}),
-          content: item.content,
-        })),
-      document_upload_ids: inputs
-        .filter((item) => item.source_type === 'DOCUMENT' && item.file)
-        .map((item) => item.file.upload_id),
-      image_upload_ids: inputs
-        .filter((item) => item.source_type === 'IMAGE' && item.file)
-        .map((item) => item.file.upload_id),
-      human_resolutions: resolutions,
-      ...(fingerprint ? { input_fingerprint: fingerprint } : {}),
-    }
-  }
-
-  async function checkReadiness(resolutions = [], fingerprint = undefined) {
+  async function checkReadiness(stackAdaptation = undefined) {
     setReadinessState((current) => ({
-      ...current, status: 'evaluating', error: '', resolutions,
+      ...current, status: 'evaluating', error: '',
     }))
     try {
-      const response = await evaluateImplementationReadiness(
+      const response = await evaluateTrustedImplementationReadiness(
         project.agent_project_id,
-        readinessRequest(resolutions, fingerprint),
+        {
+          selected_outputs: selectedOutputs,
+          ...(stackAdaptation ? { stack_adaptation: stackAdaptation } : {}),
+        },
       )
-      if (!response?.data?.status || !response?.data?.input_fingerprint) {
+      if (!response?.data?.status || (!response?.data?.readiness_id && !response?.data?.input_fingerprint)) {
         throw new Error('Invalid readiness response')
       }
       setReadinessState({
         status: 'complete', result: response.data, error: '', stale: false,
-        resolutions,
+        resolutions: [],
       })
     } catch (error) {
       setReadinessState((current) => ({
@@ -1112,15 +1160,13 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
 
   function adaptToSupportedStack(finding) {
     if (!readinessState.result || readinessState.stale) return
-    const resolutions = [
-      ...readinessState.resolutions,
-      {
-        finding_id: finding.finding_id,
-        decision: 'ADAPT_TO_SUPPORTED_STACK',
-        note: 'Approved for the AgileFlow PP1 prototype.',
-      },
-    ]
-    checkReadiness(resolutions, readinessState.result.input_fingerprint)
+    const fingerprint = readinessState.result.stack_adaptation?.fingerprint
+    if (!fingerprint || finding.resolution_action !== 'ADAPT_TO_SUPPORTED_STACK') return
+    checkReadiness({
+      decision: 'ADAPT_TO_SUPPORTED_STACK',
+      expected_fingerprint: fingerprint,
+      note: 'Approved for the AgileFlow PP1 prototype.',
+    })
   }
 
   function inputsAreValid() {
@@ -1160,7 +1206,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
   }
 
   function checkReadinessFromPanel() {
-    if (!inputsAreValid() || !outputsAreValid()) return
+    if (!outputsAreValid()) return
     setErrors({})
     checkReadiness()
   }
@@ -1247,9 +1293,6 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
   }
   const addInput = () => {
     setInputs((current) => [...current, emptyInput()])
-    setReadinessState((current) => (
-      current.result ? { ...current, stale: true } : current
-    ))
   }
   const changeOutputs = (values) => {
     setSelectedOutputs(values)
@@ -1257,6 +1300,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     setReadinessState((current) => (
       current.result ? { ...current, stale: true } : current
     ))
+    readinessEvaluationRef.current = null
   }
   const inputStepProps = {
     actions: workspaceActions,
@@ -1337,6 +1381,10 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         )}
     </AgentInputWizard>
   )
+  const reviewSpecification = () => {
+    if (activeSection === 'ALL') setStep(0)
+    else onNavigateNode?.('SPECIFICATION_VERIFICATION')
+  }
 
   return (
     <div className="space-y-5">
@@ -1376,7 +1424,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
           <ReadinessReview
             state={readinessState}
             onAdapt={adaptToSupportedStack}
-            onBack={() => setStep(0)}
+            onBack={reviewSpecification}
           />
         </>
       )}
@@ -1387,7 +1435,8 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
           errors={errors}
           onCheck={checkReadinessFromPanel}
           onAdapt={adaptToSupportedStack}
-          onBack={() => setStep(0)}
+          onBack={reviewSpecification}
+          specificationStatus={consolidationState.result?.status}
         />
       ) : null}
 

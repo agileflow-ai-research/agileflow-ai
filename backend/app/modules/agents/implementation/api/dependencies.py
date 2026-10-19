@@ -51,6 +51,12 @@ from app.modules.agents.implementation.preparation.readiness.service import (
     ReadinessUploadTypeError,
     StaleReadinessResolutionError,
 )
+from app.modules.agents.implementation.preparation.readiness.trusted.service import (
+    TrustedReadinessService,
+)
+from app.modules.agents.implementation.preparation.readiness.trusted.storage import (
+    TrustedReadinessStorage,
+)
 from app.modules.agents.implementation.inputs.upload.service import (
     ImplementationInputService,
     WrongAgentProjectTypeError,
@@ -465,6 +471,26 @@ def get_implementation_readiness_service(
         storage,
         DocumentExtractionService(standalone_service, storage),
         binding_repository,
+    )
+
+
+def get_trusted_readiness_storage() -> TrustedReadinessStorage:
+    return TrustedReadinessStorage(settings.agent3_upload_root)
+
+
+def get_trusted_readiness_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    consolidation_service: Annotated[
+        ProjectConsolidationService, Depends(get_project_consolidation_service)
+    ],
+    storage: Annotated[
+        TrustedReadinessStorage, Depends(get_trusted_readiness_storage)
+    ],
+) -> TrustedReadinessService:
+    return TrustedReadinessService(
+        standalone_service, consolidation_service, storage
     )
 
 

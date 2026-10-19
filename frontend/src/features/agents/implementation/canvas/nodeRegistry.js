@@ -58,7 +58,9 @@ export function deriveWorkflowPresentation(snapshot) {
 
   let readinessStatus = WORKFLOW_NODE_STATES.NOT_STARTED
   if (readiness?.status === 'evaluating') readinessStatus = WORKFLOW_NODE_STATES.RUNNING
-  else if (readiness?.error || readiness?.stale) readinessStatus = WORKFLOW_NODE_STATES.NEEDS_ATTENTION
+  else if (readiness?.error) readinessStatus = WORKFLOW_NODE_STATES.FAILED
+  else if (consolidation?.status && consolidation.status !== 'READY') readinessStatus = WORKFLOW_NODE_STATES.BLOCKED
+  else if (readiness?.stale) readinessStatus = WORKFLOW_NODE_STATES.BLOCKED
   else if (readiness?.result?.status === 'READY') readinessStatus = WORKFLOW_NODE_STATES.COMPLETE
   else if (readiness?.result?.status === 'READY_WITH_WARNINGS') readinessStatus = WORKFLOW_NODE_STATES.NEEDS_ATTENTION
   else if (readiness?.result?.status === 'NOT_READY') readinessStatus = WORKFLOW_NODE_STATES.BLOCKED

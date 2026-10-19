@@ -9,6 +9,7 @@ import {
   createGitHubRepository,
   deleteImplementationInputFile,
   evaluateImplementationReadiness,
+  evaluateTrustedImplementationReadiness,
   extractImplementationDocument,
   getGitHubConnection,
   getImplementationDocumentChunks,
@@ -27,6 +28,7 @@ import {
   getProjectConsolidationStatus,
   getProjectConflicts,
   getTrustedProjectSpecification,
+  getTrustedImplementationReadiness,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
@@ -179,6 +181,21 @@ describe('implementationAgentService', () => {
     evaluateImplementationReadiness('AGP-003', request)
     expect(apiClient.post).toHaveBeenCalledWith(
       '/agents/implementation/AGP-003/readiness/evaluate',
+      request,
+      { authenticated: true },
+    )
+  })
+
+  it('uses distinct trusted project readiness endpoints with only selected outputs and decisions', () => {
+    const request = { selected_outputs: ['BACKEND_CODE'] }
+    getTrustedImplementationReadiness('AGP-003')
+    evaluateTrustedImplementationReadiness('AGP-003', request)
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/trusted-readiness',
+      { authenticated: true },
+    )
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/trusted-readiness/evaluate',
       request,
       { authenticated: true },
     )

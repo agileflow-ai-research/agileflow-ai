@@ -245,6 +245,21 @@ export function evaluateImplementationReadiness(agentProjectId, request) {
   )
 }
 
+export function getTrustedImplementationReadiness(agentProjectId) {
+  return apiClient.get(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/trusted-readiness`,
+    { authenticated: true },
+  )
+}
+
+export function evaluateTrustedImplementationReadiness(agentProjectId, request) {
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/trusted-readiness/evaluate`,
+    request,
+    { authenticated: true },
+  )
+}
+
 export function connectGitHub(agentProjectId) {
   return apiClient.post(
     `/agents/implementation/${encodeURIComponent(agentProjectId)}/github/connect`,

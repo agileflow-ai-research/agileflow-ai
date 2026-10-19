@@ -83,6 +83,11 @@ def _classify(category: str, value: str) -> tuple[str | None, bool | None]:
     return None, None
 
 
+def classify_stack_value(category: str, value: str) -> tuple[str | None, bool | None]:
+    """Apply the legacy PP1 stack semantics to an authoritative trusted value."""
+    return _classify(category, value)
+
+
 def _structured_declarations(value: Any, artifact: NormalizedArtifact):
     if not isinstance(value, dict):
         return

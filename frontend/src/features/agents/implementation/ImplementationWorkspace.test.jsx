@@ -9,7 +9,7 @@ import {
   connectGitHub,
   createGitHubRepository,
   deleteImplementationInputFile,
-  evaluateImplementationReadiness,
+  evaluateTrustedImplementationReadiness,
   extractImplementationDocument,
   getGitHubConnection,
   getImplementationDocumentChunks,
@@ -27,6 +27,7 @@ import {
   getProjectConsolidationStatus,
   getProjectConflicts,
   getTrustedProjectSpecification,
+  getTrustedImplementationReadiness,
   prepareImplementationDocumentChunks,
   runImplementationRuleDetector,
   runImplementationZeroShotClassifier,
@@ -52,7 +53,8 @@ vi.mock('./services/implementationAgentService.js', () => ({
   saveImplementationHumanReview: vi.fn(),
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
-  evaluateImplementationReadiness: vi.fn(),
+  evaluateTrustedImplementationReadiness: vi.fn(),
+  getTrustedImplementationReadiness: vi.fn(),
   extractImplementationDocument: vi.fn(),
   getImplementationDocumentExtraction: vi.fn(),
   getImplementationDocumentChunks: vi.fn(),
@@ -434,6 +436,7 @@ function zeroShotResult(overrides = {}) {
 
 function readinessResult(overrides = {}) {
   return {
+    readiness_id: 'RDY-' + 'A'.repeat(24),
     status: 'READY_WITH_WARNINGS',
     input_fingerprint: 'b'.repeat(64),
     summary: { errors: 0, warnings: 1, info: 1 },
@@ -442,7 +445,9 @@ function readinessResult(overrides = {}) {
       tests: false, visual_context_pending: false,
     },
     selected_outputs: ['BACKEND_CODE'],
-    output_readiness: [{ output: 'BACKEND_CODE', ready: true, findings: ['RF-1111111111111111'] }],
+    output_readiness: [{ output: 'BACKEND_CODE', status: 'READY_WITH_WARNINGS', ready: true, findings: ['RF-1111111111111111'] }],
+    policy_version: '1', project_specification_id: 'TPS-' + 'A'.repeat(24),
+    selected_outputs_digest: 'd'.repeat(64), current: true,
     effective_stack: {
       frontend: 'React + Vite', styling: 'Plain CSS', backend: 'Node.js + Express.js',
       database: 'MySQL', language: 'JavaScript', api_style: 'REST',
@@ -506,6 +511,7 @@ describe('ImplementationWorkspace', () => {
     window.history.replaceState({}, '', '/')
     getGitHubConnection.mockResolvedValue({ data: { connected: false } })
     getGitHubRepository.mockResolvedValue({ data: { created: false } })
+    getTrustedImplementationReadiness.mockRejectedValue({ status: 404 })
     getPreparationStatus.mockResolvedValue({
       data: {
         status: 'NOT_STARTED', source_count: 0, eligible_source_count: 0,
@@ -579,7 +585,7 @@ describe('ImplementationWorkspace', () => {
     getImplementationCanonicalArtifacts.mockResolvedValue({ data: canonicalArtifactResult() })
     buildImplementationSemanticArtifacts.mockResolvedValue({ data: semanticArtifactResult() })
     getImplementationSemanticArtifacts.mockResolvedValue({ data: semanticArtifactResult() })
-    evaluateImplementationReadiness.mockResolvedValue({ data: readinessResult() })
+    evaluateTrustedImplementationReadiness.mockResolvedValue({ data: readinessResult() })
   })
 
   it('prepares, summarizes, reviews, and force-rebuilds semantic chunks', async () => {
@@ -948,13 +954,12 @@ describe('ImplementationWorkspace', () => {
     ;['React + Vite', 'Plain CSS', 'Node.js + Express.js', 'MySQL', 'JavaScript', 'REST'].forEach((value) => {
       expect(screen.getByText(value)).toBeInTheDocument()
     })
-    expect(screen.getByText('BACKEND_CODE: Ready')).toBeInTheDocument()
+    expect(screen.getByText('Backend Code')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Start Agent|Run Agent/i })).not.toBeInTheDocument()
-    expect(evaluateImplementationReadiness).toHaveBeenCalledWith(
+    expect(evaluateTrustedImplementationReadiness).toHaveBeenCalledWith(
       'AGP-003',
       expect.objectContaining({
         selected_outputs: ['BACKEND_CODE'],
-        document_upload_ids: [], image_upload_ids: [], human_resolutions: [],
       }),
     )
   })
@@ -962,7 +967,7 @@ describe('ImplementationWorkspace', () => {
   it('shows evaluating, READY, and NOT_READY states truthfully', async () => {
     const user = userEvent.setup()
     let resolveEvaluation
-    evaluateImplementationReadiness.mockReturnValueOnce(new Promise((resolve) => { resolveEvaluation = resolve }))
+    evaluateTrustedImplementationReadiness.mockReturnValueOnce(new Promise((resolve) => { resolveEvaluation = resolve }))
     render(<ImplementationWorkspace project={project} />)
     await reachWorkspaceReview(user)
     await user.click(screen.getByRole('button', { name: 'Check Implementation Readiness' }))
@@ -970,12 +975,12 @@ describe('ImplementationWorkspace', () => {
     resolveEvaluation({ data: readinessResult({
       status: 'READY', summary: { errors: 0, warnings: 0, info: 1 }, findings: [],
     }) })
-    expect(await screen.findByText('READY')).toBeInTheDocument()
+    expect((await screen.findAllByText('READY')).length).toBeGreaterThan(0)
   })
 
   it('renders blocking findings and returns to inputs without starting execution', async () => {
     const user = userEvent.setup()
-    evaluateImplementationReadiness.mockResolvedValue({ data: readinessResult({
+    evaluateTrustedImplementationReadiness.mockResolvedValue({ data: readinessResult({
       status: 'NOT_READY', summary: { errors: 1, warnings: 0, info: 0 },
       output_readiness: [{ output: 'BACKEND_CODE', ready: false, findings: ['RF-3333333333333333'] }],
       findings: [{
@@ -991,46 +996,46 @@ describe('ImplementationWorkspace', () => {
     await user.click(screen.getByRole('button', { name: 'Check Implementation Readiness' }))
     expect(await screen.findByText('NOT READY')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Blocking Issues' })).toBeInTheDocument()
-    expect(screen.getByText('API_SPECIFICATION_REQUIRED')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Back to Inputs' }))
+    expect(screen.getByText(/API_SPECIFICATION_REQUIRED/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Review Specification' }))
     expect(screen.getByRole('heading', { name: 'Implementation Inputs' })).toBeInTheDocument()
   })
 
   it('re-evaluates an explicit prototype-stack adaptation and records human approval', async () => {
     const user = userEvent.setup()
     const conflict = {
-      finding_id: 'RF-4444444444444444', code: 'UNSUPPORTED_PROTOTYPE_TECHNOLOGY', severity: 'ERROR',
+      finding_id: 'RF-4444444444444444', code: 'UNSUPPORTED_PROTOTYPE_TECHNOLOGY', issue_code: 'UNSUPPORTED_IMPLEMENTATION_STACK', severity: 'ERROR',
       title: 'Unsupported Backend Technology', message: 'FastAPI is outside the PP1 stack.',
       affected_outputs: ['BACKEND_CODE'], sources: [], requires_human_decision: true,
-      allowed_resolutions: ['ADAPT_TO_SUPPORTED_STACK'], category: 'backend',
+      allowed_resolutions: ['ADAPT_TO_SUPPORTED_STACK'], resolution_action: 'ADAPT_TO_SUPPORTED_STACK', category: 'backend',
       provided_value: 'FastAPI', supported_value: 'Node.js + Express.js', resolved: false, resolution: null,
     }
-    evaluateImplementationReadiness
+    evaluateTrustedImplementationReadiness
       .mockResolvedValueOnce({ data: readinessResult({
         status: 'NOT_READY', summary: { errors: 1, warnings: 0, info: 0 }, findings: [conflict],
+        stack_adaptation: { approved: false, fingerprint: 'e'.repeat(64) },
       }) })
       .mockResolvedValueOnce({ data: readinessResult({
         findings: [{ ...conflict, resolved: true, resolution: {
           finding_id: conflict.finding_id, decision: 'ADAPT_TO_SUPPORTED_STACK',
           note: 'Approved for the AgileFlow PP1 prototype.',
-        } }],
+        } }], stack_adaptation: { approved: true, fingerprint: 'e'.repeat(64) },
       }) })
     render(<ImplementationWorkspace project={project} />)
     await reachWorkspaceReview(user)
     await user.click(screen.getByRole('button', { name: 'Check Implementation Readiness' }))
-    expect(await screen.findByText('Provided: FastAPI')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Adapt to AgileFlow PP1 Stack' }))
-    await waitFor(() => expect(evaluateImplementationReadiness).toHaveBeenCalledTimes(2))
-    expect(evaluateImplementationReadiness.mock.calls[1][1]).toEqual(expect.objectContaining({
-      input_fingerprint: 'b'.repeat(64),
-      human_resolutions: [expect.objectContaining({
-        finding_id: conflict.finding_id, decision: 'ADAPT_TO_SUPPORTED_STACK',
-      })],
+    expect(await screen.findByText('Requested: FastAPI')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Adapt to supported stack' }))
+    await waitFor(() => expect(evaluateTrustedImplementationReadiness).toHaveBeenCalledTimes(2))
+    expect(evaluateTrustedImplementationReadiness.mock.calls[1][1]).toEqual(expect.objectContaining({
+      stack_adaptation: expect.objectContaining({
+        expected_fingerprint: 'e'.repeat(64), decision: 'ADAPT_TO_SUPPORTED_STACK',
+      }),
     }))
-    expect(await screen.findByText(/Human decision recorded/)).toBeInTheDocument()
+    expect(await screen.findByText(/Human-approved implementation adaptation recorded/)).toBeInTheDocument()
   })
 
-  it('marks readiness stale after text or output changes', async () => {
+  it('does not let unsaved raw text changes redefine trusted readiness', async () => {
     const user = userEvent.setup()
     render(<ImplementationWorkspace project={project} />)
     await reachWorkspaceReview(user)
@@ -1039,7 +1044,7 @@ describe('ImplementationWorkspace', () => {
     await user.click(screen.getByRole('button', { name: 'Back' }))
     await user.click(screen.getByRole('button', { name: 'Back' }))
     await user.type(screen.getByLabelText(/Content/), ' Changed')
-    expect(screen.getByRole('alert')).toHaveTextContent('Inputs changed')
+    expect(screen.queryByText(/no longer current/i)).not.toBeInTheDocument()
   })
 
   it('marks readiness stale after selected outputs change', async () => {
@@ -1050,7 +1055,7 @@ describe('ImplementationWorkspace', () => {
     await screen.findByText('READY WITH WARNINGS')
     await user.click(screen.getByRole('button', { name: 'Back' }))
     await user.click(screen.getByRole('checkbox', { name: 'Frontend Code' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Inputs changed')
+    expect(screen.getByRole('alert')).toHaveTextContent('trusted specification or selected outputs changed')
   })
 
   it('marks readiness stale when an uploaded document is removed', async () => {
@@ -1071,12 +1076,12 @@ describe('ImplementationWorkspace', () => {
     await user.click(screen.getByRole('button', { name: 'Back' }))
     await user.click(screen.getByRole('button', { name: 'Back' }))
     await user.click(screen.getByRole('button', { name: 'Remove Input' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Inputs changed')
+    expect(screen.getByRole('alert')).toHaveTextContent('trusted specification or selected outputs changed')
   })
 
   it('shows readiness API failures without claiming a readiness status', async () => {
     const user = userEvent.setup()
-    evaluateImplementationReadiness.mockRejectedValue({
+    evaluateTrustedImplementationReadiness.mockRejectedValue({
       errors: [{ message: 'Readiness dependencies are unavailable' }],
     })
     render(<ImplementationWorkspace project={project} />)
@@ -1086,9 +1091,9 @@ describe('ImplementationWorkspace', () => {
     expect(screen.queryByText('READY WITH WARNINGS')).not.toBeInTheDocument()
   })
 
-  it('reports image context as pending without claiming image understanding', async () => {
+  it('does not send raw image references to trusted readiness', async () => {
     const user = userEvent.setup()
-    evaluateImplementationReadiness.mockResolvedValue({ data: readinessResult({
+    evaluateTrustedImplementationReadiness.mockResolvedValue({ data: readinessResult({
       coverage: {
         requirements: true, design: false, implementation: false,
         tests: false, visual_context_pending: true,
@@ -1115,8 +1120,56 @@ describe('ImplementationWorkspace', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Frontend Code' }))
     await user.click(screen.getByRole('button', { name: 'Review Workspace' }))
     await user.click(screen.getByRole('button', { name: 'Check Implementation Readiness' }))
-    expect(await screen.findByText('Pending image analysis')).toBeInTheDocument()
-    expect(screen.getByText('Visual input is attached but has not yet been interpreted.')).toBeInTheDocument()
+    await waitFor(() => expect(evaluateTrustedImplementationReadiness).toHaveBeenCalled())
+    expect(evaluateTrustedImplementationReadiness).toHaveBeenLastCalledWith(
+      'AGP-003', { selected_outputs: ['FRONTEND_CODE'] },
+    )
+  })
+
+  it('restores a current trusted readiness snapshot without posting again', async () => {
+    const current = readinessResult()
+    getTrustedImplementationReadiness.mockResolvedValue({ data: current })
+    getProjectConsolidationStatus.mockResolvedValue({
+      data: { status: 'READY', source_set_digest: 'b'.repeat(64), pending_conflict_count: 0, issue_count: 0, issues: [] },
+    })
+    getTrustedProjectSpecification.mockResolvedValue({
+      data: { project_specification_id: current.project_specification_id, status: 'READY', categories: {} },
+    })
+    render(<ImplementationWorkspace project={project} activeSection="PROJECT_SOURCES" />)
+    expect(await screen.findByRole('checkbox', { name: 'Backend Code' })).toBeChecked()
+    await waitFor(() => expect(getTrustedImplementationReadiness).toHaveBeenCalledOnce())
+    expect(evaluateTrustedImplementationReadiness).not.toHaveBeenCalled()
+  })
+
+  it('auto-evaluates once when the trusted specification is ready and an output is selected', async () => {
+    const user = userEvent.setup()
+    getProjectConsolidationStatus.mockResolvedValue({
+      data: { status: 'READY', source_set_digest: 'b'.repeat(64), pending_conflict_count: 0, issue_count: 0, issues: [] },
+    })
+    render(<ImplementationWorkspace project={project} />)
+    await user.type(screen.getByLabelText(/Content/), 'Users can create bookings.')
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Backend Code' }))
+    await waitFor(() => expect(evaluateTrustedImplementationReadiness).toHaveBeenCalledOnce())
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    expect(evaluateTrustedImplementationReadiness).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not loop after automatic trusted readiness failure', async () => {
+    const user = userEvent.setup()
+    getProjectConsolidationStatus.mockResolvedValue({
+      data: { status: 'READY', source_set_digest: 'b'.repeat(64), pending_conflict_count: 0, issue_count: 0, issues: [] },
+    })
+    evaluateTrustedImplementationReadiness.mockRejectedValue({ errors: [{ message: 'Evaluation unavailable' }] })
+    render(<ImplementationWorkspace project={project} />)
+    await user.type(screen.getByLabelText(/Content/), 'Users can create bookings.')
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Backend Code' }))
+    await waitFor(() => expect(evaluateTrustedImplementationReadiness).toHaveBeenCalledOnce())
+    await user.click(screen.getByRole('button', { name: 'Review Workspace' }))
+    await screen.findByText('Evaluation unavailable')
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    expect(evaluateTrustedImplementationReadiness).toHaveBeenCalledTimes(1)
   })
 
   it('preserves TEXT input, exact outputs, review, and no execution behavior', async () => {

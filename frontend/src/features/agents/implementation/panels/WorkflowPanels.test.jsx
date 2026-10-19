@@ -311,7 +311,7 @@ describe('Agent 3 workflow panels', () => {
 
     expect(screen.getByText('READY WITH WARNINGS')).toBeInTheDocument()
     expect(screen.getByText('Tests missing')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Check Implementation Readiness' }))
+    await user.click(screen.getByRole('button', { name: 'Re-evaluate Readiness' }))
     expect(onCheck).toHaveBeenCalledOnce()
   })
 
