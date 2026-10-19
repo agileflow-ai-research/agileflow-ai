@@ -5,6 +5,8 @@ import { ARTIFACT_GROUPS, MAX_SOURCES_PER_PROJECT } from '../../constants/inputs
 import {
   createTestGenerationTextInput,
   deleteTestGenerationInput,
+  extractTestGenerationSource,
+  getTestGenerationExtraction,
   listTestGenerationInputs,
   uploadTestGenerationInputFile,
 } from '../../services/testingValidationAgentService.js'
@@ -30,14 +32,27 @@ function TestGenerationInputsStep({ agentProjectId }) {
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
   const [removingId, setRemovingId] = useState(null)
+  const [extractions, setExtractions] = useState({})
+  const [extractingId, setExtractingId] = useState(null)
+  const [extractErrors, setExtractErrors] = useState({})
 
   useEffect(() => {
     let active = true
     listTestGenerationInputs(agentProjectId)
       .then((response) => {
         if (!active) return
-        setSources(response.data ?? [])
+        const listed = response.data ?? []
+        setSources(listed)
         setLoadState('ready')
+        listed
+          .filter((item) => item.extraction_status)
+          .forEach((item) => {
+            getTestGenerationExtraction(agentProjectId, item.source_id)
+              .then((extracted) => {
+                if (active) setExtractions((current) => ({ ...current, [item.source_id]: extracted.data }))
+              })
+              .catch(() => {})
+          })
       })
       .catch((requestError) => {
         if (!active) return
@@ -63,6 +78,26 @@ function TestGenerationInputsStep({ agentProjectId }) {
       return false
     } finally {
       setAdding(false)
+    }
+  }
+
+  async function extractSource(sourceId, { force }) {
+    setExtractingId(sourceId)
+    setExtractErrors((current) => ({ ...current, [sourceId]: '' }))
+    try {
+      const response = await extractTestGenerationSource(agentProjectId, sourceId, { force })
+      const result = response.data
+      setExtractions((current) => ({ ...current, [sourceId]: result }))
+      setSources((current) => current.map((item) => (
+        item.source_id === sourceId ? { ...item, extraction_status: result.status } : item
+      )))
+    } catch (requestError) {
+      setExtractErrors((current) => ({
+        ...current,
+        [sourceId]: messageFrom(requestError, 'The document could not be extracted.'),
+      }))
+    } finally {
+      setExtractingId(null)
     }
   }
 
@@ -126,7 +161,11 @@ function TestGenerationInputsStep({ agentProjectId }) {
                   source={source}
                   index={indexOf(source.source_id)}
                   removing={removingId === source.source_id}
-                  disabled={adding || removingId !== null}
+                  disabled={adding || removingId !== null || extractingId !== null}
+                  extraction={extractions[source.source_id]}
+                  extracting={extractingId === source.source_id}
+                  extractError={extractErrors[source.source_id]}
+                  onExtract={extractSource}
                   onRemove={removeSource}
                 />
               ))}

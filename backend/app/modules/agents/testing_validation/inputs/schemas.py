@@ -9,6 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.common.document_extraction.schemas import ExtractionStatus
 from app.common.status import AgentRunMode
 from app.modules.agents.testing_validation.contracts.enums import (
     Agent4ArtifactType,
@@ -42,6 +43,7 @@ class TestGenerationSource(BaseModel):
     mime_type: str | None = None
     size_bytes: int | None = Field(default=None, gt=0)
     sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    extraction_status: ExtractionStatus | None = None
     created_at: datetime
 
 

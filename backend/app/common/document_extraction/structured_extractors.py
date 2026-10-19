@@ -4,8 +4,8 @@ from typing import Any
 
 import yaml
 
-from app.modules.agents.implementation.inputs.extraction import constants
-from app.modules.agents.implementation.inputs.extraction.schemas import (
+from app.common.document_extraction.constants import DEFAULT_LIMITS, ExtractionLimits
+from app.common.document_extraction.schemas import (
     ExtractionStatus,
     ExtractionWarning,
     ExtractionWarningCode,
@@ -21,15 +21,20 @@ def _normalize_text(value: str) -> str:
     return value.replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
-def _bounded(value: str):
-    if len(value) <= constants.MAX_EXTRACTED_CHARACTERS:
+def _bounded(value: str, limit: int):
+    if len(value) <= limit:
         return value, False
-    return value[: constants.MAX_EXTRACTED_CHARACTERS], True
+    return value[:limit], True
 
 
-def extract_text(path: Path, *, markdown: bool = False):
+def extract_text(
+    path: Path,
+    *,
+    markdown: bool = False,
+    limits: ExtractionLimits = DEFAULT_LIMITS,
+):
     text = _normalize_text(path.read_text(encoding="utf-8-sig"))
-    bounded, truncated = _bounded(text)
+    bounded, truncated = _bounded(text, limits.max_extracted_characters)
     warnings: list[ExtractionWarning] = []
     if not bounded:
         status = ExtractionStatus.FAILED
@@ -83,7 +88,12 @@ def _is_empty(value: Any) -> bool:
     return value is None or value == "" or value == [] or value == {}
 
 
-def extract_structured(path: Path, *, yaml_document: bool = False):
+def extract_structured(
+    path: Path,
+    *,
+    yaml_document: bool = False,
+    limits: ExtractionLimits = DEFAULT_LIMITS,
+):
     source = path.read_text(encoding="utf-8-sig")
     try:
         value = yaml.safe_load(source) if yaml_document else json.loads(source)
@@ -107,7 +117,7 @@ def extract_structured(path: Path, *, yaml_document: bool = False):
             ],
         )
 
-    bounded, truncated = _bounded(normalized)
+    bounded, truncated = _bounded(normalized, limits.max_extracted_characters)
     warnings: list[ExtractionWarning] = []
     if _is_empty(value):
         status = ExtractionStatus.FAILED

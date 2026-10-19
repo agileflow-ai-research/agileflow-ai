@@ -2,8 +2,8 @@ from pathlib import Path
 
 import fitz
 
-from app.modules.agents.implementation.inputs.extraction import constants
-from app.modules.agents.implementation.inputs.extraction.schemas import (
+from app.common.document_extraction.constants import DEFAULT_LIMITS, ExtractionLimits
+from app.common.document_extraction.schemas import (
     ExtractionStatus,
     ExtractionWarning,
     ExtractionWarningCode,
@@ -18,7 +18,7 @@ def _normalize_text(value: str) -> str:
     return value.replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
-def extract_pdf(path: Path):
+def extract_pdf(path: Path, *, limits: ExtractionLimits = DEFAULT_LIMITS):
     pages: list[PDFPage] = []
     combined_parts: list[str] = []
     warnings: list[ExtractionWarning] = []
@@ -28,19 +28,19 @@ def extract_pdf(path: Path):
 
     with fitz.open(path) as document:
         page_count = document.page_count
-        process_count = min(page_count, constants.MAX_PDF_PAGES)
-        if page_count > constants.MAX_PDF_PAGES:
+        process_count = min(page_count, limits.max_pdf_pages)
+        if page_count > limits.max_pdf_pages:
             truncated = True
             warnings.append(
                 ExtractionWarning(
                     code=ExtractionWarningCode.CONTENT_TRUNCATED,
                     message=(
-                        f"Only the first {constants.MAX_PDF_PAGES} PDF pages "
+                        f"Only the first {limits.max_pdf_pages} PDF pages "
                         "were extracted."
                     ),
                 )
             )
-        remaining = constants.MAX_EXTRACTED_CHARACTERS
+        remaining = limits.max_extracted_characters
         for page_index in range(process_count):
             page_number = page_index + 1
             try:

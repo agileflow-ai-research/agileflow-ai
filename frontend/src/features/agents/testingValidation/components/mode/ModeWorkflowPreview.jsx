@@ -6,7 +6,7 @@ import {
 } from '../../constants/workspace.js'
 
 const workflowNotes = {
-  TEST_GENERATION: 'Inputs are available now. The later stages are not yet functional and do not run.',
+  TEST_GENERATION: 'Inputs and document extraction are available now. Later stages are not yet functional and do not run.',
   VALIDATION: 'Validation is a separate workflow with its own inputs and outputs. Its execution pipeline is not part of the current rebuild, and nothing in this preview runs code.',
 }
 

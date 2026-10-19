@@ -7,6 +7,8 @@ that the project is ACTIVE. Choosing a mode or adding inputs never creates an Ag
 from fastapi import UploadFile
 
 from app.common.status import AgentType
+from app.common.document_extraction.constants import EXTRACTOR_VERSION
+from app.common.document_extraction.schemas import ExtractionStatus
 from app.modules.agents.testing_validation.contracts.enums import (
     Agent4ArtifactType,
     Agent4InputSourceType,
@@ -51,7 +53,10 @@ class TestGenerationInputService:
 
     def list_sources(self, agent_project_id: str, current_user: UserPublicResponse) -> list[TestGenerationSource]:
         project = self._require_project(agent_project_id, current_user, active=False)
-        return [self._public(record) for record in self._records(project, current_user)]
+        return [
+            self._with_extraction_status(project, record, self._public(record))
+            for record in self._records(project, current_user)
+        ]
 
     def add_text(
         self,
@@ -159,6 +164,23 @@ class TestGenerationInputService:
         existing_text = sum(len(item.get("text_content") or "") for item in records)
         if existing_text + added_text_characters > MAX_TOTAL_TEXT_CHARACTERS:
             raise InputValidationError("Manual text sources exceed the project total size limit")
+
+    def _with_extraction_status(self, project: AgentProject, record: dict, source: TestGenerationSource) -> TestGenerationSource:
+        """Report extraction state only for a sidecar that matches the current file and extractor version."""
+        if source.source_type is not Agent4InputSourceType.DOCUMENT:
+            return source
+        payload = self._storage.read_extraction(project.agent_project_id, source.source_id)
+        if (
+            payload is None
+            or payload.get("source_sha256") != record.get("sha256")
+            or payload.get("extractor_version") != EXTRACTOR_VERSION
+        ):
+            return source
+        try:
+            status = ExtractionStatus(payload.get("status"))
+        except ValueError:
+            return source
+        return source.model_copy(update={"extraction_status": status})
 
     @staticmethod
     def _public(record: dict) -> TestGenerationSource:

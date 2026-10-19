@@ -8,8 +8,8 @@ from docx.text.paragraph import Paragraph
 from docx.oxml.table import CT_Tbl
 from docx.oxml.text.paragraph import CT_P
 
-from app.modules.agents.implementation.inputs.extraction import constants
-from app.modules.agents.implementation.inputs.extraction.schemas import (
+from app.common.document_extraction.constants import DEFAULT_LIMITS, ExtractionLimits
+from app.common.document_extraction.schemas import (
     DOCXBlock,
     DOCXBlockType,
     DOCXContent,
@@ -34,14 +34,14 @@ def _heading_level(paragraph: Paragraph) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def extract_docx(path: Path):
+def extract_docx(path: Path, *, limits: ExtractionLimits = DEFAULT_LIMITS):
     warnings: list[ExtractionWarning] = []
     with ZipFile(path) as archive:
         entries = archive.infolist()
         if (
-            len(entries) > constants.MAX_DOCX_ARCHIVE_ENTRIES
+            len(entries) > limits.max_docx_archive_entries
             or sum(entry.file_size for entry in entries)
-            > constants.MAX_DOCX_UNCOMPRESSED_BYTES
+            > limits.max_docx_uncompressed_bytes
         ):
             raise ValueError("DOCX expanded content exceeds the extraction safety limit")
         names = {entry.filename for entry in entries}
@@ -64,7 +64,7 @@ def extract_docx(path: Path):
     headings = 0
     paragraphs = 0
     tables = 0
-    remaining = constants.MAX_EXTRACTED_CHARACTERS
+    remaining = limits.max_extracted_characters
     truncated = False
 
     for block_index, child in enumerate(document.element.body.iterchildren(), 1):

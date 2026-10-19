@@ -4,28 +4,17 @@ from threading import Lock
 
 from pydantic import ValidationError
 
+from app.common.document_extraction.constants import ExtractionLimits
+from app.common.document_extraction.dispatch import DOCUMENT_TYPES, failed_outcome
+from app.common.document_extraction.docx_extractor import extract_docx
+from app.common.document_extraction.pdf_extractor import extract_pdf
+from app.common.document_extraction.structured_extractors import extract_structured, extract_text
+from app.modules.agents.implementation.inputs.extraction import constants
 from app.modules.agents.implementation.inputs.extraction.constants import EXTRACTOR_VERSION
-from app.modules.agents.implementation.inputs.extraction.docx_extractor import extract_docx
-from app.modules.agents.implementation.inputs.extraction.pdf_extractor import extract_pdf
 from app.modules.agents.implementation.inputs.extraction.schemas import (
-    DOCXContent,
-    DOCXMetrics,
     DocumentExtractionResult,
     DocumentType,
     ExtractionStatus,
-    ExtractionWarning,
-    ExtractionWarningCode,
-    MarkdownContent,
-    PDFContent,
-    PDFMetrics,
-    StructuredContent,
-    StructuredMetrics,
-    TextContent,
-    TextMetrics,
-)
-from app.modules.agents.implementation.inputs.extraction.structured_extractors import (
-    extract_structured,
-    extract_text,
 )
 from app.modules.agents.implementation.contracts.schemas import ImplementationInputSourceType
 from app.modules.agents.implementation.inputs.upload.service import require_implementation_project
@@ -49,19 +38,20 @@ class ExtractionStorageError(RuntimeError):
     pass
 
 
+def _current_limits() -> ExtractionLimits:
+    # Read at call time so tuned Agent 3 constants apply without re-importing the shared package.
+    return ExtractionLimits(
+        max_pdf_pages=constants.MAX_PDF_PAGES,
+        max_extracted_characters=constants.MAX_EXTRACTED_CHARACTERS,
+        max_docx_uncompressed_bytes=constants.MAX_DOCX_UNCOMPRESSED_BYTES,
+        max_docx_archive_entries=constants.MAX_DOCX_ARCHIVE_ENTRIES,
+    )
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-DOCUMENT_TYPES = {
-    ".pdf": DocumentType.PDF,
-    ".docx": DocumentType.DOCX,
-    ".txt": DocumentType.TXT,
-    ".md": DocumentType.MD,
-    ".json": DocumentType.JSON,
-    ".yaml": DocumentType.YAML,
-    ".yml": DocumentType.YAML,
-}
 
 
 class DocumentExtractionService:
@@ -163,64 +153,22 @@ class DocumentExtractionService:
 
     @staticmethod
     def _dispatch(staged: StagedUpload, document_type: DocumentType):
+        limits = _current_limits()
         if document_type is DocumentType.PDF:
-            return extract_pdf(staged.file_path)
+            return extract_pdf(staged.file_path, limits=limits)
         if document_type is DocumentType.DOCX:
-            return extract_docx(staged.file_path)
+            return extract_docx(staged.file_path, limits=limits)
         if document_type is DocumentType.TXT:
-            return extract_text(staged.file_path)
+            return extract_text(staged.file_path, limits=limits)
         if document_type is DocumentType.MD:
-            return extract_text(staged.file_path, markdown=True)
+            return extract_text(staged.file_path, markdown=True, limits=limits)
         if document_type is DocumentType.JSON:
-            return extract_structured(staged.file_path)
-        return extract_structured(staged.file_path, yaml_document=True)
+            return extract_structured(staged.file_path, limits=limits)
+        return extract_structured(staged.file_path, yaml_document=True, limits=limits)
 
     @staticmethod
     def _failed_payload(document_type: DocumentType):
-        warning = ExtractionWarning(
-            code=ExtractionWarningCode.EXTRACTION_ERROR,
-            message="The document could not be extracted safely.",
-        )
-        if document_type is DocumentType.PDF:
-            return (
-                ExtractionStatus.FAILED,
-                PDFContent(pages=[], combined_text=""),
-                PDFMetrics(
-                    page_count=0,
-                    processed_page_count=0,
-                    pages_with_text=0,
-                    pages_without_text=0,
-                    extracted_character_count=0,
-                ),
-                [warning],
-            )
-        if document_type is DocumentType.DOCX:
-            return (
-                ExtractionStatus.FAILED,
-                DOCXContent(blocks=[], combined_text=""),
-                DOCXMetrics(
-                    block_count=0,
-                    paragraph_count=0,
-                    heading_count=0,
-                    table_count=0,
-                    extracted_character_count=0,
-                ),
-                [warning],
-            )
-        if document_type is DocumentType.MD:
-            content = MarkdownContent(markdown="", combined_text="")
-            metrics = TextMetrics(extracted_character_count=0, line_count=0)
-        elif document_type is DocumentType.TXT:
-            content = TextContent(text="", combined_text="")
-            metrics = TextMetrics(extracted_character_count=0, line_count=0)
-        else:
-            content = StructuredContent(
-                structured_content=None, normalized_text=""
-            )
-            metrics = StructuredMetrics(
-                root_type="NULL", extracted_character_count=0
-            )
-        return ExtractionStatus.FAILED, content, metrics, [warning]
+        return failed_outcome(document_type)
 
     @staticmethod
     def _load_valid_cache(

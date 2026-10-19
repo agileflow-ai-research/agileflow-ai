@@ -32,6 +32,7 @@ from app.modules.agents.testing_validation.inputs.constants import (
 
 SOURCE_ID_PATTERN = re.compile(r"^(LOCAL|A4UP)-[0-9a-f]{32}$")
 STORAGE_DIRECTORY = "test-generation-inputs"
+EXTRACTION_SUFFIX = ".extracted.json"
 
 
 class InputValidationError(ValueError):
@@ -67,6 +68,8 @@ class TestGenerationInputStorage:
             return []
         records = []
         for path in directory.glob("*.json"):
+            if not SOURCE_ID_PATTERN.fullmatch(path.stem):
+                continue
             record = self._load(path)
             if record is None:
                 continue
@@ -90,6 +93,47 @@ class TestGenerationInputStorage:
             self._cleanup(partial, path)
             raise InputStorageError("Source record could not be stored") from exc
 
+    def load_record(self, agent_project_id: str, owner_user_id: str, source_id: str) -> dict | None:
+        if not SOURCE_ID_PATTERN.fullmatch(source_id):
+            return None
+        directory = self._project_directory(agent_project_id)
+        record = self._load(self._contained(directory, f"{source_id}.json"))
+        if record is None or record.get("owner_user_id") != owner_user_id:
+            return None
+        return record
+
+    def document_file_path(self, agent_project_id: str, source_id: str, extension: str) -> Path:
+        """The server-derived location of a stored file. Clients never supply this path."""
+        directory = self._project_directory(agent_project_id)
+        path = self._contained(directory, f"{source_id}{extension}")
+        if not path.is_file():
+            raise InputNotFoundError(source_id)
+        return path
+
+    def read_extraction(self, agent_project_id: str, source_id: str) -> dict | None:
+        if not SOURCE_ID_PATTERN.fullmatch(source_id):
+            return None
+        path = self._contained(self._project_directory(agent_project_id), f"{source_id}{EXTRACTION_SUFFIX}")
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return value if isinstance(value, dict) else None
+
+    def write_extraction(self, agent_project_id: str, source_id: str, payload: dict) -> None:
+        if not SOURCE_ID_PATTERN.fullmatch(source_id):
+            raise InputStorageError("Invalid source identity")
+        directory = self._project_directory(agent_project_id)
+        path = self._contained(directory, f"{source_id}{EXTRACTION_SUFFIX}")
+        partial = self._contained(directory, f"{source_id}{EXTRACTION_SUFFIX}.part")
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            partial.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+            partial.replace(path)
+        except (OSError, TypeError, ValueError) as exc:
+            self._cleanup(partial)
+            raise InputStorageError("Document extraction could not be cached") from exc
+
     def delete(self, agent_project_id: str, owner_user_id: str, source_id: str) -> None:
         if not SOURCE_ID_PATTERN.fullmatch(source_id):
             raise InputNotFoundError(source_id)
@@ -101,7 +145,7 @@ class TestGenerationInputStorage:
         extension = record.get("storage_extension")
         if extension:
             self._cleanup(self._contained(directory, f"{source_id}{extension}"))
-        self._cleanup(path)
+        self._cleanup(self._contained(directory, f"{source_id}{EXTRACTION_SUFFIX}"), path)
 
     # --- file bytes ---------------------------------------------------------
 

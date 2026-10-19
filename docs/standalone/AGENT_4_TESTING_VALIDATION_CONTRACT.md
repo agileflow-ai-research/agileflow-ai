@@ -586,7 +586,9 @@ Agent 3 currently owns working upload and document extraction infrastructure, lo
 - Agent 4 **must not** independently duplicate PDF, DOCX, TXT/MD, or JSON/YAML extraction.
 - The contract does not refactor Agent 3 in this revision.
 - Reuse will be handled as a **dedicated cross-agent integration step**, after team agreement. The likely target is a neutral shared package. No shared package is created by this contract revision.
-- Until then, the extraction and upload integration is an **architectural dependency**, and Agent 4 Mode A extraction work is blocked on that agreement.
+- Until then, the extraction and upload integration is an **architectural dependency**, and the Mode A extraction work is implemented against the shared primitive below.
+
+**Implementation status (Step 3):** the format extractors now live in the shared primitive `backend/app/common/document_extraction/`. They take explicit limits and have no agent, ownership, or route knowledge. Agent 3 and Agent 4 each keep a thin adapter: Agent 3 for its staged uploads and `A3UP` results, Agent 4 for its `A4UP` sources and `TEST_GENERATION` results. Upload registration is still Agent 4's own minimal module, and consolidating it with Agent 3's storage remains a separate decision.
 
 ### Secure Validation Execution Implementation
 

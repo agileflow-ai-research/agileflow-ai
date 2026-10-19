@@ -19,10 +19,12 @@ from app.modules.agents.testing_validation.engine import Agent4Engine
 from app.modules.agents.testing_validation.schemas import Agent4RunRequest, Agent4RunResult
 from app.modules.agents.testing_validation.service import Agent4Service, WrongAgentProjectTypeError
 from app.modules.agents.testing_validation.inputs.router import router as inputs_router
+from app.modules.agents.testing_validation.extraction.router import router as extraction_router
 
 
 router = APIRouter(prefix="/agents/testing-validation", tags=["testing-validation-agent"])
 router.include_router(inputs_router)
+router.include_router(extraction_router)
 
 
 def get_agent4_engine() -> Agent4Engine:

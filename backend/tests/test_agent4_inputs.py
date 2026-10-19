@@ -24,7 +24,7 @@ SOURCE_ID = re.compile(r"^(LOCAL|A4UP)-[0-9a-f]{32}$")
 PUBLIC_KEYS = {
     "source_id", "agent_project_id", "run_mode", "artifact_type", "source_type",
     "normally_supplied_by", "supplied_via", "label", "processing_status", "text_content",
-    "original_filename", "mime_type", "size_bytes", "sha256", "created_at",
+    "original_filename", "mime_type", "size_bytes", "sha256", "extraction_status", "created_at",
 }
 
 

@@ -171,7 +171,8 @@ describe('TEST_GENERATION input collection', () => {
     expect(uploadTestGenerationInputFile).toHaveBeenCalledWith('AGP-004', expect.objectContaining({
       artifact_type: 'WIREFRAMES', source_type: 'IMAGE',
     }))
-    expect(screen.queryByText(/Extract|Chunk|Classification|Rule-based/i)).not.toBeInTheDocument()
+    expect(within(card).queryByRole('button', { name: /Extract/ })).not.toBeInTheDocument()
+    expect(within(card).queryByText(/Chunk|Classification|Rule-based|Extracted/i)).not.toBeInTheDocument()
   })
 
   it('rejects blank text and missing USER_STORIES origin before calling the service', async () => {

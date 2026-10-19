@@ -40,3 +40,20 @@ export function deleteTestGenerationInput(agentProjectId, sourceId) {
     { authenticated: true },
   )
 }
+
+// Document extraction. These calls are project-level preparation and never create an AgentRun.
+export function extractTestGenerationSource(agentProjectId, sourceId, { force = false } = {}) {
+  const suffix = force ? '?force=true' : ''
+  return apiClient.post(
+    `${testGenerationInputsPath(agentProjectId)}/${encodeURIComponent(sourceId)}/extract${suffix}`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getTestGenerationExtraction(agentProjectId, sourceId) {
+  return apiClient.get(
+    `${testGenerationInputsPath(agentProjectId)}/${encodeURIComponent(sourceId)}/extraction`,
+    { authenticated: true },
+  )
+}

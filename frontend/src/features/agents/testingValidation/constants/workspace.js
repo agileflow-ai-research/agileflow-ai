@@ -17,6 +17,7 @@ export const AGENT4_MODES = {
 
 export const WORKFLOW_STATUS_LABELS = {
   ACTIVE: 'Active',
+  AVAILABLE: 'Available',
   COMING_NEXT: 'Coming next',
   NOT_AVAILABLE: 'Not available yet',
 }
@@ -24,7 +25,7 @@ export const WORKFLOW_STATUS_LABELS = {
 // Terminology follows contract v1.1. Only Inputs is functional in this step.
 export const TEST_GENERATION_WORKFLOW = [
   { id: 'inputs', label: 'Inputs', status: 'ACTIVE' },
-  { id: 'processing', label: 'Processing', status: 'NOT_AVAILABLE' },
+  { id: 'document-extraction', label: 'Document Extraction', status: 'AVAILABLE' },
   { id: 'testability', label: 'Testability', status: 'NOT_AVAILABLE' },
   { id: 'test-case-plan', label: 'Test Case Plan', status: 'NOT_AVAILABLE' },
   { id: 'human-review', label: 'Human Review', status: 'NOT_AVAILABLE' },
