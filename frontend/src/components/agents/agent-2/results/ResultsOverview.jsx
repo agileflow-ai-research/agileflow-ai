@@ -1,5 +1,6 @@
 import Button from '../../../ui/Button.jsx'
 import { downloadJiraPlan } from '../../../../services/jiraPlanExport.js'
+import { deriveCorrectionAttempts } from './correctionAttempts.js'
 
 const designOutputCodes = [
   'SYSTEM_ARCHITECTURE',
@@ -194,9 +195,12 @@ function ResultsOverview({
   subtitle = 'Generated design and planning artifacts',
   status,
   result,
+  run,
   outputs,
   warnings = [],
   errors = [],
+  isHistorical = false,
+  correction_attempts,
   project,
   onStartAnotherRun,
   onOpenRunHistory,
@@ -218,9 +222,17 @@ function ResultsOverview({
         ? 'Failed'
         : 'Not available'
 
-  // Truthful correction attempts: current API does not return correction count, do not fabricate "1"
-  const correctionAttemptsValue =
-    result?.correction_attempts !== undefined ? String(result.correction_attempts) : 'Not available'
+  // Truthful correction attempts using real response or historical run evidence
+  const correctionAttemptsValue = deriveCorrectionAttempts({
+    correction_attempts,
+    result,
+    run,
+    warnings,
+    errors,
+    status: effectiveStatus,
+    isHistorical,
+    title,
+  })
 
   const hasTraceability = hasTraceabilityReferences(safeOutputs)
   const traceabilityChain = deriveTraceabilityChain(safeOutputs)

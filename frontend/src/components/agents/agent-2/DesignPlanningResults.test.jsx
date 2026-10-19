@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { getAgentProjectRun } from '../../../services/agentProjectService.js'
 import DesignPlanningResults from './DesignPlanningResults.jsx'
+import { deriveCorrectionAttempts } from './results/correctionAttempts.js'
 import RunDetail from '../RunDetail.jsx'
 
 vi.mock('../../../services/agentProjectService.js', () => ({ getAgentProjectRun: vi.fn() }))
@@ -122,13 +123,143 @@ describe('DesignPlanningResults · S2-06 Results Overview', () => {
     expect(metrics).toHaveTextContent('Validation')
     expect(metrics).toHaveTextContent('Passed')
 
-    // Correction attempts is neutral "Not available" because the API does not provide it
+    // Correction attempts is neutral "Not available" because the legacy mock does not provide it
     expect(metrics).toHaveTextContent('Correction attempts')
     expect(metrics).toHaveTextContent('Not available')
 
     // Traceability is Available because source_refs exist
     expect(metrics).toHaveTextContent('Traceability')
     expect(metrics).toHaveTextContent('Available')
+  })
+
+  it('displays "0" correction attempts for a newly completed clean run with correction_attempts = 0', () => {
+    const outputs = {
+      SYSTEM_ARCHITECTURE: { components: [{ id: 'CMP-001', name: 'Core', source_refs: ['SPEC-001'] }] },
+    }
+
+    render(
+      <DesignPlanningResults
+        status="COMPLETED"
+        result={{
+          run_id: 'RUN-102',
+          status: 'COMPLETED',
+          outputs,
+          correction_attempts: 0,
+          warnings: [],
+          errors: [],
+        }}
+        outputs={outputs}
+      />,
+    )
+
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('0')
+    expect(metrics).not.toHaveTextContent('Not available')
+  })
+
+  it('displays actual correction count for newly completed corrected run with correction_attempts = 1 and 2', () => {
+    const outputs = {
+      SYSTEM_ARCHITECTURE: { components: [{ id: 'CMP-001', name: 'Core', source_refs: ['SPEC-001'] }] },
+    }
+
+    const { rerender } = render(
+      <DesignPlanningResults
+        status="COMPLETED"
+        result={{
+          run_id: 'RUN-103',
+          status: 'COMPLETED',
+          outputs,
+          correction_attempts: 1,
+          warnings: [
+            {
+              code: 'OUTPUT_CORRECTED',
+              message: 'Generated output passed validation after a bounded correction attempt',
+              details: { correction_attempts: 1 },
+            },
+          ],
+          errors: [],
+        }}
+        outputs={outputs}
+      />,
+    )
+
+    let metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('1')
+
+    rerender(
+      <DesignPlanningResults
+        status="COMPLETED"
+        result={{
+          run_id: 'RUN-103B',
+          status: 'COMPLETED',
+          outputs,
+          correction_attempts: 2,
+          warnings: [
+            {
+              code: 'OUTPUT_CORRECTED',
+              message: 'Generated output passed validation after a bounded correction attempt',
+              details: { correction_attempts: 2 },
+            },
+          ],
+          errors: [],
+        }}
+        outputs={outputs}
+      />,
+    )
+
+    metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('2')
+  })
+
+  it('derives correction count from OUTPUT_CORRECTED warning for historical runs without direct correction_attempts', () => {
+    const outputs = {
+      SYSTEM_ARCHITECTURE: { components: [{ id: 'CMP-001', name: 'Core', source_refs: ['SPEC-001'] }] },
+    }
+
+    render(
+      <DesignPlanningResults
+        title="Persisted design and planning outputs"
+        status="COMPLETED"
+        isHistorical
+        outputs={outputs}
+        warnings={[
+          {
+            code: 'OUTPUT_CORRECTED',
+            message: 'Generated output passed validation after a bounded correction attempt',
+            details: { correction_attempts: 1 },
+          },
+        ]}
+        errors={[]}
+      />,
+    )
+
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('1')
+  })
+
+  it('displays 0 correction attempts for historical clean completed run without warnings', () => {
+    const outputs = {
+      SYSTEM_ARCHITECTURE: { components: [{ id: 'CMP-001', name: 'Core', source_refs: ['SPEC-001'] }] },
+    }
+
+    render(
+      <DesignPlanningResults
+        title="Persisted design and planning outputs"
+        status="COMPLETED"
+        isHistorical
+        outputs={outputs}
+        warnings={[]}
+        errors={[]}
+      />,
+    )
+
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('0')
   })
 
   it('summarizes only returned outputs in Result Package Cards and does not show unreturned artifacts', () => {
@@ -336,8 +467,8 @@ describe('DesignPlanningResults · S2-06 Results Overview', () => {
     click.mockRestore()
   })
 
-  it('renders persisted Agent 2 results and export controls in historical run detail', async () => {
-    getAgentProjectRun.mockResolvedValue({
+  it('renders persisted Agent 2 results with 0 corrections for clean historical runs and does not make extra API requests', async () => {
+    getAgentProjectRun.mockResolvedValueOnce({
       data: {
         run_id: 'RUN-020',
         agent_type: 'DESIGN_PLANNING',
@@ -356,5 +487,83 @@ describe('DesignPlanningResults · S2-06 Results Overview', () => {
     expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Download Jira-compatible JSON' })).toBeInTheDocument()
     expect(screen.getAllByText('Booking').length).toBeGreaterThan(0)
+
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('0')
+    // Verification: getAgentProjectRun called once only (no extra API calls)
+    expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders persisted Agent 2 results with derived count for corrected historical runs', async () => {
+    getAgentProjectRun.mockResolvedValueOnce({
+      data: {
+        run_id: 'RUN-021',
+        agent_type: 'DESIGN_PLANNING',
+        run_mode: 'DEFAULT',
+        status: 'COMPLETED',
+        selected_outputs: ['JIRA_PLAN'],
+        created_at: '2026-10-14T10:00:00Z',
+        started_at: '2026-10-14T10:00:01Z',
+        completed_at: '2026-10-14T10:00:02Z',
+        warnings: [
+          {
+            code: 'OUTPUT_CORRECTED',
+            message: 'Generated output passed validation after a bounded correction attempt',
+            details: { correction_attempts: 1 },
+          },
+        ],
+        errors: [],
+        output_manifest: { JIRA_PLAN: jiraPlan },
+      },
+    })
+    render(<RunDetail agentProjectId="AGP-002" runId="RUN-021" />)
+    expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('1')
+    expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+  })
+
+  describe('deriveCorrectionAttempts helper', () => {
+    it('uses explicit null/undefined check so 0 is preserved and not treated as falsy', () => {
+      expect(deriveCorrectionAttempts({ result: { correction_attempts: 0 } })).toBe('0')
+      expect(deriveCorrectionAttempts({ result: { correction_attempts: 1 } })).toBe('1')
+      expect(deriveCorrectionAttempts({ result: { correction_attempts: 2 } })).toBe('2')
+      expect(deriveCorrectionAttempts({ run: { correction_attempts: 0 } })).toBe('0')
+      expect(deriveCorrectionAttempts({ correction_attempts: 0 })).toBe('0')
+    })
+
+    it('falls back to OUTPUT_CORRECTED warning details when top-level field is absent', () => {
+      expect(
+        deriveCorrectionAttempts({
+          warnings: [
+            { code: 'OUTPUT_CORRECTED', details: { correction_attempts: 1 } },
+          ],
+        }),
+      ).toBe('1')
+    })
+
+    it('falls back to "0" for historical clean completed runs without warnings', () => {
+      expect(
+        deriveCorrectionAttempts({
+          isHistorical: true,
+          status: 'COMPLETED',
+          warnings: [],
+          errors: [],
+        }),
+      ).toBe('0')
+    })
+
+    it('returns "Not available" when run has errors or is not completed and no correction count exists', () => {
+      expect(
+        deriveCorrectionAttempts({
+          isHistorical: true,
+          status: 'FAILED',
+          errors: ['Some error'],
+        }),
+      ).toBe('Not available')
+    })
   })
 })

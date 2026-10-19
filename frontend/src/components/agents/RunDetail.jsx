@@ -118,6 +118,8 @@ function RunDetail({ agentProjectId, runId, onClose }) {
           status={run.status}
           warnings={run.warnings}
           errors={run.errors}
+          run={run}
+          isHistorical
           title="Persisted design and planning outputs"
         />
       ) : (
