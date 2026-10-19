@@ -22,3 +22,11 @@ export function saveClarificationResponse(agentProjectId, runId, response) {
     { authenticated: true },
   )
 }
+
+export function refineRequirementsRun(agentProjectId, runId) {
+  return apiClient.post(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/runs/${encodeURIComponent(runId)}/refine`,
+    undefined,
+    { authenticated: true },
+  )
+}

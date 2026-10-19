@@ -303,6 +303,7 @@ def test_standalone_enum_values_are_exact() -> None:
     ]
     assert [item.value for item in AgentRunMode] == [
         "DEFAULT",
+        "REFINEMENT",
         "TEST_GENERATION",
         "VALIDATION",
     ]

@@ -18,6 +18,8 @@ from app.modules.agent1.schemas import (
     Persona,
     QualityFinding,
     QualityFindingCategory,
+    RefinedFunctionalRequirement,
+    RefinedNonFunctionalRequirement,
     RequirementOutputCode,
     SRSArtifact,
     UserStory,
@@ -39,6 +41,13 @@ OUTPUT_MODELS: dict[RequirementOutputCode, type[BaseModel] | Any] = {
     RequirementOutputCode.SRS: SRSArtifact,
 }
 
+REFINEMENT_OUTPUT_MODELS: dict[RequirementOutputCode, type[BaseModel] | Any] = {
+    RequirementOutputCode.FUNCTIONAL_REQUIREMENTS: list[RefinedFunctionalRequirement],
+    RequirementOutputCode.NON_FUNCTIONAL_REQUIREMENTS: list[
+        RefinedNonFunctionalRequirement
+    ],
+}
+
 
 SYSTEM_PROMPT = """You are the Requirement Gathering and Analysis Agent for AgileFlow AI.
 Generate only domain requirements content grounded in the supplied sources. Never generate project IDs,
@@ -58,12 +67,31 @@ only supplied source IDs. Clarification questions use quality_finding_refs, requ
 and optional LOW/MEDIUM/HIGH priority. Ask targeted questions about unresolved issues, never generic questions.
 Do not repeat equivalent items. Optional unknown values must be null rather than invented."""
 
+REFINEMENT_SYSTEM_PROMPT = """You are refining validated FR/NFR requirements using recorded human
+clarification answers. Return every original requirement exactly once with the same ID and source_refs.
+Revise only requirements directly supported by an answer linked through its clarification question.
+For a changed requirement, set refined_from to its original ID and clarification_refs to the CQ IDs used.
+For an unchanged requirement, preserve all original content, set refined_from to null, and use an empty
+clarification_refs list. Never invent an answer, source, requirement, project identifier, or run metadata.
+Return only JSON conforming to the supplied schema."""
+
 
 def _selected_schema(selected: list[RequirementOutputCode]) -> dict[str, Any]:
     response_model = create_model(
         "Agent1SelectedOutputs",
         __config__=ConfigDict(extra="forbid"),
         **{code.value: (OUTPUT_MODELS[code], ...) for code in selected},
+    )
+    schema = response_model.model_json_schema()
+    _make_schema_strict(schema)
+    return schema
+
+
+def _refinement_schema(selected: list[RequirementOutputCode]) -> dict[str, Any]:
+    response_model = create_model(
+        "Agent1RefinementOutputs",
+        __config__=ConfigDict(extra="forbid"),
+        **{code.value: (REFINEMENT_OUTPUT_MODELS[code], ...) for code in selected},
     )
     schema = response_model.model_json_schema()
     _make_schema_strict(schema)
@@ -170,6 +198,135 @@ class Agent1Engine:
             ),
         )
         return validated
+
+    def refine(
+        self,
+        context: Agent1InputContext,
+        original_outputs: dict[str, list[dict[str, Any]]],
+        quality_findings: list[dict[str, Any]],
+        questions: list[dict[str, Any]],
+        answers: dict[str, str],
+    ) -> dict[str, Any]:
+        selected = [
+            code
+            for code in (
+                RequirementOutputCode.FUNCTIONAL_REQUIREMENTS,
+                RequirementOutputCode.NON_FUNCTIONAL_REQUIREMENTS,
+            )
+            if original_outputs.get(code.value)
+        ]
+        prompt = {
+            "original_requirements": original_outputs,
+            "quality_findings": quality_findings,
+            "clarification_questions": questions,
+            "human_answers": [
+                {"question_id": question_id, "answer": answer}
+                for question_id, answer in answers.items()
+            ],
+            "source_context": context.model_dump(mode="json", exclude_none=True),
+        }
+        try:
+            raw = self._provider.generate_structured(
+                system_prompt=REFINEMENT_SYSTEM_PROMPT,
+                user_prompt=json.dumps(prompt, ensure_ascii=False, indent=2),
+                json_schema=_refinement_schema(selected),
+            )
+        except ModelStructuredOutputError as exc:
+            raise StructuredOutputInvalidError(
+                "Model refinement response was not valid structured JSON"
+            ) from exc
+        if set(raw) != {code.value for code in selected}:
+            raise StructuredOutputInvalidError(
+                "Model refinement keys did not match original requirement outputs"
+            )
+
+        validated: dict[str, Any] = {}
+        try:
+            for code in selected:
+                value = TypeAdapter(REFINEMENT_OUTPUT_MODELS[code]).validate_python(
+                    raw[code.value]
+                )
+                if not value:
+                    raise StructuredOutputInvalidError(
+                        f"{code.value} refinement must not be empty"
+                    )
+                validated[code.value] = [
+                    item.model_dump(mode="json") for item in value
+                ]
+        except (ValidationError, KeyError, TypeError) as exc:
+            raise StructuredOutputInvalidError(
+                "Model refinement failed Agent 1 structured validation"
+            ) from exc
+
+        self._validate_nonblank_strings(validated)
+        self._validate_references(context, validated)
+        self._validate_unique_artifacts(validated)
+        self._validate_refinement(
+            validated, original_outputs, questions, set(answers)
+        )
+        return validated
+
+    @staticmethod
+    def _validate_refinement(
+        outputs: dict[str, Any],
+        original_outputs: dict[str, list[dict[str, Any]]],
+        questions: list[dict[str, Any]],
+        answered_question_ids: set[str],
+    ) -> None:
+        questions_by_id = {question["id"]: question for question in questions}
+        for code in (
+            RequirementOutputCode.FUNCTIONAL_REQUIREMENTS.value,
+            RequirementOutputCode.NON_FUNCTIONAL_REQUIREMENTS.value,
+        ):
+            originals = {item["id"]: item for item in original_outputs.get(code, [])}
+            refined = {item["id"]: item for item in outputs.get(code, [])}
+            if set(refined) != set(originals) or len(refined) != len(
+                outputs.get(code, [])
+            ):
+                raise StructuredOutputInvalidError(
+                    f"{code} refinement must preserve original requirement IDs"
+                )
+            for requirement_id, item in refined.items():
+                original = originals[requirement_id]
+                if item["source_refs"] != original["source_refs"]:
+                    raise StructuredOutputInvalidError(
+                        f"{code} refinement must preserve source references"
+                    )
+                clarification_refs = set(item["clarification_refs"])
+                valid_clarification_refs = (
+                    answered_question_ids & set(questions_by_id)
+                )
+                if not clarification_refs.issubset(valid_clarification_refs):
+                    raise StructuredOutputInvalidError(
+                        f"{code} refinement contains an invalid clarification reference"
+                    )
+                if any(
+                    requirement_id
+                    not in questions_by_id[ref]["requirement_refs"]
+                    for ref in clarification_refs
+                ):
+                    raise StructuredOutputInvalidError(
+                        f"{code} refinement uses an unrelated clarification reference"
+                    )
+                comparable = {
+                    key: value
+                    for key, value in item.items()
+                    if key not in {"refined_from", "clarification_refs"}
+                }
+                changed = comparable != original
+                if changed and (
+                    item["refined_from"] != requirement_id
+                    or not clarification_refs
+                ):
+                    raise StructuredOutputInvalidError(
+                        f"{code} changed requirement lacks refinement traceability"
+                    )
+                if not changed and (
+                    item["refined_from"] is not None or clarification_refs
+                ):
+                    raise StructuredOutputInvalidError(
+                        f"{code} unchanged requirement must not claim refinement"
+                    )
 
     @staticmethod
     def _build_user_prompt(

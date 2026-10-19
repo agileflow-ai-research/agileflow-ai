@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from fastapi import UploadFile
+from pydantic import TypeAdapter, ValidationError
 
 from app.common.id_generator import generate_id
 from app.common.model_provider import ModelProviderError
@@ -11,7 +12,7 @@ from app.common.transcription_provider import (
     TranscriptionProviderConfigurationError,
     TranscriptionProviderError,
 )
-from app.common.status import AgentRunMode, AgentType
+from app.common.status import AgentRunMode, AgentRunStatus, AgentType
 from app.core.config import settings
 from app.modules.agent1.engine import Agent1Engine, StructuredOutputInvalidError
 from app.modules.agent1.extractor import ExtractionEmptyError, ExtractionError
@@ -34,8 +35,11 @@ from app.modules.agent1.schemas import (
     Agent1InputContext,
     Agent1RunRequest,
     Agent1RunResult,
+    ClarificationQuestion,
     ClarificationResponse,
     ClarificationResponseRequest,
+    FunctionalRequirement,
+    NonFunctionalRequirement,
     RequirementSource,
     RequirementSourceRecord,
     RequirementSourceResponse,
@@ -58,6 +62,14 @@ class SourceNotFoundError(LookupError):
 
 class NoUsableSourceError(ValueError):
     """Raised when a run has no usable (extracted) sources to process."""
+
+
+class OriginalRunNotRefinableError(ValueError):
+    """Raised when an originating run cannot be used for refinement."""
+
+
+class MissingClarificationAnswersError(ValueError):
+    """Raised when refinement questions do not all have human answers."""
 
 
 DISALLOWED_MIME_PATTERNS = (
@@ -483,10 +495,12 @@ class Agent1Service:
         self,
         standalone_service: StandaloneService,
         source_repository: RequirementSourceRepository,
+        clarification_repository: ClarificationResponseRepository,
         engine: Agent1Engine,
     ) -> None:
         self._standalone = standalone_service
         self._repository = source_repository
+        self._clarification_repository = clarification_repository
         self._engine = engine
 
     def run(
@@ -571,6 +585,144 @@ class Agent1Service:
                 run,
                 "INTERNAL_ERROR",
                 "Agent 1 execution failed unexpectedly",
+            )
+        return self.to_result(run)
+
+    def refine(
+        self,
+        agent_project_id: str,
+        original_run_id: str,
+        current_user: UserPublicResponse,
+    ) -> Agent1RunResult:
+        project = self._standalone.require_active_project(
+            current_user.user_id, agent_project_id
+        )
+        if project.agent_type is not AgentType.REQUIREMENTS:
+            raise WrongAgentProjectTypeError(
+                "Agent project must have agent_type REQUIREMENTS"
+            )
+        original_run = self._standalone.get_run(
+            agent_project_id, original_run_id, current_user
+        )
+        if (
+            original_run.agent_type is not AgentType.REQUIREMENTS
+            or original_run.status is not AgentRunStatus.COMPLETED
+            or original_run.run_mode is not AgentRunMode.DEFAULT
+        ):
+            raise OriginalRunNotRefinableError(
+                "Only a completed requirements run can be refined"
+            )
+
+        original_outputs = {
+            code: original_run.output_manifest.get(code, [])
+            for code in (
+                "FUNCTIONAL_REQUIREMENTS",
+                "NON_FUNCTIONAL_REQUIREMENTS",
+            )
+            if original_run.output_manifest.get(code)
+        }
+        if not original_outputs:
+            raise OriginalRunNotRefinableError(
+                "The original run has no usable FR/NFR requirements"
+            )
+        try:
+            if original_outputs.get("FUNCTIONAL_REQUIREMENTS"):
+                TypeAdapter(list[FunctionalRequirement]).validate_python(
+                    original_outputs["FUNCTIONAL_REQUIREMENTS"]
+                )
+            if original_outputs.get("NON_FUNCTIONAL_REQUIREMENTS"):
+                TypeAdapter(list[NonFunctionalRequirement]).validate_python(
+                    original_outputs["NON_FUNCTIONAL_REQUIREMENTS"]
+                )
+        except ValidationError as exc:
+            raise OriginalRunNotRefinableError(
+                "The original run requirements are invalid"
+            ) from exc
+        questions = original_run.output_manifest.get(
+            "CLARIFICATION_QUESTIONS", []
+        )
+        if not isinstance(questions, list) or not questions:
+            raise MissingClarificationAnswersError(
+                "The original run has no clarification questions to answer"
+            )
+        try:
+            TypeAdapter(list[ClarificationQuestion]).validate_python(questions)
+        except ValidationError as exc:
+            raise OriginalRunNotRefinableError(
+                "The original run clarification questions are invalid"
+            ) from exc
+        quality_findings = original_run.output_manifest.get(
+            "QUALITY_FINDINGS", []
+        )
+        responses = self._clarification_repository.list_responses(
+            current_user.user_id, agent_project_id, original_run_id
+        )
+        answers = {
+            response["question_id"]: response["answer"] for response in responses
+        }
+        missing = [
+            question["id"]
+            for question in questions
+            if question["id"] not in answers
+        ]
+        if missing:
+            raise MissingClarificationAnswersError(
+                "All clarification questions require saved human answers"
+            )
+        try:
+            context = Agent1InputContext.model_validate(original_run.input_snapshot)
+        except Exception as exc:
+            raise OriginalRunNotRefinableError(
+                "The original run input context is invalid"
+            ) from exc
+
+        selected = list(original_outputs)
+        refinement_snapshot = {
+            **context.model_dump(mode="json", exclude_none=True),
+            "originating_run_id": original_run_id,
+            "clarification_responses": [
+                {"question_id": question["id"], "answer": answers[question["id"]]}
+                for question in questions
+            ],
+        }
+        run = self._standalone.create_run(
+            current_user.user_id,
+            agent_project_id,
+            AgentRunMode.REFINEMENT,
+            selected,
+            refinement_snapshot,
+        )
+        run = self._standalone.mark_run_running(
+            current_user.user_id, agent_project_id, run.run_id
+        )
+        try:
+            outputs = self._engine.refine(
+                context,
+                original_outputs,
+                quality_findings if isinstance(quality_findings, list) else [],
+                questions,
+                answers,
+            )
+            run = self._standalone.complete_run(
+                current_user.user_id,
+                agent_project_id,
+                run.run_id,
+                outputs,
+                [],
+            )
+        except StructuredOutputInvalidError as exc:
+            run = self._fail(run, "STRUCTURED_OUTPUT_INVALID", str(exc))
+        except ModelProviderError:
+            run = self._fail(
+                run,
+                "MODEL_EXECUTION_FAILED",
+                "The configured model provider could not refine the requirements",
+            )
+        except Exception:
+            run = self._fail(
+                run,
+                "INTERNAL_ERROR",
+                "Agent 1 refinement failed unexpectedly",
             )
         return self.to_result(run)
 

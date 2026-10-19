@@ -222,6 +222,16 @@ class NonFunctionalRequirement(BaseModel):
     source_refs: list[str] = Field(min_length=1)
 
 
+class RefinedFunctionalRequirement(FunctionalRequirement):
+    refined_from: str | None = Field(default=None, pattern=r"^FR-\d{3,}$")
+    clarification_refs: list[str] = Field(default_factory=list)
+
+
+class RefinedNonFunctionalRequirement(NonFunctionalRequirement):
+    refined_from: str | None = Field(default=None, pattern=r"^NFR-\d{3,}$")
+    clarification_refs: list[str] = Field(default_factory=list)
+
+
 class UserStory(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(pattern=r"^US-\d{3,}$")

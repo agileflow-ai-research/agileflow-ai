@@ -36,7 +36,9 @@ from app.modules.agent1.service import (
     Agent1Service,
     ClarificationQuestionNotFoundError,
     ClarificationResponseService,
+    MissingClarificationAnswersError,
     NoUsableSourceError,
+    OriginalRunNotRefinableError,
     RequirementSourceProcessingService,
     RequirementSourceService,
     SourceNotFoundError,
@@ -84,9 +86,15 @@ def get_agent1_service(
     repository: Annotated[
         RequirementSourceRepository, Depends(get_requirement_source_repository)
     ],
+    clarification_repository: Annotated[
+        ClarificationResponseRepository,
+        Depends(get_clarification_response_repository),
+    ],
     engine: Annotated[Agent1Engine, Depends(get_agent1_engine)],
 ) -> Agent1Service:
-    return Agent1Service(standalone_service, repository, engine)
+    return Agent1Service(
+        standalone_service, repository, clarification_repository, engine
+    )
 
 
 def get_requirement_source_service(
@@ -411,6 +419,53 @@ def run_requirements_agent(
             "Standalone run storage is unavailable",
         )
     return SuccessResponse(message="Requirements agent run finished", data=result)
+
+
+@router.post(
+    "/{agent_project_id}/runs/{run_id}/refine",
+    response_model=SuccessResponse[Agent1RunResult],
+)
+def refine_requirements_run(
+    agent_project_id: str,
+    run_id: str,
+    service: Annotated[Agent1Service, Depends(get_agent1_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[Agent1RunResult] | JSONResponse:
+    try:
+        result = service.refine(agent_project_id, run_id, current_user)
+    except (AgentProjectNotFoundError, AgentRunNotFoundError):
+        return _error(
+            status.HTTP_404_NOT_FOUND,
+            "Original run not found",
+            "run_id",
+            "Original run not found",
+        )
+    except ArchivedAgentProjectError:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Agent project is archived",
+            "agent_project_id",
+            "Reactivate the agent project before refining requirements",
+        )
+    except (
+        MissingClarificationAnswersError,
+        OriginalRunNotRefinableError,
+        WrongAgentProjectTypeError,
+    ) as exc:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Requirements cannot be refined",
+            "run_id",
+            str(exc),
+        )
+    except (ClarificationResponseRepositoryError, StandaloneServiceError):
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Requirement refinement failed",
+            "database",
+            "Refinement storage is unavailable",
+        )
+    return SuccessResponse(message="Requirements refinement finished", data=result)
 
 
 @router.get(

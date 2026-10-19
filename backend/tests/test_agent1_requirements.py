@@ -596,6 +596,237 @@ def test_blank_clarification_answer_is_rejected(agent1_context):
     assert response.status_code == 422
 
 
+def test_answer_refines_fr_preserves_unaffected_requirement_and_original_run(
+    agent1_context,
+):
+    authentication, _, runs, provider = agent1_context
+    client = authentication.client()
+    project = create_project(client)
+    original_requirements = [
+        {
+            **VALID_FUNCTIONAL[0],
+            "statement": "Patients may cancel appointments.",
+        },
+        {
+            "id": "FR-002",
+            "statement": "The system shall send booking confirmations.",
+            "source_refs": ["TEXT-001"],
+            "rationale": None,
+        },
+    ]
+    provider.response = {
+        "FUNCTIONAL_REQUIREMENTS": original_requirements,
+        "QUALITY_FINDINGS": [{
+            "id": "QF-001",
+            "category": "MISSING_INFORMATION",
+            "issue": "The cancellation window is missing.",
+            "affected_requirement_refs": ["FR-001"],
+            "source_refs": ["TEXT-001"],
+            "recommendation": None,
+        }],
+        "CLARIFICATION_QUESTIONS": [{
+            "id": "CQ-001",
+            "question": "What cancellation window applies?",
+            "reason": "The cancellation rule is incomplete.",
+            "quality_finding_refs": ["QF-001"],
+            "requirement_refs": ["FR-001"],
+            "source_refs": ["TEXT-001"],
+            "priority": "HIGH",
+        }],
+    }
+    original = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
+        json={
+            "text": "Patients cancel appointments and receive confirmations.",
+            "selected_outputs": [
+                "FUNCTIONAL_REQUIREMENTS",
+                "QUALITY_FINDINGS",
+                "CLARIFICATION_QUESTIONS",
+            ],
+        },
+    ).json()["data"]
+    original_manifest = deepcopy(
+        runs.documents[original["run_id"]]["output_manifest"]
+    )
+    base_path = (
+        f"/api/v1/agents/requirements/{project['agent_project_id']}"
+        f"/runs/{original['run_id']}"
+    )
+    assert client.post(
+        f"{base_path}/clarification-responses",
+        json={"question_id": "CQ-001", "answer": "Up to 12 hours before start."},
+    ).status_code == 200
+    provider.response = {
+        "FUNCTIONAL_REQUIREMENTS": [
+            {
+                **original_requirements[0],
+                "statement": (
+                    "Patients may cancel appointments until 12 hours before "
+                    "the start time."
+                ),
+                "refined_from": "FR-001",
+                "clarification_refs": ["CQ-001"],
+            },
+            {
+                **original_requirements[1],
+                "refined_from": None,
+                "clarification_refs": [],
+            },
+        ]
+    }
+
+    refined = client.post(f"{base_path}/refine").json()["data"]
+
+    assert refined["status"] == "COMPLETED"
+    assert refined["run_id"] != original["run_id"]
+    assert refined["run_mode"] == "REFINEMENT"
+    assert refined["outputs"]["FUNCTIONAL_REQUIREMENTS"][0]["source_refs"] == [
+        "TEXT-001"
+    ]
+    assert refined["outputs"]["FUNCTIONAL_REQUIREMENTS"][0]["refined_from"] == "FR-001"
+    assert refined["outputs"]["FUNCTIONAL_REQUIREMENTS"][0]["clarification_refs"] == ["CQ-001"]
+    assert refined["outputs"]["FUNCTIONAL_REQUIREMENTS"][1]["statement"] == original_requirements[1]["statement"]
+    assert runs.documents[original["run_id"]]["output_manifest"] == original_manifest
+    assert len(runs.documents) == 2
+    assert "The cancellation window is missing." in provider.calls[-1]["user_prompt"]
+
+
+def test_answer_refines_nfr_with_traceability():
+    original = {
+        "id": "NFR-001",
+        "category": "Performance",
+        "statement": "Search shall be fast.",
+        "measurable_target": None,
+        "source_refs": ["TEXT-001"],
+    }
+    provider = FixedProvider({
+        "NON_FUNCTIONAL_REQUIREMENTS": [{
+            **original,
+            "statement": "Search results shall be returned promptly.",
+            "measurable_target": "95% of searches complete within two seconds.",
+            "refined_from": "NFR-001",
+            "clarification_refs": ["CQ-001"],
+        }]
+    })
+    outputs = Agent1Engine(provider).refine(
+        CLINIC_CONTEXT,
+        {"NON_FUNCTIONAL_REQUIREMENTS": [original]},
+        [],
+        [{
+            "id": "CQ-001",
+            "question": "What response-time target applies?",
+            "reason": "Fast is not measurable.",
+            "quality_finding_refs": [],
+            "requirement_refs": ["NFR-001"],
+            "source_refs": ["TEXT-001"],
+            "priority": "HIGH",
+        }],
+        {"CQ-001": "95% within two seconds."},
+    )
+
+    assert outputs["NON_FUNCTIONAL_REQUIREMENTS"][0]["refined_from"] == "NFR-001"
+    assert outputs["NON_FUNCTIONAL_REQUIREMENTS"][0]["source_refs"] == ["TEXT-001"]
+
+
+def test_refinement_rejects_missing_answer_and_foreign_run(agent1_context):
+    authentication, _, runs, provider = agent1_context
+    client = authentication.client()
+    project = create_project(client)
+    provider.response = {
+        "FUNCTIONAL_REQUIREMENTS": deepcopy(VALID_FUNCTIONAL),
+        "CLARIFICATION_QUESTIONS": [{
+            "id": "CQ-001",
+            "question": "Which rule applies?",
+            "reason": "A rule is missing.",
+            "quality_finding_refs": [],
+            "requirement_refs": ["FR-001"],
+            "source_refs": ["TEXT-001"],
+            "priority": "MEDIUM",
+        }],
+    }
+    original = client.post(
+        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
+        json={
+            "text": "Members search the catalogue.",
+            "selected_outputs": [
+                "FUNCTIONAL_REQUIREMENTS",
+                "CLARIFICATION_QUESTIONS",
+            ],
+        },
+    ).json()["data"]
+    path = (
+        f"/api/v1/agents/requirements/{project['agent_project_id']}"
+        f"/runs/{original['run_id']}/refine"
+    )
+
+    assert client.post(path).status_code == 422
+    assert authentication.client("USR-002").post(path).status_code == 404
+    assert len(runs.documents) == 1
+
+
+@pytest.mark.parametrize(
+    "refined_requirements",
+    [
+        [{
+            **VALID_FUNCTIONAL[0],
+            "statement": "A changed statement.",
+            "refined_from": "FR-001",
+            "clarification_refs": ["CQ-999"],
+        }],
+        [
+            {
+                **VALID_FUNCTIONAL[0],
+                "statement": "A duplicate statement.",
+                "refined_from": "FR-001",
+                "clarification_refs": ["CQ-001"],
+            },
+            {
+                **VALID_FUNCTIONAL[0],
+                "id": "FR-002",
+                "statement": "A duplicate statement.",
+                "refined_from": "FR-002",
+                "clarification_refs": ["CQ-001"],
+            },
+        ],
+        [{
+            **VALID_FUNCTIONAL[0],
+            "statement": "Changed without traceability.",
+            "refined_from": None,
+            "clarification_refs": [],
+        }],
+    ],
+)
+def test_invalid_duplicate_and_malformed_refinements_are_rejected(
+    refined_requirements,
+):
+    originals = deepcopy(VALID_FUNCTIONAL)
+    if len(refined_requirements) == 2:
+        originals.append({
+            **VALID_FUNCTIONAL[0],
+            "id": "FR-002",
+            "statement": "A second original statement.",
+        })
+    question = {
+        "id": "CQ-001",
+        "question": "What should change?",
+        "reason": "Human input is needed.",
+        "quality_finding_refs": [],
+        "requirement_refs": [item["id"] for item in originals],
+        "source_refs": ["TEXT-001"],
+        "priority": "MEDIUM",
+    }
+    with pytest.raises(ValueError):
+        Agent1Engine(FixedProvider({
+            "FUNCTIONAL_REQUIREMENTS": refined_requirements,
+        })).refine(
+            CLINIC_CONTEXT,
+            {"FUNCTIONAL_REQUIREMENTS": originals},
+            [],
+            [question],
+            {"CQ-001": "Use the clarified rule."},
+        )
+
+
 def test_non_completed_sources_are_ignored_and_never_reprocessed(agent1_context):
     authentication, _, runs, provider = agent1_context
     sources = app.dependency_overrides[get_requirement_source_repository]()

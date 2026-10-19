@@ -1,0 +1,32 @@
+Subject: My detailed requirements & feature suggestions for the new system
+From: David Miller <david.m@company.com> (IT Support & Infrastructure Lead)
+Date: October 16, 2026
+To: Core System Development Team
+
+Hi Team,
+
+I wanted to send over my personal notes and expectations for how the new portal should work based on what my IT support staff deals with every day.
+
+1. User Account Management & Roles:
+Both managers and admins can manage users. We get calls at all hours when managers are out of office or in meetings, so IT Administrators need full permissions to create accounts, reset roles, and update profile details directly. Restricting this to managers only will cause huge bottlenecks.
+
+2. Login Sessions & Token Expiration:
+Our team and remote contractors work long shifts across different time zones. Password reset links and authentication tokens shouldn't expire quickly. They must stay valid for 24 hours so users don't get locked out while waiting across time zones or during multi-stage shifts.
+
+3. Employee ID Format:
+We work with external consultants, contractors, and advisors who don't have standard numeric staff IDs. Their IDs start with prefixes like "EXT-8839". The Employee ID field must accept variable-length alphanumeric strings, not just numbers.
+
+4. Department Management:
+We have several cross-functional teams that share oversight. The portal needs to support assigning multiple co-lead managers to a single department so both leaders have equal administrative access.
+
+5. Failed Login Security:
+When someone gets their password wrong 3 times, do NOT lock their account immediately. It creates a flood of unnecessary support tickets for IT. Instead, trigger a CAPTCHA challenge and send a notification email, but allow them to keep trying.
+
+6. Dashboard Requirement Note:
+For the main supervisor view, supervisor dashboard user pending requests within 24 hours.
+
+Let me know when we can review these!
+
+Best,
+David Miller
+Lead IT Systems Administrator

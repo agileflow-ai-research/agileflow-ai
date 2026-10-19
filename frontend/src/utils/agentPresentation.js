@@ -52,6 +52,7 @@ export const agentRunStatusPresentation = Object.freeze({
 
 export const agentRunModePresentation = Object.freeze({
   DEFAULT: Object.freeze({ label: 'Standard run' }),
+  REFINEMENT: Object.freeze({ label: 'Requirement Refinement' }),
   TEST_GENERATION: Object.freeze({ label: 'Test Case Generation' }),
   VALIDATION: Object.freeze({ label: 'Testing & Validation' }),
 })

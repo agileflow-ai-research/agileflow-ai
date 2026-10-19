@@ -5,11 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import RequirementsResults from './RequirementsResults.jsx'
 import {
   getClarificationResponses,
+  refineRequirementsRun,
   saveClarificationResponse,
 } from '../../services/requirementsAgentService.js'
 
 vi.mock('../../services/requirementsAgentService.js', () => ({
   getClarificationResponses: vi.fn(),
+  refineRequirementsRun: vi.fn(),
   saveClarificationResponse: vi.fn(),
 }))
 
@@ -99,5 +101,63 @@ describe('RequirementsResults', () => {
     ].forEach((text) => expect(screen.getByText((_, node) => (
       node.tagName === 'P' && node.textContent === text
     ))).toBeInTheDocument())
+  })
+
+  it('starts refinement and renders changed traceability with unchanged items', async () => {
+    const user = userEvent.setup()
+    getClarificationResponses.mockResolvedValue({
+      data: [{ question_id: 'CQ-001', answer: 'Use a target of 80.' }],
+    })
+    refineRequirementsRun.mockResolvedValue({
+      data: {
+        run_id: 'RUN-002',
+        status: 'COMPLETED',
+        warnings: [],
+        errors: [],
+        outputs: {
+          NON_FUNCTIONAL_REQUIREMENTS: [
+            {
+              ...outputs.NON_FUNCTIONAL_REQUIREMENTS[0],
+              statement: 'The system shall achieve a usability score of at least 80.',
+              refined_from: 'NFR-001',
+              clarification_refs: ['CQ-001'],
+            },
+            {
+              id: 'NFR-002',
+              category: 'Availability',
+              statement: 'The service shall remain available.',
+              measurable_target: '99.9% monthly uptime.',
+              source_refs: ['TEXT-001'],
+              refined_from: null,
+              clarification_refs: [],
+            },
+          ],
+        },
+      },
+    })
+    render(
+      <RequirementsResults
+        outputs={{
+          NON_FUNCTIONAL_REQUIREMENTS: outputs.NON_FUNCTIONAL_REQUIREMENTS,
+          CLARIFICATION_QUESTIONS: outputs.CLARIFICATION_QUESTIONS,
+        }}
+        agentProjectId="AGP-001"
+        runId="RUN-001"
+      />,
+    )
+
+    await screen.findByDisplayValue('Use a target of 80.')
+    await user.click(screen.getByRole('button', { name: 'Refine Requirements' }))
+
+    expect(await screen.findByText('Refined requirements')).toBeInTheDocument()
+    expect(screen.getByText(/usability score of at least 80/)).toBeInTheDocument()
+    expect(screen.getByText((_, node) => (
+      node.tagName === 'P' && node.textContent === 'Refined from: NFR-001'
+    ))).toBeInTheDocument()
+    expect(screen.getByText((_, node) => (
+      node.tagName === 'P' && node.textContent === 'Clarifications: CQ-001'
+    ))).toBeInTheDocument()
+    expect(screen.getByText('The service shall remain available.')).toBeInTheDocument()
+    expect(refineRequirementsRun).toHaveBeenCalledWith('AGP-001', 'RUN-001')
   })
 })

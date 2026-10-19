@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import {
   getClarificationResponses,
+  refineRequirementsRun,
   saveClarificationResponse,
 } from '../../services/requirementsAgentService.js'
 import ArtifactViewer from './ArtifactViewer.jsx'
@@ -54,6 +55,8 @@ function FunctionalRequirements({ items }) {
     <Item key={item.id} heading={item.id}>
       <p>{item.statement}</p>
       {item.rationale && <p className="mt-2"><span className="font-semibold">Rationale:</span> {item.rationale}</p>}
+      {item.refined_from && <p className="mt-2"><span className="font-semibold">Refined from:</span> {item.refined_from}</p>}
+      <References label="Clarifications" values={item.clarification_refs} />
       <References label="Sources" values={item.source_refs} />
     </Item>
   ))}</div>
@@ -65,6 +68,8 @@ function NonFunctionalRequirements({ items }) {
     <Item key={item.id} heading={item.id} metadata={item.category}>
       <p>{item.statement}</p>
       {(item.measurable_target || item.measure) && <p className="mt-2"><span className="font-semibold">Measurable target:</span> {item.measurable_target || item.measure}</p>}
+      {item.refined_from && <p className="mt-2"><span className="font-semibold">Refined from:</span> {item.refined_from}</p>}
+      <References label="Clarifications" values={item.clarification_refs} />
       <References label="Sources" values={item.source_refs} />
     </Item>
   ))}</div>
@@ -121,11 +126,12 @@ function QualityFindings({ items }) {
   ))}</div>
 }
 
-function ClarificationQuestions({ items, agentProjectId, runId }) {
+function ClarificationQuestions({ items, agentProjectId, runId, onRefined }) {
   const [answers, setAnswers] = useState({})
   const [saved, setSaved] = useState({})
   const [savingId, setSavingId] = useState(null)
   const [error, setError] = useState('')
+  const [refining, setRefining] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -169,6 +175,24 @@ function ClarificationQuestions({ items, agentProjectId, runId }) {
     }
   }
 
+  async function refine() {
+    setRefining(true)
+    setError('')
+    try {
+      const response = await refineRequirementsRun(agentProjectId, runId)
+      if (!response?.data) throw new Error('Invalid refinement response')
+      onRefined?.(response.data)
+    } catch (requestError) {
+      setError(
+        requestError?.errors?.[0]?.message
+        ?? requestError?.message
+        ?? 'Requirements could not be refined.',
+      )
+    } finally {
+      setRefining(false)
+    }
+  }
+
   if (!items.length) return <EmptyArtifact />
   return <div className="space-y-3">
     {error && <p role="alert" className="text-sm text-state-danger">{error}</p>}
@@ -196,6 +220,9 @@ function ClarificationQuestions({ items, agentProjectId, runId }) {
         </Item>
       </li>
     ))}</ol>
+    {agentProjectId && runId && <Button onClick={refine} disabled={refining}>
+      {refining ? 'Refining…' : 'Refine Requirements'}
+    </Button>}
   </div>
 }
 
@@ -240,7 +267,12 @@ function buildRequirementsSections(outputs, context) {
 }
 
 function RequirementsResults({ outputs, title = 'Requirements results', warnings = [], errors = [], actions, agentProjectId, runId }) {
-  const sections = buildRequirementsSections(outputs, { agentProjectId, runId })
+  const [refinedResult, setRefinedResult] = useState(null)
+  const sections = buildRequirementsSections(outputs, {
+    agentProjectId,
+    runId,
+    onRefined: setRefinedResult,
+  })
   if (sections.length === 0) {
     sections.push({
       id: 'no-output',
@@ -248,7 +280,17 @@ function RequirementsResults({ outputs, title = 'Requirements results', warnings
       content: <p className="text-sm text-content-muted">This run did not produce a validated output artifact.</p>,
     })
   }
-  return <ResultsWorkspace title={title} sections={sections} warnings={warnings} errors={errors} actions={actions} />
+  return <div className="space-y-6">
+    <ResultsWorkspace title={title} sections={sections} warnings={warnings} errors={errors} actions={actions} />
+    {refinedResult && <RequirementsResults
+      title="Refined requirements"
+      outputs={refinedResult.outputs}
+      warnings={(refinedResult.warnings ?? []).map((item) => item.message)}
+      errors={(refinedResult.errors ?? []).map((item) => `${item.code}: ${item.message}`)}
+      agentProjectId={agentProjectId}
+      runId={refinedResult.run_id}
+    />}
+  </div>
 }
 
 export default RequirementsResults

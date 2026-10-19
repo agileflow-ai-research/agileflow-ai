@@ -73,5 +73,6 @@ class AgentRunStatus(str, Enum):
 
 class AgentRunMode(str, Enum):
     DEFAULT = "DEFAULT"
+    REFINEMENT = "REFINEMENT"
     TEST_GENERATION = "TEST_GENERATION"
     VALIDATION = "VALIDATION"

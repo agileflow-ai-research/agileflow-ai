@@ -22,7 +22,9 @@ from app.common.status import (
 
 ALLOWED_RUN_MODES = MappingProxyType(
     {
-        AgentType.REQUIREMENTS: frozenset({AgentRunMode.DEFAULT}),
+        AgentType.REQUIREMENTS: frozenset(
+            {AgentRunMode.DEFAULT, AgentRunMode.REFINEMENT}
+        ),
         AgentType.DESIGN_PLANNING: frozenset({AgentRunMode.DEFAULT}),
         AgentType.IMPLEMENTATION: frozenset({AgentRunMode.DEFAULT}),
         AgentType.TESTING_VALIDATION: frozenset(

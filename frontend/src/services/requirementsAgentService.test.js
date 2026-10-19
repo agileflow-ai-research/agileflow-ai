@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiClient } from './apiClient.js'
 import {
   getClarificationResponses,
+  refineRequirementsRun,
   runRequirementsAgent,
   saveClarificationResponse,
 } from './requirementsAgentService.js'
@@ -37,6 +38,16 @@ describe('requirementsAgentService', () => {
     expect(apiClient.post).toHaveBeenLastCalledWith(
       '/agents/requirements/AGP-007/runs/RUN-003/clarification-responses',
       { question_id: 'CQ-001', answer: 'Twelve hours.' },
+      { authenticated: true },
+    )
+  })
+
+  it('starts a refinement run from the originating run', () => {
+    refineRequirementsRun('AGP-007', 'RUN-003')
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/requirements/AGP-007/runs/RUN-003/refine',
+      undefined,
       { authenticated: true },
     )
   })
