@@ -46,6 +46,10 @@ const ImplementationCanvasInner = forwardRef(function ImplementationCanvasInner(
     autoArrange: arrange,
     resetLayout: arrange,
     fitView: () => flowInstance.current?.fitView({ padding: 0.16, duration: 250 }),
+    focusNode: (nodeId) => {
+      const node = nodes.find((item) => item.id === nodeId)
+      if (node) flowInstance.current?.fitView({ nodes: [node], padding: 0.8, duration: 250, maxZoom: 1 })
+    },
   }))
 
   function handleNodesChange(changes) {

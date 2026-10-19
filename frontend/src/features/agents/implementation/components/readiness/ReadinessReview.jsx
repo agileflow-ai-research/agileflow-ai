@@ -1,6 +1,7 @@
 import Button from '../../../../../components/ui/Button.jsx'
 import Card from '../../../../../components/ui/Card.jsx'
 import ResearchDetails from '../common/ResearchDetails.jsx'
+import HumanDecisionCallout from '../common/HumanDecisionCallout.jsx'
 
 const labels = { READY: 'READY', READY_WITH_WARNINGS: 'READY WITH WARNINGS', NOT_READY: 'NOT READY' }
 const outputStatusLabels = { READY: 'Ready', READY_WITH_WARNINGS: 'Ready with warnings', NOT_READY: 'Blocked' }
@@ -11,7 +12,7 @@ const outputLabels = {
 }
 const title = (value) => value.replaceAll('_', ' ').toLowerCase().replace(/(^|\s)\S/g, (letter) => letter.toUpperCase())
 
-export default function ReadinessReview({ state, onAdapt, onBack }) {
+export default function ReadinessReview({ state, onAdapt, onBack, onContinueWithWarnings }) {
   const result = state.result
   if (!result) return null
   const findings = result.findings ?? []
@@ -27,6 +28,31 @@ export default function ReadinessReview({ state, onAdapt, onBack }) {
         <p className="mt-1 text-sm text-content-secondary">{grouped.ERROR.length} blocking · {grouped.WARNING.length} warnings</p>
       </div>
       {state.stale && <p role="alert" className="text-sm text-state-warning">The trusted specification or selected outputs changed. This result is no longer current.</p>}
+
+      {result.status === 'READY_WITH_WARNINGS' && !result.continuation_approved ? (
+        <HumanDecisionCallout
+          eyebrow="Human decision required"
+          title="Do you want Agent 3 to continue with these warnings?"
+          description="Agent 3 has enough trusted information to continue, but some recommended implementation context is missing. It can proceed using the approved implementation context and PP1 stack."
+          evidence={`${grouped.WARNING.length} current readiness warnings affect the selected outputs.`}
+          outcome="The approval is saved for this exact readiness snapshot, and Delivery Setup becomes available."
+        >
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button variant="outline" onClick={onBack}>Review Specification</Button>
+            <Button
+              loading={state.status === 'continuing'}
+              loadingLabel="Saving warning approval"
+              disabled={state.stale}
+              onClick={onContinueWithWarnings}
+            >
+              Continue With Warnings
+            </Button>
+          </div>
+        </HumanDecisionCallout>
+      ) : null}
+      {result.status === 'READY_WITH_WARNINGS' && result.continuation_approved ? (
+        <p className="rounded-control border border-state-success/40 bg-state-success/10 p-4 text-sm text-state-success">Readiness warnings approved. Agent 3 may continue to Delivery Setup.</p>
+      ) : null}
 
       <section aria-labelledby="selected-outputs-title">
         <h4 id="selected-outputs-title" className="font-semibold text-content-primary">Selected Outputs</h4>

@@ -64,6 +64,7 @@ class FinalApprovalSnapshot(StrictModel):
     reviewer_owner_id: str
     decision: FinalApprovalDecision
     acknowledged_warning_codes: list[str]
+    readiness_continuation_decision_id: str | None = None
     project_specification_id: str
     project_specification_source_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     project_specification_decision_digest: str = Field(pattern=r"^[0-9a-f]{64}$")

@@ -1,4 +1,5 @@
 import OutputSelector from '../../../../components/agents/OutputSelector.jsx'
+import Button from '../../../../components/ui/Button.jsx'
 import ImplementationInputsStep from '../components/inputs/ImplementationInputsStep.jsx'
 import SourceSummary from '../components/common/SourceSummary.jsx'
 import { outputOptions } from '../constants/workspace.js'
@@ -11,6 +12,9 @@ export default function ProjectSourcesPanel({
   onOutputsChange,
   outputError,
   inputStepProps,
+  canAnalyze,
+  analyzing,
+  onAnalyze,
 }) {
   const sourceCount = inputs.filter(hasSource).length
   return (
@@ -38,6 +42,18 @@ export default function ProjectSourcesPanel({
       </section>
 
       <ImplementationInputsStep {...inputStepProps} inputs={inputs} showResearchDetails={false} />
+
+      <div className="flex justify-end border-t border-default pt-5">
+        <Button
+          size="large"
+          loading={analyzing}
+          loadingLabel="Starting input analysis"
+          disabled={!canAnalyze || analyzing}
+          onClick={onAnalyze}
+        >
+          Next — Analyze Inputs
+        </Button>
+      </div>
     </div>
   )
 }

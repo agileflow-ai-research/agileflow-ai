@@ -108,5 +108,10 @@ describe('ImplementationCanvas', () => {
     expect(flow.latestProps.nodes.find((node) => node.id === 'PROJECT_SOURCES').position).toEqual(DEFAULT_NODE_POSITIONS.PROJECT_SOURCES)
     act(() => apiRef.current.resetLayout())
     await waitFor(() => expect(flow.fitView).toHaveBeenCalled())
+    flow.fitView.mockClear()
+    act(() => apiRef.current.focusNode('INPUT_ANALYSIS'))
+    expect(flow.fitView).toHaveBeenCalledWith(expect.objectContaining({
+      nodes: [expect.objectContaining({ id: 'INPUT_ANALYSIS' })],
+    }))
   })
 })

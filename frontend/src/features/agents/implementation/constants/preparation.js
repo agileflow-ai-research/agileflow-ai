@@ -20,16 +20,34 @@ export const PREPARATION_STATE_PRESENTATION = Object.freeze({
 
 export const SOURCE_PREPARATION_LABELS = Object.freeze({
   QUEUED: 'Queued',
-  EXTRACTING: 'Extracting',
-  CHUNKING: 'Preparing Chunks',
-  CLASSIFYING_RULES: 'Running Rule Analysis',
-  CLASSIFYING_MODEL: 'Running Model Analysis',
-  BUILDING_HYBRID: 'Combining Results',
-  WAITING_FOR_HUMAN: 'Waiting for Review',
-  READY: 'Prepared',
+  EXTRACTING: 'Reading document',
+  CHUNKING: 'Preparing content',
+  CLASSIFYING_RULES: 'Analyzing content',
+  CLASSIFYING_MODEL: 'Analyzing content',
+  BUILDING_HYBRID: 'Preparing specification',
+  WAITING_FOR_HUMAN: 'Needs your review',
+  READY: 'Complete',
   FAILED: 'Failed',
-  SKIPPED: 'Not Analyzed',
+  SKIPPED: 'Not analyzed',
 })
+
+export const SOURCE_PREPARATION_STAGE_LABELS = Object.freeze({
+  TEXT_NORMALIZATION: 'Preparing text',
+  EXTRACTION: 'Reading document',
+  CHUNKING: 'Preparing content',
+  RULE_CLASSIFICATION: 'Analyzing content',
+  MODEL_CLASSIFICATION: 'Analyzing content',
+  HYBRID: 'Preparing specification',
+  HUMAN_REVIEW: 'Needs your review',
+})
+
+export function sourcePreparationLabel(source) {
+  return SOURCE_PREPARATION_LABELS[source?.status]
+    ?? SOURCE_PREPARATION_STAGE_LABELS[source?.status]
+    ?? SOURCE_PREPARATION_LABELS[source?.current_stage]
+    ?? SOURCE_PREPARATION_STAGE_LABELS[source?.current_stage]
+    ?? (source?.status ? source.status.replaceAll('_', ' ').toLowerCase() : 'Queued')
+}
 
 export function preparationToWorkflowState(status) {
   return {

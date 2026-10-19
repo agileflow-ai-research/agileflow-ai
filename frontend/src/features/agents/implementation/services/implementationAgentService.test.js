@@ -6,6 +6,7 @@ import {
   buildImplementationSemanticArtifacts,
   buildImplementationHybridDetections,
   connectGitHub,
+  continueTrustedImplementationReadiness,
   createGitHubRepository,
   createImplementationRun,
   deleteImplementationInputFile,
@@ -199,6 +200,20 @@ describe('implementationAgentService', () => {
     )
     expect(apiClient.post).toHaveBeenCalledWith(
       '/agents/implementation/AGP-003/trusted-readiness/evaluate',
+      request,
+      { authenticated: true },
+    )
+  })
+
+  it('persists warning continuation through the scoped backend endpoint', () => {
+    const request = {
+      expected_readiness_id: 'RDY-' + 'A'.repeat(24),
+      expected_readiness_fingerprint: 'b'.repeat(64),
+      acknowledged_warning_codes: ['UI_FLOW_RECOMMENDED'],
+    }
+    continueTrustedImplementationReadiness('AGP-003', request)
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/implementation/AGP-003/trusted-readiness/continue',
       request,
       { authenticated: true },
     )

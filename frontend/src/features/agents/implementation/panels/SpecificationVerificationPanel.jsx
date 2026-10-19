@@ -1,8 +1,10 @@
 import ArtifactGroup from '../components/common/ArtifactGroup.jsx'
+import HumanDecisionCallout from '../components/common/HumanDecisionCallout.jsx'
 import ResearchDetails from '../components/common/ResearchDetails.jsx'
 import SemanticReviewCards from '../components/review/SemanticReviewCards.jsx'
 import { specificationPresentation } from '../constants/specification.js'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
+import Button from '../../../../components/ui/Button.jsx'
 import { reviewTaxonomy } from '../constants/workspace.js'
 import { sourceName } from '../utils/sourcePresentation.js'
 import {
@@ -63,12 +65,14 @@ function aggregateArtifacts(inputs) {
 
 export default function SpecificationVerificationPanel({
   inputs,
+  preparationState,
   humanReviewContent,
   researchContent,
   specificationState,
   consolidationState,
   onSemanticDecision,
   onProjectConflictDecision,
+  onOpenArtifactReview,
 }) {
   const { groups, machineSuggestions, verifiedReferences } = aggregateArtifacts(inputs)
   const semanticMetrics = inputs.reduce((summary, input) => ({
@@ -88,9 +92,73 @@ export default function SpecificationVerificationPanel({
     FAILED: 'Consolidation failed',
     STALE: 'Source set changed',
   }[consolidation?.status] ?? 'Not started'
+  const phaseRows = [
+    {
+      label: 'Input Classification',
+      value: preparationState?.result?.status === 'RUNNING' ? 'Preparing'
+        : preparationState?.result?.status === 'WAITING_FOR_HUMAN' ? 'Needs your review'
+          : ['ANALYSIS_READY', 'PARTIAL_FAILURE'].includes(preparationState?.result?.status) ? 'Complete' : 'Waiting',
+    },
+    {
+      label: 'Semantic Structuring',
+      value: specification?.status === 'PREPARING_SPECIFICATION' ? 'Preparing'
+        : specification?.status === 'SPECIFICATION_READY' ? 'Complete'
+          : ['WAITING_FOR_ARTIFACT_REVIEW', 'WAITING_FOR_SEMANTIC_REVIEW'].includes(specification?.status) ? 'Needs your review' : 'Waiting',
+    },
+    {
+      label: 'Project Consolidation',
+      value: consolidation?.status === 'CONSOLIDATING' ? 'Preparing'
+        : consolidation?.status === 'WAITING_FOR_HUMAN' ? 'Needs your review'
+          : consolidation?.status === 'READY' ? 'Complete' : 'Waiting',
+    },
+    {
+      label: 'Final Trusted Specification',
+      value: consolidation?.status === 'READY' ? 'Complete' : 'Waiting',
+    },
+  ]
+  const artifactReviewSources = (preparationState?.result?.sources ?? []).filter(
+    (source) => source.status === 'WAITING_FOR_HUMAN',
+  )
 
   return (
     <div className="space-y-6">
+      {artifactReviewSources.length > 0 ? (
+        <HumanDecisionCallout
+          title="How should this information be classified?"
+          description="Agent 3 found requirement classifications that must be confirmed before semantic structuring can continue."
+          evidence={artifactReviewSources.map((source) => source.filename || source.label || source.source_id).join(', ')}
+          outcome="Agent 3 resumes semantic preparation after every required source review is complete."
+        />
+      ) : specification?.status === 'WAITING_FOR_SEMANTIC_REVIEW' ? (
+        <HumanDecisionCallout
+          title="Should this grounded information be included in the trusted specification?"
+          description="Compare the verified value with the grounded semantic suggestion, then approve or reject each item."
+          evidence={`${specification.pending_semantic_decision_count} semantic decisions require review.`}
+          outcome="Project consolidation begins only after all semantic decisions are complete."
+        />
+      ) : consolidation?.status === 'WAITING_FOR_HUMAN' ? (
+        <HumanDecisionCallout
+          title="Which conflicting project information should Agent 3 use?"
+          description="Select the supported candidate for each cross-source conflict. Source evidence remains visible with every option."
+          evidence={`${consolidation.pending_conflict_count} cross-source decisions require review.`}
+          outcome="The final trusted project specification becomes ready after every conflict is resolved."
+        />
+      ) : null}
+      <section aria-labelledby="verification-phases-title" className="space-y-3">
+        <div>
+          <h3 id="verification-phases-title" className="font-semibold text-content-primary">Verification progress</h3>
+          <p className="mt-1 text-sm text-content-secondary">Mechanical preparation continues automatically and pauses only when your decision is required.</p>
+        </div>
+        <ol className="divide-y divide-default rounded-control border border-default">
+          {phaseRows.map((phase) => (
+            <li key={phase.label} className="flex items-center justify-between gap-4 px-3 py-3 text-sm">
+              <span className="font-medium text-content-primary">{phase.label}</span>
+              <span className={phase.value === 'Complete' ? 'text-state-success' : phase.value === 'Needs your review' ? 'text-state-warning' : 'text-content-secondary'}>{phase.value}</span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
       <section aria-labelledby="specification-preparation-title" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -108,6 +176,28 @@ export default function SpecificationVerificationPanel({
         {specificationState?.status === 'loading' ? <p className="text-sm text-content-secondary">Loading specification status...</p> : null}
         {specificationState?.error ? <p role="alert" className="text-sm text-state-danger">{specificationState.error}</p> : null}
       </section>
+
+      {artifactReviewSources.length > 0 ? (
+        <section aria-labelledby="artifact-review-title" className="space-y-3">
+          <div>
+            <h3 id="artifact-review-title" className="font-semibold text-content-primary">Input Classification Review</h3>
+            <p className="mt-1 text-sm text-content-secondary">Confirm, relabel, exclude, or add labels only where Agent 3 needs your judgment.</p>
+          </div>
+          <div className="space-y-2">
+            {artifactReviewSources.map((source) => (
+              <div key={source.source_id} className="flex items-center justify-between gap-4 rounded-control border border-state-warning p-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-content-primary">{source.filename || source.label || source.source_id}</p>
+                  <p className="mt-1 text-xs text-state-warning">Needs your review</p>
+                </div>
+                <Button variant="outline" size="small" onClick={() => onOpenArtifactReview?.(source.source_id)}>
+                  Review Source
+                </Button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {specification?.status === 'WAITING_FOR_SEMANTIC_REVIEW' ? (
         <section aria-labelledby="semantic-review-title" className="space-y-3">

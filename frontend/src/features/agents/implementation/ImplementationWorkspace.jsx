@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   connectGitHub,
@@ -7,6 +7,7 @@ import {
   buildImplementationHybridDetections,
   createGitHubRepository,
   createImplementationRun,
+  continueTrustedImplementationReadiness,
   deleteImplementationInputFile,
   evaluateTrustedImplementationReadiness,
   extractImplementationDocument,
@@ -49,6 +50,7 @@ import ReadinessReview from './components/readiness/ReadinessReview.jsx'
 import GitHubIntegration from './components/github/GitHubIntegration.jsx'
 import ImplementationInputsStep from './components/inputs/ImplementationInputsStep.jsx'
 import HumanReviewWorkspace from './components/review/HumanReviewWorkspace.jsx'
+import HumanDecisionCallout from './components/common/HumanDecisionCallout.jsx'
 import DeliverySetupPanel from './panels/DeliverySetupPanel.jsx'
 import ImplementationReadinessPanel from './panels/ImplementationReadinessPanel.jsx'
 import GenerateImplementationPanel from './panels/GenerateImplementationPanel.jsx'
@@ -67,6 +69,24 @@ import {
   requestInput,
 } from './utils/workspace.js'
 import { extractionSummary } from './utils/presentation.js'
+import { deriveWorkflowGates } from './utils/workflowGates.js'
+
+function WorkflowBarrier({ gate, onNavigate }) {
+  return (
+    <HumanDecisionCallout
+      eyebrow={gate.failed ? 'Action required after failure' : 'Blocked'}
+      title={gate.failed ? 'This stage needs attention before the workflow can continue.' : 'Complete the upstream decision first.'}
+      description={gate.blocking_reason}
+      outcome="The workflow remains unchanged until the prerequisite is completed and validated."
+    >
+      {gate.blocking_node_id ? (
+        <Button variant="outline" onClick={() => onNavigate?.(gate.blocking_node_id)}>
+          Go to prerequisite
+        </Button>
+      ) : null}
+    </HumanDecisionCallout>
+  )
+}
 
 function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentationChange, onNavigateNode }) {
   const [step, setStep] = useState(0)
@@ -122,14 +142,28 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
   const [runState, setRunState] = useState({
     status: 'loading', runs: [], current: null, error: '',
   })
+  const [deliveryDecision, setDeliveryDecision] = useState('PENDING')
   const consolidationStartRef = useRef(null)
   const readinessEvaluationRef = useRef(null)
+  const preparationSubmittingRef = useRef(false)
+  const continuationSubmittingRef = useRef(false)
   const approvalSubmittingRef = useRef(false)
   const approvalIdempotencyRef = useRef(null)
   const readinessStateRef = useRef(readinessState)
   const activeProjectRef = useRef(project.agent_project_id)
 
   const consolidatedSpecificationId = consolidationState.specification?.project_specification_id
+  const workflowGates = useMemo(() => deriveWorkflowGates({
+    inputs,
+    selectedOutputs,
+    preparationState,
+    specificationState,
+    consolidationState,
+    readinessState,
+    repositoryState,
+    deliveryDecision,
+    runState,
+  }), [consolidationState, deliveryDecision, inputs, preparationState, readinessState, repositoryState, runState, selectedOutputs, specificationState])
 
   useEffect(() => {
     readinessStateRef.current = readinessState
@@ -137,6 +171,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
 
   useEffect(() => {
     activeProjectRef.current = project.agent_project_id
+    setDeliveryDecision('PENDING')
     return () => {
       if (activeProjectRef.current === project.agent_project_id) activeProjectRef.current = null
     }
@@ -239,7 +274,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
 
   useEffect(() => {
     if (
-      specificationState.result?.status !== 'SPECIFICATION_READY'
+      !workflowGates.automation.consolidation_allowed
       || !['NOT_STARTED', 'STALE'].includes(consolidationState.result?.status)
     ) return undefined
     const startKey = [
@@ -265,7 +300,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         }))
       })
     return () => { active = false }
-  }, [consolidationState.result?.source_set_digest, consolidationState.result?.status, project.agent_project_id, specificationState.result?.status])
+  }, [consolidationState.result?.source_set_digest, consolidationState.result?.status, project.agent_project_id, workflowGates.automation.consolidation_allowed])
 
   useEffect(() => {
     const state = consolidationState.result?.status
@@ -294,7 +329,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
   }, [consolidationState.result?.status, project.agent_project_id])
 
   useEffect(() => {
-    if (consolidationState.result?.status !== 'READY' || selectedOutputs.length === 0) return undefined
+    if (!workflowGates.automation.readiness_evaluation_allowed || selectedOutputs.length === 0) return undefined
     const currentReadiness = readinessStateRef.current
     const selectedKey = [...selectedOutputs].sort().join(',')
     const resultKey = [...(currentReadiness.result?.selected_outputs ?? [])].sort().join(',')
@@ -321,14 +356,13 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
           error: error?.errors?.[0]?.message || error?.message || 'Trusted readiness could not be evaluated.',
         }))
       })
-  }, [consolidatedSpecificationId, consolidationState.result?.source_set_digest, consolidationState.result?.status, project.agent_project_id, selectedOutputs])
+  }, [consolidatedSpecificationId, consolidationState.result?.source_set_digest, project.agent_project_id, selectedOutputs, workflowGates.automation.readiness_evaluation_allowed])
 
   useEffect(() => {
-    const preparationStatus = preparationState.result?.status
     if (
       specificationState.status !== 'loaded'
       || specificationState.result?.status !== 'NOT_STARTED'
-      || !['WAITING_FOR_HUMAN', 'ANALYSIS_READY', 'PARTIAL_FAILURE'].includes(preparationStatus)
+      || !workflowGates.automation.specification_preparation_allowed
     ) return
     let active = true
     setSpecificationState((current) => ({ ...current, status: 'starting', error: '' }))
@@ -350,7 +384,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         }))
       })
     return () => { active = false }
-  }, [preparationState.result?.status, project.agent_project_id, specificationState.result?.status, specificationState.status])
+  }, [project.agent_project_id, specificationState.result?.status, specificationState.status, workflowGates.automation.specification_preparation_allowed])
 
   useEffect(() => {
     if (preparationState.result?.status !== 'RUNNING') return undefined
@@ -529,10 +563,13 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       specificationState,
       consolidationState,
       runState,
+      deliveryDecision,
     })
-  }, [consolidationState, githubState, inputs, onPresentationChange, preparationState, readinessState, repositoryState, runState, selectedOutputs, specificationState])
+  }, [consolidationState, deliveryDecision, githubState, inputs, onPresentationChange, preparationState, readinessState, repositoryState, runState, selectedOutputs, specificationState])
 
   async function analyzeProjectInputs() {
+    if (preparationSubmittingRef.current) return false
+    preparationSubmittingRef.current = true
     setPreparationState((current) => ({ ...current, status: 'starting', error: '' }))
     const textInputs = inputs
       .filter((item) => item.source_type === 'TEXT' && item.content.trim())
@@ -548,13 +585,26 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         throw new Error('Invalid project preparation response')
       }
       setPreparationState({ status: 'loaded', result: response.data, error: '' })
+      return true
     } catch (error) {
       if (error?.status === 401) return
       setPreparationState((current) => ({
         ...current, status: 'error',
         error: error?.errors?.[0]?.message || error?.message || 'Project input analysis could not be started.',
       }))
+      return false
+    } finally {
+      preparationSubmittingRef.current = false
     }
+  }
+
+  async function beginInputAnalysis() {
+    const validInputs = inputsAreValid()
+    const validOutputs = outputsAreValid()
+    if (!validInputs || !validOutputs) return
+    setErrors({})
+    const started = await analyzeProjectInputs()
+    if (started) onNavigateNode?.('INPUT_ANALYSIS')
   }
 
   function updateInput(index, changes) {
@@ -893,6 +943,22 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     }
   }
 
+  async function refreshPreparationStatus() {
+    try {
+      const response = await getPreparationStatus(project.agent_project_id)
+      if (!response?.data?.status || !Array.isArray(response.data.sources)) {
+        throw new Error('Invalid project preparation response')
+      }
+      setPreparationState({ status: 'loaded', result: response.data, error: '' })
+    } catch (error) {
+      if (error?.status === 401) return
+      setPreparationState((current) => ({
+        ...current, status: 'error',
+        error: error?.errors?.[0]?.message || error?.message || 'Project input analysis status could not be refreshed.',
+      }))
+    }
+  }
+
   async function submitSemanticDecision(uploadId, decisionId, request) {
     setSpecificationState((current) => ({
       ...current, savingDecisionId: decisionId, error: '',
@@ -976,6 +1042,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       }
       setHumanReviewWorkspace({ uploadId: file.upload_id, status: 'loaded', result: response.data, error: '' })
       if (response.data.review.review_status === 'COMPLETE') {
+        await refreshPreparationStatus()
         await refreshSpecificationStatus()
       }
     } catch (error) {
@@ -1199,6 +1266,52 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     })
   }
 
+  async function continueWithReadinessWarnings() {
+    const readiness = readinessState.result
+    if (
+      readiness?.status !== 'READY_WITH_WARNINGS'
+      || readiness.current === false
+      || readiness.continuation_approved
+      || continuationSubmittingRef.current
+    ) return
+    const warningCodes = [...new Set(
+      (readiness.findings ?? [])
+        .filter((item) => item.severity === 'WARNING' && !item.resolved)
+        .map((item) => item.issue_code ?? item.code)
+        .filter(Boolean),
+    )].sort()
+    const requestProjectId = project.agent_project_id
+    continuationSubmittingRef.current = true
+    setReadinessState((current) => ({ ...current, status: 'continuing', error: '' }))
+    try {
+      const response = await continueTrustedImplementationReadiness(
+        requestProjectId,
+        {
+          expected_readiness_id: readiness.readiness_id,
+          expected_readiness_fingerprint: readiness.readiness_fingerprint,
+          acknowledged_warning_codes: warningCodes,
+        },
+      )
+      if (!response?.data?.continuation_approved) {
+        throw new Error('Invalid readiness continuation response')
+      }
+      if (activeProjectRef.current !== requestProjectId) return
+      setReadinessState({
+        status: 'complete', result: response.data, error: '', stale: false,
+        resolutions: [],
+      })
+    } catch (error) {
+      if (activeProjectRef.current !== requestProjectId) return
+      setReadinessState((current) => ({
+        ...current,
+        status: 'error',
+        error: error?.errors?.[0]?.message || error?.message || 'Readiness warning approval could not be saved.',
+      }))
+    } finally {
+      continuationSubmittingRef.current = false
+    }
+  }
+
   function inputsAreValid() {
     if (inputs.length === 0) {
       setErrors({ inputs: 'Add at least one implementation input.' })
@@ -1302,6 +1415,9 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
     || item.chunks?.status === 'preparing'
     || item.ruleDetections?.status === 'running'
     || item.zeroShotDetections?.status === 'running'
+  ))
+  const canAnalyze = selectedOutputs.length > 0 && inputs.length > 0 && !workspaceBusy && inputs.every((item) => (
+    item.source_type === 'TEXT' ? Boolean(item.content.trim()) : Boolean(item.file)
   ))
   const workspaceRequest = {
     inputs: inputs.map(requestInput),
@@ -1481,6 +1597,9 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
           onOutputsChange={changeOutputs}
           outputError={errors.outputs}
           inputStepProps={inputStepProps}
+          canAnalyze={canAnalyze}
+          analyzing={preparationState.status === 'starting'}
+          onAnalyze={beginInputAnalysis}
         />
       ) : null}
       {activeSection === 'INPUT_ANALYSIS' ? (
@@ -1494,12 +1613,17 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
       {activeSection === 'SPECIFICATION_VERIFICATION' ? (
         <SpecificationVerificationPanel
           inputs={inputs}
+          preparationState={preparationState}
           humanReviewContent={humanReviewContent}
           researchContent={specificationResearchContent}
           specificationState={specificationState}
           consolidationState={consolidationState}
           onSemanticDecision={submitSemanticDecision}
           onProjectConflictDecision={submitProjectConflictDecision}
+          onOpenArtifactReview={(sourceId) => {
+            const inputIndex = inputs.findIndex((input) => input.file?.upload_id === sourceId)
+            if (inputIndex >= 0) openHumanReviews(inputIndex, inputs[inputIndex].file)
+          }}
         />
       ) : null}
 
@@ -1509,19 +1633,21 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
             state={readinessState}
             onAdapt={adaptToSupportedStack}
             onBack={reviewSpecification}
+            onContinueWithWarnings={continueWithReadinessWarnings}
           />
         </>
       )}
       {activeSection === 'IMPLEMENTATION_READINESS' ? (
-        <ImplementationReadinessPanel
+        workflowGates.SPECIFICATION_GATE.satisfied ? <ImplementationReadinessPanel
           state={readinessState}
           workspaceBusy={workspaceBusy}
           errors={errors}
           onCheck={checkReadinessFromPanel}
           onAdapt={adaptToSupportedStack}
           onBack={reviewSpecification}
+          onContinueWithWarnings={continueWithReadinessWarnings}
           specificationStatus={consolidationState.result?.status}
-        />
+        /> : <WorkflowBarrier gate={workflowGates.READINESS_GATE} onNavigate={onNavigateNode} />
       ) : null}
 
       {activeSection === 'ALL' && (
@@ -1536,7 +1662,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
         />
       )}
       {activeSection === 'DELIVERY_SETUP' ? (
-        <DeliverySetupPanel
+        workflowGates.READINESS_GATE.satisfied ? <DeliverySetupPanel
           githubState={githubState}
           repositoryState={repositoryState}
           integrationProps={{
@@ -1548,7 +1674,11 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
             onConnect: handleGitHubConnect,
             onCreateRepository: handleRepositoryCreate,
           }}
-        />
+          onContinue={() => {
+            if (repositoryState.status !== 'created') setDeliveryDecision('SKIPPED')
+            onNavigateNode?.('GENERATE_IMPLEMENTATION')
+          }}
+        /> : <WorkflowBarrier gate={workflowGates.DELIVERY_GATE} onNavigate={onNavigateNode} />
       ) : null}
       {activeSection === 'GENERATE_IMPLEMENTATION' ? (
         <GenerateImplementationPanel
@@ -1558,6 +1688,7 @@ function ImplementationWorkspace({ project, activeSection = 'ALL', onPresentatio
           githubState={githubState}
           repositoryState={repositoryState}
           runState={runState}
+          workflowGate={workflowGates.FINAL_APPROVAL_GATE}
           onApprove={approveImplementation}
           onNavigate={onNavigateNode}
         />

@@ -565,6 +565,10 @@ def test_openapi_exposes_only_implemented_agent3_routes():
                 "GET",
                 "/api/v1/agents/implementation/{agent_project_id}/trusted-readiness",
             ),
+                (
+                    "POST",
+                    "/api/v1/agents/implementation/{agent_project_id}/trusted-readiness/continue",
+                ),
         (
             "POST",
             "/api/v1/agents/implementation/{agent_project_id}/preparation/start",

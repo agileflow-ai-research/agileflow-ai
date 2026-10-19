@@ -32,7 +32,7 @@ describe('implementation workflow registry', () => {
     expect(nodes).toHaveLength(9)
     expect(nodes.map((node) => node.id)).toEqual(IMPLEMENTATION_NODE_REGISTRY.map((node) => node.id))
     expect(nodes[0].position).toEqual(DEFAULT_NODE_POSITIONS.PROJECT_SOURCES)
-    expect(nodes[5].data).toMatchObject({ status: 'NOT_STARTED', locked: false })
+    expect(nodes[5].data).toMatchObject({ status: 'BLOCKED', locked: false })
     expect(nodes.slice(6).every((node) => node.data.status === 'LOCKED' && node.data.locked)).toBe(true)
     nodes[0].data.onOpen()
     expect(openNode).toHaveBeenCalledWith('PROJECT_SOURCES')
@@ -49,16 +49,19 @@ describe('implementation workflow registry', () => {
 
     expect(presentation.PROJECT_SOURCES).toMatchObject({ status: 'RUNNING', summary: '1 source · 1 selected output' })
     expect(presentation.INPUT_ANALYSIS).toMatchObject({ status: 'RUNNING', summary: '1 source prepared · 0 pending' })
-    expect(presentation.SPECIFICATION_VERIFICATION.status).toBe('WAITING_FOR_HUMAN')
-    expect(presentation.IMPLEMENTATION_READINESS.status).toBe('NOT_STARTED')
-    expect(presentation.DELIVERY_SETUP.status).toBe('RUNNING')
-    expect(presentation.GENERATE_IMPLEMENTATION.status).toBe('NOT_STARTED')
+    expect(presentation.SPECIFICATION_VERIFICATION.status).toBe('BLOCKED')
+    expect(presentation.IMPLEMENTATION_READINESS.status).toBe('BLOCKED')
+    expect(presentation.DELIVERY_SETUP.status).toBe('BLOCKED')
+    expect(presentation.GENERATE_IMPLEMENTATION.status).toBe('BLOCKED')
   })
 
   it('maps final approval honestly without claiming code generation', () => {
     const waiting = deriveWorkflowPresentation({
+      preparationState: { result: { status: 'ANALYSIS_READY' } },
+      specificationState: { result: { status: 'SPECIFICATION_READY' } },
       consolidationState: { result: { status: 'READY' } },
-      readinessState: { result: { status: 'READY', current: true }, stale: false },
+      readinessState: { result: { status: 'READY', current: true, readiness_id: 'RDY-1' }, stale: false },
+      deliveryDecision: 'SKIPPED',
       runState: { status: 'loaded', runs: [] },
     })
     expect(waiting.GENERATE_IMPLEMENTATION).toMatchObject({
@@ -66,12 +69,14 @@ describe('implementation workflow registry', () => {
     })
 
     const approved = deriveWorkflowPresentation({
+      preparationState: { result: { status: 'WAITING_FOR_HUMAN' } },
+      specificationState: { result: { status: 'SPECIFICATION_READY' } },
       consolidationState: { result: { status: 'STALE' } },
       readinessState: { result: { status: 'NOT_READY', current: false }, stale: true },
-      runState: { status: 'loaded', runs: [{ run_id: 'RUN-012' }] },
+      runState: { status: 'loaded', runs: [{ run_id: 'RUN-012', run_status: 'READY_FOR_GENERATION', readiness_id: 'RDY-OLD' }] },
     })
     expect(approved.GENERATE_IMPLEMENTATION).toMatchObject({
-      status: 'COMPLETE', summary: 'RUN-012 ready for future generation',
+      status: 'BLOCKED', summary: 'Waiting for specification review',
     })
   })
 
@@ -90,11 +95,53 @@ describe('implementation workflow registry', () => {
     })
 
     expect(presentation.INPUT_ANALYSIS).toMatchObject({
-      status: 'WAITING_FOR_HUMAN', summary: '3 / 3 eligible sources processed',
+      status: 'COMPLETE', summary: '3 / 3 eligible sources processed',
     })
     expect(presentation.SPECIFICATION_VERIFICATION).toMatchObject({
       status: 'WAITING_FOR_HUMAN', summary: '2 sources awaiting verification',
     })
+    expect(presentation.IMPLEMENTATION_READINESS.status).toBe('BLOCKED')
+    expect(presentation.DELIVERY_SETUP.status).toBe('BLOCKED')
+    expect(presentation.GENERATE_IMPLEMENTATION.status).toBe('BLOCKED')
+  })
+
+  it('maps readiness warnings to human approval before allowing configured delivery', () => {
+    const base = {
+      preparationState: { result: { status: 'ANALYSIS_READY' } },
+      specificationState: { result: { status: 'SPECIFICATION_READY' } },
+      consolidationState: { result: { status: 'READY' } },
+      repositoryState: { status: 'created', repository: { full_name: 'octocat/app' } },
+      deliveryDecision: 'PENDING',
+      runState: { status: 'loaded', runs: [] },
+    }
+    const pending = deriveWorkflowPresentation({
+      ...base,
+      readinessState: {
+        status: 'complete', stale: false,
+        result: { status: 'READY_WITH_WARNINGS', current: true, readiness_id: 'RDY-1', continuation_approved: false },
+      },
+    })
+    expect(pending.IMPLEMENTATION_READINESS).toMatchObject({
+      status: 'WAITING_FOR_HUMAN', statusLabel: 'Needs Your Approval',
+      summary: 'Needs your approval',
+    })
+    expect(pending.DELIVERY_SETUP).toMatchObject({
+      status: 'BLOCKED', summary: 'Waiting for readiness approval',
+    })
+    expect(pending.GENERATE_IMPLEMENTATION.status).toBe('BLOCKED')
+
+    const approved = deriveWorkflowPresentation({
+      ...base,
+      readinessState: {
+        status: 'complete', stale: false,
+        result: { status: 'READY_WITH_WARNINGS', current: true, readiness_id: 'RDY-1', continuation_approved: true },
+      },
+    })
+    expect(approved.IMPLEMENTATION_READINESS).toMatchObject({
+      status: 'COMPLETE', statusLabel: 'Approved with Warnings',
+      summary: 'Approved with warnings',
+    })
+    expect(approved.DELIVERY_SETUP.status).toBe('COMPLETE')
   })
 
   it('maps authoritative specification preparation and semantic decisions', () => {
@@ -126,7 +173,10 @@ describe('implementation workflow registry', () => {
     })
 
     const ready = deriveWorkflowPresentation({
-      inputs: [], selectedOutputs: [], consolidationState: { result: { status: 'READY', pending_conflict_count: 0, issue_count: 0 } },
+      inputs: [], selectedOutputs: [],
+      preparationState: { result: { status: 'ANALYSIS_READY' } },
+      specificationState: { result: { status: 'SPECIFICATION_READY' } },
+      consolidationState: { result: { status: 'READY', pending_conflict_count: 0, issue_count: 0 } },
     })
     expect(ready.SPECIFICATION_VERIFICATION).toMatchObject({
       status: 'COMPLETE', summary: 'Project specification ready',

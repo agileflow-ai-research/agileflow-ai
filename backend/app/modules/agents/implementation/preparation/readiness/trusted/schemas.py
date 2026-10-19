@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -32,6 +33,39 @@ class TrustedReadinessEvaluationRequest(StrictModel):
         if len(values) != len(set(values)):
             raise ValueError("selected_outputs must not contain duplicates")
         return values
+
+
+class TrustedReadinessContinuationRequest(StrictModel):
+    expected_readiness_id: str = Field(pattern=r"^RDY-[0-9A-F]{24}$")
+    expected_readiness_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    acknowledged_warning_codes: list[str] = Field(min_length=1)
+
+    @field_validator("acknowledged_warning_codes")
+    @classmethod
+    def unique_warning_codes(cls, values):
+        if len(values) != len(set(values)):
+            raise ValueError("acknowledged_warning_codes must not contain duplicates")
+        if any(not value.strip() for value in values):
+            raise ValueError("warning codes must not be blank")
+        return values
+
+
+class TrustedReadinessContinuationDecision(StrictModel):
+    decision_id: str = Field(pattern=r"^RCD-[0-9a-f]{32}$")
+    agent_project_id: str
+    readiness_id: str = Field(pattern=r"^RDY-[0-9A-F]{24}$")
+    readiness_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    readiness_policy_version: str
+    selected_outputs_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    project_specification_id: str
+    stack_adaptation_fingerprint: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    acknowledged_warning_codes: list[str]
+    warning_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    reviewer_owner_id: str
+    decision: Literal["CONTINUE_WITH_WARNINGS"] = "CONTINUE_WITH_WARNINGS"
+    created_at: datetime
 
 
 class RequirementKind(StrEnum):
@@ -93,3 +127,6 @@ class TrustedReadinessSnapshot(StrictModel):
     effective_stack: dict[str, str]
     evaluated_at: datetime
     current: bool = True
+    continuation_required: bool = False
+    continuation_approved: bool = False
+    continuation_decision_id: str | None = None

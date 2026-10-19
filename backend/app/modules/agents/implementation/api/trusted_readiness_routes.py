@@ -12,10 +12,12 @@ from app.modules.agents.implementation.inputs.upload.service import WrongAgentPr
 from app.modules.agents.implementation.preparation.consolidation.service import ConsolidationNotFoundError
 from app.modules.agents.implementation.preparation.consolidation.storage import ConsolidationStorageError
 from app.modules.agents.implementation.preparation.readiness.trusted.schemas import (
+    TrustedReadinessContinuationRequest,
     TrustedReadinessEvaluationRequest,
     TrustedReadinessSnapshot,
 )
 from app.modules.agents.implementation.preparation.readiness.trusted.service import (
+    ReadinessContinuationError,
     StaleStackAdaptationError,
     TrustedReadinessNotFoundError,
     TrustedReadinessService,
@@ -42,6 +44,8 @@ def _service_error(exc: Exception) -> JSONResponse:
         return _error(404, "Trusted readiness not found", "trusted_readiness", "No trusted readiness evaluation exists")
     if isinstance(exc, StaleStackAdaptationError):
         return _error(409, "Stack adaptation is stale", "stack_adaptation", str(exc))
+    if isinstance(exc, ReadinessContinuationError):
+        return _error(409, "Readiness continuation rejected", "trusted_readiness", str(exc))
     return _error(503, "Trusted readiness unavailable", "trusted_readiness", "Trusted readiness storage is unavailable")
 
 
@@ -51,6 +55,7 @@ SERVICE_ERRORS = (
     ConsolidationNotFoundError, ConsolidationStorageError,
     TrustedReadinessStorageError, TrustedReadinessNotFoundError,
     StaleStackAdaptationError,
+    ReadinessContinuationError,
 )
 
 
@@ -85,3 +90,24 @@ def get_trusted_readiness(
     except SERVICE_ERRORS as exc:
         return _service_error(exc)
     return SuccessResponse(message="Trusted implementation readiness retrieved", data=result)
+
+
+@router.post(
+    "/{agent_project_id}/trusted-readiness/continue",
+    response_model=SuccessResponse[TrustedReadinessSnapshot],
+)
+def continue_trusted_readiness(
+    agent_project_id: str,
+    request: TrustedReadinessContinuationRequest,
+    service: Annotated[TrustedReadinessService, Depends(get_trusted_readiness_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[TrustedReadinessSnapshot] | JSONResponse:
+    try:
+        result = service.continue_with_warnings(
+            agent_project_id, request, current_user
+        )
+    except SERVICE_ERRORS as exc:
+        return _service_error(exc)
+    return SuccessResponse(
+        message="Readiness warnings acknowledged", data=result
+    )

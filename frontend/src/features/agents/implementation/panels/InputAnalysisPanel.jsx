@@ -4,7 +4,7 @@ import ResearchDetails from '../components/common/ResearchDetails.jsx'
 import SourceSummary from '../components/common/SourceSummary.jsx'
 import {
   preparationPresentation,
-  SOURCE_PREPARATION_LABELS,
+  sourcePreparationLabel,
 } from '../constants/preparation.js'
 import { hasSource, sourceAnalysisState } from '../utils/sourcePresentation.js'
 
@@ -34,9 +34,11 @@ export default function InputAnalysisPanel({ inputs, preparationState, onAnalyze
             </div>
             <p className="mt-1 text-sm text-content-secondary">Prepare every eligible project source through the trusted automated analysis stages.</p>
           </div>
-          <Button loading={busy} loadingLabel="Analyzing project inputs" disabled={busy} onClick={onAnalyze}>
-            Analyze Project Inputs
-          </Button>
+          {['FAILED', 'PARTIAL_FAILURE'].includes(result?.status) ? (
+            <Button variant="outline" loading={busy} loadingLabel="Retrying input analysis" disabled={busy} onClick={onAnalyze}>
+              Retry Input Analysis
+            </Button>
+          ) : null}
         </div>
         <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
           {[
@@ -61,19 +63,19 @@ export default function InputAnalysisPanel({ inputs, preparationState, onAnalyze
                 <p className="truncate text-sm font-medium text-content-primary">{sourceName(source)}</p>
                 <p className="mt-1 text-xs text-content-muted">
                   {source.source_kind === 'DOCUMENT' ? 'Document' : source.source_kind === 'IMAGE' ? 'Image' : 'Text'}
-                  {source.current_stage ? ` · ${source.current_stage.replaceAll('_', ' ').toLowerCase()}` : ''}
+                  {source.current_stage ? ` · ${sourcePreparationLabel({ status: source.current_stage })}` : ''}
                 </p>
                 {source.error?.message ? <p className="mt-1 text-xs text-state-danger">{source.error.message}</p> : null}
               </div>
               <span className={`shrink-0 text-xs font-semibold ${source.status === 'FAILED' ? 'text-state-danger' : source.status === 'READY' ? 'text-state-success' : 'text-content-secondary'}`}>
-                {SOURCE_PREPARATION_LABELS[source.status] ?? source.status}
+                {sourcePreparationLabel(source)}
               </span>
             </div>
           ))}
         </div>
       ) : <SourceSummary inputs={inputs} mode="analysis" />}
-      {result?.status === 'RUNNING' ? <p className="text-sm text-content-secondary">{result.processed_source_count} / {result.eligible_source_count} eligible sources processed</p> : null}
-      {result?.status === 'WAITING_FOR_HUMAN' ? <p className="text-sm text-state-warning">{result.human_review_source_count} {result.human_review_source_count === 1 ? 'source requires' : 'sources require'} verification in Specification Verification.</p> : null}
+      {result?.status === 'RUNNING' ? <p role="status" className="text-sm text-content-secondary">Analyzing project inputs... {result.processed_source_count} / {result.eligible_source_count} eligible sources processed</p> : null}
+      {result?.status === 'WAITING_FOR_HUMAN' ? <p className="text-sm text-state-warning">Input analysis is complete. {result.human_review_source_count} {result.human_review_source_count === 1 ? 'item needs' : 'items need'} your review.</p> : null}
       <ResearchDetails>{researchContent}</ResearchDetails>
     </div>
   )

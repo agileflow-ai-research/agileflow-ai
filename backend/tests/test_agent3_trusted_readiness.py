@@ -16,8 +16,16 @@ from app.modules.agents.implementation.preparation.consolidation.schemas import 
 )
 from app.modules.agents.implementation.preparation.readiness.trusted.constants import TRUSTED_READINESS_POLICY_VERSION
 from app.modules.agents.implementation.preparation.readiness.trusted.policy import digest
-from app.modules.agents.implementation.preparation.readiness.trusted.schemas import TrustedReadinessEvaluationRequest
-from app.modules.agents.implementation.preparation.readiness.trusted.service import StaleStackAdaptationError, TrustedReadinessService
+from app.modules.agents.implementation.preparation.readiness.trusted.schemas import (
+    TrustedReadinessContinuationRequest,
+    TrustedReadinessEvaluationRequest,
+    TrustedStackAdaptation,
+)
+from app.modules.agents.implementation.preparation.readiness.trusted.service import (
+    ReadinessContinuationError,
+    StaleStackAdaptationError,
+    TrustedReadinessService,
+)
 from app.modules.agents.implementation.preparation.readiness.trusted.storage import TrustedReadinessStorage
 from app.modules.agents.implementation.preparation.schemas import ArtifactDetectionLabel as A
 
@@ -178,6 +186,185 @@ def test_request_rejects_frontend_fact_injection():
             "selected_outputs": ["BACKEND_CODE"],
             "trusted_project_specification": {"categories": {}},
         })
+    with pytest.raises(ValueError):
+        TrustedReadinessContinuationRequest.model_validate({
+            "expected_readiness_id": "RDY-" + "A" * 24,
+            "expected_readiness_fingerprint": "b" * 64,
+            "acknowledged_warning_codes": ["UI_FLOW_RECOMMENDED"],
+            "warning_messages": ["frontend supplied fact"],
+        })
+
+
+def test_openapi_exposes_only_the_single_continuation_operation():
+    from app.main import app
+
+    path = "/api/v1/agents/implementation/{agent_project_id}/trusted-readiness/continue"
+    assert set(app.openapi()["paths"][path]) == {"post"}
+
+
+def continuation_request(result, warning_codes=None, **updates):
+    values = {
+        "expected_readiness_id": result.readiness_id,
+        "expected_readiness_fingerprint": result.readiness_fingerprint,
+        "acknowledged_warning_codes": warning_codes or sorted(codes(result)),
+    }
+    values.update(updates)
+    return TrustedReadinessContinuationRequest(**values)
+
+
+def test_warning_continuation_persists_without_mutating_readiness_or_specification(tmp_path):
+    categories = {
+        A.FUNCTIONAL_REQUIREMENTS: [project_item(A.FUNCTIONAL_REQUIREMENTS, "A")]
+    }
+    readiness, consolidation = service(tmp_path, categories)
+    before = consolidation.final.model_dump(mode="json")
+    result = readiness.evaluate(
+        PROJECT_ID, request(ImplementationOutputCode.FRONTEND_CODE),
+        SimpleNamespace(user_id="USR-001"),
+    )
+    assert result.status == "READY_WITH_WARNINGS"
+    assert result.continuation_required is True
+
+    approved = readiness.continue_with_warnings(
+        PROJECT_ID, continuation_request(result),
+        SimpleNamespace(user_id="USR-001"),
+    )
+    assert approved.status == "READY_WITH_WARNINGS"
+    assert approved.continuation_approved is True
+    assert approved.continuation_required is False
+    assert approved.continuation_decision_id.startswith("RCD-")
+    assert consolidation.final.model_dump(mode="json") == before
+
+    restored = readiness.get(PROJECT_ID, SimpleNamespace(user_id="USR-001"))
+    assert restored.continuation_decision_id == approved.continuation_decision_id
+    assert (tmp_path / PROJECT_ID / "implementation-readiness-continuation.json").exists()
+
+
+def test_warning_continuation_requires_exact_current_identity_and_warning_set(tmp_path):
+    readiness, _ = service(tmp_path, {
+        A.FUNCTIONAL_REQUIREMENTS: [project_item(A.FUNCTIONAL_REQUIREMENTS, "A")]
+    })
+    result = readiness.evaluate(
+        PROJECT_ID, request(ImplementationOutputCode.FRONTEND_CODE),
+        SimpleNamespace(user_id="USR-001"),
+    )
+    with pytest.raises(ReadinessContinuationError, match="changed"):
+        readiness.continue_with_warnings(
+            PROJECT_ID,
+            continuation_request(result, expected_readiness_fingerprint="0" * 64),
+            SimpleNamespace(user_id="USR-001"),
+        )
+    with pytest.raises(ReadinessContinuationError, match="exactly"):
+        readiness.continue_with_warnings(
+            PROJECT_ID, continuation_request(result, ["STALE_WARNING"]),
+            SimpleNamespace(user_id="USR-001"),
+        )
+    with pytest.raises(ReadinessContinuationError, match="exactly"):
+        readiness.continue_with_warnings(
+            PROJECT_ID,
+            continuation_request(result, sorted(codes(result)) + ["EXTRA_WARNING"]),
+            SimpleNamespace(user_id="USR-001"),
+        )
+
+
+def test_ready_and_not_ready_cannot_be_continued(tmp_path):
+    ready_service, _ = service(tmp_path / "ready", {
+        A.FUNCTIONAL_REQUIREMENTS: [project_item(A.FUNCTIONAL_REQUIREMENTS, "A")],
+        A.API_SPECIFICATION: [project_item(A.API_SPECIFICATION, "B")],
+        A.ACCEPTANCE_CRITERIA: [project_item(A.ACCEPTANCE_CRITERIA, "C")],
+        A.NON_FUNCTIONAL_REQUIREMENTS: [project_item(A.NON_FUNCTIONAL_REQUIREMENTS, "D")],
+        A.TEST_CASES: [project_item(A.TEST_CASES, "E")],
+    })
+    ready = ready_service.evaluate(
+        PROJECT_ID, request(ImplementationOutputCode.API_IMPLEMENTATION),
+        SimpleNamespace(user_id="USR-001"),
+    )
+    with pytest.raises(ReadinessContinuationError, match="Only current"):
+        ready_service.continue_with_warnings(
+            PROJECT_ID,
+            TrustedReadinessContinuationRequest(
+                expected_readiness_id=ready.readiness_id,
+                expected_readiness_fingerprint=ready.readiness_fingerprint,
+                acknowledged_warning_codes=["UNNEEDED"],
+            ),
+            SimpleNamespace(user_id="USR-001"),
+        )
+
+    blocked_service, _ = service(tmp_path / "blocked", {})
+    blocked = blocked_service.evaluate(
+        PROJECT_ID, request(ImplementationOutputCode.DATABASE_IMPLEMENTATION),
+        SimpleNamespace(user_id="USR-001"),
+    )
+    with pytest.raises(ReadinessContinuationError, match="Only current"):
+        blocked_service.continue_with_warnings(
+            PROJECT_ID,
+            TrustedReadinessContinuationRequest(
+                expected_readiness_id=blocked.readiness_id,
+                expected_readiness_fingerprint=blocked.readiness_fingerprint,
+                acknowledged_warning_codes=["DATABASE_SCHEMA_REQUIRED"],
+            ),
+            SimpleNamespace(user_id="USR-001"),
+        )
+
+
+def test_changed_outputs_and_specification_invalidate_warning_continuation(tmp_path):
+    readiness, consolidation = service(tmp_path, {
+        A.FUNCTIONAL_REQUIREMENTS: [project_item(A.FUNCTIONAL_REQUIREMENTS, "A")]
+    })
+    first = readiness.evaluate(
+        PROJECT_ID, request(ImplementationOutputCode.FRONTEND_CODE),
+        SimpleNamespace(user_id="USR-001"),
+    )
+    readiness.continue_with_warnings(
+        PROJECT_ID, continuation_request(first),
+        SimpleNamespace(user_id="USR-001"),
+    )
+    changed = readiness.evaluate(
+        PROJECT_ID, request(ImplementationOutputCode.BACKEND_CODE),
+        SimpleNamespace(user_id="USR-001"),
+    )
+    assert changed.continuation_approved is False
+    assert changed.continuation_required is True
+
+    readiness.continue_with_warnings(
+        PROJECT_ID, continuation_request(changed),
+        SimpleNamespace(user_id="USR-001"),
+    )
+    consolidation.status = ConsolidationStatus.STALE
+    stale = readiness.get(PROJECT_ID, SimpleNamespace(user_id="USR-001"))
+    assert stale.current is False
+    assert stale.continuation_approved is False
+
+
+def test_continuation_identity_rejects_policy_spec_stack_and_owner_changes(tmp_path):
+    readiness, _ = service(tmp_path, {
+        A.FUNCTIONAL_REQUIREMENTS: [project_item(A.FUNCTIONAL_REQUIREMENTS, "A")]
+    })
+    user = SimpleNamespace(user_id="USR-001")
+    result = readiness.evaluate(
+        PROJECT_ID, request(ImplementationOutputCode.FRONTEND_CODE), user,
+    )
+    readiness.continue_with_warnings(
+        PROJECT_ID, continuation_request(result), user,
+    )
+    assert readiness.valid_continuation(result, user) is not None
+
+    changed_values = [
+        {"policy_version": "future-policy"},
+        {"selected_outputs_digest": "0" * 64},
+        {"project_specification_id": "TPS-" + "F" * 24},
+        {"stack_adaptation": TrustedStackAdaptation(
+            decision="ADAPT_TO_SUPPORTED_STACK", fingerprint="1" * 64,
+            approved=True, approved_at=NOW,
+        )},
+    ]
+    for update in changed_values:
+        assert readiness.valid_continuation(
+            result.model_copy(update=update), user
+        ) is None
+    assert readiness.valid_continuation(
+        result, SimpleNamespace(user_id="USR-OTHER")
+    ) is None
 
 
 def test_malformed_persisted_snapshot_never_loads_as_ready(tmp_path):

@@ -59,6 +59,9 @@ describe('Agent 3 workflow panels', () => {
         onOutputsChange={vi.fn()}
         outputError=""
         inputStepProps={props}
+        canAnalyze
+        analyzing={false}
+        onAnalyze={vi.fn()}
       />,
     )
 
@@ -121,10 +124,10 @@ describe('Agent 3 workflow panels', () => {
     )
 
     expect(screen.getAllByText('Needs Attention')).toHaveLength(2)
-    expect(screen.getByText('requirements.pdf').closest('div').parentElement).toHaveTextContent('Prepared')
-    expect(screen.getByText('api-spec.docx').closest('div').parentElement).toHaveTextContent('Waiting for Review')
+    expect(screen.getByText('requirements.pdf').closest('div').parentElement).toHaveTextContent('Complete')
+    expect(screen.getByText('api-spec.docx').closest('div').parentElement).toHaveTextContent('Needs your review')
     expect(screen.getByText('broken.yaml').closest('div').parentElement).toHaveTextContent('The document could not be extracted.')
-    await user.click(screen.getByRole('button', { name: 'Analyze Project Inputs' }))
+    await user.click(screen.getByRole('button', { name: 'Retry Input Analysis' }))
     expect(onAnalyze).toHaveBeenCalledOnce()
   })
 
@@ -208,6 +211,7 @@ describe('Agent 3 workflow panels', () => {
     )
 
     expect(screen.getByText('Semantic Review Required')).toBeInTheDocument()
+    expect(screen.getByText('Should this grounded information be included in the trusted specification?')).toBeInTheDocument()
     expect(screen.getByText(/Requires name and email\./)).toBeInTheDocument()
     expect(screen.getByText('MySQL')).toBeInTheDocument()
     expect(screen.getByText('PostgreSQL')).toBeInTheDocument()
@@ -217,6 +221,33 @@ describe('Agent 3 workflow panels', () => {
     })
     const research = screen.getByText('Research Details').closest('details')
     expect(within(research).getByRole('button', { name: 'Run Semantic Fallback' })).toBeInTheDocument()
+  })
+
+  it('surfaces required artifact decisions outside Research Details', async () => {
+    const user = userEvent.setup()
+    const onOpenArtifactReview = vi.fn()
+    render(
+      <SpecificationVerificationPanel
+        inputs={[]}
+        preparationState={{
+          result: {
+            status: 'WAITING_FOR_HUMAN',
+            sources: [{
+              source_id: 'UP-REVIEW', filename: 'requirements.pdf', status: 'WAITING_FOR_HUMAN',
+            }],
+          },
+        }}
+        onOpenArtifactReview={onOpenArtifactReview}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Input Classification Review' })).toBeInTheDocument()
+    expect(screen.getByText('How should this information be classified?')).toBeInTheDocument()
+    expect(screen.getAllByText(/requirements\.pdf/).length).toBeGreaterThan(0)
+    const action = screen.getByRole('button', { name: 'Review Source' })
+    expect(action.closest('details')).toBeNull()
+    await user.click(action)
+    expect(onOpenArtifactReview).toHaveBeenCalledWith('UP-REVIEW')
   })
 
   it('renders cross-source evidence, submits stored choices, and shows the final specification by category', async () => {
@@ -251,6 +282,7 @@ describe('Agent 3 workflow panels', () => {
     )
 
     expect(screen.getByText('Cross-source review required')).toBeInTheDocument()
+    expect(screen.getByText('Which conflicting project information should Agent 3 use?')).toBeInTheDocument()
     const conflictCard = screen.getByText('Technology Conflict').closest('article')
     expect(within(conflictCard).getByText(/constraints\.pdf/)).toBeInTheDocument()
     expect(within(conflictCard).getByText(/architecture\.docx/)).toBeInTheDocument()
@@ -311,13 +343,17 @@ describe('Agent 3 workflow panels', () => {
 
     expect(screen.getByText('READY WITH WARNINGS')).toBeInTheDocument()
     expect(screen.getByText('Tests missing')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Re-evaluate Readiness' }))
+    expect(screen.getByText('Do you want Agent 3 to continue with these warnings?')).toBeInTheDocument()
+    const research = screen.getByRole('button', { name: 'Re-evaluate Readiness' }).closest('details')
+    expect(research).not.toHaveAttribute('open')
+    await user.click(within(research).getByRole('button', { name: 'Re-evaluate Readiness' }))
     expect(onCheck).toHaveBeenCalledOnce()
   })
 
   it('presents existing GitHub and repository state as one delivery setup experience', async () => {
     const user = userEvent.setup()
     const onConnect = vi.fn()
+    const onContinue = vi.fn()
     const githubState = { status: 'disconnected', connection: null, notice: '', error: '' }
     const repositoryState = { status: 'idle', repository: null, error: '' }
     render(
@@ -328,11 +364,15 @@ describe('Agent 3 workflow panels', () => {
           githubState, repositoryState, repositoryForm: { name: '', description: '', visibility: 'PRIVATE' },
           setRepositoryForm: vi.fn(), setRepositoryState: vi.fn(), onConnect, onCreateRepository: vi.fn(),
         }}
+        onContinue={onContinue}
       />,
     )
     expect(screen.getByText(/GitHub Account:/).parentElement).toHaveTextContent('Not connected')
     expect(screen.getByText(/Repository:/).parentElement).toHaveTextContent('Not created yet')
+    expect(screen.getByText('How should the generated implementation be delivered?')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Connect GitHub' }))
     expect(onConnect).toHaveBeenCalledOnce()
+    await user.click(screen.getByRole('button', { name: 'Continue Without Repository Delivery' }))
+    expect(onContinue).toHaveBeenCalledOnce()
   })
 })

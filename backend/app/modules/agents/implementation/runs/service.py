@@ -107,7 +107,7 @@ class ImplementationRunService:
                         "Stored implementation run snapshot is invalid"
                     ) from exc
 
-            specification, readiness = self._validate_current_state(
+            specification, readiness, continuation = self._validate_current_state(
                 project_id, request, current_user
             )
             delivery = self._delivery_snapshot(
@@ -119,7 +119,13 @@ class ImplementationRunService:
                 "reviewer_owner_id": current_user.user_id,
                 "decision": FinalApprovalDecision.APPROVED,
                 "acknowledged_warning_codes": sorted(
-                    request.acknowledged_warning_codes
+                    item.issue_code
+                    for item in readiness.findings
+                    if item.severity is FindingSeverity.WARNING
+                    and not item.resolved
+                ),
+                "readiness_continuation_decision_id": (
+                    continuation.decision_id if continuation else None
                 ),
                 "project_specification_id": specification.project_specification_id,
                 "project_specification_source_set_digest": specification.source_set_digest,
@@ -320,12 +326,20 @@ class ImplementationRunService:
                 "READINESS_INCONSISTENT",
                 "Implementation readiness findings do not match its status",
             )
+        continuation = self._readiness.valid_continuation(
+            readiness, current_user
+        )
         acknowledged = sorted(request.acknowledged_warning_codes)
         if readiness.status is ReadinessStatus.READY_WITH_WARNINGS:
-            if acknowledged != warning_codes:
+            if continuation is None and acknowledged != warning_codes:
                 raise ImplementationRunApprovalError(
                     "WARNING_ACKNOWLEDGEMENT_STALE",
                     "All current readiness warnings must be acknowledged exactly",
+                )
+            if continuation is not None and acknowledged not in ([], warning_codes):
+                raise ImplementationRunApprovalError(
+                    "WARNING_ACKNOWLEDGEMENT_STALE",
+                    "Readiness warning acknowledgement changed before approval",
                 )
         elif acknowledged:
             raise ImplementationRunApprovalError(
@@ -374,7 +388,7 @@ class ImplementationRunService:
                 "STACK_ADAPTATION_STALE",
                 "The implementation stack adaptation changed before approval",
             )
-        return specification, readiness
+        return specification, readiness, continuation
 
     def _delivery_snapshot(self, project_id, owner_id, selected_outputs):
         connection = None
@@ -445,7 +459,8 @@ class ImplementationRunService:
             snapshot.stack_adaptation_decision.fingerprint
             if snapshot.stack_adaptation_decision
             else None,
-            sorted(snapshot.approval.acknowledged_warning_codes),
+            ([] if snapshot.approval.readiness_continuation_decision_id
+             else sorted(snapshot.approval.acknowledged_warning_codes)),
         )
         received = (
             request.expected_project_specification_id,

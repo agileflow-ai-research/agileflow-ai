@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from app.modules.agents.implementation.inputs.upload.service import require_implementation_project
 from app.modules.agents.implementation.preparation.consolidation.constants import ConsolidationStatus
@@ -9,7 +10,9 @@ from .constants import (EFFECTIVE_STACK, OUTPUT_POLICY,
                         TRUSTED_READINESS_POLICY_VERSION,
                         TRUSTED_READINESS_SCHEMA_VERSION)
 from .policy import digest, evaluate_output_policy, evaluate_stack, finding
-from .schemas import (TrustedCoverageItem, TrustedOutputReadiness,
+from .schemas import (TrustedCoverageItem,
+                      TrustedOutputReadiness,
+                      TrustedReadinessContinuationDecision,
                       TrustedReadinessSnapshot, TrustedStackAdaptation)
 
 
@@ -19,6 +22,12 @@ class StaleStackAdaptationError(ValueError):
 
 class TrustedReadinessNotFoundError(LookupError):
     pass
+
+
+class ReadinessContinuationError(ValueError):
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(message)
 
 
 def utc_now():
@@ -41,7 +50,7 @@ class TrustedReadinessService:
                                                 request.selected_outputs,
                                                 outputs_digest)
             self._storage.save(result)
-            return result
+            return self._with_continuation(result, current_user)
 
         specification = self._consolidation.get_final(project_id, current_user)
         if (
@@ -52,7 +61,7 @@ class TrustedReadinessService:
                                                 request.selected_outputs,
                                                 outputs_digest)
             self._storage.save(result)
-            return result
+            return self._with_continuation(result, current_user)
 
         categories = {category: list(items) for category, items in specification.categories.items()}
         findings = evaluate_output_policy(request.selected_outputs, categories)
@@ -92,7 +101,7 @@ class TrustedReadinessService:
             categories, specification=specification, adaptation=adaptation,
         )
         self._storage.save(result)
-        return result
+        return self._with_continuation(result, current_user)
 
     def get(self, project_id, current_user):
         require_implementation_project(self._standalone, project_id, current_user)
@@ -118,8 +127,110 @@ class TrustedReadinessService:
             except Exception:
                 current = False
         if not current:
-            return result.model_copy(update={"current": False})
-        return result
+            return self._with_continuation(
+                result.model_copy(update={"current": False}), current_user
+            )
+        return self._with_continuation(result, current_user)
+
+    def continue_with_warnings(self, project_id, request, current_user):
+        result = self.get(project_id, current_user)
+        if result.status is not ReadinessStatus.READY_WITH_WARNINGS:
+            raise ReadinessContinuationError(
+                "READINESS_CONTINUATION_NOT_ALLOWED",
+                "Only current readiness with warnings can be continued",
+            )
+        if not result.current:
+            raise ReadinessContinuationError(
+                "READINESS_STALE", "Implementation readiness is stale"
+            )
+        if (
+            request.expected_readiness_id != result.readiness_id
+            or request.expected_readiness_fingerprint
+            != result.readiness_fingerprint
+        ):
+            raise ReadinessContinuationError(
+                "READINESS_STALE", "Implementation readiness changed before approval"
+            )
+        required_codes = warning_codes(result)
+        if sorted(request.acknowledged_warning_codes) != required_codes:
+            raise ReadinessContinuationError(
+                "WARNING_ACKNOWLEDGEMENT_STALE",
+                "All current readiness warnings must be acknowledged exactly",
+            )
+        if not required_codes:
+            raise ReadinessContinuationError(
+                "READINESS_INCONSISTENT",
+                "Readiness with warnings has no current warnings",
+            )
+        decision = TrustedReadinessContinuationDecision(
+            decision_id=f"RCD-{uuid4().hex}",
+            agent_project_id=project_id,
+            readiness_id=result.readiness_id,
+            readiness_fingerprint=result.readiness_fingerprint,
+            readiness_policy_version=result.policy_version,
+            selected_outputs_digest=result.selected_outputs_digest,
+            project_specification_id=result.project_specification_id,
+            stack_adaptation_fingerprint=(
+                result.stack_adaptation.fingerprint
+                if result.stack_adaptation else None
+            ),
+            acknowledged_warning_codes=required_codes,
+            warning_set_digest=warning_set_digest(result),
+            reviewer_owner_id=current_user.user_id,
+            created_at=self._clock(),
+        )
+        self._storage.save_continuation(decision)
+        return self._with_continuation(result, current_user)
+
+    def valid_continuation(self, readiness, current_user):
+        if (
+            readiness.status is not ReadinessStatus.READY_WITH_WARNINGS
+            or not readiness.current
+        ):
+            return None
+        decision = self._storage.load_continuation(
+            readiness.agent_project_id
+        )
+        if decision is None:
+            return None
+        expected = (
+            readiness.readiness_id,
+            readiness.readiness_fingerprint,
+            readiness.policy_version,
+            readiness.selected_outputs_digest,
+            readiness.project_specification_id,
+            readiness.stack_adaptation.fingerprint
+            if readiness.stack_adaptation else None,
+            warning_codes(readiness),
+            warning_set_digest(readiness),
+            current_user.user_id,
+        )
+        actual = (
+            decision.readiness_id,
+            decision.readiness_fingerprint,
+            decision.readiness_policy_version,
+            decision.selected_outputs_digest,
+            decision.project_specification_id,
+            decision.stack_adaptation_fingerprint,
+            sorted(decision.acknowledged_warning_codes),
+            decision.warning_set_digest,
+            decision.reviewer_owner_id,
+        )
+        return decision if actual == expected else None
+
+    def _with_continuation(self, result, current_user):
+        required = (
+            result.current
+            and result.status is ReadinessStatus.READY_WITH_WARNINGS
+        )
+        decision = self.valid_continuation(result, current_user) if required else None
+        return result.model_copy(update={
+            "continuation_required": required and decision is None,
+            "continuation_approved": decision is not None,
+            "continuation_decision_id": (
+                decision.decision_id if decision else None
+            ),
+        })
 
     @staticmethod
     def _valid_specification(project_id, specification):
@@ -207,5 +318,28 @@ class TrustedReadinessService:
 def readiness_fingerprint(snapshot: TrustedReadinessSnapshot) -> str:
     """Recompute the content fingerprint without trusting the stored value."""
     return digest(
-        snapshot.model_dump(mode="json", exclude={"readiness_fingerprint", "current"})
+        snapshot.model_dump(
+            mode="json",
+            exclude={
+                "readiness_fingerprint", "current", "continuation_required",
+                "continuation_approved", "continuation_decision_id",
+            },
+        )
     )
+
+
+def warning_codes(snapshot: TrustedReadinessSnapshot) -> list[str]:
+    return sorted({
+        item.issue_code
+        for item in snapshot.findings
+        if item.severity is FindingSeverity.WARNING and not item.resolved
+    })
+
+
+def warning_set_digest(snapshot: TrustedReadinessSnapshot) -> str:
+    warnings = [
+        item.model_dump(mode="json")
+        for item in snapshot.findings
+        if item.severity is FindingSeverity.WARNING and not item.resolved
+    ]
+    return digest(sorted(warnings, key=lambda item: (item["issue_code"], item["finding_id"])))

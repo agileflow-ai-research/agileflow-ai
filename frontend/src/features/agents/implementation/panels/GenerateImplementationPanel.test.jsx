@@ -79,6 +79,33 @@ describe('GenerateImplementationPanel', () => {
     expect(value.onApprove).toHaveBeenCalledWith(['UI_FLOW_RECOMMENDED'])
   })
 
+  it('recognizes persisted warning continuation but keeps final approval explicit', async () => {
+    const user = userEvent.setup()
+    const warning = {
+      finding_id: 'TRF-1111111111111111', issue_code: 'UI_FLOW_RECOMMENDED',
+      severity: 'WARNING', resolved: false, title: 'UI flow not provided',
+      message: 'The implementation can proceed with limited UI context.',
+    }
+    const value = props({
+      readinessState: {
+        status: 'complete', stale: false,
+        result: readiness({
+          status: 'READY_WITH_WARNINGS', findings: [warning],
+          continuation_approved: true,
+          continuation_decision_id: 'RCD-' + 'a'.repeat(32),
+        }),
+      },
+    })
+    render(<GenerateImplementationPanel {...value} />)
+
+    expect(screen.getByText(/Previously acknowledged/)).toBeInTheDocument()
+    expect(screen.getByText('✓ Approved with warnings')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(value.onApprove).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Approve Implementation' }))
+    expect(value.onApprove).toHaveBeenCalledWith([])
+  })
+
   it.each([
     ['NOT_READY', false],
     ['READY', true],

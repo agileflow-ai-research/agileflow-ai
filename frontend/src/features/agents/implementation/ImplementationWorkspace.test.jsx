@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,6 +7,7 @@ import {
   buildImplementationSemanticArtifacts,
   buildImplementationHybridDetections,
   connectGitHub,
+  continueTrustedImplementationReadiness,
   createGitHubRepository,
   createImplementationRun,
   deleteImplementationInputFile,
@@ -66,6 +67,7 @@ vi.mock('./services/implementationAgentService.js', () => ({
   getImplementationZeroShotDetections: vi.fn(),
   runImplementationZeroShotClassifier: vi.fn(),
   connectGitHub: vi.fn(),
+  continueTrustedImplementationReadiness: vi.fn(),
   createGitHubRepository: vi.fn(),
   createImplementationRun: vi.fn(),
   getGitHubConnection: vi.fn(),
@@ -458,7 +460,7 @@ function readinessResult(overrides = {}) {
     },
     artifact_manifest: [],
     findings: [{
-      finding_id: 'RF-1111111111111111', code: 'PRECODE_TEST_CONTEXT_MISSING',
+      finding_id: 'RF-1111111111111111', code: 'PRECODE_TEST_CONTEXT_MISSING', issue_code: 'PRECODE_TEST_CONTEXT_MISSING',
       severity: 'WARNING', title: 'Pre-code test context is missing',
       message: 'No pre-code test artifacts were supplied.', affected_outputs: ['BACKEND_CODE'],
       sources: [], requires_human_decision: false, allowed_resolutions: [],
@@ -488,6 +490,48 @@ function trustedRunReadiness(overrides = {}) {
     selected_outputs_digest: 'd'.repeat(64),
     stack_adaptation: null,
     ...overrides,
+  })
+}
+
+function mockSpecificationReady(overrides = {}) {
+  const projectSpecificationId = overrides.projectSpecificationId || 'TPS-' + 'A'.repeat(24)
+  getPreparationStatus.mockResolvedValue({
+    data: {
+      status: 'ANALYSIS_READY', source_count: 1, eligible_source_count: 1,
+      processed_source_count: 1, completed_source_count: 1,
+      active_source_count: 0, failed_source_count: 0,
+      sources: [{ source_id: 'A3UP-1', source_kind: 'TEXT', status: 'READY' }],
+      requires_human_review: false, human_review_source_count: 0,
+    },
+  })
+  getSpecificationStatus.mockResolvedValue({
+    data: {
+      status: 'SPECIFICATION_READY', source_count: 1, applicable_source_count: 1,
+      ready_source_count: 1, waiting_artifact_review_count: 0,
+      waiting_semantic_review_count: 0, failed_source_count: 0,
+      pending_semantic_decision_count: 0, sources: [],
+    },
+  })
+  startSpecificationPreparation.mockResolvedValue({
+    data: {
+      status: 'SPECIFICATION_READY', source_count: 1, applicable_source_count: 1,
+      ready_source_count: 1, waiting_artifact_review_count: 0,
+      waiting_semantic_review_count: 0, failed_source_count: 0,
+      pending_semantic_decision_count: 0, sources: [],
+    },
+  })
+  getProjectConsolidationStatus.mockResolvedValue({
+    data: {
+      status: 'READY', source_count: 1, item_count: 1, conflict_count: 0,
+      pending_conflict_count: 0, issue_count: 0,
+      source_set_digest: 'b'.repeat(64), issues: [],
+    },
+  })
+  getTrustedProjectSpecification.mockResolvedValue({
+    data: {
+      project_specification_id: projectSpecificationId,
+      status: 'READY', categories: {}, relationships: [], traceability: {},
+    },
   })
 }
 
@@ -1161,9 +1205,7 @@ describe('ImplementationWorkspace', () => {
 
   it('auto-evaluates once when the trusted specification is ready and an output is selected', async () => {
     const user = userEvent.setup()
-    getProjectConsolidationStatus.mockResolvedValue({
-      data: { status: 'READY', source_set_digest: 'b'.repeat(64), pending_conflict_count: 0, issue_count: 0, issues: [] },
-    })
+    mockSpecificationReady()
     render(<ImplementationWorkspace project={project} />)
     await user.type(screen.getByLabelText(/Content/), 'Users can create bookings.')
     await user.click(screen.getByRole('button', { name: 'Next' }))
@@ -1175,9 +1217,7 @@ describe('ImplementationWorkspace', () => {
 
   it('does not loop after automatic trusted readiness failure', async () => {
     const user = userEvent.setup()
-    getProjectConsolidationStatus.mockResolvedValue({
-      data: { status: 'READY', source_set_digest: 'b'.repeat(64), pending_conflict_count: 0, issue_count: 0, issues: [] },
-    })
+    mockSpecificationReady()
     evaluateTrustedImplementationReadiness.mockRejectedValue({ errors: [{ message: 'Evaluation unavailable' }] })
     render(<ImplementationWorkspace project={project} />)
     await user.type(screen.getByLabelText(/Content/), 'Users can create bookings.')
@@ -1188,6 +1228,38 @@ describe('ImplementationWorkspace', () => {
     await screen.findByText('Evaluation unavailable')
     await new Promise((resolve) => window.setTimeout(resolve, 0))
     expect(evaluateTrustedImplementationReadiness).toHaveBeenCalledTimes(1)
+  })
+
+  it('persists readiness warning continuation once and unlocks the effective gate', async () => {
+    const user = userEvent.setup()
+    const warningReadiness = readinessResult({
+      continuation_required: true,
+      continuation_approved: false,
+      readiness_fingerprint: 'e'.repeat(64),
+    })
+    mockSpecificationReady({ projectSpecificationId: warningReadiness.project_specification_id })
+    getTrustedImplementationReadiness.mockResolvedValue({ data: warningReadiness })
+    continueTrustedImplementationReadiness.mockResolvedValue({
+      data: {
+        ...warningReadiness,
+        continuation_required: false,
+        continuation_approved: true,
+        continuation_decision_id: 'RCD-' + 'a'.repeat(32),
+      },
+    })
+
+    render(<ImplementationWorkspace project={project} activeSection="IMPLEMENTATION_READINESS" />)
+    expect(await screen.findByText('Do you want Agent 3 to continue with these warnings?')).toBeInTheDocument()
+    await user.dblClick(screen.getByRole('button', { name: 'Continue With Warnings' }))
+
+    await waitFor(() => expect(continueTrustedImplementationReadiness).toHaveBeenCalledTimes(1))
+    expect(continueTrustedImplementationReadiness).toHaveBeenCalledWith('AGP-003', {
+      expected_readiness_id: warningReadiness.readiness_id,
+      expected_readiness_fingerprint: warningReadiness.readiness_fingerprint,
+      acknowledged_warning_codes: ['PRECODE_TEST_CONTEXT_MISSING'],
+    })
+    expect(await screen.findByText(/Readiness warnings approved/)).toBeInTheDocument()
+    expect(createImplementationRun).not.toHaveBeenCalled()
   })
 
   it('preserves TEXT input, exact outputs, review, and no execution behavior', async () => {
@@ -1569,6 +1641,10 @@ describe('ImplementationWorkspace', () => {
   })
 
   it('reuses the existing GitHub UI for the delivery setup canvas panel', async () => {
+    mockSpecificationReady()
+    getTrustedImplementationReadiness.mockResolvedValue({
+      data: trustedRunReadiness(),
+    })
     render(<ImplementationWorkspace project={project} activeSection="DELIVERY_SETUP" />)
     expect(await screen.findByRole('button', { name: 'Connect GitHub' })).toBeEnabled()
     expect(screen.queryByRole('heading', { name: 'Implementation Inputs' })).not.toBeInTheDocument()
@@ -1580,11 +1656,38 @@ describe('ImplementationWorkspace', () => {
     expect(screen.getByRole('heading', { name: 'Implementation Inputs' })).toBeInTheDocument()
   })
 
-  it('loads persisted project preparation state and starts analysis once', async () => {
+  it('validates project setup and starts input analysis once before navigating', async () => {
+    const user = userEvent.setup()
+    const onNavigateNode = vi.fn()
+    render(
+      <ImplementationWorkspace
+        project={project}
+        activeSection="PROJECT_SOURCES"
+        onNavigateNode={onNavigateNode}
+      />,
+    )
+
+    const next = screen.getByRole('button', { name: 'Next — Analyze Inputs' })
+    expect(next).toBeDisabled()
+    await user.type(screen.getByRole('textbox', { name: 'Content' }), 'Build a booking API.')
+    await user.click(screen.getByRole('checkbox', { name: 'Backend Code' }))
+    expect(next).toBeEnabled()
+    fireEvent.click(next)
+    fireEvent.click(next)
+
+    await waitFor(() => expect(startPreparation).toHaveBeenCalledOnce())
+    expect(startPreparation).toHaveBeenCalledWith(project.agent_project_id, [expect.objectContaining({
+      content: 'Build a booking API.',
+    })])
+    expect(onNavigateNode).toHaveBeenCalledOnce()
+    expect(onNavigateNode).toHaveBeenCalledWith('INPUT_ANALYSIS')
+  })
+
+  it('loads persisted project preparation state and retries a failed analysis once', async () => {
     const user = userEvent.setup()
     getPreparationStatus.mockResolvedValue({
       data: {
-        status: 'WAITING_FOR_HUMAN', source_count: 1, eligible_source_count: 1,
+        status: 'PARTIAL_FAILURE', source_count: 1, eligible_source_count: 1,
         processed_source_count: 1, completed_source_count: 1,
         active_source_count: 0, failed_source_count: 0,
         sources: [{
@@ -1597,11 +1700,10 @@ describe('ImplementationWorkspace', () => {
     render(<ImplementationWorkspace project={project} activeSection="INPUT_ANALYSIS" />)
 
     expect(await screen.findByText('requirements.pdf')).toBeInTheDocument()
-    expect(screen.getByText('Waiting for You')).toBeInTheDocument()
-    await waitFor(() => expect(startSpecificationPreparation).toHaveBeenCalledWith(
-      project.agent_project_id,
-    ))
-    await user.click(screen.getByRole('button', { name: 'Analyze Project Inputs' }))
+    expect(screen.getAllByText('Needs Attention').length).toBeGreaterThan(0)
+    await waitFor(() => expect(getPreparationStatus).toHaveBeenCalled())
+    expect(startSpecificationPreparation).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Retry Input Analysis' }))
     expect(startPreparation).toHaveBeenCalledOnce()
     expect(startPreparation).toHaveBeenCalledWith(project.agent_project_id, [])
   })
@@ -1680,6 +1782,14 @@ describe('ImplementationWorkspace', () => {
   it.each(['CONSOLIDATING', 'WAITING_FOR_HUMAN', 'READY', 'FAILED', 'PARTIAL_FAILURE'])(
     'does not auto-start consolidation from %s',
     async (status) => {
+      getPreparationStatus.mockResolvedValue({
+        data: {
+          status: 'ANALYSIS_READY', source_count: 1, eligible_source_count: 1,
+          processed_source_count: 1, completed_source_count: 1,
+          active_source_count: 0, failed_source_count: 0, sources: [],
+          requires_human_review: false, human_review_source_count: 0,
+        },
+      })
       getSpecificationStatus.mockResolvedValue({
         data: {
           status: 'SPECIFICATION_READY', source_count: 1, applicable_source_count: 1,
@@ -1704,6 +1814,14 @@ describe('ImplementationWorkspace', () => {
   it.each(['NOT_STARTED', 'STALE'])(
     'auto-starts %s exactly once across rerenders and unchanged responses',
     async (status) => {
+      getPreparationStatus.mockResolvedValue({
+        data: {
+          status: 'ANALYSIS_READY', source_count: 1, eligible_source_count: 1,
+          processed_source_count: 1, completed_source_count: 1,
+          active_source_count: 0, failed_source_count: 0, sources: [],
+          requires_human_review: false, human_review_source_count: 0,
+        },
+      })
       getSpecificationStatus.mockResolvedValue({
         data: {
           status: 'SPECIFICATION_READY', source_count: 1, applicable_source_count: 1,
@@ -1729,6 +1847,14 @@ describe('ImplementationWorkspace', () => {
   )
 
   it('cleans up a pending consolidation start when the project changes', async () => {
+    getPreparationStatus.mockResolvedValue({
+      data: {
+        status: 'ANALYSIS_READY', source_count: 1, eligible_source_count: 1,
+        processed_source_count: 1, completed_source_count: 1,
+        active_source_count: 0, failed_source_count: 0, sources: [],
+        requires_human_review: false, human_review_source_count: 0,
+      },
+    })
     getSpecificationStatus.mockResolvedValue({
       data: {
         status: 'SPECIFICATION_READY', source_count: 1, applicable_source_count: 1,
@@ -1760,6 +1886,14 @@ describe('ImplementationWorkspace', () => {
   it('handles a stale cross-source decision without trusting or resubmitting client facts', async () => {
     const user = userEvent.setup()
     const fingerprint = 'c'.repeat(64)
+    getPreparationStatus.mockResolvedValue({
+      data: {
+        status: 'ANALYSIS_READY', source_count: 2, eligible_source_count: 2,
+        processed_source_count: 2, completed_source_count: 2,
+        active_source_count: 0, failed_source_count: 0, sources: [],
+        requires_human_review: false, human_review_source_count: 0,
+      },
+    })
     getSpecificationStatus.mockResolvedValue({
       data: {
         status: 'SPECIFICATION_READY', source_count: 2, applicable_source_count: 2,
@@ -1805,7 +1939,7 @@ describe('ImplementationWorkspace', () => {
 
   it('shows an honest empty readiness panel until the existing evaluation has run', async () => {
     render(<ImplementationWorkspace project={project} activeSection="IMPLEMENTATION_READINESS" />)
-    expect(await screen.findByText(/No readiness evaluation exists yet/)).toBeInTheDocument()
+    expect(await screen.findByText('Waiting for specification review')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Implementation Inputs' })).not.toBeInTheDocument()
   })
 
@@ -1841,16 +1975,10 @@ describe('ImplementationWorkspace', () => {
   it('creates one run for a rapid double approval click and shows the run ID', async () => {
     const user = userEvent.setup()
     const currentReadiness = trustedRunReadiness()
+    mockSpecificationReady({ projectSpecificationId: currentReadiness.project_specification_id })
+    getGitHubConnection.mockResolvedValue({ data: connectedGitHub() })
+    getGitHubRepository.mockResolvedValue({ data: repositoryMetadata() })
     getTrustedImplementationReadiness.mockResolvedValue({ data: currentReadiness })
-    getProjectConsolidationStatus.mockResolvedValue({
-      data: {
-        status: 'READY', source_count: 1, item_count: 1, conflict_count: 0,
-        pending_conflict_count: 0, issue_count: 0, source_set_digest: 'b'.repeat(64), issues: [],
-      },
-    })
-    getTrustedProjectSpecification.mockResolvedValue({
-      data: { project_specification_id: currentReadiness.project_specification_id, status: 'READY', categories: {}, relationships: [], traceability: {} },
-    })
     let resolveCreate
     createImplementationRun.mockReturnValue(new Promise((resolve) => { resolveCreate = resolve }))
 

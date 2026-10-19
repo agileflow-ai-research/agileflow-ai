@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   preparationToWorkflowState,
   SOURCE_PREPARATION_LABELS,
+  sourcePreparationLabel,
 } from './preparation.js'
 
 describe('project preparation presentation', () => {
@@ -30,5 +31,11 @@ describe('project preparation presentation', () => {
       'FAILED',
       'SKIPPED',
     ])
+  })
+
+  it('translates technical preparation stages into calm user-facing copy', () => {
+    expect(sourcePreparationLabel({ status: 'CLASSIFYING_MODEL' })).toBe('Analyzing content')
+    expect(sourcePreparationLabel({ status: 'MODEL_CLASSIFICATION' })).toBe('Analyzing content')
+    expect(sourcePreparationLabel({ status: 'HUMAN_REVIEW' })).toBe('Needs your review')
   })
 })

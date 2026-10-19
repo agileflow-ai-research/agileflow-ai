@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
-const canvasActions = vi.hoisted(() => ({ autoArrange: vi.fn(), resetLayout: vi.fn() }))
+const canvasActions = vi.hoisted(() => ({ autoArrange: vi.fn(), resetLayout: vi.fn(), focusNode: vi.fn() }))
 
 vi.mock('../canvas/ImplementationCanvas.jsx', () => ({
   default: forwardRef(function TestCanvas({ onSelectNode }, ref) {
@@ -21,7 +21,19 @@ vi.mock('../canvas/ImplementationCanvas.jsx', () => ({
 }))
 
 vi.mock('../ImplementationWorkspace.jsx', () => ({
-  default: ({ activeSection }) => <div data-testid="implementation-workspace">Workspace section: {activeSection}</div>,
+  default: ({ activeSection, onPresentationChange }) => (
+    <div data-testid="implementation-workspace">
+      Workspace section: {activeSection}
+      <button
+        type="button"
+        onClick={() => onPresentationChange({
+          preparationState: { result: { status: 'WAITING_FOR_HUMAN' } },
+        })}
+      >
+        Emit review transition
+      </button>
+    </div>
+  ),
 }))
 
 import ImplementationProjectPage from './ImplementationProjectPage.jsx'
@@ -30,6 +42,14 @@ const project = { agent_project_id: 'AGP-003', name: 'Delivery Portal', status: 
 const projectStatus = { label: 'Active', tone: 'success' }
 
 describe('ImplementationProjectPage', () => {
+  it('opens Project & Sources immediately and focuses the first workflow step', () => {
+    render(<ImplementationProjectPage project={project} projectStatus={projectStatus} />)
+
+    expect(screen.getByRole('heading', { name: 'Project & Sources' })).toBeInTheDocument()
+    expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('PROJECT_SOURCES')
+    expect(canvasActions.focusNode).toHaveBeenCalledWith('PROJECT_SOURCES')
+  })
+
   it('opens active node details, closes them, and exposes the existing workspace by section', async () => {
     const user = userEvent.setup()
     render(<ImplementationProjectPage project={project} projectStatus={projectStatus} />)
@@ -38,13 +58,30 @@ describe('ImplementationProjectPage', () => {
     expect(screen.getByRole('heading', { name: 'Project & Sources' })).toBeInTheDocument()
     expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('PROJECT_SOURCES')
 
-    await user.click(screen.getByRole('button', { name: 'Close workflow details' }))
-    expect(screen.getByLabelText('Workflow node details')).toHaveClass('hidden')
+    expect(screen.getByRole('dialog', { name: 'Project & Sources' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close workflow modal' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Select readiness' }))
     expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('IMPLEMENTATION_READINESS')
     await user.click(screen.getByRole('button', { name: 'Select delivery setup' }))
     expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('DELIVERY_SETUP')
+  })
+
+  it('uses an accessible internally scrolling modal and closes safely with Escape', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationProjectPage project={project} projectStatus={projectStatus} />)
+    const canvas = screen.getByLabelText('Agent 3 implementation workflow canvas')
+
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
+    expect(screen.getByTestId('workflow-modal-body')).toHaveClass('overflow-y-auto')
+    expect(screen.getByTestId('workflow-modal-header')).toHaveClass('sticky', 'top-0')
+    expect(screen.getByTestId('workflow-modal-footer')).toHaveClass('sticky', 'bottom-0')
+    expect(screen.queryByLabelText('Workflow node details')).not.toBeInTheDocument()
+    expect(screen.getByTestId('workflow-modal-backdrop')).toHaveClass('fixed', 'inset-0')
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Agent 3 implementation workflow canvas')).toBe(canvas)
   })
 
   it('opens final approval while keeping actual execution stages locked', async () => {
@@ -71,5 +108,21 @@ describe('ImplementationProjectPage', () => {
     await user.click(screen.getByRole('button', { name: 'Reset Layout' }))
     expect(canvasActions.autoArrange).toHaveBeenCalledOnce()
     expect(canvasActions.resetLayout).toHaveBeenCalledOnce()
+  })
+
+  it('auto-selects a human review transition once without stealing focus on repeated state', async () => {
+    const user = userEvent.setup()
+    render(<ImplementationProjectPage project={project} projectStatus={projectStatus} />)
+    canvasActions.focusNode.mockClear()
+
+    await user.click(screen.getByRole('button', { name: 'Emit review transition' }))
+    expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('SPECIFICATION_VERIFICATION')
+    expect(canvasActions.focusNode).toHaveBeenCalledTimes(1)
+    expect(canvasActions.focusNode).toHaveBeenCalledWith('SPECIFICATION_VERIFICATION')
+
+    await user.click(screen.getByRole('button', { name: 'Select sources' }))
+    await user.click(screen.getByRole('button', { name: 'Emit review transition' }))
+    expect(screen.getByTestId('implementation-workspace')).toHaveTextContent('PROJECT_SOURCES')
+    expect(canvasActions.focusNode).toHaveBeenCalledTimes(1)
   })
 })

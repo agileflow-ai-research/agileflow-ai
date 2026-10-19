@@ -260,6 +260,14 @@ export function evaluateTrustedImplementationReadiness(agentProjectId, request) 
   )
 }
 
+export function continueTrustedImplementationReadiness(agentProjectId, request) {
+  return apiClient.post(
+    `/agents/implementation/${encodeURIComponent(agentProjectId)}/trusted-readiness/continue`,
+    request,
+    { authenticated: true },
+  )
+}
+
 export function createImplementationRun(agentProjectId, request) {
   return apiClient.post(
     `/agents/implementation/${encodeURIComponent(agentProjectId)}/runs`,

@@ -3,7 +3,10 @@ from threading import Lock
 
 from pydantic import ValidationError
 
-from .schemas import TrustedReadinessSnapshot
+from .schemas import (
+    TrustedReadinessContinuationDecision,
+    TrustedReadinessSnapshot,
+)
 
 
 class TrustedReadinessStorageError(RuntimeError):
@@ -51,6 +54,45 @@ class TrustedReadinessStorage:
                     "Trusted readiness state could not be stored"
                 ) from exc
 
+    def load_continuation(
+        self, project_id: str
+    ) -> TrustedReadinessContinuationDecision | None:
+        path = self._continuation_path(project_id)
+        try:
+            value = TrustedReadinessContinuationDecision.model_validate_json(
+                path.read_text(encoding="utf-8")
+            )
+        except FileNotFoundError:
+            return None
+        except (OSError, ValidationError) as exc:
+            raise TrustedReadinessStorageError(
+                "Trusted readiness continuation is unavailable"
+            ) from exc
+        if value.agent_project_id != project_id:
+            raise TrustedReadinessStorageError(
+                "Trusted readiness continuation identity is invalid"
+            )
+        return value
+
+    def save_continuation(
+        self, value: TrustedReadinessContinuationDecision
+    ) -> None:
+        path = self._continuation_path(value.agent_project_id)
+        partial = path.with_suffix(path.suffix + ".part")
+        with self._lock:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                partial.write_text(value.model_dump_json(), encoding="utf-8")
+                partial.replace(path)
+            except OSError as exc:
+                try:
+                    partial.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise TrustedReadinessStorageError(
+                    "Trusted readiness continuation could not be stored"
+                ) from exc
+
     def _path(self, project_id: str) -> Path:
         root = self._root.resolve()
         directory = (root / project_id).resolve()
@@ -61,3 +103,8 @@ class TrustedReadinessStorage:
                 "Unsafe trusted readiness storage path"
             ) from exc
         return directory / "implementation-readiness.json"
+
+    def _continuation_path(self, project_id: str) -> Path:
+        return self._path(project_id).with_name(
+            "implementation-readiness-continuation.json"
+        )

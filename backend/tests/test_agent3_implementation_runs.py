@@ -24,6 +24,7 @@ from app.modules.agents.implementation.preparation.readiness.schemas import (
     ReadinessStatus,
 )
 from app.modules.agents.implementation.preparation.readiness.trusted.schemas import (
+    TrustedReadinessContinuationRequest,
     TrustedReadinessEvaluationRequest,
 )
 from app.modules.agents.implementation.preparation.readiness.trusted.service import (
@@ -178,6 +179,9 @@ class FakeReadiness:
     def get(self, *_):
         return self.value
 
+    def valid_continuation(self, *_):
+        return None
+
 
 class FakeRepository:
     def __init__(self, value=None):
@@ -280,6 +284,45 @@ def test_ready_with_warnings_requires_exact_current_acknowledgement(tmp_path):
         service, readiness, acknowledged_warning_codes=warning_codes
     )
     assert result.approved_input.approval.acknowledged_warning_codes == warning_codes
+
+
+def test_persisted_warning_continuation_avoids_duplicate_run_acknowledgement(tmp_path):
+    final = specification({A.FUNCTIONAL_REQUIREMENTS: [project_item()]})
+    consolidation = FakeConsolidation(final)
+    readiness_service = TrustedReadinessService(
+        FakeStandalone(), consolidation, TrustedReadinessStorage(tmp_path),
+        clock=lambda: NOW,
+    )
+    readiness = readiness_service.evaluate(
+        PROJECT_ID,
+        TrustedReadinessEvaluationRequest(
+            selected_outputs=[ImplementationOutputCode.FRONTEND_CODE]
+        ),
+        USER,
+    )
+    warning_codes = sorted(
+        item.issue_code for item in readiness.findings if not item.resolved
+    )
+    continued = readiness_service.continue_with_warnings(
+        PROJECT_ID,
+        TrustedReadinessContinuationRequest(
+            expected_readiness_id=readiness.readiness_id,
+            expected_readiness_fingerprint=readiness.readiness_fingerprint,
+            acknowledged_warning_codes=warning_codes,
+        ),
+        USER,
+    )
+    standalone = FakeStandalone()
+    service = ImplementationRunService(
+        standalone, consolidation, readiness_service,
+        FakeRepository(), FakeRepository(), clock=lambda: NOW,
+    )
+    run = create(service, continued, acknowledged_warning_codes=[])
+    assert run.approved_input.approval.acknowledged_warning_codes == warning_codes
+    assert (
+        run.approved_input.approval.readiness_continuation_decision_id
+        == continued.continuation_decision_id
+    )
     assert standalone.create_calls == 1
 
 

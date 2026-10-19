@@ -2,6 +2,7 @@ import { useState } from 'react'
 
 import Button from '../../../../components/ui/Button.jsx'
 import { outputOptions } from '../constants/workspace.js'
+import HumanDecisionCallout from '../components/common/HumanDecisionCallout.jsx'
 
 const outputLabels = Object.fromEntries(outputOptions.map((item) => [item.value, item.label]))
 
@@ -18,6 +19,7 @@ export default function GenerateImplementationPanel({
   runState,
   onApprove,
   onNavigate,
+  workflowGate,
 }) {
   const [acknowledgedFingerprint, setAcknowledgedFingerprint] = useState(null)
   const readiness = readinessState.result
@@ -30,8 +32,19 @@ export default function GenerateImplementationPanel({
     && ['READY', 'READY_WITH_WARNINGS'].includes(readiness?.status)
     && selectedOutputs.length > 0
   const needsAcknowledgement = readiness?.status === 'READY_WITH_WARNINGS'
+    && !readiness?.continuation_approved
   const warningsAcknowledged = acknowledgedFingerprint === readiness?.readiness_fingerprint
-  const canApprove = isReady && (!needsAcknowledgement || warningsAcknowledged)
+  const approvalAvailable = workflowGate ? workflowGate.waiting_for_human : isReady
+  const canApprove = isReady && approvalAvailable && (!needsAcknowledgement || warningsAcknowledged)
+  const blockingNodeId = workflowGate?.blocking_node_id
+    ?? (consolidationState.result?.status !== 'READY'
+      ? 'SPECIFICATION_VERIFICATION'
+      : 'IMPLEMENTATION_READINESS')
+  const blockerActionLabel = blockingNodeId === 'DELIVERY_SETUP'
+    ? 'Review Delivery Setup'
+    : blockingNodeId === 'SPECIFICATION_VERIFICATION'
+      ? 'Return to Specification'
+      : 'Review Readiness'
   const newestRun = runState.runs[0] ?? runState.current
   const currentApprovedRun = runState.runs.find(
     (run) => run.readiness_fingerprint === readiness?.readiness_fingerprint,
@@ -44,9 +57,16 @@ export default function GenerateImplementationPanel({
         <p className="mt-1 text-sm text-content-secondary">Review the exact implementation context before creating an immutable AgentRun.</p>
       </header>
 
+      <HumanDecisionCallout
+        eyebrow="Final human approval"
+        title="Approve this exact implementation plan?"
+        description="This creates an immutable AgentRun for the trusted specification, selected outputs, implementation stack, and delivery choice shown below."
+        outcome="The run becomes ready for future generation. Code generation does not start in this milestone."
+      />
+
       <dl className="grid gap-3 rounded-control border border-default bg-elevated p-4 text-sm">
         <div><dt className="font-medium text-content-muted">Project Specification</dt><dd className="mt-1 text-content-primary">{consolidationState.result?.status === 'READY' ? '✓ Approved' : formatStatus(consolidationState.result?.status)}</dd></div>
-        <div><dt className="font-medium text-content-muted">Implementation Readiness</dt><dd className="mt-1 text-content-primary">{readiness?.status === 'READY_WITH_WARNINGS' ? '⚠ READY WITH WARNINGS' : readiness?.status === 'READY' ? '✓ READY' : formatStatus(readiness?.status)}</dd></div>
+        <div><dt className="font-medium text-content-muted">Implementation Readiness</dt><dd className="mt-1 text-content-primary">{readiness?.status === 'READY_WITH_WARNINGS' ? readiness.continuation_approved ? '✓ Approved with warnings' : '⚠ READY WITH WARNINGS' : readiness?.status === 'READY' ? '✓ READY' : formatStatus(readiness?.status)}</dd></div>
         <div>
           <dt className="font-medium text-content-muted">Selected Outputs</dt>
           <dd className="mt-1 text-content-primary">{selectedOutputs.length ? selectedOutputs.map((output) => `✓ ${outputLabels[output] ?? formatStatus(output)}`).join(' · ') : 'None selected'}</dd>
@@ -67,7 +87,9 @@ export default function GenerateImplementationPanel({
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-content-secondary">
             {warnings.map((warning) => <li key={warning.finding_id}>{warning.title}: {warning.message}</li>)}
           </ul>
-          <label className="mt-4 flex items-start gap-2 text-sm text-content-primary">
+          {readiness?.continuation_approved ? (
+            <p className="mt-4 text-sm font-medium text-state-success">✓ Previously acknowledged during Implementation Readiness</p>
+          ) : <label className="mt-4 flex items-start gap-2 text-sm text-content-primary">
             <input
               type="checkbox"
               checked={warningsAcknowledged}
@@ -76,17 +98,21 @@ export default function GenerateImplementationPanel({
               )}
             />
             <span>I understand these warnings and approve implementation.</span>
-          </label>
+          </label>}
         </section>
       ) : null}
 
-      {!isReady ? (
+      {workflowGate?.satisfied ? null : !approvalAvailable ? (
         <section className="rounded-control border border-default p-4">
           <p className="font-semibold text-content-primary">Implementation cannot start yet.</p>
-          <p className="mt-1 text-sm text-content-secondary">A current READY or READY WITH WARNINGS evaluation is required.</p>
+          <p className="mt-1 text-sm text-content-secondary">{workflowGate?.blocking_reason ?? 'A current READY or READY WITH WARNINGS evaluation is required.'}</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => onNavigate('IMPLEMENTATION_READINESS')}>Review Readiness</Button>
-            {consolidationState.result?.status !== 'READY' ? <Button variant="ghost" onClick={() => onNavigate('SPECIFICATION_VERIFICATION')}>Return to Specification</Button> : null}
+            <Button
+              variant="outline"
+              onClick={() => onNavigate(blockingNodeId ?? 'IMPLEMENTATION_READINESS')}
+            >
+              {blockerActionLabel}
+            </Button>
           </div>
         </section>
       ) : (
@@ -94,7 +120,11 @@ export default function GenerateImplementationPanel({
           loading={runState.status === 'creating'}
           loadingLabel="Creating approved AgentRun"
           disabled={!canApprove || Boolean(currentApprovedRun)}
-          onClick={() => onApprove(warnings.map((item) => item.issue_code))}
+          onClick={() => onApprove(
+            readiness?.continuation_approved
+              ? []
+              : warnings.map((item) => item.issue_code),
+          )}
         >
           Approve Implementation
         </Button>
