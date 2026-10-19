@@ -1,38 +1,37 @@
 from datetime import datetime
-from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.status import AgentRunMode, AgentRunStatus, AgentType
 from app.modules.standalone.schemas import AgentRunMessage
+from app.modules.agents.testing_validation.contracts.enums import (
+    TestGenerationOutputCode,
+    ValidationOutputCode,
+)
+from app.modules.agents.testing_validation.contracts.schemas import (
+    TEST_OUTPUT_MODELS,
+    GeneratedTestCase,
+    TestTraceabilityItem,
+)
 from app.modules.agents.testing_validation.executor import (
     CommandPolicyError,
     ValidationProfile,
     resolve_validation_profile,
 )
 
-
-class TestGenerationOutputCode(StrEnum):
-    UNIT_TEST_CASES = "UNIT_TEST_CASES"
-    API_TEST_CASES = "API_TEST_CASES"
-    INTEGRATION_TEST_CASES = "INTEGRATION_TEST_CASES"
-    FUNCTIONAL_TEST_CASES = "FUNCTIONAL_TEST_CASES"
-    E2E_TEST_CASES = "E2E_TEST_CASES"
-    REGRESSION_TEST_CASES = "REGRESSION_TEST_CASES"
-    SECURITY_TEST_CASES = "SECURITY_TEST_CASES"
-    ACCEPTANCE_TEST_CASES = "ACCEPTANCE_TEST_CASES"
-    TEST_TRACEABILITY = "TEST_TRACEABILITY"
-
-
-class ValidationOutputCode(StrEnum):
-    TEST_EXECUTION_REPORT = "TEST_EXECUTION_REPORT"
-    COVERAGE_REPORT = "COVERAGE_REPORT"
-    BUG_REPORTS = "BUG_REPORTS"
-    SECURITY_FINDINGS = "SECURITY_FINDINGS"
-    CODE_QUALITY_REPORT = "CODE_QUALITY_REPORT"
-    ACCEPTANCE_CRITERIA_VALIDATION = "ACCEPTANCE_CRITERIA_VALIDATION"
-    FINAL_VALIDATION_REPORT = "FINAL_VALIDATION_REPORT"
+# Compatibility re-exports: these names moved to the contracts/ package.
+# New code should import from app.modules.agents.testing_validation.contracts.
+__all__ = [
+    "Agent4InputContext",
+    "Agent4RunRequest",
+    "Agent4RunResult",
+    "GeneratedTestCase",
+    "TEST_OUTPUT_MODELS",
+    "TestGenerationOutputCode",
+    "TestTraceabilityItem",
+    "ValidationOutputCode",
+]
 
 
 def _strip_optional(value: str | None) -> str | None:
@@ -145,47 +144,6 @@ class Agent4InputContext(BaseModel):
     domain: str = Field(min_length=1)
     run_mode: Literal[AgentRunMode.TEST_GENERATION, AgentRunMode.VALIDATION]
     inputs: dict[str, Any]
-
-
-class GeneratedTestCase(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^TEST-\d{3,}$")
-    title: str = Field(min_length=1)
-    purpose: str = Field(min_length=1)
-    preconditions: list[str]
-    test_data: list[str]
-    steps: list[str] = Field(min_length=1)
-    expected_result: str = Field(min_length=1)
-    source_refs: list[str] = Field(min_length=1)
-    representation: Literal["SPECIFICATION", "EXECUTABLE_CODE"]
-    executable: bool
-    framework: str | None
-    code: str | None
-    execution_status: Literal["NOT_EXECUTED"] = "NOT_EXECUTED"
-
-    @model_validator(mode="after")
-    def validate_representation(self) -> "GeneratedTestCase":
-        if self.executable != (self.representation == "EXECUTABLE_CODE"):
-            raise ValueError("executable must match representation")
-        if self.executable and (not self.framework or not self.code):
-            raise ValueError("executable tests require framework and code")
-        if not self.executable and (self.framework is not None or self.code is not None):
-            raise ValueError("specification-only tests cannot claim framework or code")
-        return self
-
-
-class TestTraceabilityItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    source_ref: str = Field(min_length=1)
-    source_type: Literal["REQUIREMENT", "USER_STORY", "ACCEPTANCE_CRITERION", "SRS"]
-    test_refs: list[str] = Field(min_length=1)
-    scope: Literal["STANDALONE_RESULT"] = "STANDALONE_RESULT"
-
-
-TEST_OUTPUT_MODELS: dict[TestGenerationOutputCode, Any] = {
-    **{code: list[GeneratedTestCase] for code in TestGenerationOutputCode if code is not TestGenerationOutputCode.TEST_TRACEABILITY},
-    TestGenerationOutputCode.TEST_TRACEABILITY: list[TestTraceabilityItem],
-}
 
 
 class Agent4RunResult(BaseModel):

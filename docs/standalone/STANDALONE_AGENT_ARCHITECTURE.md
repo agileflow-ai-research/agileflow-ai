@@ -289,9 +289,11 @@ The implemented specialist source layout is feature-oriented:
 
 `backend/app/modules/requirements/` remains the integrated requirement artifact,
 H1 publication, and Shared Knowledge Base domain; it is not the standalone Agent 1
-engine. `backend/app/modules/agents/implementation/` is reserved for future Agent 3
-work and is intentionally absent. The dependency direction is specialist packages to
-the shared standalone foundation, never the reverse.
+engine. `backend/app/modules/agents/implementation/` holds the implemented Agent 3
+input, preparation, readiness, specification, consolidation, and GitHub-connection
+pipeline; its code-generation and execution engine is not yet implemented. The
+dependency direction is specialist packages to the shared standalone foundation,
+never the reverse.
 
 ## 15. Progress Presentation 1 Target — October 23
 
@@ -301,7 +303,7 @@ The intended milestone is:
 - standalone foundation: implemented;
 - Agent 1: working standalone MVP;
 - Agent 2: working standalone MVP;
-- Agent 3: reserved for future implementation; no backend or frontend specialist package exists;
+- Agent 3: input, preparation, readiness, specification, consolidation, and GitHub-connection pipeline implemented in backend and frontend; code-generation engine and run execution not yet implemented;
 - Agent 4 `TEST_GENERATION`: working standalone MVP;
 - Agent 4 `VALIDATION`: working standalone MVP; and
 - full integrated multi-agent workflow: shared infrastructure established, with full specialist integration continuing after Progress Presentation 1.

@@ -1,11 +1,13 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runTestingValidationAgent } from './testingValidationAgentService.js'
+import { TEST_GENERATION_OUTPUT_CODES } from './constants/testGeneration.js'
+import { VALIDATION_OUTPUT_CODES } from './constants/validation.js'
+import { runTestingValidationAgent } from './services/testingValidationAgentService.js'
 import TestingValidationWorkspace from './TestingValidationWorkspace.jsx'
 
-vi.mock('./testingValidationAgentService.js', () => ({
+vi.mock('./services/testingValidationAgentService.js', () => ({
   runTestingValidationAgent: vi.fn(),
 }))
 
@@ -14,87 +16,98 @@ const project = {
   name: 'Quality Gate', domain: 'Fintech',
 }
 
+const testGenerationButton = () => screen.getByRole('button', { name: /^Test Case Generation/ })
+const validationButton = () => screen.getByRole('button', { name: /^Testing & Validation/ })
+
 describe('TestingValidationWorkspace', () => {
-  beforeEach(() => vi.clearAllMocks())
+  let fetchMock
 
-  it('requires an explicit mode choice before showing any wizard', () => {
-    render(<TestingValidationWorkspace project={project} />)
-    expect(screen.getByRole('button', { name: /Test Case Generation/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Testing & Validation/ })).toBeInTheDocument()
-    expect(screen.queryByLabelText('Requirements')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Source Code or Project')).not.toBeInTheDocument()
+  beforeEach(() => {
+    vi.clearAllMocks()
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
   })
 
-  it('runs TEST_GENERATION with only generation inputs and outputs', async () => {
-    const user = userEvent.setup()
-    runTestingValidationAgent.mockResolvedValue({ data: {
-      run_id: 'RUN-401', status: 'COMPLETED', run_mode: 'TEST_GENERATION', warnings: [], errors: [],
-      outputs: { UNIT_TEST_CASES: [{
-        id: 'TEST-001', title: 'Transfer funds', purpose: 'Verify transfer', preconditions: [],
-        test_data: ['valid account'], steps: ['Submit transfer'], expected_result: 'Transfer succeeds',
-        source_refs: ['SRC-001'], representation: 'SPECIFICATION', executable: false,
-        framework: null, code: null, execution_status: 'NOT_EXECUTED',
-      }] },
-    } })
-    render(<TestingValidationWorkspace project={project} />)
-    await user.click(screen.getByRole('button', { name: /Test Case Generation/ }))
-    expect(screen.getByLabelText('Requirements')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Source Code or Project')).not.toBeInTheDocument()
-    await user.type(screen.getByLabelText('Requirements'), 'Customers transfer funds')
-    await user.click(screen.getByRole('button', { name: 'Next' }))
-    expect(screen.getByRole('checkbox', { name: 'Unit Test Cases' })).toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: 'Coverage Report' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('checkbox', { name: 'Unit Test Cases' }))
-    await user.click(screen.getByRole('button', { name: 'Next' }))
-    await user.click(screen.getByRole('button', { name: 'Run Agent' }))
-    expect(runTestingValidationAgent).toHaveBeenCalledWith('AGP-004', {
-      run_mode: 'TEST_GENERATION', requirements: 'Customers transfer funds',
-      selected_outputs: ['UNIT_TEST_CASES'],
-    })
-    expect(await screen.findByRole('heading', { name: 'Generated test results' })).toBeInTheDocument()
-    expect(screen.getByText('Test specification · Not executable')).toBeInTheDocument()
-    expect(screen.getByText('Execution: NOT_EXECUTED')).toBeInTheDocument()
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
-  it('runs VALIDATION with validation-only inputs and evidence outputs', async () => {
-    const user = userEvent.setup()
-    runTestingValidationAgent.mockResolvedValue({ data: {
-      run_id: 'RUN-402', status: 'COMPLETED', run_mode: 'VALIDATION', warnings: [], errors: [],
-      outputs: { TEST_EXECUTION_REPORT: {
-        status: 'FAILED', environment: 'Controlled temporary workspace',
-        evidence: { evidence_type: 'ACTUAL_SANDBOX_EXECUTION', command: ['python', '-m', 'pytest'], exit_code: 1 },
-        failures: [{ id: 'BUG-001' }], test_cases_supplied: true,
-      } },
-    } })
+  it('shows project name and domain from the AgentProject without asking for them again', () => {
     render(<TestingValidationWorkspace project={project} />)
-    await user.click(screen.getByRole('button', { name: /Testing & Validation/ }))
-    expect(screen.getByLabelText('Source Code or Project')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Existing Source Code')).not.toBeInTheDocument()
-    await user.type(screen.getByLabelText('Source Code or Project'), 'def transfer(): return False')
-    await user.selectOptions(screen.getByLabelText('Validation profile'), 'PYTHON_PYTEST')
-    await user.click(screen.getByRole('button', { name: 'Next' }))
-    expect(screen.getByRole('checkbox', { name: 'Test Execution Report' })).toBeInTheDocument()
-    expect(screen.queryByRole('checkbox', { name: 'Unit Test Cases' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('checkbox', { name: 'Test Execution Report' }))
-    await user.click(screen.getByRole('button', { name: 'Next' }))
-    await user.click(screen.getByRole('button', { name: 'Run Agent' }))
-    expect(runTestingValidationAgent).toHaveBeenCalledWith('AGP-004', {
-      run_mode: 'VALIDATION', source_code_or_project: 'def transfer(): return False',
-      validation_profile: 'PYTHON_PYTEST', selected_outputs: ['TEST_EXECUTION_REPORT'],
-    })
-    expect(await screen.findByRole('heading', { name: 'Testing and validation evidence' })).toBeInTheDocument()
-    expect(screen.getByText(/ACTUAL_SANDBOX_EXECUTION/)).toBeInTheDocument()
+
+    expect(screen.getByText('Quality Gate')).toBeInTheDocument()
+    expect(screen.getByText('Fintech')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
-  it('validates each mode without leaking the other mode requirements', async () => {
+  it('shows the mode chooser first and no mode-specific content', () => {
+    render(<TestingValidationWorkspace project={project} />)
+
+    expect(testGenerationButton()).toBeInTheDocument()
+    expect(validationButton()).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: /workflow preview/ })).not.toBeInTheDocument()
+  })
+
+  it('shows the TEST_GENERATION workflow preview after selecting it, without any request or run', async () => {
     const user = userEvent.setup()
     render(<TestingValidationWorkspace project={project} />)
-    await user.click(screen.getByRole('button', { name: /Test Case Generation/ }))
-    await user.click(screen.getByRole('button', { name: 'Next' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('requirements, user stories, acceptance criteria, or SRS')
+
+    await user.click(testGenerationButton())
+
+    const preview = screen.getByRole('list', { name: 'Test Case Generation workflow preview' })
+    const stages = within(preview).getAllByRole('listitem')
+    expect(stages.map((item) => item.textContent)).toEqual([
+      expect.stringContaining('Inputs'),
+      expect.stringContaining('Processing'),
+      expect.stringContaining('Testability'),
+      expect.stringContaining('Test Case Plan'),
+      expect.stringContaining('Human Review'),
+      expect.stringContaining('Test Generation'),
+      expect.stringContaining('Results'),
+    ])
+    expect(screen.queryByRole('button', { name: /run/i })).not.toBeInTheDocument()
+    expect(runTestingValidationAgent).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('shows the VALIDATION workflow preview separately and starts no execution', async () => {
+    const user = userEvent.setup()
+    render(<TestingValidationWorkspace project={project} />)
+
+    await user.click(validationButton())
+
+    const preview = screen.getByRole('list', { name: 'Testing & Validation workflow preview' })
+    expect(within(preview).getAllByRole('listitem')).toHaveLength(6)
+    expect(within(preview).getByText('Test Execution')).toBeInTheDocument()
+    expect(within(preview).queryByText('Test Case Plan')).not.toBeInTheDocument()
+    expect(runTestingValidationAgent).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('lets the user change mode safely back to the chooser', async () => {
+    const user = userEvent.setup()
+    render(<TestingValidationWorkspace project={project} />)
+
+    await user.click(testGenerationButton())
     await user.click(screen.getByRole('button', { name: 'Change mode' }))
-    await user.click(screen.getByRole('button', { name: /Testing & Validation/ }))
-    await user.click(screen.getByRole('button', { name: 'Next' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Source code or project is required')
+
+    expect(testGenerationButton()).toBeInTheDocument()
+    expect(validationButton()).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: /workflow preview/ })).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps the TEST_GENERATION and VALIDATION output vocabularies separate and exact', () => {
+    expect(TEST_GENERATION_OUTPUT_CODES).toEqual([
+      'UNIT_TEST_CASES', 'API_TEST_CASES', 'INTEGRATION_TEST_CASES',
+      'FUNCTIONAL_TEST_CASES', 'E2E_TEST_CASES', 'REGRESSION_TEST_CASES',
+      'SECURITY_TEST_CASES', 'ACCEPTANCE_TEST_CASES', 'TEST_TRACEABILITY',
+    ])
+    expect(VALIDATION_OUTPUT_CODES).toEqual([
+      'TEST_EXECUTION_REPORT', 'COVERAGE_REPORT', 'BUG_REPORTS', 'SECURITY_FINDINGS',
+      'CODE_QUALITY_REPORT', 'ACCEPTANCE_CRITERIA_VALIDATION', 'FINAL_VALIDATION_REPORT',
+    ])
+    expect(TEST_GENERATION_OUTPUT_CODES.filter((code) => VALIDATION_OUTPUT_CODES.includes(code))).toEqual([])
   })
 })

@@ -14,12 +14,12 @@ from app.modules.agents.testing_validation.executor import (
     ValidationExecutor,
     resolve_validation_profile,
 )
-from app.modules.agents.testing_validation.schemas import (
-    Agent4InputContext,
-    TEST_OUTPUT_MODELS,
+from app.modules.agents.testing_validation.contracts.enums import (
     TestGenerationOutputCode,
     ValidationOutputCode,
 )
+from app.modules.agents.testing_validation.contracts.schemas import TEST_OUTPUT_MODELS
+from app.modules.agents.testing_validation.schemas import Agent4InputContext
 
 
 class StructuredOutputInvalidError(ValueError):

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { apiClient } from '../../../services/apiClient.js'
+import { apiClient } from '../../../../services/apiClient.js'
 import { runTestingValidationAgent } from './testingValidationAgentService.js'
 
-vi.mock('../../../services/apiClient.js', () => ({ apiClient: { post: vi.fn() } }))
+vi.mock('../../../../services/apiClient.js', () => ({ apiClient: { post: vi.fn() } }))
 
 describe('testingValidationAgentService', () => {
   beforeEach(() => vi.clearAllMocks())
