@@ -394,13 +394,12 @@ describe('DesignPlanningResults · S2-06 Results Overview', () => {
       />,
     )
 
-    // S2-07 action is enabled, S2-08 deferred button remains disabled
+    // S2-07 and S2-08 actions are now enabled
     const viewDesignBtn = screen.getByRole('button', { name: 'View design artifacts' })
     expect(viewDesignBtn).toBeEnabled()
 
     const viewPlanningBtn = screen.getByRole('button', { name: 'View planning hierarchy' })
-    expect(viewPlanningBtn).toBeDisabled()
-    expect(viewPlanningBtn).toHaveAttribute('title', 'Planning hierarchy view will be available in S2-08')
+    expect(viewPlanningBtn).toBeEnabled()
 
     // Open run history is enabled and callable
     const openHistoryBtn = screen.getByRole('button', { name: 'Open run history' })
@@ -874,6 +873,344 @@ describe('DesignPlanningResults · S2-06 Results Overview', () => {
       expect(screen.getByText(/ARCH-001 · Modular web application/)).toBeInTheDocument()
 
       // Still only 1 call to getAgentProjectRun
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Back to Overview
+      const backButtons = screen.getAllByRole('button', { name: 'Back to Results Overview' })
+      await user.click(backButtons[0])
+
+      expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('S2-08 Planning Hierarchy View', () => {
+    const planningOutputs = {
+      EPICS: [
+        {
+          id: 'EPIC-02',
+          title: 'Booking Management',
+          outcome: 'Customers can book, modify, and view reservations.',
+          priority: 'HIGH',
+          source_refs: ['SPEC-003'],
+        },
+      ],
+      FEATURES: [
+        {
+          id: 'FEATURE-04',
+          epic_id: 'EPIC-02',
+          title: 'Create Booking',
+          description: 'Capture booking details and confirm reservations',
+          source_refs: ['SPEC-003'],
+        },
+      ],
+      USER_STORIES: [
+        {
+          id: 'STORY-06',
+          epic_id: 'EPIC-02',
+          feature_id: 'FEATURE-04',
+          actor: 'Customer',
+          goal: 'books an available slot',
+          benefit: 'reserves an appointment',
+          acceptance_criteria: [
+            'Booking slot is locked during checkout',
+            'Confirmation email is dispatched upon payment',
+          ],
+          priority: 'HIGH',
+          estimate_points: 5,
+          source_refs: ['SPEC-003'],
+        },
+      ],
+      TASKS: [
+        {
+          id: 'TASK-13',
+          epic_id: 'EPIC-02',
+          feature_id: 'FEATURE-04',
+          story_id: 'STORY-06',
+          title: 'Create booking persistence model',
+          description: 'Define schema and migrations',
+          required_skills: ['Database', 'Python'],
+          estimate_points: 3,
+          depends_on: [],
+          source_refs: ['SPEC-003'],
+        },
+        {
+          id: 'TASK-14',
+          epic_id: 'EPIC-02',
+          feature_id: 'FEATURE-04',
+          story_id: 'STORY-06',
+          title: 'Implement POST /api/bookings',
+          description: 'FastAPI route with validation',
+          required_skills: ['FastAPI'],
+          estimate_points: 5,
+          depends_on: ['TASK-13'],
+          source_refs: ['SPEC-003'],
+        },
+        {
+          id: 'TASK-15',
+          epic_id: 'EPIC-02',
+          feature_id: 'FEATURE-04',
+          story_id: 'STORY-06',
+          title: 'Connect booking form to API',
+          description: 'Frontend integration and error handling',
+          required_skills: ['React'],
+          estimate_points: 3,
+          depends_on: ['TASK-14'],
+          source_refs: ['SPEC-003'],
+        },
+      ],
+      PRODUCT_BACKLOG: [
+        {
+          item_id: 'EPIC-02',
+          item_type: 'EPIC',
+          title: 'Booking Management',
+          priority: 'HIGH',
+          parent_id: null,
+          source_refs: ['SPEC-003'],
+        },
+        {
+          item_id: 'FEATURE-04',
+          item_type: 'FEATURE',
+          title: 'Create Booking',
+          priority: 'HIGH',
+          parent_id: 'EPIC-02',
+          source_refs: ['SPEC-003'],
+        },
+        {
+          item_id: 'STORY-06',
+          item_type: 'STORY',
+          title: 'Customer books an available slot',
+          priority: 'HIGH',
+          parent_id: 'FEATURE-04',
+          source_refs: ['SPEC-003'],
+        },
+      ],
+    }
+
+    it('navigates from S2-06 to S2-08 via "View planning hierarchy" without extra API requests', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={planningOutputs}
+        />,
+      )
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+      const viewPlanningBtn = screen.getByRole('button', { name: 'View planning hierarchy' })
+      await user.click(viewPlanningBtn)
+
+      // S2-08 rendered
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+      expect(
+        screen.getByText('Epic → Feature → User Story → Task with stable IDs and source references'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('Hierarchy valid')).toBeInTheDocument()
+      expect(screen.getByText('BookEase')).toBeInTheDocument()
+      expect(screen.getByText('Standalone Agent 2')).toBeInTheDocument()
+      expect(screen.getByText('Human reviewer')).toBeInTheDocument()
+
+      // Verification: 0 extra API requests
+      expect(getAgentProjectRun).not.toHaveBeenCalled()
+    })
+
+    it('navigates back to S2-06 from S2-08 and preserves the run result state', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={planningOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View planning hierarchy' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+
+      // Click Back to Results Overview
+      const backButtons = screen.getAllByRole('button', { name: 'Back to Results Overview' })
+      await user.click(backButtons[0])
+
+      // Returns to S2-06
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+      expect(screen.getByText('Generated design and planning artifacts')).toBeInTheDocument()
+    })
+
+    it('renders Epic → Feature → User Story → Task tree with real IDs, acceptance criteria, dependencies, and deterministic checks', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={planningOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View planning hierarchy' }))
+
+      // Main hierarchy card
+      expect(screen.getByRole('heading', { level: 3, name: 'Product backlog hierarchy' })).toBeInTheDocument()
+
+      // Epic
+      expect(screen.getByText('EPIC-02 · Booking Management')).toBeInTheDocument()
+      expect(screen.getAllByText('SPEC-003').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('High').length).toBeGreaterThan(0)
+      expect(screen.getByText('Customers can book, modify, and view reservations.')).toBeInTheDocument()
+
+      // Feature
+      expect(screen.getByText('FEATURE-04 · Create Booking')).toBeInTheDocument()
+      expect(screen.getByText('Capture booking details and confirm reservations')).toBeInTheDocument()
+
+      // Story
+      expect(screen.getByText(/STORY-06 · Customer · books an available slot/)).toBeInTheDocument()
+      expect(screen.getByText(/5 workload units/)).toBeInTheDocument()
+      expect(screen.getByText('Booking slot is locked during checkout')).toBeInTheDocument()
+      expect(screen.getByText('Confirmation email is dispatched upon payment')).toBeInTheDocument()
+
+      // Tasks and dependencies
+      expect(screen.getAllByText('TASK-13').length).toBe(2) // 1 in task title, 1 in TASK-14 dependency
+      expect(screen.getByText(/Create booking persistence model/)).toBeInTheDocument()
+      expect(screen.getAllByText('TASK-14').length).toBe(2) // 1 in task title, 1 in TASK-15 dependency
+      expect(screen.getByText(/Implement POST \/api\/bookings/)).toBeInTheDocument()
+      expect(screen.getByText('TASK-15')).toBeInTheDocument()
+
+      // Product backlog table
+      expect(screen.getByRole('heading', { level: 3, name: 'Product backlog' })).toBeInTheDocument()
+      expect(screen.getByText('3 prioritized backlog items')).toBeInTheDocument()
+
+      // Deterministic planning checks
+      expect(screen.getByRole('heading', { level: 3, name: 'Deterministic planning checks' })).toBeInTheDocument()
+      expect(screen.getByText('Features reference valid epics')).toBeInTheDocument()
+      expect(screen.getByText('Stories reference valid features')).toBeInTheDocument()
+      expect(screen.getByText('Tasks reference valid stories')).toBeInTheDocument()
+      expect(screen.getByText('Task dependencies reference valid tasks')).toBeInTheDocument()
+      expect(screen.getByText('Duplicate planning IDs rejected')).toBeInTheDocument()
+    })
+
+    it('renders partial planning package (e.g., USER_STORIES + TASKS only) without requiring Epics/Features', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            USER_STORIES: planningOutputs.USER_STORIES,
+            TASKS: planningOutputs.TASKS,
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View planning hierarchy' }))
+
+      // Renders stories as roots
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+      expect(screen.getByText(/STORY-06 · Customer · books an available slot/)).toBeInTheDocument()
+      expect(screen.getAllByText('TASK-13').length).toBe(2)
+      expect(screen.getAllByText('TASK-14').length).toBe(2)
+
+      // Epics and features are omitted
+      expect(screen.queryByText('EPIC-02 · Booking Management')).not.toBeInTheDocument()
+      expect(screen.queryByText('FEATURE-04 · Create Booking')).not.toBeInTheDocument()
+    })
+
+    it('places unlinked items in unlinked items section without fabricating parent relationships', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            EPICS: planningOutputs.EPICS,
+            FEATURES: [
+              {
+                id: 'FEATURE-ORPHAN',
+                epic_id: 'EPIC-NONEXISTENT',
+                title: 'Orphan Feature',
+                description: 'No matching epic parent',
+                source_refs: ['SPEC-003'],
+              },
+            ],
+            USER_STORIES: [
+              {
+                id: 'STORY-ORPHAN',
+                epic_id: 'EPIC-NONEXISTENT',
+                feature_id: 'FEATURE-NONEXISTENT',
+                actor: 'User',
+                goal: 'orphan goal',
+                benefit: 'orphan benefit',
+                acceptance_criteria: ['Criterion'],
+                priority: 'LOW',
+                estimate_points: 1,
+                source_refs: ['SPEC-003'],
+              },
+            ],
+            TASKS: [
+              {
+                id: 'TASK-ORPHAN',
+                epic_id: 'EPIC-NONEXISTENT',
+                feature_id: 'FEATURE-NONEXISTENT',
+                story_id: 'STORY-NONEXISTENT',
+                title: 'Orphan Task',
+                description: 'No matching story parent',
+                required_skills: [],
+                estimate_points: 1,
+                depends_on: [],
+                source_refs: ['SPEC-003'],
+              },
+            ],
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View planning hierarchy' }))
+
+      expect(screen.getByRole('heading', { level: 3, name: 'Unlinked items' })).toBeInTheDocument()
+      expect(screen.getByText(/FEATURE-ORPHAN/)).toBeInTheDocument()
+      expect(screen.getByText(/STORY-ORPHAN/)).toBeInTheDocument()
+      expect(screen.getByText(/TASK-ORPHAN/)).toBeInTheDocument()
+    })
+
+    it('displays truthful empty state when no planning hierarchy outputs were returned', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            SYSTEM_ARCHITECTURE: { components: [] },
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View planning hierarchy' }))
+
+      expect(screen.getByText('No planning hierarchy artifacts were generated for this run.')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'Product backlog hierarchy' })).not.toBeInTheDocument()
+    })
+
+    it('navigates to S2-08 and back in historical RunDetail view without extra API requests', async () => {
+      const user = userEvent.setup()
+      getAgentProjectRun.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-HIST-008',
+          agent_type: 'DESIGN_PLANNING',
+          run_mode: 'DEFAULT',
+          status: 'COMPLETED',
+          selected_outputs: ['EPICS', 'FEATURES', 'USER_STORIES', 'TASKS'],
+          created_at: '2026-10-14T10:00:00Z',
+          started_at: '2026-10-14T10:00:01Z',
+          completed_at: '2026-10-14T10:00:02Z',
+          warnings: [],
+          errors: [],
+          output_manifest: planningOutputs,
+        },
+      })
+
+      render(<RunDetail agentProjectId="AGP-002" runId="RUN-HIST-008" />)
+      expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Open S2-08
+      const viewPlanningBtn = screen.getByRole('button', { name: 'View planning hierarchy' })
+      await user.click(viewPlanningBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+      expect(screen.getByText('EPIC-02 · Booking Management')).toBeInTheDocument()
       expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
 
       // Back to Overview

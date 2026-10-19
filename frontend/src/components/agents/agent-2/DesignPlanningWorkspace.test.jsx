@@ -830,7 +830,7 @@ describe('DesignPlanningWorkspace', () => {
 
     // Actions
     expect(screen.getByRole('button', { name: 'View design artifacts' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'View planning hierarchy' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'View planning hierarchy' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Open run history' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Start another run' })).toBeEnabled()
 

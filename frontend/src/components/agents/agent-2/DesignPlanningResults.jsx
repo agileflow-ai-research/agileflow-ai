@@ -5,6 +5,7 @@ import ArtifactViewer from '../ArtifactViewer.jsx'
 import ResultsWorkspace from '../ResultsWorkspace.jsx'
 import ResultsOverview from './results/ResultsOverview.jsx'
 import DesignArtifacts from './results/DesignArtifacts.jsx'
+import PlanningHierarchy from './results/PlanningHierarchy.jsx'
 
 const outputLabels = {
   SYSTEM_ARCHITECTURE: 'System Architecture',
@@ -467,12 +468,33 @@ function DesignPlanningResults(props) {
     )
   }
 
+  if (currentView === 'planning-hierarchy') {
+    return (
+      <PlanningHierarchy
+        {...props}
+        title={props.planningHierarchyTitle || 'Agile Planning Hierarchy'}
+        subtitle={
+          props.planningHierarchySubtitle ||
+          'Epic → Feature → User Story → Task with stable IDs and source references'
+        }
+        onBackToOverview={() => {
+          setActiveView('overview')
+          props.onBackToOverview?.()
+        }}
+      />
+    )
+  }
+
   return (
     <ResultsOverview
       {...props}
       onViewDesignArtifacts={() => {
         setActiveView('design-artifacts')
         props.onViewDesignArtifacts?.()
+      }}
+      onViewPlanningHierarchy={() => {
+        setActiveView('planning-hierarchy')
+        props.onViewPlanningHierarchy?.()
       }}
     />
   )
