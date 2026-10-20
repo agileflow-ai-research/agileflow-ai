@@ -135,6 +135,15 @@ function TestingValidationWorkspace({ project, onRunCompleted }) {
     }
   }
 
+  if (configuredStage === 'TEST_GENERATION') {
+    return (
+      <section aria-labelledby="agent4-stage-canvas-title" className="space-y-2">
+        <h3 id="agent4-stage-canvas-title" className="text-card-heading font-semibold text-content-primary">Test Generation</h3>
+        <p className="text-sm text-content-secondary">This staged project is available through the six-node Test Generation canvas.</p>
+      </section>
+    )
+  }
+
   if (configuredStage === 'VALIDATION') {
     return (
       <section aria-labelledby="agent4-stage-unavailable-title" className="space-y-2">

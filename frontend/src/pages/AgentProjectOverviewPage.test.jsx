@@ -50,6 +50,14 @@ vi.mock('../features/agents/requirements/pages/RequirementsProjectPage.jsx', () 
     </section>
   ),
 }))
+vi.mock('../features/agents/testingValidation/pages/TestingValidationProjectPage.jsx', () => ({
+  default: ({ project, entryMode }) => (
+    <section aria-label="Agent 4 test generation project" data-entry-mode={entryMode}>
+      <h1>{project.name}</h1>
+      <div aria-label="Agent 4 test generation workflow canvas" />
+    </section>
+  ),
+}))
 vi.mock('../features/agents/implementation/services/implementationAgentService.js', () => ({
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
@@ -131,6 +139,32 @@ describe('AgentProjectOverviewPage', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Delivery Portal' })).toBeInTheDocument()
     expect(screen.getByLabelText('Agent 3 implementation project')).toHaveAttribute('data-entry-mode', 'existing')
     expect(screen.getByLabelText('Agent 3 implementation workflow canvas')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
+  })
+
+  it('routes a staged Agent 4 project to the six-node canvas page', async () => {
+    getAgentProjectById.mockResolvedValue({ data: {
+      ...project,
+      agent_stage: 'TEST_GENERATION',
+    } })
+    getAgentProjectRuns.mockResolvedValue({ data: [] })
+
+    renderOverview()
+
+    expect(await screen.findByLabelText('Agent 4 test generation project')).toHaveAttribute('data-entry-mode', 'existing')
+    expect(screen.getByLabelText('Agent 4 test generation workflow canvas')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Test Case Generation/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the unavailable Validation stage on its safe Coming Soon guard', async () => {
+    getAgentProjectById.mockResolvedValue({ data: { ...project, agent_stage: 'VALIDATION' } })
+    getAgentProjectRuns.mockResolvedValue({ data: [] })
+
+    renderOverview()
+
+    expect(await screen.findByText(/Coming Soon/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Agent 4 test generation workflow canvas')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
   })
 

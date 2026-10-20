@@ -1,0 +1,77 @@
+export const TESTING_VALIDATION_NODE_IDS = Object.freeze({
+  INPUT_OUTPUT_SETUP: 'INPUT_OUTPUT_SETUP',
+  INPUT_PREPARATION: 'INPUT_PREPARATION',
+  TESTING_INTELLIGENCE: 'TESTING_INTELLIGENCE',
+  CONTEXT_TESTABILITY: 'CONTEXT_TESTABILITY',
+  TEST_PLANNING_REVIEW: 'TEST_PLANNING_REVIEW',
+  TEST_GENERATION_RESULTS: 'TEST_GENERATION_RESULTS',
+})
+
+export const TESTING_VALIDATION_NODE_DEFINITIONS = Object.freeze([
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.INPUT_OUTPUT_SETUP,
+    sequence: 1,
+    title: 'Input & Output Setup',
+    shortTitle: 'Input & Output',
+    panelKey: 'input-output-setup',
+    purpose: 'Collect testing inputs and choose desired test outputs.',
+    summary: 'Configure testing inputs and outputs.',
+    futureStages: Object.freeze(['Artifact sources', 'Source types', 'Output selection', 'Human confirmation']),
+  }),
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.INPUT_PREPARATION,
+    sequence: 2,
+    title: 'Input Preparation',
+    shortTitle: 'Preparation',
+    panelKey: 'input-preparation',
+    purpose: 'Prepare confirmed inputs for testing analysis.',
+    summary: 'Extract, normalize, and chunk confirmed inputs.',
+    futureStages: Object.freeze(['Extraction', 'Normalization', 'Chunking']),
+  }),
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.TESTING_INTELLIGENCE,
+    sequence: 3,
+    title: 'Testing Intelligence',
+    shortTitle: 'Intelligence',
+    panelKey: 'testing-intelligence',
+    purpose: 'Understand testing-relevant meaning from prepared chunks.',
+    summary: 'Classify evidence and extract testing facts.',
+    futureStages: Object.freeze(['Rule Classification', 'Zero-Shot Classification', 'Hybrid Decision', 'Semantic Test-Fact Extraction']),
+  }),
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.CONTEXT_TESTABILITY,
+    sequence: 4,
+    title: 'Context & Testability',
+    shortTitle: 'Testability',
+    panelKey: 'context-testability',
+    purpose: 'Connect artifacts and determine whether requested testing outputs are feasible.',
+    summary: 'Assess traceability and output feasibility.',
+    futureStages: Object.freeze(['Traceability', 'Readiness', 'Selected-output feasibility']),
+  }),
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.TEST_PLANNING_REVIEW,
+    sequence: 5,
+    title: 'Test Planning & Human Review',
+    shortTitle: 'Planning & Review',
+    panelKey: 'test-planning-review',
+    purpose: 'Create a Test Case Plan and require human approval before detailed generation.',
+    summary: 'Plan test scenarios and require human approval.',
+    futureStages: Object.freeze(['Deterministic plan', 'AI enrichment', 'Validation', 'Mandatory human review']),
+  }),
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.TEST_GENERATION_RESULTS,
+    sequence: 6,
+    title: 'Test Generation & Results',
+    shortTitle: 'Generation & Results',
+    panelKey: 'test-generation-results',
+    purpose: 'Generate approved tests and present final Stage 1 traceability and results.',
+    summary: 'Generate approved tests and report traceability and gaps.',
+    futureStages: Object.freeze(['Detailed Test Generation', 'Schema and Reference Validation', 'Final Test Traceability', 'Results and Gap Reporting']),
+  }),
+])
+
+export const TESTING_VALIDATION_NODE_REGISTRY = TESTING_VALIDATION_NODE_DEFINITIONS
+
+export function getTestingValidationNodeDefinition(nodeId) {
+  return TESTING_VALIDATION_NODE_REGISTRY.find((node) => node.id === nodeId) ?? null
+}

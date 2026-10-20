@@ -30,13 +30,15 @@ describe('TestingValidationWorkspace', () => {
     expect(screen.queryByLabelText('Source Code or Project')).not.toBeInTheDocument()
   })
 
-  it('uses a configured Test Generation stage without asking for another mode', () => {
+  it('keeps configured Test Generation projects out of the legacy direct-run wizard', () => {
     render(<TestingValidationWorkspace project={testGenerationProject} />)
-    expect(screen.getByLabelText('Requirements')).toBeInTheDocument()
+    expect(screen.getByText(/six-node Test Generation canvas/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Requirements')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Test Case Generation/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Testing & Validation/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Change mode' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
+    expect(runTestingValidationAgent).not.toHaveBeenCalled()
   })
 
   it('does not expose Stage 2 controls for a configured Validation stage', () => {
