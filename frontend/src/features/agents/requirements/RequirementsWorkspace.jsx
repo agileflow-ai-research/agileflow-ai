@@ -6,7 +6,7 @@ import EvidenceProcessingNode from './nodes/EvidenceProcessingNode.jsx'
 import LockedNodeState from './nodes/LockedNodeState.jsx'
 import RequirementSourcesNode from './nodes/RequirementSourcesNode.jsx'
 import N2OrchestrationStatus from './nodes/N2OrchestrationStatus.jsx'
-import useRequirementEvidenceWorkflow from './hooks/useRequirementEvidenceWorkflow.js'
+import useRequirementsWorkspace from './hooks/useRequirementsWorkspace.js'
 import { getRequirementNodeDefinition, REQUIREMENTS_NODE_IDS } from './workflow/nodeDefinitions.js'
 
 function RequirementsWorkspace({
@@ -15,7 +15,7 @@ function RequirementsWorkspace({
   onPresentationChange,
   onNavigateNode,
 }) {
-  const workflow = useRequirementEvidenceWorkflow(project.agent_project_id)
+  const workflow = useRequirementsWorkspace(project.agent_project_id)
 
   useEffect(() => {
     onPresentationChange?.({
