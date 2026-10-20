@@ -1,3 +1,6 @@
+import { inputHasSource } from './sourceState.js'
+import { WORKFLOW_NODE_IDS } from '../constants/workflow.js'
+
 export const WORKFLOW_GATE_STATUS = Object.freeze({
   SATISFIED: 'SATISFIED',
   BLOCKED: 'BLOCKED',
@@ -15,10 +18,6 @@ function gate(status, blockingReason = '', blockingNodeId = null) {
     blocking_reason: blockingReason,
     blocking_node_id: blockingNodeId,
   })
-}
-
-function hasSource(input) {
-  return input?.source_type === 'TEXT' ? Boolean(input.content?.trim()) : Boolean(input?.file)
 }
 
 function currentApprovedRun(runs, readiness) {
@@ -43,18 +42,18 @@ export function deriveWorkflowGates(snapshot) {
   const deliveryDecision = snapshot?.deliveryDecision
   const runs = snapshot?.runState
 
-  const sourcesSatisfied = inputs.some(hasSource) && selectedOutputs.length > 0
+  const sourcesSatisfied = inputs.some(inputHasSource) && selectedOutputs.length > 0
   const sourcesGate = sourcesSatisfied
     ? gate(WORKFLOW_GATE_STATUS.SATISFIED)
-    : gate(WORKFLOW_GATE_STATUS.BLOCKED, 'Add project sources and select outputs', 'PROJECT_SOURCES')
+    : gate(WORKFLOW_GATE_STATUS.BLOCKED, 'Add project sources and select outputs', WORKFLOW_NODE_IDS.PROJECT_SOURCES)
 
   let analysisGate
   if (['FAILED', 'PARTIAL_FAILURE'].includes(preparation?.status)) {
-    analysisGate = gate(WORKFLOW_GATE_STATUS.FAILED, 'Input analysis needs attention', 'INPUT_ANALYSIS')
+    analysisGate = gate(WORKFLOW_GATE_STATUS.FAILED, 'Input analysis needs attention', WORKFLOW_NODE_IDS.INPUT_ANALYSIS)
   } else if (['ANALYSIS_READY', 'WAITING_FOR_HUMAN'].includes(preparation?.status)) {
     analysisGate = gate(WORKFLOW_GATE_STATUS.SATISFIED)
   } else {
-    analysisGate = gate(WORKFLOW_GATE_STATUS.BLOCKED, preparation?.status === 'RUNNING' ? 'Input analysis is still running' : 'Analyze project inputs first', 'INPUT_ANALYSIS')
+    analysisGate = gate(WORKFLOW_GATE_STATUS.BLOCKED, preparation?.status === 'RUNNING' ? 'Input analysis is still running' : 'Analyze project inputs first', WORKFLOW_NODE_IDS.INPUT_ANALYSIS)
   }
 
   const artifactReviewPending = preparation?.status === 'WAITING_FOR_HUMAN'
@@ -72,9 +71,9 @@ export function deriveWorkflowGates(snapshot) {
       : semanticReviewPending
         ? 'Complete semantic review'
         : 'Resolve project specification conflicts'
-    specificationGate = gate(WORKFLOW_GATE_STATUS.WAITING_FOR_HUMAN, reason, 'SPECIFICATION_VERIFICATION')
+    specificationGate = gate(WORKFLOW_GATE_STATUS.WAITING_FOR_HUMAN, reason, WORKFLOW_NODE_IDS.SPECIFICATION_VERIFICATION)
   } else if (specificationFailed) {
-    specificationGate = gate(WORKFLOW_GATE_STATUS.FAILED, 'Project specification needs attention', 'SPECIFICATION_VERIFICATION')
+    specificationGate = gate(WORKFLOW_GATE_STATUS.FAILED, 'Project specification needs attention', WORKFLOW_NODE_IDS.SPECIFICATION_VERIFICATION)
   } else if (
     preparation?.status === 'ANALYSIS_READY'
     && specification?.status === 'SPECIFICATION_READY'
@@ -82,7 +81,7 @@ export function deriveWorkflowGates(snapshot) {
   ) {
     specificationGate = gate(WORKFLOW_GATE_STATUS.SATISFIED)
   } else {
-    specificationGate = gate(WORKFLOW_GATE_STATUS.BLOCKED, 'Waiting for specification review', 'SPECIFICATION_VERIFICATION')
+    specificationGate = gate(WORKFLOW_GATE_STATUS.BLOCKED, 'Waiting for specification review', WORKFLOW_NODE_IDS.SPECIFICATION_VERIFICATION)
   }
 
   const readinessCurrent = readiness?.current !== false && !readinessState?.stale
@@ -92,12 +91,12 @@ export function deriveWorkflowGates(snapshot) {
     readinessGate = gate(
       specificationGate.failed ? WORKFLOW_GATE_STATUS.FAILED : WORKFLOW_GATE_STATUS.BLOCKED,
       'Waiting for specification review',
-      'SPECIFICATION_VERIFICATION',
+      WORKFLOW_NODE_IDS.SPECIFICATION_VERIFICATION,
     )
   } else if (readinessState?.status === 'error') {
-    readinessGate = gate(WORKFLOW_GATE_STATUS.FAILED, 'Implementation readiness evaluation failed', 'IMPLEMENTATION_READINESS')
+    readinessGate = gate(WORKFLOW_GATE_STATUS.FAILED, 'Implementation readiness evaluation failed', WORKFLOW_NODE_IDS.IMPLEMENTATION_READINESS)
   } else if (!readinessCurrent || readiness?.status === 'NOT_READY') {
-    readinessGate = gate(WORKFLOW_GATE_STATUS.BLOCKED, 'Resolve implementation readiness findings', 'IMPLEMENTATION_READINESS')
+    readinessGate = gate(WORKFLOW_GATE_STATUS.BLOCKED, 'Resolve implementation readiness findings', WORKFLOW_NODE_IDS.IMPLEMENTATION_READINESS)
   } else if (readiness?.status === 'READY') {
     readinessGate = gate(WORKFLOW_GATE_STATUS.SATISFIED)
   } else if (readiness?.status === 'READY_WITH_WARNINGS') {
@@ -106,10 +105,10 @@ export function deriveWorkflowGates(snapshot) {
       : gate(
           WORKFLOW_GATE_STATUS.WAITING_FOR_HUMAN,
           'Approve readiness warnings before continuing',
-          'IMPLEMENTATION_READINESS',
+          WORKFLOW_NODE_IDS.IMPLEMENTATION_READINESS,
         )
   } else {
-    readinessGate = gate(WORKFLOW_GATE_STATUS.BLOCKED, 'Implementation readiness is required', 'IMPLEMENTATION_READINESS')
+    readinessGate = gate(WORKFLOW_GATE_STATUS.BLOCKED, 'Implementation readiness is required', WORKFLOW_NODE_IDS.IMPLEMENTATION_READINESS)
   }
 
   const deliveryConfigured = repository?.status === 'created' && Boolean(repository.repository)
@@ -124,12 +123,12 @@ export function deriveWorkflowGates(snapshot) {
         : readinessAllowed
           ? 'Waiting for implementation readiness'
           : 'Complete specification review first',
-      readinessAllowed ? 'IMPLEMENTATION_READINESS' : 'SPECIFICATION_VERIFICATION',
+      readinessAllowed ? WORKFLOW_NODE_IDS.IMPLEMENTATION_READINESS : WORKFLOW_NODE_IDS.SPECIFICATION_VERIFICATION,
     )
   } else if (deliveryConfigured || deliverySkipped) {
     deliveryGate = gate(WORKFLOW_GATE_STATUS.SATISFIED)
   } else {
-    deliveryGate = gate(WORKFLOW_GATE_STATUS.WAITING_FOR_HUMAN, 'Configure delivery or continue without repository delivery', 'DELIVERY_SETUP')
+    deliveryGate = gate(WORKFLOW_GATE_STATUS.WAITING_FOR_HUMAN, 'Configure delivery or continue without repository delivery', WORKFLOW_NODE_IDS.DELIVERY_SETUP)
   }
 
   const approvedRun = currentApprovedRun(runs, readiness)
@@ -145,7 +144,7 @@ export function deriveWorkflowGates(snapshot) {
   } else if (approvedRun) {
     finalApprovalGate = gate(WORKFLOW_GATE_STATUS.SATISFIED)
   } else {
-    finalApprovalGate = gate(WORKFLOW_GATE_STATUS.WAITING_FOR_HUMAN, 'Final implementation approval required', 'GENERATE_IMPLEMENTATION')
+    finalApprovalGate = gate(WORKFLOW_GATE_STATUS.WAITING_FOR_HUMAN, 'Final implementation approval required', WORKFLOW_NODE_IDS.GENERATE_IMPLEMENTATION)
   }
 
   return Object.freeze({

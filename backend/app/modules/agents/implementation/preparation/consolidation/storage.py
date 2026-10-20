@@ -1,7 +1,11 @@
 from pathlib import Path
 from threading import Lock
 
-from pydantic import ValidationError
+from app.modules.agents.implementation.infrastructure.sidecar import (
+    load_model_sidecar,
+    project_sidecar_path,
+    save_model_sidecar,
+)
 
 from .schemas import ProjectConsolidationRecord, TrustedProjectSpecification
 
@@ -48,26 +52,24 @@ class ConsolidationStorage:
         )
 
     def _path(self, project_id: str, name: str) -> Path:
-        root = self._root.resolve()
-        directory = (root / project_id).resolve()
-        try:
-            directory.relative_to(root)
-        except ValueError as exc:
-            raise ConsolidationStorageError(
-                "Unsafe project consolidation storage path"
-            ) from exc
-        return directory / name
+        return project_sidecar_path(
+            self._root,
+            project_id,
+            name,
+            error_type=ConsolidationStorageError,
+            unsafe_path_message="Unsafe project consolidation storage path",
+        )
 
     @staticmethod
     def _load(path, model, project_id, owner_id):
-        try:
-            value = model.model_validate_json(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
+        value = load_model_sidecar(
+            path,
+            model,
+            error_type=ConsolidationStorageError,
+            unavailable_message="Project consolidation state is unavailable",
+        )
+        if value is None:
             return None
-        except (OSError, ValidationError) as exc:
-            raise ConsolidationStorageError(
-                "Project consolidation state is unavailable"
-            ) from exc
         if value.agent_project_id != project_id:
             raise ConsolidationStorageError(
                 "Project consolidation state identity is invalid"
@@ -80,17 +82,10 @@ class ConsolidationStorage:
         return value
 
     def _save(self, path: Path, value) -> None:
-        partial = path.with_suffix(path.suffix + ".part")
-        with self._lock:
-            try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                partial.write_text(value.model_dump_json(), encoding="utf-8")
-                partial.replace(path)
-            except OSError as exc:
-                try:
-                    partial.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                raise ConsolidationStorageError(
-                    "Project consolidation state could not be stored"
-                ) from exc
+        save_model_sidecar(
+            path,
+            value,
+            lock=self._lock,
+            error_type=ConsolidationStorageError,
+            failure_message="Project consolidation state could not be stored",
+        )

@@ -1,7 +1,11 @@
 from pathlib import Path
 from threading import Lock
 
-from pydantic import ValidationError
+from app.modules.agents.implementation.infrastructure.sidecar import (
+    load_model_sidecar,
+    project_sidecar_path,
+    save_model_sidecar,
+)
 
 from .schemas import (
     TrustedReadinessContinuationDecision,
@@ -21,16 +25,14 @@ class TrustedReadinessStorage:
 
     def load(self, project_id: str) -> TrustedReadinessSnapshot | None:
         path = self._path(project_id)
-        try:
-            value = TrustedReadinessSnapshot.model_validate_json(
-                path.read_text(encoding="utf-8")
-            )
-        except FileNotFoundError:
+        value = load_model_sidecar(
+            path,
+            TrustedReadinessSnapshot,
+            error_type=TrustedReadinessStorageError,
+            unavailable_message="Trusted readiness state is unavailable",
+        )
+        if value is None:
             return None
-        except (OSError, ValidationError) as exc:
-            raise TrustedReadinessStorageError(
-                "Trusted readiness state is unavailable"
-            ) from exc
         if value.agent_project_id != project_id:
             raise TrustedReadinessStorageError(
                 "Trusted readiness state identity is invalid"
@@ -38,36 +40,26 @@ class TrustedReadinessStorage:
         return value
 
     def save(self, value: TrustedReadinessSnapshot) -> None:
-        path = self._path(value.agent_project_id)
-        partial = path.with_suffix(path.suffix + ".part")
-        with self._lock:
-            try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                partial.write_text(value.model_dump_json(), encoding="utf-8")
-                partial.replace(path)
-            except OSError as exc:
-                try:
-                    partial.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                raise TrustedReadinessStorageError(
-                    "Trusted readiness state could not be stored"
-                ) from exc
+        save_model_sidecar(
+            self._path(value.agent_project_id),
+            value,
+            lock=self._lock,
+            error_type=TrustedReadinessStorageError,
+            failure_message="Trusted readiness state could not be stored",
+        )
 
     def load_continuation(
         self, project_id: str
     ) -> TrustedReadinessContinuationDecision | None:
         path = self._continuation_path(project_id)
-        try:
-            value = TrustedReadinessContinuationDecision.model_validate_json(
-                path.read_text(encoding="utf-8")
-            )
-        except FileNotFoundError:
+        value = load_model_sidecar(
+            path,
+            TrustedReadinessContinuationDecision,
+            error_type=TrustedReadinessStorageError,
+            unavailable_message="Trusted readiness continuation is unavailable",
+        )
+        if value is None:
             return None
-        except (OSError, ValidationError) as exc:
-            raise TrustedReadinessStorageError(
-                "Trusted readiness continuation is unavailable"
-            ) from exc
         if value.agent_project_id != project_id:
             raise TrustedReadinessStorageError(
                 "Trusted readiness continuation identity is invalid"
@@ -77,32 +69,22 @@ class TrustedReadinessStorage:
     def save_continuation(
         self, value: TrustedReadinessContinuationDecision
     ) -> None:
-        path = self._continuation_path(value.agent_project_id)
-        partial = path.with_suffix(path.suffix + ".part")
-        with self._lock:
-            try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                partial.write_text(value.model_dump_json(), encoding="utf-8")
-                partial.replace(path)
-            except OSError as exc:
-                try:
-                    partial.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                raise TrustedReadinessStorageError(
-                    "Trusted readiness continuation could not be stored"
-                ) from exc
+        save_model_sidecar(
+            self._continuation_path(value.agent_project_id),
+            value,
+            lock=self._lock,
+            error_type=TrustedReadinessStorageError,
+            failure_message="Trusted readiness continuation could not be stored",
+        )
 
     def _path(self, project_id: str) -> Path:
-        root = self._root.resolve()
-        directory = (root / project_id).resolve()
-        try:
-            directory.relative_to(root)
-        except ValueError as exc:
-            raise TrustedReadinessStorageError(
-                "Unsafe trusted readiness storage path"
-            ) from exc
-        return directory / "implementation-readiness.json"
+        return project_sidecar_path(
+            self._root,
+            project_id,
+            "implementation-readiness.json",
+            error_type=TrustedReadinessStorageError,
+            unsafe_path_message="Unsafe trusted readiness storage path",
+        )
 
     def _continuation_path(self, project_id: str) -> Path:
         return self._path(project_id).with_name(

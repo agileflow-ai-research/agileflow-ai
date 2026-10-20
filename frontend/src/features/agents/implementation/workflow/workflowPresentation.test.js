@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_NODE_POSITIONS } from './layout.js'
-import {
-  createWorkflowNodes,
-  deriveWorkflowPresentation,
-  IMPLEMENTATION_NODE_REGISTRY,
-  IMPLEMENTATION_WORKFLOW_EDGES,
-} from './nodeRegistry.js'
+import { DEFAULT_NODE_POSITIONS } from '../canvas/layout.js'
+import { createWorkflowNodes, IMPLEMENTATION_WORKFLOW_EDGES } from '../canvas/workflowGraph.js'
+import { IMPLEMENTATION_NODE_REGISTRY } from './nodeDefinitions.js'
+import { deriveWorkflowPresentation } from './presentation.js'
 
 describe('implementation workflow registry', () => {
   it('defines the fixed nine-node workflow and eight immutable forward edges', () => {

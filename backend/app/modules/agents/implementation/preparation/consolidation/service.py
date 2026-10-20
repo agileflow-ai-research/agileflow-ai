@@ -1,5 +1,4 @@
 import copy
-import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -12,6 +11,9 @@ from app.modules.agents.implementation.contracts.enums import (
 )
 from app.modules.agents.implementation.inputs.upload.service import (
     require_implementation_project,
+)
+from app.modules.agents.implementation.infrastructure.digests import (
+    stable_json_sha256,
 )
 from app.modules.agents.implementation.preparation.orchestration.constants import (
     SourcePreparationStatus,
@@ -82,10 +84,7 @@ def _now():
 
 
 def _digest(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
-        .encode("utf-8")
-    ).hexdigest()
+    return stable_json_sha256(value)
 
 
 def _id(prefix, value):

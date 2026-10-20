@@ -1,48 +1,7 @@
-import { MarkerType } from '@xyflow/react'
-
-import { WORKFLOW_NODE_STATES } from '../constants/workflow.js'
 import { preparationToWorkflowState } from '../constants/preparation.js'
-import { DEFAULT_NODE_POSITIONS } from './layout.js'
-import { deriveWorkflowGates } from '../utils/workflowGates.js'
-
-export const IMPLEMENTATION_NODE_REGISTRY = Object.freeze([
-  { id: 'PROJECT_SOURCES', title: 'Project & Sources', active: true, purpose: 'What information and outputs define this implementation project?', summary: 'Add trusted implementation inputs.' },
-  { id: 'INPUT_ANALYSIS', title: 'Input Analysis', active: true, purpose: 'How well have this project’s input sources been analyzed?', summary: 'Prepare and classify supplied sources.' },
-  { id: 'SPECIFICATION_VERIFICATION', title: 'Specification Verification', active: true, purpose: 'What should be implemented, and what still requires human confirmation?', summary: 'Review and verify extracted specifications.' },
-  { id: 'IMPLEMENTATION_READINESS', title: 'Implementation Readiness', active: true, purpose: 'Is there enough trusted information to implement the selected outputs?', summary: 'Evaluate whether implementation can proceed.' },
-  { id: 'DELIVERY_SETUP', title: 'Delivery Setup', active: true, purpose: 'Where should the generated implementation eventually be delivered?', summary: 'Connect GitHub and prepare a repository.' },
-  { id: 'GENERATE_IMPLEMENTATION', title: 'Generate Implementation', active: true, purpose: 'Approve the final implementation plan and create an immutable AgentRun.', summary: 'Awaiting final pre-code approval.' },
-  { id: 'BUILD_EXECUTE', title: 'Build & Execute', active: false, purpose: 'This stage is not implemented yet.', summary: 'Not implemented yet.' },
-  { id: 'CORRECTION_VALIDATION', title: 'Correction & Validation', active: false, purpose: 'This stage is not implemented yet.', summary: 'Not implemented yet.' },
-  { id: 'DELIVERY', title: 'Delivery', active: false, purpose: 'This stage is not implemented yet.', summary: 'Not implemented yet.' },
-])
-
-const edgePairs = [
-  ['PROJECT_SOURCES', 'INPUT_ANALYSIS'],
-  ['INPUT_ANALYSIS', 'SPECIFICATION_VERIFICATION'],
-  ['SPECIFICATION_VERIFICATION', 'IMPLEMENTATION_READINESS'],
-  ['IMPLEMENTATION_READINESS', 'DELIVERY_SETUP'],
-  ['DELIVERY_SETUP', 'GENERATE_IMPLEMENTATION'],
-  ['GENERATE_IMPLEMENTATION', 'BUILD_EXECUTE'],
-  ['BUILD_EXECUTE', 'CORRECTION_VALIDATION'],
-  ['CORRECTION_VALIDATION', 'DELIVERY'],
-]
-
-export const IMPLEMENTATION_WORKFLOW_EDGES = Object.freeze(edgePairs.map(([source, target]) => ({
-  id: `${source}-${target}`,
-  source,
-  target,
-  type: 'floating',
-  selectable: false,
-  deletable: false,
-  reconnectable: false,
-  focusable: false,
-  markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-})))
-
-function inputHasSource(input) {
-  return input?.source_type === 'TEXT' ? Boolean(input.content?.trim()) : Boolean(input?.file)
-}
+import { WORKFLOW_NODE_STATES } from '../constants/workflow.js'
+import { deriveWorkflowGates } from './workflowGates.js'
+import { inputHasSource } from './sourceState.js'
 
 export function deriveWorkflowPresentation(snapshot) {
   const inputs = snapshot?.inputs ?? []
@@ -172,28 +131,4 @@ export function deriveWorkflowPresentation(snapshot) {
             : 'No approved implementation run yet.',
     },
   }
-}
-
-export function createWorkflowNodes(presentation) {
-  return IMPLEMENTATION_NODE_REGISTRY.map((definition) => {
-    const current = presentation[definition.id]
-    return {
-      id: definition.id,
-      type: 'workflow',
-      draggable: true,
-      position: { ...DEFAULT_NODE_POSITIONS[definition.id] },
-      data: {
-        title: definition.title,
-        summary: current?.summary ?? definition.summary,
-        status: definition.active ? current?.status ?? WORKFLOW_NODE_STATES.NOT_STARTED : WORKFLOW_NODE_STATES.LOCKED,
-        statusLabel: current?.statusLabel,
-        attentionCount: current?.attentionCount,
-        locked: !definition.active,
-      },
-    }
-  })
-}
-
-export function getWorkflowNodeDefinition(nodeId) {
-  return IMPLEMENTATION_NODE_REGISTRY.find((node) => node.id === nodeId) ?? null
 }

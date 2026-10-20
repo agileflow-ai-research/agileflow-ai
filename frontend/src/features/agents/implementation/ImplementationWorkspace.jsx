@@ -1,17 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
-  connectGitHub,
   buildImplementationCanonicalArtifacts,
   buildImplementationSemanticArtifacts,
   buildImplementationHybridDetections,
-  createGitHubRepository,
   createImplementationRun,
   continueTrustedImplementationReadiness,
   deleteImplementationInputFile,
   evaluateTrustedImplementationReadiness,
   extractImplementationDocument,
-  getGitHubConnection,
   getImplementationDocumentChunks,
   getImplementationDocumentExtraction,
   getImplementationRuleDetections,
@@ -21,7 +18,6 @@ import {
   getImplementationCanonicalArtifacts,
   getImplementationSemanticArtifacts,
   getTrustedImplementationReadiness,
-  getGitHubRepository,
   getPreparationStatus,
   getSemanticReviews,
   getSpecificationStatus,
@@ -40,7 +36,6 @@ import {
   startPreparation,
   uploadImplementationInputFile,
 } from './services/implementationAgentService.js'
-import { navigateToGitHub } from './utils/githubNavigation.js'
 import AgentInputWizard from '../../../components/agents/AgentInputWizard.jsx'
 import OutputSelector from '../../../components/agents/OutputSelector.jsx'
 import RunReview from '../../../components/agents/RunReview.jsx'
@@ -50,7 +45,7 @@ import ReadinessReview from './components/readiness/ReadinessReview.jsx'
 import GitHubIntegration from './components/github/GitHubIntegration.jsx'
 import ImplementationInputsStep from './components/inputs/ImplementationInputsStep.jsx'
 import HumanReviewWorkspace from './components/review/HumanReviewWorkspace.jsx'
-import HumanDecisionCallout from './components/common/HumanDecisionCallout.jsx'
+import WorkflowBarrier from './components/common/WorkflowBarrier.jsx'
 import DeliverySetupPanel from './panels/DeliverySetupPanel.jsx'
 import ImplementationReadinessPanel from './panels/ImplementationReadinessPanel.jsx'
 import GenerateImplementationPanel from './panels/GenerateImplementationPanel.jsx'
@@ -65,28 +60,11 @@ import {
   artifactLabel,
   emptyInput,
   formatBytes,
-  repositoryNameError,
   requestInput,
 } from './utils/workspace.js'
 import { extractionSummary } from './utils/presentation.js'
-import { deriveWorkflowGates } from './utils/workflowGates.js'
-
-function WorkflowBarrier({ gate, onNavigate }) {
-  return (
-    <HumanDecisionCallout
-      eyebrow={gate.failed ? 'Action required after failure' : 'Blocked'}
-      title={gate.failed ? 'This stage needs attention before the workflow can continue.' : 'Complete the upstream decision first.'}
-      description={gate.blocking_reason}
-      outcome="The workflow remains unchanged until the prerequisite is completed and validated."
-    >
-      {gate.blocking_node_id ? (
-        <Button variant="outline" onClick={() => onNavigate?.(gate.blocking_node_id)}>
-          Go to prerequisite
-        </Button>
-      ) : null}
-    </HumanDecisionCallout>
-  )
-}
+import { deriveWorkflowGates } from './workflow/workflowGates.js'
+import { useGitHubDelivery } from './hooks/useGitHubDelivery.js'
 
 function ImplementationWorkspace({
   project,
@@ -99,15 +77,15 @@ function ImplementationWorkspace({
   const [inputs, setInputs] = useState([emptyInput()])
   const [selectedOutputs, setSelectedOutputs] = useState([])
   const [errors, setErrors] = useState({})
-  const [githubState, setGitHubState] = useState({
-    status: 'loading', connection: null, notice: '', error: '',
-  })
-  const [repositoryState, setRepositoryState] = useState({
-    status: 'idle', repository: null, error: '',
-  })
-  const [repositoryForm, setRepositoryForm] = useState({
-    name: '', description: '', visibility: 'PRIVATE',
-  })
+  const {
+    githubState,
+    repositoryState,
+    setRepositoryState,
+    repositoryForm,
+    setRepositoryForm,
+    handleGitHubConnect,
+    handleRepositoryCreate,
+  } = useGitHubDelivery(project.agent_project_id)
   const [extractionReview, setExtractionReview] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
@@ -526,72 +504,6 @@ function ImplementationWorkspace({
       })
     return () => { active = false }
   }, [project.agent_project_id, specificationState.result?.sources, specificationState.result?.status])
-
-  useEffect(() => {
-    let active = true
-    const query = new URLSearchParams(window.location.search)
-    const callbackStatus = query.get('github')
-    if (callbackStatus === 'error') {
-      setGitHubState((current) => ({
-        ...current,
-        error: 'GitHub account connection was not completed.',
-      }))
-    }
-    async function loadGitHubState() {
-      try {
-        const response = await getGitHubConnection(project.agent_project_id)
-        if (!active) return
-        const connection = response?.data
-        if (!connection || typeof connection.connected !== 'boolean') {
-          throw new Error('Invalid GitHub connection response')
-        }
-        setGitHubState((current) => ({
-          status: connection.connected ? 'connected' : 'disconnected',
-          connection: connection.connected ? connection : null,
-          notice: callbackStatus === 'connected' && connection.connected
-            ? 'GitHub account connected successfully.'
-            : '',
-          error: callbackStatus === 'connected' && !connection.connected
-            ? 'GitHub returned to AgileFlow, but no verified connection was found.'
-            : current.error,
-        }))
-        if (!connection.connected) {
-          setRepositoryState({ status: 'idle', repository: null, error: '' })
-          return
-        }
-        setRepositoryState({ status: 'loading', repository: null, error: '' })
-        try {
-          const repositoryResponse = await getGitHubRepository(project.agent_project_id)
-          if (!active) return
-          const repository = repositoryResponse?.data
-          if (!repository || typeof repository.created !== 'boolean') {
-            throw new Error('Invalid GitHub repository response')
-          }
-          setRepositoryState({
-            status: repository.created ? 'created' : 'ready',
-            repository: repository.created ? repository : null,
-            error: '',
-          })
-        } catch (error) {
-          if (!active || error?.status === 401) return
-          setRepositoryState({
-            status: 'error',
-            repository: null,
-            error: error?.errors?.[0]?.message || error?.message || 'GitHub repository status could not be loaded.',
-          })
-        }
-      } catch (error) {
-        if (!active || error?.status === 401) return
-        setGitHubState((current) => ({
-          ...current,
-          status: 'error',
-          error: current.error || error?.errors?.[0]?.message || error?.message || 'GitHub connection status could not be loaded.',
-        }))
-      }
-    }
-    loadGitHubState()
-    return () => { active = false }
-  }, [project.agent_project_id])
 
   useEffect(() => {
     onPresentationChange?.({
@@ -1225,51 +1137,6 @@ function ImplementationWorkspace({
     } catch (error) {
       const message = error?.errors?.[0]?.message || error?.message || 'The uploaded file could not be removed.'
       updateInput(index, { status: 'uploaded', error: message })
-    }
-  }
-
-  async function handleGitHubConnect() {
-    setGitHubState((current) => ({
-      ...current, status: 'connecting', error: '', notice: '',
-    }))
-    try {
-      const response = await connectGitHub(project.agent_project_id)
-      if (!response?.data?.installation_url) {
-        throw new Error('Invalid GitHub connection response')
-      }
-      navigateToGitHub(response.data.installation_url)
-    } catch (error) {
-      if (error?.status === 401) return
-      setGitHubState((current) => ({
-        ...current,
-        status: current.connection ? 'connected' : 'disconnected',
-        error: error?.errors?.[0]?.message || error?.message || 'GitHub connection could not be started.',
-      }))
-    }
-  }
-
-  async function handleRepositoryCreate() {
-    const validationError = repositoryNameError(repositoryForm.name)
-    if (validationError) {
-      setRepositoryState((current) => ({ ...current, error: validationError }))
-      return
-    }
-    setRepositoryState((current) => ({ ...current, status: 'creating', error: '' }))
-    try {
-      const response = await createGitHubRepository(project.agent_project_id, {
-        name: repositoryForm.name.trim(),
-        description: repositoryForm.description.trim() || null,
-        visibility: repositoryForm.visibility,
-      })
-      if (!response?.data?.created) throw new Error('Invalid GitHub repository response')
-      setRepositoryState({ status: 'created', repository: response.data, error: '' })
-    } catch (error) {
-      const partialRepository = error?.data?.repository
-      setRepositoryState({
-        status: partialRepository?.created ? 'error' : 'ready',
-        repository: null,
-        error: error?.errors?.[0]?.message || error?.message || 'The GitHub repository could not be created.',
-      })
     }
   }
 

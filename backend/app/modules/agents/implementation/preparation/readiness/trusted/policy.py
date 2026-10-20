@@ -1,6 +1,6 @@
-import hashlib
-import json
-
+from app.modules.agents.implementation.infrastructure.digests import (
+    stable_json_sha256,
+)
 from app.modules.agents.implementation.preparation.readiness.schemas import (
     FindingSeverity,
     HumanResolutionDecision,
@@ -11,10 +11,7 @@ from .schemas import TrustedReadinessFinding
 
 
 def digest(value) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
-        .encode("utf-8")
-    ).hexdigest()
+    return stable_json_sha256(value)
 
 
 def finding(code, severity, title, message, *, outputs=(), categories=(),

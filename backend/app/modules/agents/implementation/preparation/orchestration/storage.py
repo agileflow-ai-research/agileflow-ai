@@ -1,7 +1,11 @@
 from pathlib import Path
 from threading import Lock
 
-from pydantic import ValidationError
+from app.modules.agents.implementation.infrastructure.sidecar import (
+    load_model_sidecar,
+    project_sidecar_path,
+    save_model_sidecar,
+)
 
 from .schemas import ProjectPreparationRecord
 
@@ -21,17 +25,15 @@ class ProjectPreparationStorage:
     def load(
         self, *, agent_project_id: str, owner_user_id: str
     ) -> ProjectPreparationRecord | None:
-        state_path, _ = self._paths(agent_project_id)
-        try:
-            record = ProjectPreparationRecord.model_validate_json(
-                state_path.read_text(encoding="utf-8")
-            )
-        except FileNotFoundError:
+        state_path = self._path(agent_project_id)
+        record = load_model_sidecar(
+            state_path,
+            ProjectPreparationRecord,
+            error_type=ProjectPreparationStorageError,
+            unavailable_message="Project preparation state is unavailable",
+        )
+        if record is None:
             return None
-        except (OSError, ValidationError) as exc:
-            raise ProjectPreparationStorageError(
-                "Project preparation state is unavailable"
-            ) from exc
         if (
             record.agent_project_id != agent_project_id
             or record.owner_user_id != owner_user_id
@@ -42,33 +44,19 @@ class ProjectPreparationStorage:
         return record
 
     def save(self, record: ProjectPreparationRecord) -> None:
-        state_path, partial_path = self._paths(record.agent_project_id)
-        with self._lock:
-            try:
-                state_path.parent.mkdir(parents=True, exist_ok=True)
-                partial_path.write_text(
-                    record.model_dump_json(), encoding="utf-8"
-                )
-                partial_path.replace(state_path)
-            except OSError as exc:
-                try:
-                    partial_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                raise ProjectPreparationStorageError(
-                    "Project preparation state could not be stored"
-                ) from exc
+        save_model_sidecar(
+            self._path(record.agent_project_id),
+            record,
+            lock=self._lock,
+            error_type=ProjectPreparationStorageError,
+            failure_message="Project preparation state could not be stored",
+        )
 
-    def _paths(self, agent_project_id: str) -> tuple[Path, Path]:
-        root = self._root.resolve()
-        project_directory = (root / agent_project_id).resolve()
-        try:
-            project_directory.relative_to(root)
-        except ValueError as exc:
-            raise ProjectPreparationStorageError(
-                "Unsafe project preparation storage path"
-            ) from exc
-        return (
-            project_directory / "preparation.json",
-            project_directory / "preparation.json.part",
+    def _path(self, agent_project_id: str) -> Path:
+        return project_sidecar_path(
+            self._root,
+            agent_project_id,
+            "preparation.json",
+            error_type=ProjectPreparationStorageError,
+            unsafe_path_message="Unsafe project preparation storage path",
         )

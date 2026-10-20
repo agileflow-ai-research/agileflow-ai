@@ -1,7 +1,8 @@
-import hashlib
-import json
 from typing import Any
 
+from app.modules.agents.implementation.infrastructure.digests import (
+    stable_json_sha256,
+)
 from app.modules.agents.implementation.preparation.schemas import (
     ArtifactDetectionLabel,
 )
@@ -15,10 +16,7 @@ from .schemas import (
 
 
 def _digest(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
-        .encode("utf-8")
-    ).hexdigest()
+    return stable_json_sha256(value)
 
 
 def _id(prefix: str, value: Any) -> str:

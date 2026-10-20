@@ -12,7 +12,7 @@ import '@xyflow/react/dist/style.css'
 import WorkflowNode from '../nodes/WorkflowNode.jsx'
 import FloatingWorkflowEdge from './FloatingWorkflowEdge.jsx'
 import { positionWorkflowNodes } from './layout.js'
-import { createWorkflowNodes, IMPLEMENTATION_WORKFLOW_EDGES } from './nodeRegistry.js'
+import { createWorkflowNodes, IMPLEMENTATION_WORKFLOW_EDGES } from './workflowGraph.js'
 
 const nodeTypes = Object.freeze({ workflow: WorkflowNode })
 const edgeTypes = Object.freeze({ floating: FloatingWorkflowEdge })

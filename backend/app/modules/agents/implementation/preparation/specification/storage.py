@@ -1,7 +1,11 @@
 from pathlib import Path
 from threading import Lock
 
-from pydantic import ValidationError
+from app.modules.agents.implementation.infrastructure.sidecar import (
+    load_model_sidecar,
+    project_sidecar_path,
+    save_model_sidecar,
+)
 
 from .schemas import ProjectSpecificationRecord
 
@@ -17,17 +21,14 @@ class ProjectSpecificationStorage:
         self._root = Path(root)
 
     def load(self, agent_project_id: str, owner_user_id: str):
-        path, _ = self._paths(agent_project_id)
-        try:
-            record = ProjectSpecificationRecord.model_validate_json(
-                path.read_text(encoding="utf-8")
-            )
-        except FileNotFoundError:
+        record = load_model_sidecar(
+            self._path(agent_project_id),
+            ProjectSpecificationRecord,
+            error_type=ProjectSpecificationStorageError,
+            unavailable_message="Project specification state is unavailable",
+        )
+        if record is None:
             return None
-        except (OSError, ValidationError) as exc:
-            raise ProjectSpecificationStorageError(
-                "Project specification state is unavailable"
-            ) from exc
         if (
             record.agent_project_id != agent_project_id
             or record.owner_user_id != owner_user_id
@@ -38,28 +39,19 @@ class ProjectSpecificationStorage:
         return record
 
     def save(self, record: ProjectSpecificationRecord) -> None:
-        path, partial = self._paths(record.agent_project_id)
-        with self._lock:
-            try:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                partial.write_text(record.model_dump_json(), encoding="utf-8")
-                partial.replace(path)
-            except OSError as exc:
-                try:
-                    partial.unlink(missing_ok=True)
-                except OSError:
-                    pass
-                raise ProjectSpecificationStorageError(
-                    "Project specification state could not be stored"
-                ) from exc
+        save_model_sidecar(
+            self._path(record.agent_project_id),
+            record,
+            lock=self._lock,
+            error_type=ProjectSpecificationStorageError,
+            failure_message="Project specification state could not be stored",
+        )
 
-    def _paths(self, agent_project_id: str):
-        root = self._root.resolve()
-        directory = (root / agent_project_id).resolve()
-        try:
-            directory.relative_to(root)
-        except ValueError as exc:
-            raise ProjectSpecificationStorageError(
-                "Unsafe project specification storage path"
-            ) from exc
-        return directory / "specification.json", directory / "specification.json.part"
+    def _path(self, agent_project_id: str) -> Path:
+        return project_sidecar_path(
+            self._root,
+            agent_project_id,
+            "specification.json",
+            error_type=ProjectSpecificationStorageError,
+            unsafe_path_message="Unsafe project specification storage path",
+        )

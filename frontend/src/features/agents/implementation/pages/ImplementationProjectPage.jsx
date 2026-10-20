@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
+import { WORKFLOW_MODAL_ORIGINS, WORKFLOW_NODE_IDS } from '../constants/workflow.js'
 import ImplementationCanvas from '../canvas/ImplementationCanvas.jsx'
 import WorkflowControls from '../canvas/WorkflowControls.jsx'
 import ImplementationWorkspace from '../ImplementationWorkspace.jsx'
@@ -8,20 +9,19 @@ import WorkflowNodeModal from '../panels/WorkflowNodeModal.jsx'
 import WorkflowNextStepNotice from '../components/common/WorkflowNextStepNotice.jsx'
 import ProjectOverviewModal from '../components/ProjectOverviewModal.jsx'
 import {
-  deriveWorkflowPresentation,
   getWorkflowNodeDefinition,
   IMPLEMENTATION_NODE_REGISTRY,
-} from '../canvas/nodeRegistry.js'
-import { deriveWorkflowTransition } from '../utils/workflowProgression.js'
-
-function inputHasSource(input) {
-  return input?.source_type === 'TEXT' ? Boolean(input.content?.trim()) : Boolean(input?.file)
-}
+} from '../workflow/nodeDefinitions.js'
+import { deriveWorkflowPresentation } from '../workflow/presentation.js'
+import { inputHasSource } from '../workflow/sourceState.js'
+import { deriveWorkflowTransition } from '../workflow/workflowProgression.js'
 
 function ImplementationProjectPage({ project, projectStatus, projectActions, entryMode = 'created' }) {
   const canvasRef = useRef(null)
   const enteringExistingProject = entryMode === 'existing'
-  const initialVisibleModal = enteringExistingProject ? null : { nodeId: 'PROJECT_SOURCES', origin: 'AUTO' }
+  const initialVisibleModal = enteringExistingProject
+    ? null
+    : { nodeId: WORKFLOW_NODE_IDS.PROJECT_SOURCES, origin: WORKFLOW_MODAL_ORIGINS.AUTO }
   const [projectOverviewOpen, setProjectOverviewOpen] = useState(enteringExistingProject)
   const [visibleModal, setVisibleModal] = useState(initialVisibleModal)
   const [workspaceSnapshot, setWorkspaceSnapshot] = useState(null)
@@ -60,7 +60,7 @@ function ImplementationProjectPage({ project, projectStatus, projectActions, ent
     if (visibleModalRef.current) return
     canvasRef.current?.focusNode(next.nodeId)
     if (next.requiresUserAction) {
-      const nextModal = { nodeId: next.nodeId, origin: 'AUTO' }
+      const nextModal = { nodeId: next.nodeId, origin: WORKFLOW_MODAL_ORIGINS.AUTO }
       visibleModalRef.current = nextModal
       setVisibleModal(nextModal)
     }
@@ -70,7 +70,7 @@ function ImplementationProjectPage({ project, projectStatus, projectActions, ent
     setVisibleModal(null)
   }, [])
   const handleManualNavigation = useCallback((nodeId) => {
-    const nextModal = { nodeId, origin: 'MANUAL' }
+    const nextModal = { nodeId, origin: WORKFLOW_MODAL_ORIGINS.MANUAL }
     visibleModalRef.current = nextModal
     setVisibleModal(nextModal)
   }, [])
@@ -85,7 +85,7 @@ function ImplementationProjectPage({ project, projectStatus, projectActions, ent
 
   useEffect(() => {
     lastAutoPresentedTransitionKeyRef.current = null
-    if (!enteringExistingProject) canvasRef.current?.focusNode('PROJECT_SOURCES')
+    if (!enteringExistingProject) canvasRef.current?.focusNode(WORKFLOW_NODE_IDS.PROJECT_SOURCES)
   }, [enteringExistingProject, project.agent_project_id])
 
   const nextStepNotice = useMemo(() => {
@@ -98,11 +98,11 @@ function ImplementationProjectPage({ project, projectStatus, projectActions, ent
       ? `${target.title} needs your attention.`
       : `${target.title} is continuing automatically.`
     const actionLabel = {
-      SPECIFICATION_VERIFICATION: 'Go to Specification Verification',
-      IMPLEMENTATION_READINESS: targetState === 'WAITING_FOR_HUMAN' ? 'Review Readiness' : 'Go to Implementation Readiness',
-      DELIVERY_SETUP: 'Go to Delivery Setup',
-      GENERATE_IMPLEMENTATION: 'Review Implementation Plan',
-      INPUT_ANALYSIS: 'Go to Input Analysis',
+      [WORKFLOW_NODE_IDS.SPECIFICATION_VERIFICATION]: 'Go to Specification Verification',
+      [WORKFLOW_NODE_IDS.IMPLEMENTATION_READINESS]: targetState === 'WAITING_FOR_HUMAN' ? 'Review Readiness' : 'Go to Implementation Readiness',
+      [WORKFLOW_NODE_IDS.DELIVERY_SETUP]: 'Go to Delivery Setup',
+      [WORKFLOW_NODE_IDS.GENERATE_IMPLEMENTATION]: 'Review Implementation Plan',
+      [WORKFLOW_NODE_IDS.INPUT_ANALYSIS]: 'Go to Input Analysis',
     }[activeWorkflowNodeId] ?? `Go to ${target.title}`
     return { description, actionLabel, targetNodeId: activeWorkflowNodeId }
   }, [activeWorkflowNodeId, activeWorkflowTransition?.requiresUserAction, presentation, visibleModalNodeId])
@@ -148,7 +148,7 @@ function ImplementationProjectPage({ project, projectStatus, projectActions, ent
             <div className={selectedDefinition?.active ? '' : 'hidden'}>
               <ImplementationWorkspace
                 project={project}
-                activeSection={selectedDefinition?.active ? selectedDefinition.id : 'PROJECT_SOURCES'}
+                activeSection={selectedDefinition?.active ? selectedDefinition.id : WORKFLOW_NODE_IDS.PROJECT_SOURCES}
                 initialArtifactReviewQueue={workspaceSnapshot?.artifactReviewQueue ?? []}
                 onPresentationChange={handlePresentationChange}
                 onNavigateNode={handleManualNavigation}
