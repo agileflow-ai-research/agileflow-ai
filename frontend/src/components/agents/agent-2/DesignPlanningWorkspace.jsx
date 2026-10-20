@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
-import { runDesignPlanningAgent } from '../../../services/designPlanningAgentService.js'
+import {
+  extractSpecificationDocument,
+  runDesignPlanningAgent,
+} from '../../../services/designPlanningAgentService.js'
 import Button from '../../ui/Button.jsx'
 import Card from '../../ui/Card.jsx'
 import Input from '../../ui/Input.jsx'
@@ -162,16 +165,18 @@ const specificationFields = ['requirements', 'SRS', 'user_stories', 'acceptance_
 const specificationSources = [
   {
     id: 'requirements',
+    sourceType: 'REQUIREMENTS',
     stateKey: 'requirements',
     shortLabel: 'Requirements',
     label: 'Requirements',
     cardTitle: 'Requirements',
-    helperText: 'Manual input — functional or business requirements text.',
+    helperText: 'Manual input or document upload — functional or business requirements text.',
     placeholder:
       'Users can register and log in.\nUsers can browse available services and time slots.\nUsers can create or cancel an appointment.\nAdmins can manage services and booking availability.',
   },
   {
     id: 'srs',
+    sourceType: 'SRS',
     stateKey: 'SRS',
     shortLabel: 'SRS',
     label: 'Software Requirements Specification (SRS)',
@@ -181,6 +186,7 @@ const specificationSources = [
   },
   {
     id: 'user_stories',
+    sourceType: 'USER_STORIES',
     stateKey: 'user_stories',
     shortLabel: 'User Stories',
     label: 'User Stories',
@@ -190,6 +196,7 @@ const specificationSources = [
   },
   {
     id: 'acceptance_criteria',
+    sourceType: 'ACCEPTANCE_CRITERIA',
     stateKey: 'acceptance_criteria',
     shortLabel: 'Acceptance Criteria',
     label: 'Acceptance Criteria',
@@ -211,9 +218,91 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
   const [result, setResult] = useState(null)
   const [requestError, setRequestError] = useState('')
 
+  const [sourceModes, setSourceModes] = useState({
+    requirements: 'manual',
+    srs: 'manual',
+    user_stories: 'manual',
+    acceptance_criteria: 'manual',
+  })
+  const [uploadStatus, setUploadStatus] = useState({
+    requirements: 'IDLE',
+    srs: 'IDLE',
+    user_stories: 'IDLE',
+    acceptance_criteria: 'IDLE',
+  })
+  const [uploadProvenance, setUploadProvenance] = useState({
+    requirements: null,
+    srs: null,
+    user_stories: null,
+    acceptance_criteria: null,
+  })
+  const [uploadErrors, setUploadErrors] = useState({
+    requirements: '',
+    srs: '',
+    user_stories: '',
+    acceptance_criteria: '',
+  })
+  const fileInputRef = useRef(null)
+
   function updateField(field, value) {
     setInput((current) => ({ ...current, [field]: value }))
     setErrors((current) => ({ ...current, [field]: '', specification: '' }))
+  }
+
+  async function handleFileUpload(sourceId, file) {
+    const config = specificationSources.find((s) => s.id === sourceId)
+    if (!config) return
+
+    const ext = '.' + (file.name.split('.').pop() || '').toLowerCase()
+    const allowedExtensions = ['.docx', '.pdf', '.txt', '.md']
+    if (!allowedExtensions.includes(ext)) {
+      setUploadStatus((prev) => ({ ...prev, [sourceId]: 'FAILED' }))
+      setUploadErrors((prev) => ({
+        ...prev,
+        [sourceId]: `UNSUPPORTED_DOCUMENT_TYPE: File format "${ext}" is not supported. Please upload a .docx, .pdf, .txt, or .md file.`,
+      }))
+      return
+    }
+
+    const MAX_SIZE = 10 * 1024 * 1024
+    if (file.size > MAX_SIZE) {
+      setUploadStatus((prev) => ({ ...prev, [sourceId]: 'FAILED' }))
+      setUploadErrors((prev) => ({
+        ...prev,
+        [sourceId]: `DOCUMENT_TOO_LARGE: File size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 10 MB limit.`,
+      }))
+      return
+    }
+
+    setUploadStatus((prev) => ({ ...prev, [sourceId]: 'UPLOADING' }))
+    setUploadErrors((prev) => ({ ...prev, [sourceId]: '' }))
+
+    try {
+      setUploadStatus((prev) => ({ ...prev, [sourceId]: 'EXTRACTING' }))
+      const projectId = project?.agent_project_id || project?.id
+      const response = await extractSpecificationDocument(projectId, file, config.sourceType)
+      const data = response?.data
+      if (!data || !data.extracted_text) {
+        throw new Error('DOCUMENT_EXTRACTION_FAILED: Backend returned empty extraction data.')
+      }
+
+      setUploadProvenance((prev) => ({ ...prev, [sourceId]: data }))
+      setUploadStatus((prev) => ({ ...prev, [sourceId]: 'COMPLETED' }))
+      updateField(config.stateKey, data.extracted_text)
+    } catch (err) {
+      setUploadStatus((prev) => ({ ...prev, [sourceId]: 'FAILED' }))
+      const message = err.message || 'DOCUMENT_EXTRACTION_FAILED: Document extraction failed.'
+      setUploadErrors((prev) => ({ ...prev, [sourceId]: message }))
+    }
+  }
+
+  function handleRemoveFile(sourceId) {
+    const config = specificationSources.find((s) => s.id === sourceId)
+    if (!config) return
+    setUploadProvenance((prev) => ({ ...prev, [sourceId]: null }))
+    setUploadStatus((prev) => ({ ...prev, [sourceId]: 'IDLE' }))
+    setUploadErrors((prev) => ({ ...prev, [sourceId]: '' }))
+    updateField(config.stateKey, '')
   }
 
   function toggleOutput(value) {
@@ -549,29 +638,245 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
               </Card>
             </div>
 
-            <Card className="border-default bg-[#150c2a] p-6">
-              <div>
-                <h3 className="text-card-heading font-semibold text-content-primary">
-                  {activeSourceConfig.cardTitle}
-                </h3>
-                <p className="mt-0.5 text-sm text-content-muted">
-                  Manual input — Agent 2 does not require Agent 1.
-                </p>
-              </div>
+            {(() => {
+              const currentMode = sourceModes[activeSourceConfig.id] || 'manual'
+              const currentStatus = uploadStatus[activeSourceConfig.id] || 'IDLE'
+              const currentProvenance = uploadProvenance[activeSourceConfig.id] || null
+              const currentError = uploadErrors[activeSourceConfig.id] || ''
 
-              <div className="mt-4" id={`panel-${activeSourceConfig.id}`}>
-                <Textarea
-                  id={activeSourceConfig.id}
-                  label={activeSourceConfig.label}
-                  labelClassName="sr-only"
-                  rows={8}
-                  value={input[activeSourceConfig.stateKey]}
-                  onChange={(event) => updateField(activeSourceConfig.stateKey, event.target.value)}
-                  placeholder={activeSourceConfig.placeholder}
-                  textareaClassName="font-sans text-sm bg-[#0b0517] border-default leading-relaxed"
-                />
-              </div>
-            </Card>
+              return (
+                <Card className="border-default bg-[#150c2a] p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border-default/40 pb-4">
+                    <div>
+                      <h3 className="text-card-heading font-semibold text-content-primary">
+                        {activeSourceConfig.cardTitle}
+                      </h3>
+                      <p className="mt-0.5 text-sm text-content-muted">
+                        {currentMode === 'manual'
+                          ? 'Manual input — Agent 2 does not require Agent 1.'
+                          : 'Document upload — extracted text will populate this specification source.'}
+                      </p>
+                    </div>
+                    <div className="inline-flex rounded-lg border border-default bg-[#0b0517] p-1 text-xs font-medium">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSourceModes((prev) => ({
+                            ...prev,
+                            [activeSourceConfig.id]: 'manual',
+                          }))
+                        }
+                        className={cn(
+                          'rounded-md px-3 py-1.5 transition-colors cursor-pointer',
+                          currentMode === 'manual'
+                            ? 'bg-[#1f1338] text-white shadow-sm font-semibold'
+                            : 'text-content-muted hover:text-content-primary',
+                        )}
+                      >
+                        Manual text
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSourceModes((prev) => ({
+                            ...prev,
+                            [activeSourceConfig.id]: 'upload',
+                          }))
+                        }
+                        className={cn(
+                          'rounded-md px-3 py-1.5 transition-colors cursor-pointer',
+                          currentMode === 'upload'
+                            ? 'bg-[#1f1338] text-white shadow-sm font-semibold'
+                            : 'text-content-muted hover:text-content-primary',
+                        )}
+                      >
+                        Upload document
+                      </button>
+                    </div>
+                  </div>
+
+                  {currentMode === 'manual' ? (
+                    <div className="mt-4" id={`panel-${activeSourceConfig.id}`}>
+                      <Textarea
+                        id={activeSourceConfig.id}
+                        label={activeSourceConfig.label}
+                        labelClassName="sr-only"
+                        rows={8}
+                        value={input[activeSourceConfig.stateKey]}
+                        onChange={(event) =>
+                          updateField(activeSourceConfig.stateKey, event.target.value)
+                        }
+                        placeholder={activeSourceConfig.placeholder}
+                        textareaClassName="font-sans text-sm bg-[#0b0517] border-default leading-relaxed"
+                      />
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-4" id={`panel-${activeSourceConfig.id}`}>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".docx,.pdf,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,text/plain,text/markdown"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) handleFileUpload(activeSourceConfig.id, file)
+                          e.target.value = ''
+                        }}
+                        className="sr-only"
+                        aria-label="Upload document file"
+                      />
+
+                      {!currentProvenance && (
+                        <div className="rounded-lg border-2 border-dashed border-[#2a2046] bg-[#0b0517] p-8 text-center">
+                          <div className="mx-auto flex max-w-md flex-col items-center">
+                            <div className="text-2xl mb-2">📄</div>
+                            <h4 className="text-sm font-semibold text-content-primary">
+                              Upload specification
+                            </h4>
+                            <p className="mt-1 text-xs text-content-muted">
+                              Supported: DOCX, PDF, TXT, MD · Max 10 MB
+                            </p>
+                            <div className="mt-4 flex items-center gap-3">
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={
+                                  currentStatus === 'UPLOADING' ||
+                                  currentStatus === 'EXTRACTING'
+                                }
+                              >
+                                Choose document
+                              </Button>
+                            </div>
+                            {(currentStatus === 'UPLOADING' ||
+                              currentStatus === 'EXTRACTING') && (
+                              <div className="mt-4 inline-flex items-center gap-2 text-xs text-brand-purple">
+                                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand-purple border-t-transparent" />
+                                <span>
+                                  {currentStatus === 'UPLOADING'
+                                    ? 'Uploading document...'
+                                    : 'Extracting text...'}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {currentError && (
+                        <div
+                          role="alert"
+                          className="rounded-card border border-state-danger/50 bg-state-danger/10 p-3 text-sm text-state-danger"
+                        >
+                          {currentError}
+                        </div>
+                      )}
+
+                      {currentProvenance && (
+                        <div className="space-y-4">
+                          <div className="rounded-card border border-default bg-[#0b0517] p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-purple/10 text-brand-purple text-xl">
+                                  📄
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-semibold text-content-primary truncate text-sm">
+                                      {currentProvenance.original_filename}
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#064e3b] px-2 py-0.5 text-[11px] font-medium text-[#34d399]">
+                                      ✓ Extraction completed
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-content-muted">
+                                    <span>
+                                      {currentProvenance.character_count?.toLocaleString()} characters
+                                    </span>
+                                    <span>•</span>
+                                    <span>
+                                      {(currentProvenance.size_bytes / 1024).toFixed(1)} KB
+                                    </span>
+                                    <span>•</span>
+                                    <span>MIME: {currentProvenance.mime_type}</span>
+                                    <span>•</span>
+                                    <span title={currentProvenance.sha256}>
+                                      SHA-256: {currentProvenance.sha256?.slice(0, 12)}...
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => fileInputRef.current?.click()}
+                                  disabled={
+                                    currentStatus === 'UPLOADING' ||
+                                    currentStatus === 'EXTRACTING'
+                                  }
+                                >
+                                  Replace file
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    handleRemoveFile(activeSourceConfig.id)
+                                  }
+                                  disabled={
+                                    currentStatus === 'UPLOADING' ||
+                                    currentStatus === 'EXTRACTING'
+                                  }
+                                  className="text-state-danger hover:bg-state-danger/10"
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            </div>
+                            <p className="mt-3 text-[11px] text-content-muted/70 border-t border-border-default/30 pt-2">
+                              Current-session upload metadata (not persisted in AgentRun).
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <label
+                                htmlFor={activeSourceConfig.id}
+                                className="text-sm font-medium text-content-primary"
+                              >
+                                Extracted text
+                              </label>
+                              <span className="text-xs text-content-muted">
+                                Editable text area
+                              </span>
+                            </div>
+                            <Textarea
+                              id={activeSourceConfig.id}
+                              label={activeSourceConfig.label}
+                              labelClassName="sr-only"
+                              rows={10}
+                              value={input[activeSourceConfig.stateKey]}
+                              onChange={(event) =>
+                                updateField(activeSourceConfig.stateKey, event.target.value)
+                              }
+                              placeholder={activeSourceConfig.placeholder}
+                              textareaClassName="font-sans text-sm bg-[#0b0517] border-default leading-relaxed"
+                            />
+                          </div>
+
+                          <div className="rounded-card border border-[#2a2046] bg-[#120824] p-3 text-xs text-content-muted">
+                            <strong className="text-content-primary">Human review:</strong> Review extracted content before continuing. You may edit the text directly.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Card>
+              )
+            })()}
 
             <div
               role="note"

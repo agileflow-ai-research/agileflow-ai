@@ -376,3 +376,15 @@ class Agent2RunResult(BaseModel):
     warnings: list[AgentRunMessage]
     errors: list[AgentRunMessage]
     correction_attempts: int = 0
+
+
+class DocumentExtractionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_type: Literal["REQUIREMENTS", "SRS", "USER_STORIES", "ACCEPTANCE_CRITERIA"]
+    original_filename: str
+    mime_type: str
+    size_bytes: int
+    sha256: str
+    character_count: int
+    extracted_text: str
+    extraction_status: Literal["COMPLETED"] = "COMPLETED"

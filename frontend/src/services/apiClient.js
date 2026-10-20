@@ -72,7 +72,9 @@ export async function request(
   const requestHeaders = new Headers(headers)
   const token = authenticated ? getAccessToken() : null
 
-  if (body !== undefined && !requestHeaders.has('Content-Type')) {
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
+
+  if (body !== undefined && !requestHeaders.has('Content-Type') && !isFormData) {
     requestHeaders.set('Content-Type', 'application/json')
   }
   if (token) {
@@ -84,7 +86,7 @@ export async function request(
     response = await fetch(buildUrl(path), {
       method,
       headers: requestHeaders,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
       signal,
     })
   } catch (error) {

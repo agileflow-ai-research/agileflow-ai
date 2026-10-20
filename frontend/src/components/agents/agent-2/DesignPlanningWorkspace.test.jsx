@@ -1,11 +1,15 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runDesignPlanningAgent } from '../../../services/designPlanningAgentService.js'
+import {
+  extractSpecificationDocument,
+  runDesignPlanningAgent,
+} from '../../../services/designPlanningAgentService.js'
 import DesignPlanningWorkspace from './DesignPlanningWorkspace.jsx'
 
 vi.mock('../../../services/designPlanningAgentService.js', () => ({
+  extractSpecificationDocument: vi.fn(),
   runDesignPlanningAgent: vi.fn(),
 }))
 
@@ -883,6 +887,321 @@ describe('DesignPlanningWorkspace', () => {
 
     // API was NOT re-called
     expect(runDesignPlanningAgent).toHaveBeenCalledTimes(1)
+  })
+
+  describe('S2-01 Document Upload & Extraction', () => {
+    it('supports switching between Manual text and Upload document modes', async () => {
+      const user = userEvent.setup()
+      render(<DesignPlanningWorkspace project={project} />)
+
+      // Default is manual mode
+      expect(screen.getByRole('button', { name: 'Manual text' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Upload document' })).toBeInTheDocument()
+      expect(screen.getByLabelText('Requirements')).toBeInTheDocument()
+
+      // Switch to upload mode
+      await user.click(screen.getByRole('button', { name: 'Upload document' }))
+      expect(screen.getByText('Upload specification')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Choose document' })).toBeInTheDocument()
+      expect(screen.getByText(/Supported: DOCX, PDF, TXT, MD · Max 10 MB/)).toBeInTheDocument()
+
+      // Switch back to manual mode
+      await user.click(screen.getByRole('button', { name: 'Manual text' }))
+      expect(screen.getByLabelText('Requirements')).toBeInTheDocument()
+    })
+
+    it('extracts text from uploaded document and populates editable textarea with provenance', async () => {
+      const user = userEvent.setup()
+      extractSpecificationDocument.mockResolvedValueOnce({
+        data: {
+          source_type: 'SRS',
+          original_filename: 'BookEase_Sample_SRS_Agent2_Full_Workflow.docx',
+          mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          size_bytes: 14206,
+          sha256: 'a1b2c3d4e5f67890abcdef1234567890',
+          character_count: 14206,
+          extracted_text: 'BookEase Hotel Reservation System SRS content.\nSection 1: Overview.',
+          extraction_status: 'COMPLETED',
+        },
+      })
+
+      render(<DesignPlanningWorkspace project={project} />)
+
+      // Switch to SRS tab
+      await user.click(screen.getByRole('tab', { name: /^srs$/i }))
+
+      // Switch to upload mode
+      await user.click(screen.getByRole('button', { name: 'Upload document' }))
+
+      // Upload file
+      const file = new File(['dummy docx'], 'BookEase_Sample_SRS_Agent2_Full_Workflow.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      })
+      const fileInput = screen.getByLabelText('Upload document file')
+      await user.upload(fileInput, file)
+
+      expect(extractSpecificationDocument).toHaveBeenCalledWith(
+        'AGP-002',
+        expect.any(File),
+        'SRS',
+      )
+
+      // Check provenance card
+      expect(screen.getByText('BookEase_Sample_SRS_Agent2_Full_Workflow.docx')).toBeInTheDocument()
+      expect(screen.getByText('✓ Extraction completed')).toBeInTheDocument()
+      expect(screen.getByText(/14,206 characters/)).toBeInTheDocument()
+      expect(screen.getByText(/Current-session upload metadata/)).toBeInTheDocument()
+
+      // Check extracted text in editable textarea
+      const textarea = screen.getByLabelText(/Software Requirements Specification/)
+      expect(textarea).toHaveValue('BookEase Hotel Reservation System SRS content.\nSection 1: Overview.')
+      expect(screen.getByText(/Human review:/)).toBeInTheDocument()
+    })
+
+    it('allows human-in-the-loop editing of extracted text', async () => {
+      const user = userEvent.setup()
+      extractSpecificationDocument.mockResolvedValueOnce({
+        data: {
+          source_type: 'SRS',
+          original_filename: 'BookEase.docx',
+          mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          size_bytes: 5000,
+          sha256: 'abc123',
+          character_count: 200,
+          extracted_text: 'Initial extracted text.',
+          extraction_status: 'COMPLETED',
+        },
+      })
+
+      render(<DesignPlanningWorkspace project={project} />)
+      await user.click(screen.getByRole('tab', { name: /^srs$/i }))
+      await user.click(screen.getByRole('button', { name: 'Upload document' }))
+
+      const file = new File(['docx'], 'BookEase.docx')
+      await user.upload(screen.getByLabelText('Upload document file'), file)
+
+      const textarea = screen.getByLabelText(/Software Requirements Specification/)
+      expect(textarea).toHaveValue('Initial extracted text.')
+
+      // Edit extracted text
+      await user.type(textarea, ' Edited by human.')
+      expect(textarea).toHaveValue('Initial extracted text. Edited by human.')
+    })
+
+    it('supports replacing and removing an uploaded document', async () => {
+      const user = userEvent.setup()
+      extractSpecificationDocument
+        .mockResolvedValueOnce({
+          data: {
+            source_type: 'SRS',
+            original_filename: 'Doc1.docx',
+            mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            size_bytes: 1000,
+            sha256: 'hash1',
+            character_count: 50,
+            extracted_text: 'First doc content.',
+            extraction_status: 'COMPLETED',
+          },
+        })
+        .mockResolvedValueOnce({
+          data: {
+            source_type: 'SRS',
+            original_filename: 'Doc2.docx',
+            mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            size_bytes: 2000,
+            sha256: 'hash2',
+            character_count: 100,
+            extracted_text: 'Second doc content.',
+            extraction_status: 'COMPLETED',
+          },
+        })
+
+      render(<DesignPlanningWorkspace project={project} />)
+      await user.click(screen.getByRole('tab', { name: /^srs$/i }))
+      await user.click(screen.getByRole('button', { name: 'Upload document' }))
+
+      // Upload Doc1
+      const file1 = new File(['doc1'], 'Doc1.docx')
+      await user.upload(screen.getByLabelText('Upload document file'), file1)
+      expect(screen.getByText('Doc1.docx')).toBeInTheDocument()
+
+      // Replace with Doc2
+      const file2 = new File(['doc2'], 'Doc2.docx')
+      await user.upload(screen.getByLabelText('Upload document file'), file2)
+      expect(screen.getByText('Doc2.docx')).toBeInTheDocument()
+      expect(screen.getByLabelText(/Software Requirements Specification/)).toHaveValue('Second doc content.')
+
+      // Remove Doc2
+      await user.click(screen.getByRole('button', { name: 'Remove' }))
+      expect(screen.queryByText('Doc2.docx')).not.toBeInTheDocument()
+      expect(screen.getByText('Upload specification')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Choose document' })).toBeInTheDocument()
+    })
+
+    it('shows safe error when client-side or backend validation fails', async () => {
+      const user = userEvent.setup()
+      render(<DesignPlanningWorkspace project={project} />)
+      await user.click(screen.getByRole('button', { name: 'Upload document' }))
+      const fileInput = screen.getByLabelText('Upload document file')
+
+      // 1. Unsupported extension (.exe)
+      const invalidExtFile = new File(['binary'], 'virus.exe', { type: 'application/octet-stream' })
+      fireEvent.change(fileInput, { target: { files: [invalidExtFile] } })
+      expect(await screen.findByRole('alert')).toHaveTextContent(/UNSUPPORTED_DOCUMENT_TYPE/)
+
+      // 2. Oversized file (> 10 MiB)
+      const oversizedFile = new File(['content'], 'huge.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      })
+      Object.defineProperty(oversizedFile, 'size', { value: 11 * 1024 * 1024 })
+      fireEvent.change(fileInput, { target: { files: [oversizedFile] } })
+      expect(await screen.findByRole('alert')).toHaveTextContent(/DOCUMENT_TOO_LARGE/)
+
+      // 3. Backend extraction failure (DOCUMENT_TEXT_NOT_FOUND)
+      extractSpecificationDocument.mockRejectedValueOnce(
+        new Error('DOCUMENT_TEXT_NOT_FOUND: The uploaded document contains no readable text.'),
+      )
+      const blankPdf = new File(['empty'], 'blank.pdf', { type: 'application/pdf' })
+      fireEvent.change(fileInput, { target: { files: [blankPdf] } })
+      expect(await screen.findByRole('alert')).toHaveTextContent(/DOCUMENT_TEXT_NOT_FOUND/)
+    })
+
+    it('maintains independent source tab states and allows continuing with extracted SRS only', async () => {
+      const user = userEvent.setup()
+      extractSpecificationDocument.mockResolvedValueOnce({
+        data: {
+          source_type: 'SRS',
+          original_filename: 'SRS.md',
+          mime_type: 'text/markdown',
+          size_bytes: 300,
+          sha256: 'hash-srs',
+          character_count: 50,
+          extracted_text: '# Markdown SRS\nFull system spec.',
+          extraction_status: 'COMPLETED',
+        },
+      })
+
+      render(<DesignPlanningWorkspace project={project} />)
+
+      // SRS tab: upload
+      await user.click(screen.getByRole('tab', { name: /^srs$/i }))
+      await user.click(screen.getByRole('button', { name: 'Upload document' }))
+      const srsFile = new File(['# Markdown SRS'], 'SRS.md', { type: 'text/markdown' })
+      await user.upload(screen.getByLabelText('Upload document file'), srsFile)
+      expect(screen.getByText('SRS.md')).toBeInTheDocument()
+
+      // Requirements tab: manual
+      await user.click(screen.getByRole('tab', { name: /requirements/i }))
+      expect(screen.getByLabelText('Requirements')).toHaveValue('')
+      await user.type(screen.getByLabelText('Requirements'), 'Manual requirement 1.')
+
+      // Switch back to SRS: still has extracted document
+      await user.click(screen.getByRole('tab', { name: /srs/i }))
+      expect(screen.getByText('SRS.md')).toBeInTheDocument()
+      expect(screen.getByLabelText(/Software Requirements Specification/)).toHaveValue(
+        '# Markdown SRS\nFull system spec.',
+      )
+
+      // Can continue to planning because at least one source has content
+      await user.click(screen.getByRole('button', { name: 'Continue to planning' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Technical & Planning Information' })).toBeInTheDocument()
+      expect(screen.getByText(/Step 2 of 5 · Project preferences and team context/)).toBeInTheDocument()
+    })
+
+    it('blocks advancing when zero usable sources exist after removing uploaded file', async () => {
+      const user = userEvent.setup()
+      extractSpecificationDocument.mockResolvedValueOnce({
+        data: {
+          source_type: 'SRS',
+          original_filename: 'temp.docx',
+          mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          size_bytes: 100,
+          sha256: 'hash',
+          character_count: 20,
+          extracted_text: 'Temporary spec',
+          extraction_status: 'COMPLETED',
+        },
+      })
+
+      render(<DesignPlanningWorkspace project={project} />)
+      await user.click(screen.getByRole('tab', { name: /^srs$/i }))
+      await user.click(screen.getByRole('button', { name: 'Upload document' }))
+
+      await user.upload(screen.getByLabelText('Upload document file'), new File(['x'], 'temp.docx'))
+      expect(screen.getByText('temp.docx')).toBeInTheDocument()
+
+      // Remove the file
+      await user.click(screen.getByRole('button', { name: 'Remove' }))
+
+      // Click continue with 0 usable sources
+      await user.click(screen.getByRole('button', { name: 'Continue to planning' }))
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        /At least one usable source is required: requirements, SRS, user stories, or acceptance criteria./,
+      )
+      expect(screen.getByText(/Step 1 of 5/)).toBeInTheDocument()
+    })
+
+    it('preserves existing Agent2RunRequest contract when executing with extracted/edited document', async () => {
+      const user = userEvent.setup()
+      extractSpecificationDocument.mockResolvedValueOnce({
+        data: {
+          source_type: 'SRS',
+          original_filename: 'BookEase_Sample_SRS_Agent2_Full_Workflow.docx',
+          mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          size_bytes: 14206,
+          sha256: 'abc123',
+          character_count: 14206,
+          extracted_text: 'BookEase Hotel Reservation System SRS.',
+          extraction_status: 'COMPLETED',
+        },
+      })
+
+      runDesignPlanningAgent.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-DOC-01',
+          status: 'COMPLETED',
+          warnings: [],
+          errors: [],
+          outputs: {
+            SYSTEM_ARCHITECTURE: { system_name: 'BookEase' },
+          },
+        },
+      })
+
+      render(<DesignPlanningWorkspace project={project} />)
+
+      // Step 1: Upload and edit SRS
+      await user.click(screen.getByRole('tab', { name: /^srs$/i }))
+      await user.click(screen.getByRole('button', { name: 'Upload document' }))
+      await user.upload(
+        screen.getByLabelText('Upload document file'),
+        new File(['data'], 'BookEase_Sample_SRS_Agent2_Full_Workflow.docx'),
+      )
+
+      const srsTextarea = screen.getByLabelText(/Software Requirements Specification/)
+      await user.type(srsTextarea, ' Human edit: Payment gateway integration.')
+      await user.click(screen.getByRole('button', { name: 'Continue to planning' }))
+
+      // Step 2: Planning
+      await user.click(screen.getByRole('button', { name: 'Continue to outputs' }))
+
+      // Step 3: Outputs
+      await user.click(screen.getByRole('checkbox', { name: /system architecture/i }))
+      await user.click(screen.getByRole('button', { name: 'Review selection' }))
+
+      // Step 4: Review and Run
+      await user.click(screen.getByRole('button', { name: 'Run Agent 2' }))
+
+      // Verify exact existing payload contract was submitted to runDesignPlanningAgent
+      expect(runDesignPlanningAgent).toHaveBeenCalledTimes(1)
+      expect(runDesignPlanningAgent).toHaveBeenCalledWith('AGP-002', {
+        selected_outputs: ['SYSTEM_ARCHITECTURE'],
+        SRS: 'BookEase Hotel Reservation System SRS. Human edit: Payment gateway integration.',
+      })
+
+      // Verify completion
+      expect(await screen.findByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+    })
   })
 })
 
