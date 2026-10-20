@@ -10,6 +10,7 @@ from app.modules.agents.requirements.engine import Agent1Engine
 from app.modules.agents.requirements.schemas import Agent1RunRequest, Agent1RunResult
 from app.modules.agents.requirements.service import Agent1Service, WrongAgentProjectTypeError
 from app.modules.agents.requirements.api.source_routes import router as source_router
+from app.modules.agents.requirements.api.processing_routes import router as processing_router
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.standalone.router import get_standalone_service
@@ -23,6 +24,7 @@ from app.modules.standalone.service import (
 
 router = APIRouter(prefix="/agents/requirements", tags=["requirements-agent"])
 router.include_router(source_router)
+router.include_router(processing_router)
 
 
 def get_agent1_engine() -> Agent1Engine:

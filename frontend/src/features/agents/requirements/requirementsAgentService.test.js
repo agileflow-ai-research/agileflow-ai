@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiClient } from '../../../services/apiClient.js'
 import {
   deleteRequirementSource,
+  getRequirementDocumentProcessingResult,
+  getRequirementDocumentProcessingStatus,
   listRequirementSources,
+  processRequirementDocument,
   uploadRequirementSource,
 } from './requirementsAgentService.js'
 
@@ -34,6 +37,28 @@ describe('requirementsAgentService source collection', () => {
     deleteRequirementSource('AGP-007', 'AUD-001')
     expect(apiClient.delete).toHaveBeenCalledWith(
       '/agents/requirements/AGP-007/sources/AUD-001', { authenticated: true },
+    )
+  })
+
+  it('processes, checks status, and retrieves results through explicit endpoints', () => {
+    processRequirementDocument('AGP-007', 'DOC-001', { force: true })
+    getRequirementDocumentProcessingStatus('AGP-007', 'DOC-001')
+    getRequirementDocumentProcessingResult('AGP-007', 'DOC-001')
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/requirements/AGP-007/sources/DOC-001/processing?force=true',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenNthCalledWith(
+      1,
+      '/agents/requirements/AGP-007/sources/DOC-001/processing/status',
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenNthCalledWith(
+      2,
+      '/agents/requirements/AGP-007/sources/DOC-001/processing/result',
+      { authenticated: true },
     )
   })
 })

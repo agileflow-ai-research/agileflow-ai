@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   deleteRequirementSource,
+  getRequirementDocumentProcessingResult,
+  getRequirementDocumentProcessingStatus,
   listRequirementSources,
+  processRequirementDocument,
   runRequirementsAgent,
   uploadRequirementSource,
 } from './requirementsAgentService.js'
@@ -12,7 +15,10 @@ import RequirementsWorkspace from './RequirementsWorkspace.jsx'
 
 vi.mock('./requirementsAgentService.js', () => ({
   deleteRequirementSource: vi.fn(),
+  getRequirementDocumentProcessingResult: vi.fn(),
+  getRequirementDocumentProcessingStatus: vi.fn(),
   listRequirementSources: vi.fn(),
+  processRequirementDocument: vi.fn(),
   runRequirementsAgent: vi.fn(),
   uploadRequirementSource: vi.fn(),
 }))
@@ -30,6 +36,9 @@ describe('RequirementsWorkspace Node 1', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     listRequirementSources.mockResolvedValue({ data: persistedSources })
+    getRequirementDocumentProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'DOC-001', status: 'READY', error: null,
+    } })
   })
 
   it('renders actions and persisted IDs, types, filenames, and statuses', async () => {
@@ -42,7 +51,7 @@ describe('RequirementsWorkspace Node 1', () => {
     ;['AUD-001', 'VID-001', 'Document', 'Audio', 'Video', 'requirements.pdf', 'interview.mp3', 'workflow.mp4'].forEach((text) => {
       expect(screen.getByText(text)).toBeInTheDocument()
     })
-    expect(screen.getAllByText('Ready')).toHaveLength(3)
+    expect(screen.getAllByText('Ready').length).toBeGreaterThanOrEqual(3)
     expect(listRequirementSources).toHaveBeenCalledWith('AGP-001')
     expect(runRequirementsAgent).not.toHaveBeenCalled()
   })
@@ -86,5 +95,57 @@ describe('RequirementsWorkspace Node 1', () => {
     expect(await screen.findByText('AUD-001')).toBeInTheDocument()
     expect(screen.queryByText('DOC-001')).not.toBeInTheDocument()
     expect(listRequirementSources).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows persisted processing state after reload and loads the extracted result', async () => {
+    const user = userEvent.setup()
+    getRequirementDocumentProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'DOC-001', status: 'COMPLETED', error: null,
+    } })
+    getRequirementDocumentProcessingResult.mockResolvedValue({ data: {
+      source_id: 'DOC-001', document_type: 'PDF', text: 'Persisted extracted requirement',
+    } })
+    render(<RequirementsWorkspace project={project} />)
+
+    expect(await screen.findByText('Completed')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'View Result' }))
+
+    expect(await screen.findByText('Persisted extracted requirement')).toBeInTheDocument()
+    expect(getRequirementDocumentProcessingResult).toHaveBeenCalledWith('AGP-001', 'DOC-001')
+  })
+
+  it('shows processing immediately and completes document processing', async () => {
+    const user = userEvent.setup()
+    let finishProcessing
+    processRequirementDocument.mockReturnValue(new Promise((resolve) => { finishProcessing = resolve }))
+    render(<RequirementsWorkspace project={project} />)
+    await screen.findByRole('button', { name: 'Process Document' })
+
+    await user.click(screen.getByRole('button', { name: 'Process Document' }))
+    expect(screen.getByText('Processing')).toBeInTheDocument()
+    finishProcessing({ data: { source_id: 'DOC-001', status: 'COMPLETED', error: null } })
+
+    expect(await screen.findByText('Completed')).toBeInTheDocument()
+    expect(processRequirementDocument).toHaveBeenCalledWith('AGP-001', 'DOC-001', { force: false })
+    expect(runRequirementsAgent).not.toHaveBeenCalled()
+  })
+
+  it('shows safe failure details and retries with force', async () => {
+    const user = userEvent.setup()
+    getRequirementDocumentProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'DOC-001', status: 'FAILED',
+      error: { code: 'NO_MACHINE_READABLE_TEXT', message: 'OCR is not available in N2A.' },
+    } })
+    processRequirementDocument.mockResolvedValue({ data: {
+      source_id: 'DOC-001', status: 'COMPLETED', error: null,
+    } })
+    render(<RequirementsWorkspace project={project} />)
+
+    expect(await screen.findByText('Failed')).toBeInTheDocument()
+    expect(screen.getByText(/NO_MACHINE_READABLE_TEXT/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry Processing' }))
+
+    expect(processRequirementDocument).toHaveBeenCalledWith('AGP-001', 'DOC-001', { force: true })
+    expect(await screen.findByText('Completed')).toBeInTheDocument()
   })
 })

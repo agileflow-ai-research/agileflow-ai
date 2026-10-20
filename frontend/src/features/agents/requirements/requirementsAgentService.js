@@ -32,3 +32,26 @@ export function deleteRequirementSource(agentProjectId, sourceId) {
     { authenticated: true },
   )
 }
+
+export function processRequirementDocument(agentProjectId, sourceId, { force = false } = {}) {
+  const suffix = force ? '?force=true' : ''
+  return apiClient.post(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/processing${suffix}`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getRequirementDocumentProcessingStatus(agentProjectId, sourceId) {
+  return apiClient.get(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/processing/status`,
+    { authenticated: true },
+  )
+}
+
+export function getRequirementDocumentProcessingResult(agentProjectId, sourceId) {
+  return apiClient.get(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/processing/result`,
+    { authenticated: true },
+  )
+}

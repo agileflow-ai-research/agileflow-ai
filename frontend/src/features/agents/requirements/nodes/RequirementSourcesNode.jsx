@@ -5,7 +5,10 @@ import Card from '../../../../components/ui/Card.jsx'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import {
   deleteRequirementSource,
+  getRequirementDocumentProcessingResult,
+  getRequirementDocumentProcessingStatus,
   listRequirementSources,
+  processRequirementDocument,
   uploadRequirementSource,
 } from '../requirementsAgentService.js'
 
@@ -19,6 +22,13 @@ function sourceLabel(value) {
   return value.charAt(0) + value.slice(1).toLowerCase()
 }
 
+const processingTones = {
+  READY: 'neutral',
+  PROCESSING: 'info',
+  COMPLETED: 'success',
+  FAILED: 'danger',
+}
+
 export default function RequirementSourcesNode({ project }) {
   const inputRefs = useRef({})
   const requestSequence = useRef(0)
@@ -26,6 +36,7 @@ export default function RequirementSourcesNode({ project }) {
   const [loadStatus, setLoadStatus] = useState('loading')
   const [uploadingType, setUploadingType] = useState(null)
   const [removingId, setRemovingId] = useState(null)
+  const [processingStates, setProcessingStates] = useState({})
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -37,6 +48,33 @@ export default function RequirementSourcesNode({ project }) {
         if (!Array.isArray(response?.data)) throw new Error('Invalid requirement sources response')
         setSources(response.data)
         setLoadStatus('success')
+        const documents = response.data.filter((source) => source.source_type === 'DOCUMENT')
+        setProcessingStates(Object.fromEntries(documents.map((source) => [
+          source.source_id,
+          { status: 'READY', result: null, requestError: '' },
+        ])))
+        return Promise.all(documents.map(async (source) => {
+          try {
+            const statusResponse = await getRequirementDocumentProcessingStatus(
+              project.agent_project_id,
+              source.source_id,
+            )
+            if (requestSequence.current !== requestId || !statusResponse?.data?.status) return
+            setProcessingStates((current) => ({
+              ...current,
+              [source.source_id]: { ...statusResponse.data, result: null, requestError: '' },
+            }))
+          } catch (requestError) {
+            if (requestSequence.current !== requestId || requestError?.status === 401) return
+            setProcessingStates((current) => ({
+              ...current,
+              [source.source_id]: {
+                ...(current[source.source_id] ?? { status: 'READY' }),
+                requestError: requestError?.errors?.[0]?.message || 'Processing status could not be loaded.',
+              },
+            }))
+          }
+        }))
       })
       .catch((requestError) => {
         if (requestSequence.current !== requestId || requestError?.status === 401) return
@@ -60,6 +98,12 @@ export default function RequirementSourcesNode({ project }) {
         )
         if (!response?.data) throw new Error('Invalid requirement source response')
         setSources((current) => [...current, response.data])
+        if (response.data.source_type === 'DOCUMENT') {
+          setProcessingStates((current) => ({
+            ...current,
+            [response.data.source_id]: { status: 'READY', result: null, requestError: '' },
+          }))
+        }
       }
     } catch (requestError) {
       if (requestError?.status !== 401) {
@@ -79,12 +123,76 @@ export default function RequirementSourcesNode({ project }) {
     try {
       await deleteRequirementSource(project.agent_project_id, sourceId)
       setSources((current) => current.filter((source) => source.source_id !== sourceId))
+      setProcessingStates((current) => {
+        const next = { ...current }
+        delete next[sourceId]
+        return next
+      })
     } catch (requestError) {
       if (requestError?.status !== 401) {
         setError(requestError?.errors?.[0]?.message || 'The source could not be removed.')
       }
     } finally {
       setRemovingId(null)
+    }
+  }
+
+  async function processDocument(sourceId, force = false) {
+    setProcessingStates((current) => ({
+      ...current,
+      [sourceId]: { ...(current[sourceId] ?? {}), status: 'PROCESSING', error: null, requestError: '', result: null },
+    }))
+    try {
+      const response = await processRequirementDocument(
+        project.agent_project_id,
+        sourceId,
+        { force },
+      )
+      if (!response?.data?.status) throw new Error('Invalid document processing response')
+      setProcessingStates((current) => ({
+        ...current,
+        [sourceId]: { ...response.data, result: null, requestError: '' },
+      }))
+    } catch (requestError) {
+      if (requestError?.status === 401) return
+      setProcessingStates((current) => ({
+        ...current,
+        [sourceId]: {
+          ...(current[sourceId] ?? {}),
+          status: 'FAILED',
+          error: null,
+          requestError: requestError?.errors?.[0]?.message || 'Document processing could not be completed.',
+          result: null,
+        },
+      }))
+    }
+  }
+
+  async function loadResult(sourceId) {
+    setProcessingStates((current) => ({
+      ...current,
+      [sourceId]: { ...current[sourceId], resultLoading: true, requestError: '' },
+    }))
+    try {
+      const response = await getRequirementDocumentProcessingResult(
+        project.agent_project_id,
+        sourceId,
+      )
+      if (!response?.data?.text) throw new Error('Invalid document processing result')
+      setProcessingStates((current) => ({
+        ...current,
+        [sourceId]: { ...current[sourceId], result: response.data, resultLoading: false },
+      }))
+    } catch (requestError) {
+      if (requestError?.status === 401) return
+      setProcessingStates((current) => ({
+        ...current,
+        [sourceId]: {
+          ...current[sourceId],
+          resultLoading: false,
+          requestError: requestError?.errors?.[0]?.message || 'The extracted document text could not be loaded.',
+        },
+      }))
     }
   }
 
@@ -141,23 +249,84 @@ export default function RequirementSourcesNode({ project }) {
         ) : (
           <div className="space-y-3">
             {sources.map((source) => (
-              <Card key={source.source_id} variant="elevated" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="grid min-w-0 flex-1 gap-2 text-sm sm:grid-cols-[6rem_7rem_minmax(0,1fr)_auto] sm:items-center">
-                  <p className="font-semibold text-content-primary">{source.source_id}</p>
-                  <p className="text-content-secondary">{sourceLabel(source.source_type)}</p>
-                  <p className="truncate text-content-primary" title={source.original_filename}>{source.original_filename}</p>
-                  <StatusBadge label={sourceLabel(source.status)} tone="success" />
+              <Card key={source.source_id} variant="elevated" className="space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="grid min-w-0 flex-1 gap-2 text-sm sm:grid-cols-[6rem_7rem_minmax(0,1fr)_auto] sm:items-center">
+                    <p className="font-semibold text-content-primary">{source.source_id}</p>
+                    <p className="text-content-secondary">{sourceLabel(source.source_type)}</p>
+                    <p className="truncate text-content-primary" title={source.original_filename}>{source.original_filename}</p>
+                    <StatusBadge label={sourceLabel(source.status)} tone="success" />
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    loading={removingId === source.source_id}
+                    loadingLabel={`Removing ${source.original_filename}`}
+                    disabled={Boolean(uploadingType || removingId || processingStates[source.source_id]?.status === 'PROCESSING')}
+                    onClick={() => { void removeSource(source.source_id) }}
+                  >
+                    Remove
+                  </Button>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="small"
-                  loading={removingId === source.source_id}
-                  loadingLabel={`Removing ${source.original_filename}`}
-                  disabled={Boolean(uploadingType || removingId)}
-                  onClick={() => { void removeSource(source.source_id) }}
-                >
-                  Remove
-                </Button>
+                {source.source_type === 'DOCUMENT' ? (
+                  <div className="space-y-3 border-t border-default pt-4" aria-label={`Document processing for ${source.original_filename}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium text-content-primary">Document processing</p>
+                        <StatusBadge
+                          label={sourceLabel(processingStates[source.source_id]?.status ?? 'READY')}
+                          tone={processingTones[processingStates[source.source_id]?.status] ?? 'neutral'}
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {processingStates[source.source_id]?.status === 'COMPLETED' ? (
+                          <Button
+                            variant="outline"
+                            size="small"
+                            loading={processingStates[source.source_id]?.resultLoading}
+                            loadingLabel="Loading extracted text"
+                            onClick={() => { void loadResult(source.source_id) }}
+                          >
+                            View Result
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="outline"
+                          size="small"
+                          loading={processingStates[source.source_id]?.status === 'PROCESSING'}
+                          loadingLabel="Processing document"
+                          disabled={Boolean(uploadingType || removingId)}
+                          onClick={() => { void processDocument(
+                            source.source_id,
+                            ['FAILED', 'COMPLETED'].includes(processingStates[source.source_id]?.status),
+                          ) }}
+                        >
+                          {processingStates[source.source_id]?.status === 'FAILED'
+                            ? 'Retry Processing'
+                            : processingStates[source.source_id]?.status === 'COMPLETED'
+                              ? 'Reprocess'
+                              : 'Process Document'}
+                        </Button>
+                      </div>
+                    </div>
+                    {processingStates[source.source_id]?.requestError ? (
+                      <p role="alert" className="text-sm text-state-danger">{processingStates[source.source_id].requestError}</p>
+                    ) : null}
+                    {processingStates[source.source_id]?.error?.message ? (
+                      <p className="text-sm text-state-danger">
+                        {processingStates[source.source_id].error.code}: {processingStates[source.source_id].error.message}
+                      </p>
+                    ) : null}
+                    {processingStates[source.source_id]?.result ? (
+                      <section aria-label={`Extracted text for ${source.original_filename}`}>
+                        <p className="text-sm font-medium text-content-primary">Extracted text</p>
+                        <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-control border border-default bg-surface p-3 text-sm text-content-secondary">
+                          {processingStates[source.source_id].result.text}
+                        </pre>
+                      </section>
+                    ) : null}
+                  </div>
+                ) : null}
               </Card>
             ))}
           </div>

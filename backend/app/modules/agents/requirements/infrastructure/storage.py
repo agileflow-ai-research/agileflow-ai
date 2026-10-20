@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
@@ -70,6 +71,16 @@ class SourceNotFoundError(LookupError):
 
 class SourceStorageError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class StoredRequirementSource:
+    metadata: RequirementSourceMetadata
+    file_path: Path
+    processing_path: Path
+    processing_partial_path: Path
+    result_path: Path
+    result_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -212,13 +223,69 @@ class RequirementSourceStorage:
         stored_path = self._contained(
             project_directory, f"{source_id}{metadata.extension}"
         )
+        processing_path = self._contained(
+            project_directory, f"{source_id}.document-processing.json"
+        )
+        processing_partial_path = self._contained(
+            project_directory, f"{source_id}.document-processing.json.part"
+        )
+        result_path = self._contained(
+            project_directory, f"{source_id}.document-result.json"
+        )
+        result_partial_path = self._contained(
+            project_directory, f"{source_id}.document-result.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
+            processing_path.unlink(missing_ok=True)
+            processing_partial_path.unlink(missing_ok=True)
+            result_path.unlink(missing_ok=True)
+            result_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise SourceNotFoundError(source_id) from exc
         except OSError as exc:
             raise SourceStorageError("Requirement source could not be removed") from exc
+
+    def locate(
+        self,
+        *,
+        agent_project_id: str,
+        owner_user_id: str,
+        source_id: str,
+    ) -> StoredRequirementSource:
+        if not SOURCE_ID_PATTERN.fullmatch(source_id):
+            raise SourceNotFoundError(source_id)
+        project_directory = self._project_directory(agent_project_id)
+        metadata_path = self._contained(
+            project_directory, f"{source_id}.metadata.json"
+        )
+        metadata = self._load_metadata(
+            metadata_path, agent_project_id, owner_user_id, source_id
+        )
+        file_path = self._contained(
+            project_directory, f"{source_id}{metadata.extension}"
+        )
+        if not file_path.is_file():
+            raise SourceStorageError(
+                "Requirement source metadata references a missing file"
+            )
+        return StoredRequirementSource(
+            metadata=metadata,
+            file_path=file_path,
+            processing_path=self._contained(
+                project_directory, f"{source_id}.document-processing.json"
+            ),
+            processing_partial_path=self._contained(
+                project_directory, f"{source_id}.document-processing.json.part"
+            ),
+            result_path=self._contained(
+                project_directory, f"{source_id}.document-result.json"
+            ),
+            result_partial_path=self._contained(
+                project_directory, f"{source_id}.document-result.json.part"
+            ),
+        )
 
     def _next_source_id(
         self, directory: Path, source_type: RequirementSourceType
@@ -364,9 +431,13 @@ class RequirementSourceStorage:
         elif extension == ".txt":
             try:
                 content = path.read_bytes()
-                valid = b"\x00" not in content
-                content.decode("utf-8")
-            except UnicodeDecodeError:
+                if content.startswith((b"\xff\xfe", b"\xfe\xff")):
+                    content.decode("utf-16")
+                    valid = True
+                else:
+                    valid = b"\x00" not in content
+                    content.decode("utf-8-sig")
+            except (UnicodeDecodeError, UnicodeError):
                 valid = False
         elif extension == ".mp3":
             valid = header.startswith(b"ID3") or (
