@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   deleteRequirementSource,
+  continueRequirementN1,
   getNormalizedRequirementEvidence,
   getRequirementAudioProcessingResult,
   getRequirementAudioProcessingStatus,
@@ -11,6 +12,7 @@ import {
   getRequirementDocumentProcessingStatus,
   getRequirementEvidenceChunks,
   getRequirementPreparationStatus,
+  getRequirementWorkflow,
   getRequirementVideoProcessingResult,
   getRequirementVideoProcessingStatus,
   listRequirementSources,
@@ -19,6 +21,7 @@ import {
   processRequirementDocument,
   processRequirementVideo,
   uploadRequirementSource,
+  updateRequirementOutputs,
 } from './requirementsAgentService.js'
 import RequirementsWorkspace from './RequirementsWorkspace.jsx'
 import { REQUIREMENTS_NODE_IDS } from './workflow/nodeDefinitions.js'
@@ -26,6 +29,7 @@ import { deriveRequirementsWorkflowPresentation } from './workflow/presentation.
 
 vi.mock('./requirementsAgentService.js', () => ({
   deleteRequirementSource: vi.fn(),
+  continueRequirementN1: vi.fn(),
   getNormalizedRequirementEvidence: vi.fn(),
   getRequirementAudioProcessingResult: vi.fn(),
   getRequirementAudioProcessingStatus: vi.fn(),
@@ -33,6 +37,7 @@ vi.mock('./requirementsAgentService.js', () => ({
   getRequirementDocumentProcessingStatus: vi.fn(),
   getRequirementEvidenceChunks: vi.fn(),
   getRequirementPreparationStatus: vi.fn(),
+  getRequirementWorkflow: vi.fn(),
   getRequirementVideoProcessingResult: vi.fn(),
   getRequirementVideoProcessingStatus: vi.fn(),
   listRequirementSources: vi.fn(),
@@ -41,6 +46,7 @@ vi.mock('./requirementsAgentService.js', () => ({
   processRequirementDocument: vi.fn(),
   processRequirementVideo: vi.fn(),
   uploadRequirementSource: vi.fn(),
+  updateRequirementOutputs: vi.fn(),
 }))
 
 const project = {
@@ -76,6 +82,15 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     listRequirementSources.mockResolvedValue({ data: persistedSources })
+    getRequirementWorkflow.mockResolvedValue({ data: {
+      selected_outputs: ['SRS'], n1_state: 'WAITING_FOR_HUMAN', selection_revision: 1,
+    } })
+    updateRequirementOutputs.mockResolvedValue({ data: {
+      selected_outputs: ['FUNCTIONAL_REQUIREMENTS', 'SRS'], n1_state: 'WAITING_FOR_HUMAN', selection_revision: 2,
+    } })
+    continueRequirementN1.mockResolvedValue({ data: {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', selection_revision: 1,
+    } })
     getRequirementDocumentProcessingStatus.mockResolvedValue(processingStatus('DOC-001'))
     getRequirementAudioProcessingStatus.mockResolvedValue(processingStatus('AUD-001'))
     getRequirementVideoProcessingStatus.mockResolvedValue(processingStatus('VID-001'))
@@ -107,6 +122,47 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
       expect(screen.getByText(text)).toBeInTheDocument()
     })
     expect(screen.queryByRole('button', { name: /Process Document|Process Audio|Process Video|Prepare Evidence/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Functional Requirements')).toBeInTheDocument()
+    expect(screen.getByText('Non-Functional Requirements')).toBeInTheDocument()
+    expect(screen.getByText('Software Requirements Specification')).toBeInTheDocument()
+    expect(screen.getAllByRole('checkbox')).toHaveLength(6)
+    expect(screen.getByRole('checkbox', { name: 'Software Requirements Specification' })).toBeChecked()
+    expect(screen.queryByText('Quality Findings')).not.toBeInTheDocument()
+    expect(screen.queryByText('Clarification Questions')).not.toBeInTheDocument()
+  })
+
+  it('persists requested outputs and confirms N1 without starting N2', async () => {
+    const user = userEvent.setup()
+    render(<RequirementsWorkspace project={project} />)
+    await screen.findByRole('heading', { name: 'Client Requirement Sources' })
+
+    await user.click(screen.getByRole('checkbox', { name: 'Functional Requirements' }))
+    await waitFor(() => expect(updateRequirementOutputs).toHaveBeenCalledWith(
+      'AGP-001', ['SRS', 'FUNCTIONAL_REQUIREMENTS'],
+    ))
+    await user.click(screen.getByRole('button', { name: 'Continue — Process Evidence' }))
+    await waitFor(() => expect(continueRequirementN1).toHaveBeenCalledWith('AGP-001'))
+    expect(await screen.findByText('The current sources and requested outputs are confirmed.')).toBeInTheDocument()
+    expect(processRequirementDocument).not.toHaveBeenCalled()
+    expect(processRequirementAudio).not.toHaveBeenCalled()
+    expect(processRequirementVideo).not.toHaveBeenCalled()
+  })
+
+  it('disables Continue until both a source and persisted output exist', async () => {
+    listRequirementSources.mockResolvedValue({ data: [] })
+    getRequirementWorkflow.mockResolvedValue({ data: {
+      selected_outputs: [], n1_state: 'NOT_STARTED', selection_revision: 0,
+    } })
+    render(<RequirementsWorkspace project={project} />)
+    expect(await screen.findByRole('button', { name: 'Continue — Process Evidence' })).toBeDisabled()
+  })
+
+  it('keeps Continue disabled when sources exist but no output is selected', async () => {
+    getRequirementWorkflow.mockResolvedValue({ data: {
+      selected_outputs: [], n1_state: 'NOT_STARTED', selection_revision: 0,
+    } })
+    render(<RequirementsWorkspace project={project} />)
+    expect(await screen.findByRole('button', { name: 'Continue — Process Evidence' })).toBeDisabled()
   })
 
   it('uploads mixed sources, removes one, and reloads persisted sources', async () => {

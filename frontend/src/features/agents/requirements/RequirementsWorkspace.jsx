@@ -22,6 +22,7 @@ function RequirementsWorkspace({
       sources: workflow.sources,
       processingStates: workflow.processingStates,
       preparationStates: workflow.preparationStates,
+      workflowState: workflow.workflowState,
     })
   }, [
     onPresentationChange,
@@ -29,6 +30,7 @@ function RequirementsWorkspace({
     workflow.preparationStates,
     workflow.processingStates,
     workflow.sources,
+    workflow.workflowState,
   ])
 
   const activeNode = getRequirementNodeDefinition(activeSection)
@@ -54,6 +56,13 @@ function RequirementsWorkspace({
           removingId={workflow.removingId}
           onAddFiles={workflow.addFiles}
           onRemoveSource={workflow.removeSource}
+          selectedOutputs={workflow.workflowState?.selected_outputs ?? []}
+          outputSaving={workflow.outputSaving}
+          continueSubmitting={workflow.continueSubmitting}
+          workflowError={workflow.workflowError}
+          n1State={workflow.workflowState?.n1_state}
+          onSelectedOutputsChange={workflow.changeSelectedOutputs}
+          onContinue={workflow.continueN1}
         />
       ) : null}
 

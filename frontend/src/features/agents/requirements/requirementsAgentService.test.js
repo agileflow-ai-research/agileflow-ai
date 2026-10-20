@@ -4,6 +4,7 @@ import { apiClient } from '../../../services/apiClient.js'
 import * as requirementsAgentService from './requirementsAgentService.js'
 import {
   deleteRequirementSource,
+  continueRequirementN1,
   getRequirementAudioProcessingResult,
   getRequirementAudioProcessingStatus,
   getRequirementDocumentProcessingResult,
@@ -11,6 +12,7 @@ import {
   getNormalizedRequirementEvidence,
   getRequirementEvidenceChunks,
   getRequirementPreparationStatus,
+  getRequirementWorkflow,
   getRequirementVideoProcessingResult,
   getRequirementVideoProcessingStatus,
   listRequirementSources,
@@ -19,10 +21,11 @@ import {
   processRequirementVideo,
   prepareRequirementEvidence,
   uploadRequirementSource,
+  updateRequirementOutputs,
 } from './requirementsAgentService.js'
 
 vi.mock('../../../services/apiClient.js', () => ({
-  apiClient: { delete: vi.fn(), get: vi.fn(), post: vi.fn() },
+  apiClient: { delete: vi.fn(), get: vi.fn(), post: vi.fn(), put: vi.fn() },
 }))
 
 describe('requirementsAgentService source collection', () => {
@@ -35,6 +38,24 @@ describe('requirementsAgentService source collection', () => {
   it('lists persisted project sources with authentication', () => {
     listRequirementSources('AGP-007')
     expect(apiClient.get).toHaveBeenCalledWith('/agents/requirements/AGP-007/sources', { authenticated: true })
+  })
+
+  it('loads and updates authoritative workflow state and confirms N1', () => {
+    getRequirementWorkflow('AGP-007')
+    updateRequirementOutputs('AGP-007', ['SRS'])
+    continueRequirementN1('AGP-007')
+
+    expect(apiClient.get).toHaveBeenCalledWith('/agents/requirements/AGP-007/workflow', { authenticated: true })
+    expect(apiClient.put).toHaveBeenCalledWith(
+      '/agents/requirements/AGP-007/workflow/outputs',
+      { selected_outputs: ['SRS'] },
+      { authenticated: true },
+    )
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/requirements/AGP-007/workflow/n1/continue',
+      undefined,
+      { authenticated: true },
+    )
   })
 
   it('uploads a typed source as multipart form data', () => {

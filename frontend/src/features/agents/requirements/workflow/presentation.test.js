@@ -17,7 +17,7 @@ describe('requirements workflow presentation', () => {
     })
     expect(nodeState(result, REQUIREMENTS_NODE_IDS.INPUT_COLLECTION)).toBe(WORKFLOW_NODE_STATES.NOT_STARTED)
     expect(nodeState(result, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.NOT_STARTED)
-    expect(deriveRequirementsCurrentNodeId({ loadStatus: 'success', sources: [] })).toBe(REQUIREMENTS_NODE_IDS.INPUT_COLLECTION)
+    expect(deriveRequirementsCurrentNodeId({ loadStatus: 'success', workflowState: { n1_state: 'NOT_STARTED' } })).toBe(REQUIREMENTS_NODE_IDS.INPUT_COLLECTION)
   })
 
   it('does not complete N1 for malformed or unsupported persisted sources', () => {
@@ -46,9 +46,26 @@ describe('requirements workflow presentation', () => {
       sources: [source],
       processingStates: { 'DOC-001': { status: 'COMPLETED' } },
       preparationStates: { 'DOC-001': { status: 'COMPLETED', chunks: { chunks: [{ chunk_id: 'CHK-1' }] } } },
+      workflowState: { n1_state: 'COMPLETE' },
     })
     expect(nodeState(complete, REQUIREMENTS_NODE_IDS.INPUT_COLLECTION)).toBe(WORKFLOW_NODE_STATES.COMPLETE)
     expect(nodeState(complete, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.COMPLETE)
+  })
+
+  it('uses authoritative N1 gate state and presents the human gate as ready to continue', () => {
+    const waiting = deriveRequirementsWorkflowPresentation({
+      sources: [source],
+      processingStates: { 'DOC-001': { status: 'READY' } },
+      preparationStates: { 'DOC-001': { status: 'READY' } },
+      workflowState: { n1_state: 'WAITING_FOR_HUMAN' },
+    })
+    expect(waiting[REQUIREMENTS_NODE_IDS.INPUT_COLLECTION]).toMatchObject({
+      status: WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN,
+      statusLabel: 'Ready to Continue',
+    })
+    expect(deriveRequirementsCurrentNodeId({
+      loadStatus: 'success', workflowState: { n1_state: 'COMPLETE' },
+    })).toBe(REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)
   })
 
   it('propagates failures and permanently locks all unimplemented nodes', () => {

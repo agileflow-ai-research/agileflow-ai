@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   deleteRequirementSource,
+  continueRequirementN1,
   getNormalizedRequirementEvidence,
   getRequirementAudioProcessingResult,
   getRequirementAudioProcessingStatus,
@@ -9,6 +10,7 @@ import {
   getRequirementDocumentProcessingStatus,
   getRequirementEvidenceChunks,
   getRequirementPreparationStatus,
+  getRequirementWorkflow,
   getRequirementVideoProcessingResult,
   getRequirementVideoProcessingStatus,
   listRequirementSources,
@@ -17,6 +19,7 @@ import {
   processRequirementDocument,
   processRequirementVideo,
   uploadRequirementSource,
+  updateRequirementOutputs,
 } from '../requirementsAgentService.js'
 
 function processingClient(sourceType) {
@@ -50,6 +53,10 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
   const [removingId, setRemovingId] = useState(null)
   const [processingStates, setProcessingStates] = useState({})
   const [preparationStates, setPreparationStates] = useState({})
+  const [workflowState, setWorkflowState] = useState(null)
+  const [outputSaving, setOutputSaving] = useState(false)
+  const [continueSubmitting, setContinueSubmitting] = useState(false)
+  const [workflowError, setWorkflowError] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -58,10 +65,15 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
     setLoadStatus('loading')
     setError('')
 
-    void listRequirementSources(agentProjectId)
-      .then(async (response) => {
+    void Promise.all([
+      listRequirementSources(agentProjectId),
+      getRequirementWorkflow(agentProjectId),
+    ])
+      .then(async ([response, workflowResponse]) => {
         if (requestSequence.current !== requestId) return
         if (!Array.isArray(response?.data)) throw new Error('Invalid requirement sources response')
+        if (!workflowResponse?.data?.n1_state) throw new Error('Invalid requirements workflow response')
+        setWorkflowState(workflowResponse.data)
         const nextSources = response.data.filter((source) => (
           ['DOCUMENT', 'AUDIO', 'VIDEO'].includes(source.source_type)
         ))
@@ -147,6 +159,13 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
 
   const reload = useCallback(() => setReloadSequence((value) => value + 1), [])
 
+  async function refreshWorkflow() {
+    const response = await getRequirementWorkflow(agentProjectId)
+    if (!response?.data?.n1_state) throw new Error('Invalid requirements workflow response')
+    setWorkflowState(response.data)
+    return response.data
+  }
+
   async function addFiles(sourceType, fileList) {
     const files = Array.from(fileList ?? [])
     if (files.length === 0 || uploadingType) return
@@ -168,6 +187,7 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
           },
         }))
       }
+      await refreshWorkflow()
     } catch (requestError) {
       if (requestError?.status !== 401) {
         setError(errorMessage(requestError, 'One or more sources could not be uploaded.'))
@@ -194,6 +214,7 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
         delete next[sourceId]
         return next
       })
+      await refreshWorkflow()
     } catch (requestError) {
       if (requestError?.status !== 401) {
         setError(errorMessage(requestError, 'The source could not be removed.'))
@@ -358,8 +379,45 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
     }
   }
 
+  async function changeSelectedOutputs(selectedOutputs) {
+    if (outputSaving || selectedOutputs.length === 0) return
+    setOutputSaving(true)
+    setWorkflowError('')
+    try {
+      const response = await updateRequirementOutputs(agentProjectId, selectedOutputs)
+      if (!response?.data?.n1_state) throw new Error('Invalid requested outputs response')
+      setWorkflowState(response.data)
+    } catch (requestError) {
+      if (requestError?.status !== 401) {
+        setWorkflowError(errorMessage(requestError, 'Requested outputs could not be saved.'))
+      }
+    } finally {
+      setOutputSaving(false)
+    }
+  }
+
+  async function continueN1() {
+    if (continueSubmitting) return
+    setContinueSubmitting(true)
+    setWorkflowError('')
+    try {
+      const response = await continueRequirementN1(agentProjectId)
+      if (!response?.data?.n1_state) throw new Error('Invalid N1 confirmation response')
+      setWorkflowState(response.data)
+    } catch (requestError) {
+      if (requestError?.status !== 401) {
+        setWorkflowError(errorMessage(requestError, 'The requirements input could not be confirmed.'))
+      }
+    } finally {
+      setContinueSubmitting(false)
+    }
+  }
+
   return {
     addFiles,
+    changeSelectedOutputs,
+    continueN1,
+    continueSubmitting,
     error,
     loadPreparedEvidence,
     loadProcessingResult,
@@ -373,5 +431,8 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
     removingId,
     sources,
     uploadingType,
+    outputSaving,
+    workflowError,
+    workflowState,
   }
 }

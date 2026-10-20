@@ -37,6 +37,7 @@ vi.mock('../RequirementsWorkspace.jsx', () => ({
         onClick={() => onPresentationChange({
           loadStatus: 'success',
           sources: [{ source_id: 'DOC-001', source_type: 'DOCUMENT' }],
+          workflowState: { n1_state: 'COMPLETE', selected_outputs: ['SRS'] },
           processingStates: { 'DOC-001': { status: 'READY' } },
           preparationStates: { 'DOC-001': { status: 'READY' } },
         })}

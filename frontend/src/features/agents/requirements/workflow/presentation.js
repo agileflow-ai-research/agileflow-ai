@@ -14,6 +14,7 @@ export function deriveRequirementsWorkflowPresentation({
   sources,
   processingStates,
   preparationStates,
+  workflowState,
 }) {
   const sourceList = Array.isArray(sources)
     ? sources.filter(validSource)
@@ -48,20 +49,24 @@ export function deriveRequirementsWorkflowPresentation({
   else if (hasActiveWork || hasPersistedProgress) n2State = WORKFLOW_NODE_STATES.RUNNING
 
   const states = {
-    [REQUIREMENTS_NODE_IDS.INPUT_COLLECTION]: hasSources
-      ? WORKFLOW_NODE_STATES.COMPLETE
+    [REQUIREMENTS_NODE_IDS.INPUT_COLLECTION]: Object.values(WORKFLOW_NODE_STATES).includes(workflowState?.n1_state)
+      ? workflowState.n1_state
       : WORKFLOW_NODE_STATES.NOT_STARTED,
     [REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING]: n2State,
   }
 
   return Object.fromEntries(REQUIREMENTS_NODE_REGISTRY.map((definition) => [definition.id, {
     status: definition.active ? states[definition.id] : WORKFLOW_NODE_STATES.LOCKED,
+    ...(definition.id === REQUIREMENTS_NODE_IDS.INPUT_COLLECTION
+      && states[definition.id] === WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
+      ? { statusLabel: 'Ready to Continue' }
+      : {}),
     summary: definition.summary,
   }]))
 }
 
-export function deriveRequirementsCurrentNodeId({ loadStatus, sources }) {
-  return loadStatus === 'success' && Array.isArray(sources) && sources.some(validSource)
+export function deriveRequirementsCurrentNodeId({ loadStatus, workflowState }) {
+  return loadStatus === 'success' && workflowState?.n1_state === WORKFLOW_NODE_STATES.COMPLETE
     ? REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING
     : REQUIREMENTS_NODE_IDS.INPUT_COLLECTION
 }

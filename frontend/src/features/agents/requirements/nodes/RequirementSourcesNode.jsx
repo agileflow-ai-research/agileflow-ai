@@ -3,6 +3,8 @@ import { useRef } from 'react'
 import Button from '../../../../components/ui/Button.jsx'
 import Card from '../../../../components/ui/Card.jsx'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
+import OutputSelector from '../../../../components/agents/OutputSelector.jsx'
+import { REQUIREMENT_OUTPUT_OPTIONS } from '../workflow/outputDefinitions.js'
 
 const sourceActions = [
   { type: 'DOCUMENT', label: 'Add Documents', accept: '.pdf,.docx,.txt' },
@@ -14,7 +16,20 @@ function sourceLabel(value) {
   return value.charAt(0) + value.slice(1).toLowerCase()
 }
 
-function RequirementSourcesNode({ sources, uploadingType, removingId, onAddFiles, onRemoveSource }) {
+function RequirementSourcesNode({
+  sources,
+  uploadingType,
+  removingId,
+  selectedOutputs,
+  outputSaving,
+  continueSubmitting,
+  workflowError,
+  n1State,
+  onAddFiles,
+  onRemoveSource,
+  onSelectedOutputsChange,
+  onContinue,
+}) {
   const inputRefs = useRef({})
 
   async function addFiles(sourceType, files) {
@@ -96,6 +111,35 @@ function RequirementSourcesNode({ sources, uploadingType, removingId, onAddFiles
             ))}
           </div>
         )}
+      </section>
+
+      <section aria-label="Requested output selection" className="space-y-4 border-t border-default pt-5">
+        <div>
+          <p className="mt-1 text-sm text-content-secondary">
+            Choose the user-facing artifacts Agent 1 should produce later in the workflow.
+          </p>
+        </div>
+        <OutputSelector
+          label="Requested Outputs"
+          options={REQUIREMENT_OUTPUT_OPTIONS.map((option) => ({
+            ...option,
+            disabled: outputSaving || continueSubmitting,
+          }))}
+          selectedValues={selectedOutputs}
+          onChange={onSelectedOutputsChange}
+        />
+        {workflowError ? <p className="text-sm text-state-danger" role="alert">{workflowError}</p> : null}
+        {n1State === 'COMPLETE' ? (
+          <p className="text-sm text-state-success">The current sources and requested outputs are confirmed.</p>
+        ) : null}
+        <Button
+          loading={continueSubmitting}
+          loadingLabel="Confirming requirements input"
+          disabled={sources.length === 0 || selectedOutputs.length === 0 || outputSaving}
+          onClick={() => { void onContinue() }}
+        >
+          Continue — Process Evidence
+        </Button>
       </section>
     </section>
   )
