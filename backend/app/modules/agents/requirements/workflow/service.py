@@ -10,12 +10,19 @@ from app.modules.agents.requirements.workflow.constants import (
     REQUIREMENTS_WORKFLOW_VERSION,
     SOURCE_SET_CONTRACT_VERSION,
 )
-from app.modules.agents.requirements.workflow.schemas import (
+from app.modules.agents.requirements.workflow.contracts.n1 import (
     RequirementN1Confirmation,
-    RequirementN1State,
     RequirementOutputCode,
+)
+from app.modules.agents.requirements.workflow.contracts.record import (
     RequirementWorkflowRecord,
+)
+from app.modules.agents.requirements.workflow.contracts.responses import (
     RequirementWorkflowResponse,
+)
+from app.modules.agents.requirements.workflow.projection import (
+    build_workflow_response,
+    confirmation_is_current,
 )
 from app.modules.agents.requirements.workflow.storage import (
     WORKFLOW_STATE_LOCK,
@@ -91,7 +98,7 @@ class RequirementWorkflowService:
                 self._standalone, agent_project_id, current_user
             )
             record, sources = self._load_current(project.agent_project_id, current_user)
-            return self._response(record, len(sources))
+            return build_workflow_response(record, len(sources))
 
     def update_outputs(
         self,
@@ -115,7 +122,7 @@ class RequirementWorkflowService:
                     }
                 )
                 self._workflow.save(record)
-            return self._response(record, len(sources))
+            return build_workflow_response(record, len(sources))
 
     def continue_n1(
         self, agent_project_id: str, current_user: UserPublicResponse
@@ -134,7 +141,7 @@ class RequirementWorkflowService:
                     "Select at least one requested output before continuing"
                 )
             confirmation = record.n1_confirmation
-            if not self._confirmation_current(record):
+            if not confirmation_is_current(record):
                 now = self._clock()
                 record = record.model_copy(
                     update={
@@ -149,7 +156,7 @@ class RequirementWorkflowService:
                 self._workflow.save(record)
             elif confirmation is None:  # pragma: no cover - defensive invariant
                 raise RequirementWorkflowGateError("N1 confirmation is unavailable")
-            return self._response(record, len(sources))
+            return build_workflow_response(record, len(sources))
 
     def _load_current(self, agent_project_id: str, current_user: UserPublicResponse):
         sources = self._sources.list_for_project(
@@ -203,65 +210,3 @@ class RequirementWorkflowService:
             )
             self._workflow.save(record)
         return record, sources
-
-    @staticmethod
-    def _confirmation_current(record: RequirementWorkflowRecord) -> bool:
-        confirmation = record.n1_confirmation
-        return bool(
-            confirmation
-            and confirmation.source_set_digest == record.source_set_digest
-            and confirmation.selection_digest == record.selection_digest
-        )
-
-    def _response(
-        self, record: RequirementWorkflowRecord, source_count: int
-    ) -> RequirementWorkflowResponse:
-        current = self._confirmation_current(record)
-        if source_count == 0 or not record.selected_outputs:
-            state = RequirementN1State.NOT_STARTED
-        elif current:
-            state = RequirementN1State.COMPLETE
-        else:
-            state = RequirementN1State.WAITING_FOR_HUMAN
-        confirmation = record.n1_confirmation
-        execution = next(
-            (
-                item
-                for item in reversed(record.n2_executions)
-                if item.execution_id == record.current_n2_execution_id
-            ),
-            None,
-        )
-        n2_is_current = bool(
-            current
-            and execution
-            and confirmation
-            and execution.confirmed_source_set_digest
-            == confirmation.source_set_digest
-            and execution.confirmed_selection_digest
-            == confirmation.selection_digest
-        )
-        return RequirementWorkflowResponse(
-            schema_version=record.schema_version,
-            workflow_version=record.workflow_version,
-            agent_project_id=record.agent_project_id,
-            selected_outputs=record.selected_outputs,
-            selection_revision=record.selection_revision,
-            selection_digest=record.selection_digest,
-            source_set_digest=record.source_set_digest,
-            source_count=source_count,
-            n1_state=state,
-            n1_confirmation_current=current,
-            confirmed_source_set_digest=(
-                confirmation.source_set_digest if confirmation else None
-            ),
-            confirmed_selection_digest=(
-                confirmation.selection_digest if confirmation else None
-            ),
-            confirmed_at=confirmation.confirmed_at if confirmation else None,
-            n2_execution=execution,
-            n2_is_current=n2_is_current,
-            n2_execution_count=len(record.n2_executions),
-            created_at=record.created_at,
-            updated_at=record.updated_at,
-        )

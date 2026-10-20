@@ -14,7 +14,7 @@ from app.modules.agents.requirements.workflow.constants import (
     N2_ORCHESTRATION_CONTRACT_VERSION,
 )
 from app.modules.agents.requirements.workflow.executor import AGENT1_N2_EXECUTOR
-from app.modules.agents.requirements.workflow.schemas import (
+from app.modules.agents.requirements.workflow.contracts.n2 import (
     RequirementN2Error,
     RequirementN2Execution,
     RequirementN2ResultSummary,
@@ -22,8 +22,16 @@ from app.modules.agents.requirements.workflow.schemas import (
     RequirementN2SourceSnapshot,
     RequirementN2SourceStatus,
     RequirementN2Status,
+)
+from app.modules.agents.requirements.workflow.contracts.record import (
     RequirementWorkflowRecord,
+)
+from app.modules.agents.requirements.workflow.contracts.responses import (
     RequirementWorkflowResponse,
+)
+from app.modules.agents.requirements.workflow.projection import (
+    build_workflow_response,
+    confirmation_is_current,
 )
 from app.modules.agents.requirements.workflow.service import (
     RequirementWorkflowGateError,
@@ -127,7 +135,7 @@ class RequirementN2OrchestrationService:
                     )
                     record.updated_at = self._clock()
                     self._states.save(record)
-            return self._workflow._response(record, source_count)
+            return build_workflow_response(record, source_count)
 
     def continue_n1_and_start(
         self, agent_project_id: str, current_user: UserPublicResponse
@@ -136,7 +144,7 @@ class RequirementN2OrchestrationService:
             self._workflow.continue_n1(agent_project_id, current_user)
             record, source_count = self._load_record(agent_project_id, current_user)
             confirmation = record.n1_confirmation
-            if not confirmation or not self._workflow._confirmation_current(record):
+            if not confirmation or not confirmation_is_current(record):
                 raise RequirementWorkflowGateError(
                     "N1 confirmation is stale; confirm the current inputs before starting N2"
                 )
@@ -152,7 +160,7 @@ class RequirementN2OrchestrationService:
             if existing is not None:
                 record.current_n2_execution_id = existing.execution_id
                 self._states.save(record)
-                return self._workflow._response(record, source_count)
+                return build_workflow_response(record, source_count)
             sources = self._sources.list_for_project(
                 agent_project_id=agent_project_id,
                 owner_user_id=current_user.user_id,
@@ -167,7 +175,7 @@ class RequirementN2OrchestrationService:
             record.updated_at = self._clock()
             self._states.save(record)
             self._submit(record, execution, current_user)
-            return self._workflow._response(record, source_count)
+            return build_workflow_response(record, source_count)
 
     def retry(
         self, agent_project_id: str, current_user: UserPublicResponse
@@ -181,7 +189,7 @@ class RequirementN2OrchestrationService:
             confirmation = record.n1_confirmation
             if (
                 not confirmation
-                or not self._workflow._confirmation_current(record)
+                or not confirmation_is_current(record)
                 or previous.confirmed_source_set_digest != confirmation.source_set_digest
                 or previous.confirmed_selection_digest != confirmation.selection_digest
             ):
@@ -193,7 +201,7 @@ class RequirementN2OrchestrationService:
                 RequirementN2Status.RUNNING,
                 RequirementN2Status.COMPLETE,
             }:
-                return self._workflow._response(record, source_count)
+                return build_workflow_response(record, source_count)
             sources = self._sources.list_for_project(
                 agent_project_id=agent_project_id,
                 owner_user_id=current_user.user_id,
@@ -213,7 +221,7 @@ class RequirementN2OrchestrationService:
             record.updated_at = self._clock()
             self._states.save(record)
             self._submit(record, execution, current_user)
-            return self._workflow._response(record, source_count)
+            return build_workflow_response(record, source_count)
 
     def _submit(
         self,

@@ -36,6 +36,7 @@ from test_agent1_video_processing import (
     FakeSpeechToTextProvider,
     FakeVideoAudioExtractor,
 )
+from test_agent1_workflow import assert_workflow_response_contract
 from test_standalone_foundation import FakeAgentProjectRepository, FakeAgentRunRepository
 
 
@@ -240,6 +241,7 @@ def test_processing_failure_stops_and_retry_reuses_same_logical_key(w2_context):
     assert "provider details" not in failed["error"]["message"]
     retry = client.post(f"/api/v1/agents/requirements/{project_id}/workflow/n2/retry")
     assert retry.status_code == 200
+    assert_workflow_response_contract(retry)
     retried = retry.json()["data"]["n2_execution"]
     assert retried["execution_key"] == failed["execution_key"]
     assert retried["attempt_number"] == 2

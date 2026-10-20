@@ -17,15 +17,19 @@ from app.modules.agents.requirements.workflow.orchestration import (
     n2_chunk_set_digest,
     n2_execution_key,
 )
-from app.modules.agents.requirements.workflow.schemas import (
+from app.modules.agents.requirements.workflow.contracts.n1 import (
     RequirementN1Confirmation,
+    RequirementOutputCode,
+)
+from app.modules.agents.requirements.workflow.contracts.n2 import (
     RequirementN2Execution,
     RequirementN2ResultSummary,
     RequirementN2SourceProgress,
     RequirementN2SourceSnapshot,
     RequirementN2SourceStatus,
     RequirementN2Status,
-    RequirementOutputCode,
+)
+from app.modules.agents.requirements.workflow.contracts.record import (
     RequirementWorkflowRecord,
 )
 from app.modules.agents.requirements.workflow.service import (

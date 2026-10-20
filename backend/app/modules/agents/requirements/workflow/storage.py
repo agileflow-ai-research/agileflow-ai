@@ -5,7 +5,9 @@ from app.modules.agents.requirements.infrastructure.sidecar import (
     load_model_sidecar,
     save_model_sidecar,
 )
-from app.modules.agents.requirements.workflow.schemas import RequirementWorkflowRecord
+from app.modules.agents.requirements.workflow.contracts.record import (
+    RequirementWorkflowRecord,
+)
 
 
 WORKFLOW_STATE_LOCK = RLock()

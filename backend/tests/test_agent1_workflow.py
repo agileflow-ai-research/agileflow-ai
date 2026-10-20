@@ -12,7 +12,7 @@ from app.modules.agents.requirements.contracts.schemas import (
     RequirementSourceType,
 )
 from app.modules.agents.requirements.infrastructure.storage import RequirementSourceStorage
-from app.modules.agents.requirements.workflow.schemas import RequirementOutputCode
+from app.modules.agents.requirements.workflow.contracts.n1 import RequirementOutputCode
 from app.modules.agents.requirements.workflow.service import (
     selection_digest,
     source_set_digest,
@@ -26,6 +26,40 @@ from test_standalone_foundation import FakeAgentProjectRepository, FakeAgentRunR
 
 
 TXT = b"Stakeholders need secure appointment booking."
+WORKFLOW_RESPONSE_FIELDS = {
+    "schema_version",
+    "workflow_version",
+    "agent_project_id",
+    "selected_outputs",
+    "selection_revision",
+    "selection_digest",
+    "source_set_digest",
+    "source_count",
+    "n1_state",
+    "n1_confirmation_current",
+    "confirmed_source_set_digest",
+    "confirmed_selection_digest",
+    "confirmed_at",
+    "n2_execution",
+    "n2_is_current",
+    "n2_execution_count",
+    "created_at",
+    "updated_at",
+}
+API_RESPONSE_FIELDS = {
+    "success",
+    "message",
+    "data",
+    "errors",
+    "workflow_stage",
+    "next_action",
+}
+
+
+def assert_workflow_response_contract(response):
+    body = response.json()
+    assert set(body) == API_RESPONSE_FIELDS
+    assert set(body["data"]) == WORKFLOW_RESPONSE_FIELDS
 
 
 @pytest.fixture
@@ -136,6 +170,7 @@ def test_selection_persists_sorted_and_revision_changes_only_for_real_change(wor
         client, project_id, ["SRS", "FUNCTIONAL_REQUIREMENTS"]
     )
     assert first.status_code == 200
+    assert_workflow_response_contract(first)
     first_data = first.json()["data"]
     assert first_data["selected_outputs"] == ["FUNCTIONAL_REQUIREMENTS", "SRS"]
     assert first_data["selection_revision"] == 1
@@ -149,6 +184,7 @@ def test_selection_persists_sorted_and_revision_changes_only_for_real_change(wor
     app.dependency_overrides[get_requirement_workflow_storage] = lambda: RequirementWorkflowStorage(tmp_path)
     reloaded = client.get(workflow_url(project_id))
     assert reloaded.status_code == 200
+    assert_workflow_response_contract(reloaded)
     assert reloaded.json()["data"]["selected_outputs"] == ["FUNCTIONAL_REQUIREMENTS", "SRS"]
 
 
@@ -181,6 +217,7 @@ def test_continue_is_idempotent_and_input_changes_make_confirmation_stale(workfl
     first = client.post(f"{workflow_url(project_id)}/n1/continue")
     second = client.post(f"{workflow_url(project_id)}/n1/continue")
     assert first.status_code == second.status_code == 200
+    assert_workflow_response_contract(first)
     assert first.json()["data"]["n1_state"] == "COMPLETE"
     assert first.json()["data"]["confirmed_at"] == second.json()["data"]["confirmed_at"]
     assert runs.documents == {}
