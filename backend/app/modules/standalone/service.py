@@ -92,6 +92,7 @@ class StandaloneService:
                 ),
                 owner_user_id=current_user.user_id,
                 agent_type=request.agent_type,
+                agent_stage=request.agent_stage,
                 name=request.name,
                 description=request.description,
                 domain=request.domain,

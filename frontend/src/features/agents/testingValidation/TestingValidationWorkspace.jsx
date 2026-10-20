@@ -62,9 +62,14 @@ function emptyInput(fields) {
 }
 
 function TestingValidationWorkspace({ project, onRunCompleted }) {
-  const [mode, setMode] = useState(null)
+  const configuredStage = project.agent_stage ?? null
+  const [mode, setMode] = useState(
+    configuredStage === 'TEST_GENERATION' ? 'TEST_GENERATION' : null,
+  )
   const [step, setStep] = useState(0)
-  const [input, setInput] = useState({})
+  const [input, setInput] = useState(
+    configuredStage === 'TEST_GENERATION' ? emptyInput(generationFields) : {},
+  )
   const [selectedOutputs, setSelectedOutputs] = useState([])
   const [error, setError] = useState('')
   const [runState, setRunState] = useState('idle')
@@ -130,6 +135,15 @@ function TestingValidationWorkspace({ project, onRunCompleted }) {
     }
   }
 
+  if (configuredStage === 'VALIDATION') {
+    return (
+      <section aria-labelledby="agent4-stage-unavailable-title" className="space-y-2">
+        <h3 id="agent4-stage-unavailable-title" className="text-card-heading font-semibold text-content-primary">Testing &amp; Validation</h3>
+        <p className="text-sm text-content-secondary">Coming Soon. Stage 2 execution and validation are not available yet.</p>
+      </section>
+    )
+  }
+
   if (!mode) {
     return (
       <section aria-labelledby="agent4-mode-title" className="space-y-4">
@@ -141,7 +155,7 @@ function TestingValidationWorkspace({ project, onRunCompleted }) {
 
   if (runState === 'running') return <ProcessingState status="RUNNING" title={mode === 'TEST_GENERATION' ? 'Generating test specifications' : 'Executing validation pipeline'} description={mode === 'TEST_GENERATION' ? 'Agent 4 is generating and structurally validating selected tests.' : 'Agent 4 is preparing a controlled workspace, executing applicable tools, and collecting evidence.'} />
 
-  if (result) return <TestingValidationResults runMode={result.run_mode} outputs={result.outputs} title={result.status === 'COMPLETED' ? (result.run_mode === 'TEST_GENERATION' ? 'Generated test results' : 'Testing and validation evidence') : 'Agent 4 run failed'} warnings={(result.warnings ?? []).map((item) => item.message)} errors={(result.errors ?? []).map((item) => `${item.code}: ${item.message}`)} actions={<Button variant="outline" onClick={() => { setResult(null); setRunState('idle'); setMode(null) }}>Start another run</Button>} />
+  if (result) return <TestingValidationResults runMode={result.run_mode} outputs={result.outputs} title={result.status === 'COMPLETED' ? (result.run_mode === 'TEST_GENERATION' ? 'Generated test results' : 'Testing and validation evidence') : 'Agent 4 run failed'} warnings={(result.warnings ?? []).map((item) => item.message)} errors={(result.errors ?? []).map((item) => `${item.code}: ${item.message}`)} actions={<Button variant="outline" onClick={() => { setResult(null); setRunState('idle'); if (!configuredStage) setMode(null) }}>Start another run</Button>} />
 
   const fields = mode === 'TEST_GENERATION' ? generationFields : validationFields
   const options = mode === 'TEST_GENERATION' ? generationOutputs : validationOutputs
@@ -151,9 +165,9 @@ function TestingValidationWorkspace({ project, onRunCompleted }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3"><p className="font-semibold text-content-primary">Mode: {modePresentation[mode].label}</p><Button variant="ghost" size="small" onClick={() => setMode(null)}>Change mode</Button></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><p className="font-semibold text-content-primary">Mode: {modePresentation[mode].label}</p>{configuredStage ? null : <Button variant="ghost" size="small" onClick={() => setMode(null)}>Change mode</Button>}</div>
       {error && <p role="alert" className="text-sm text-state-danger">{error}</p>}
-      <AgentInputWizard steps={steps} currentStep={step} onBack={step > 0 ? () => setStep((current) => current - 1) : () => setMode(null)} onNext={step < 2 ? next : execute} nextLabel={step === 2 ? 'Run Agent' : 'Next'}>
+      <AgentInputWizard steps={steps} currentStep={step} onBack={step > 0 ? () => setStep((current) => current - 1) : (configuredStage ? undefined : () => setMode(null))} onNext={step < 2 ? next : execute} nextLabel={step === 2 ? 'Run Agent' : 'Next'}>
         {step === 0 && <div className="grid gap-5 sm:grid-cols-2">{mode === 'VALIDATION' && <Select label="Validation profile" placeholder="" value={input.validation_profile ?? ''} options={validationProfileOptions} onChange={(event) => updateField('validation_profile', event.target.value)} helperText="Executable validation uses fixed commands in a network-disabled Docker sandbox. No profile runs static analysis only." />}{inputFields.map(([name, label], index) => <Textarea key={name} label={label} rows={index === 0 ? 8 : 4} value={input[name] ?? ''} onChange={(event) => updateField(name, event.target.value)} helperText={name === 'existing_source_code' ? 'Executable test code also requires a technology stack. Generated code is not execution evidence.' : undefined} />)}</div>}
         {step === 1 && <OutputSelector options={options} selectedValues={selectedOutputs} onChange={(values) => { setSelectedOutputs(values); setError('') }} />}
         {step === 2 && <RunReview project={project} mode={modePresentation[mode]} selectedOutputs={selectedOutputs} sections={reviewSections} />}

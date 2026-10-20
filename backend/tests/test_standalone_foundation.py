@@ -26,6 +26,7 @@ from app.modules.standalone.schemas import (
     AgentRunMessage,
     AgentRunMode,
     AgentRunStatus,
+    AgentStage,
     AgentType,
 )
 from app.modules.standalone.service import (
@@ -254,9 +255,16 @@ def standalone_client(authentication_context, standalone_repositories):
 def create_request(
     agent_type: AgentType = AgentType.REQUIREMENTS,
     name: str = "Standalone project",
+    agent_stage: AgentStage | None = None,
 ) -> AgentProjectCreateRequest:
     return AgentProjectCreateRequest(
         agent_type=agent_type,
+        agent_stage=(
+            AgentStage.TEST_GENERATION
+            if agent_type is AgentType.TESTING_VALIDATION
+            and agent_stage is None
+            else agent_stage
+        ),
         name=name,
         domain="Education",
     )
@@ -295,6 +303,10 @@ def test_standalone_enum_values_are_exact() -> None:
         "ACTIVE",
         "ARCHIVED",
     ]
+    assert [item.value for item in AgentStage] == [
+        "TEST_GENERATION",
+        "VALIDATION",
+    ]
     assert [item.value for item in AgentRunStatus] == [
         "QUEUED",
         "RUNNING",
@@ -323,10 +335,102 @@ def test_create_each_agent_project_type(
     project = create_project(standalone_service, agent_type)
 
     assert project.agent_type is agent_type
+    assert project.agent_stage is (
+        AgentStage.TEST_GENERATION
+        if agent_type is AgentType.TESTING_VALIDATION
+        else None
+    )
     assert project.owner_user_id == "USR-001"
     assert project.status is AgentProjectStatus.ACTIVE
     assert project.description == ""
     assert project.created_at == project.updated_at
+
+
+def test_testing_validation_creation_requires_available_stage(
+    standalone_client,
+) -> None:
+    client, projects, _ = standalone_client
+    base = {
+        "agent_type": "TESTING_VALIDATION",
+        "name": "Quality project",
+        "domain": "Fintech",
+    }
+
+    missing = client.post("/api/v1/agent-projects", json=base)
+    unavailable = client.post(
+        "/api/v1/agent-projects",
+        json={**base, "agent_stage": "VALIDATION"},
+    )
+    created = client.post(
+        "/api/v1/agent-projects",
+        json={**base, "agent_stage": "TEST_GENERATION"},
+    )
+
+    assert missing.status_code == 422
+    assert "agent_stage is required" in missing.text
+    assert unavailable.status_code == 422
+    assert "VALIDATION stage is not available yet" in unavailable.text
+    assert created.status_code == 201
+    assert created.json()["data"]["agent_stage"] == "TEST_GENERATION"
+    assert projects.documents["AGP-001"]["agent_stage"] is AgentStage.TEST_GENERATION
+
+
+@pytest.mark.parametrize(
+    "agent_type",
+    ["REQUIREMENTS", "DESIGN_PLANNING", "IMPLEMENTATION"],
+)
+def test_non_testing_project_rejects_agent_stage(
+    standalone_client,
+    agent_type: str,
+) -> None:
+    client, projects, _ = standalone_client
+    response = client.post(
+        "/api/v1/agent-projects",
+        json={
+            **CREATE_PAYLOAD,
+            "agent_type": agent_type,
+            "agent_stage": "TEST_GENERATION",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "only valid for TESTING_VALIDATION" in response.text
+    assert projects.documents == {}
+
+
+@pytest.mark.parametrize(
+    "agent_type",
+    ["REQUIREMENTS", "DESIGN_PLANNING", "IMPLEMENTATION"],
+)
+def test_non_testing_project_creation_omits_agent_stage(
+    standalone_client,
+    agent_type: str,
+) -> None:
+    client, _, _ = standalone_client
+    response = client.post(
+        "/api/v1/agent-projects",
+        json={**CREATE_PAYLOAD, "agent_type": agent_type},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["agent_stage"] is None
+
+
+def test_legacy_testing_validation_project_has_no_silent_stage_default() -> None:
+    project = AgentProject.model_validate(
+        {
+            "agent_project_id": "AGP-001",
+            "owner_user_id": "USR-001",
+            "agent_type": "TESTING_VALIDATION",
+            "name": "Legacy quality project",
+            "domain": "Fintech",
+            "created_at": NOW,
+            "updated_at": NOW,
+        }
+    )
+
+    assert project.agent_stage is None
+    assert project.model_dump(mode="json")["agent_stage"] is None
 
 
 def test_project_allocation_ignores_unrelated_identifiers(
@@ -462,6 +566,7 @@ def test_patch_updates_only_mutable_fields_and_timestamp(
     assert updated.description == "Updated description"
     assert updated.domain == "Updated domain"
     assert updated.agent_type is project.agent_type
+    assert updated.agent_stage is project.agent_stage
     assert updated.owner_user_id == project.owner_user_id
     assert updated.created_at == project.created_at
     assert updated.updated_at > project.updated_at
@@ -473,6 +578,7 @@ def test_patch_updates_only_mutable_fields_and_timestamp(
         ("agent_project_id", "AGP-999"),
         ("owner_user_id", "USR-002"),
         ("agent_type", "IMPLEMENTATION"),
+        ("agent_stage", "VALIDATION"),
         ("created_at", "2026-10-14T09:00:00Z"),
         ("updated_at", "2026-10-14T09:00:00Z"),
     ],
@@ -923,6 +1029,7 @@ def test_openapi_create_and_update_hide_protected_fields() -> None:
 
     assert set(create_properties) == {
         "agent_type",
+        "agent_stage",
         "name",
         "domain",
         "description",
@@ -932,10 +1039,16 @@ def test_openapi_create_and_update_hide_protected_fields() -> None:
         "agent_project_id",
         "owner_user_id",
         "agent_type",
+        "agent_stage",
         "created_at",
         "updated_at",
     ):
         assert protected not in update_properties
+
+    assert set(schemas["AgentStage"]["enum"]) == {
+        "TEST_GENERATION",
+        "VALIDATION",
+    }
 
 
 def test_repository_classes_use_only_standalone_collections() -> None:

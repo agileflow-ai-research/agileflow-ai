@@ -162,11 +162,18 @@ describe('AppLayout', () => {
 
     await user.type(screen.getByRole('textbox', { name: /project name/i }), name)
     await user.type(screen.getByRole('textbox', { name: /domain/i }), 'SaaS')
+    if (agentType === 'TESTING_VALIDATION') {
+      await user.click(screen.getByRole('radio', { name: /Test Generation/i }))
+    }
     await user.click(screen.getByRole('button', { name: 'Create Project' }))
 
     expect(await screen.findByRole('heading', { name: 'Agent project' })).toBeInTheDocument()
     expect(createAgentProject).toHaveBeenCalledWith({
-      agentType, name, domain: 'SaaS', description: '',
+      agentType,
+      name,
+      domain: 'SaaS',
+      description: '',
+      ...(agentType === 'TESTING_VALIDATION' ? { agentStage: 'TEST_GENERATION' } : {}),
     })
     expect(getAgentProjects).toHaveBeenCalledTimes(2)
     expect(screen.getByRole('link', { name: new RegExp(name) })).toHaveAttribute(

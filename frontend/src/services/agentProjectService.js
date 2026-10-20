@@ -2,12 +2,13 @@ import { apiClient } from './apiClient.js'
 
 const basePath = '/agent-projects'
 
-export function createAgentProject({ agentType, name, domain, description }) {
+export function createAgentProject({ agentType, agentStage, name, domain, description }) {
   const payload = {
     agent_type: agentType,
     name,
     domain,
   }
+  if (agentType === 'TESTING_VALIDATION' && agentStage) payload.agent_stage = agentStage
   const normalizedDescription = description?.trim()
   if (normalizedDescription) payload.description = normalizedDescription
 

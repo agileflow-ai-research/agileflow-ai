@@ -14,6 +14,11 @@ const project = {
   name: 'Quality Gate', domain: 'Fintech',
 }
 
+const testGenerationProject = {
+  ...project,
+  agent_stage: 'TEST_GENERATION',
+}
+
 describe('TestingValidationWorkspace', () => {
   beforeEach(() => vi.clearAllMocks())
 
@@ -22,6 +27,21 @@ describe('TestingValidationWorkspace', () => {
     expect(screen.getByRole('button', { name: /Test Case Generation/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Testing & Validation/ })).toBeInTheDocument()
     expect(screen.queryByLabelText('Requirements')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Source Code or Project')).not.toBeInTheDocument()
+  })
+
+  it('uses a configured Test Generation stage without asking for another mode', () => {
+    render(<TestingValidationWorkspace project={testGenerationProject} />)
+    expect(screen.getByLabelText('Requirements')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Test Case Generation/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Testing & Validation/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Change mode' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled()
+  })
+
+  it('does not expose Stage 2 controls for a configured Validation stage', () => {
+    render(<TestingValidationWorkspace project={{ ...project, agent_stage: 'VALIDATION' }} />)
+    expect(screen.getByText(/Coming Soon/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Source Code or Project')).not.toBeInTheDocument()
   })
 

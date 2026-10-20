@@ -91,9 +91,12 @@ def agent4_context(authentication_context):
 
 
 def create_project(client, agent_type="TESTING_VALIDATION"):
-    response = client.post("/api/v1/agent-projects", json={
+    payload = {
         "agent_type": agent_type, "name": "Quality Gate", "domain": "Fintech",
-    })
+    }
+    if agent_type == "TESTING_VALIDATION":
+        payload["agent_stage"] = "TEST_GENERATION"
+    response = client.post("/api/v1/agent-projects", json=payload)
     assert response.status_code == 201
     return response.json()["data"]
 
