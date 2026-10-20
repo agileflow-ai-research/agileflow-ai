@@ -1,6 +1,11 @@
 from pathlib import Path
 from threading import RLock
 
+from app.modules.agents.requirements.infrastructure.artifact_paths import (
+    ArtifactPathError,
+    RequirementArtifactKind,
+    RequirementArtifactPaths,
+)
 from app.modules.agents.requirements.infrastructure.sidecar import (
     load_model_sidecar,
     save_model_sidecar,
@@ -19,7 +24,7 @@ class RequirementWorkflowStorageError(RuntimeError):
 
 class RequirementWorkflowStorage:
     def __init__(self, root: Path) -> None:
-        self._root = Path(root)
+        self._artifact_paths = RequirementArtifactPaths(root)
 
     def load(
         self, *, agent_project_id: str, owner_user_id: str
@@ -52,18 +57,12 @@ class RequirementWorkflowStorage:
             failure_message="Requirement workflow could not be persisted",
         )
 
-    def _project_directory(self, agent_project_id: str) -> Path:
-        return self._contained(self._root, agent_project_id)
-
     def _workflow_path(self, agent_project_id: str) -> Path:
-        return self._contained(
-            self._project_directory(agent_project_id), "workflow.json"
-        )
-
-    @staticmethod
-    def _contained(directory: Path, filename: str) -> Path:
-        directory = directory.resolve()
-        candidate = (directory / filename).resolve()
-        if candidate.parent != directory:
-            raise RequirementWorkflowStorageError("Unsafe workflow storage path")
-        return candidate
+        try:
+            return self._artifact_paths.for_project(
+                agent_project_id, RequirementArtifactKind.WORKFLOW
+            )
+        except ArtifactPathError as exc:
+            raise RequirementWorkflowStorageError(
+                "Unsafe workflow storage path"
+            ) from exc

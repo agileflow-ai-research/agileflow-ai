@@ -1,6 +1,5 @@
 import hashlib
 import json
-import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +12,12 @@ from pydantic import ValidationError
 from app.modules.agents.requirements.contracts.schemas import (
     RequirementSourceMetadata,
     RequirementSourceType,
+)
+from app.modules.agents.requirements.infrastructure.artifact_paths import (
+    ArtifactPathError,
+    RequirementArtifactKind,
+    RequirementArtifactPaths,
+    SOURCE_ID_PATTERN,
 )
 
 
@@ -57,7 +62,6 @@ DECLARED_MIME_TYPES[".wav"] = frozenset(
 DECLARED_MIME_TYPES[".m4a"] = frozenset(
     {"audio/mp4", "audio/x-m4a", "application/octet-stream"}
 )
-SOURCE_ID_PATTERN = re.compile(r"^(DOC|AUD|VID)-(\d{3,})$")
 _ALLOCATION_LOCK = Lock()
 
 
@@ -75,6 +79,8 @@ class SourceStorageError(RuntimeError):
 
 @dataclass(frozen=True)
 class StoredRequirementSource:
+    """Compatibility view for N1/N2; future nodes must use artifact storage."""
+
     metadata: RequirementSourceMetadata
     file_path: Path
     processing_path: Path
@@ -103,7 +109,7 @@ def utc_now() -> datetime:
 
 class RequirementSourceStorage:
     def __init__(self, root: Path, clock=utc_now) -> None:
-        self._root = Path(root)
+        self._artifact_paths = RequirementArtifactPaths(root)
         self._clock = clock
 
     async def store(
@@ -128,16 +134,30 @@ class RequirementSourceStorage:
             project_directory.mkdir(parents=True, exist_ok=True)
             with _ALLOCATION_LOCK:
                 source_id = self._next_source_id(project_directory, source_type)
-                stored_path = self._contained(project_directory, f"{source_id}{extension}")
-                partial_path = self._contained(
-                    project_directory, f"{source_id}{extension}.part"
+                stored_path = self._source_artifact_path(
+                    agent_project_id,
+                    source_id,
+                    RequirementArtifactKind.UPLOADED_SOURCE,
+                    extension=extension,
+                )
+                partial_path = self._source_artifact_path(
+                    agent_project_id,
+                    source_id,
+                    RequirementArtifactKind.UPLOADED_SOURCE,
+                    extension=extension,
+                    partial=True,
                 )
                 partial_path.touch(exist_ok=False)
-            metadata_path = self._contained(
-                project_directory, f"{source_id}.metadata.json"
+            metadata_path = self._source_artifact_path(
+                agent_project_id,
+                source_id,
+                RequirementArtifactKind.SOURCE_METADATA,
             )
-            metadata_partial_path = self._contained(
-                project_directory, f"{source_id}.metadata.json.part"
+            metadata_partial_path = self._source_artifact_path(
+                agent_project_id,
+                source_id,
+                RequirementArtifactKind.SOURCE_METADATA,
+                partial=True,
             )
             digest = hashlib.sha256()
             size_bytes = 0
@@ -204,8 +224,11 @@ class RequirementSourceStorage:
                 metadata = self._load_metadata(
                     metadata_path, agent_project_id, owner_user_id, source_id
                 )
-                stored_path = self._contained(
-                    project_directory, f"{source_id}{metadata.extension}"
+                stored_path = self._source_artifact_path(
+                    agent_project_id,
+                    source_id,
+                    RequirementArtifactKind.UPLOADED_SOURCE,
+                    extension=metadata.extension,
                 )
                 if not stored_path.is_file():
                     raise SourceStorageError(
@@ -227,91 +250,21 @@ class RequirementSourceStorage:
     ) -> None:
         if not SOURCE_ID_PATTERN.fullmatch(source_id):
             raise SourceNotFoundError(source_id)
-        project_directory = self._project_directory(agent_project_id)
-        metadata_path = self._contained(
-            project_directory, f"{source_id}.metadata.json"
+        metadata_path = self._source_artifact_path(
+            agent_project_id,
+            source_id,
+            RequirementArtifactKind.SOURCE_METADATA,
         )
         metadata = self._load_metadata(
             metadata_path, agent_project_id, owner_user_id, source_id
         )
-        stored_path = self._contained(
-            project_directory, f"{source_id}{metadata.extension}"
-        )
-        processing_path = self._contained(
-            project_directory, f"{source_id}.document-processing.json"
-        )
-        processing_partial_path = self._contained(
-            project_directory, f"{source_id}.document-processing.json.part"
-        )
-        result_path = self._contained(
-            project_directory, f"{source_id}.document-result.json"
-        )
-        result_partial_path = self._contained(
-            project_directory, f"{source_id}.document-result.json.part"
-        )
-        audio_processing_path = self._contained(
-            project_directory, f"{source_id}.audio-processing.json"
-        )
-        audio_processing_partial_path = self._contained(
-            project_directory, f"{source_id}.audio-processing.json.part"
-        )
-        audio_result_path = self._contained(
-            project_directory, f"{source_id}.audio-result.json"
-        )
-        audio_result_partial_path = self._contained(
-            project_directory, f"{source_id}.audio-result.json.part"
-        )
-        video_processing_path = self._contained(
-            project_directory, f"{source_id}.video-processing.json"
-        )
-        video_processing_partial_path = self._contained(
-            project_directory, f"{source_id}.video-processing.json.part"
-        )
-        video_result_path = self._contained(
-            project_directory, f"{source_id}.video-result.json"
-        )
-        video_result_partial_path = self._contained(
-            project_directory, f"{source_id}.video-result.json.part"
-        )
-        preparation_path = self._contained(
-            project_directory, f"{source_id}.evidence-preparation.json"
-        )
-        preparation_partial_path = self._contained(
-            project_directory, f"{source_id}.evidence-preparation.json.part"
-        )
-        normalized_result_path = self._contained(
-            project_directory, f"{source_id}.normalized-result.json"
-        )
-        normalized_result_partial_path = self._contained(
-            project_directory, f"{source_id}.normalized-result.json.part"
-        )
-        chunk_result_path = self._contained(
-            project_directory, f"{source_id}.chunk-result.json"
-        )
-        chunk_result_partial_path = self._contained(
-            project_directory, f"{source_id}.chunk-result.json.part"
+        cleanup_paths = self._source_cleanup_paths(
+            agent_project_id, source_id, metadata.extension
         )
         try:
-            stored_path.unlink(missing_ok=True)
-            processing_path.unlink(missing_ok=True)
-            processing_partial_path.unlink(missing_ok=True)
-            result_path.unlink(missing_ok=True)
-            result_partial_path.unlink(missing_ok=True)
-            audio_processing_path.unlink(missing_ok=True)
-            audio_processing_partial_path.unlink(missing_ok=True)
-            audio_result_path.unlink(missing_ok=True)
-            audio_result_partial_path.unlink(missing_ok=True)
-            video_processing_path.unlink(missing_ok=True)
-            video_processing_partial_path.unlink(missing_ok=True)
-            video_result_path.unlink(missing_ok=True)
-            video_result_partial_path.unlink(missing_ok=True)
-            preparation_path.unlink(missing_ok=True)
-            preparation_partial_path.unlink(missing_ok=True)
-            normalized_result_path.unlink(missing_ok=True)
-            normalized_result_partial_path.unlink(missing_ok=True)
-            chunk_result_path.unlink(missing_ok=True)
-            chunk_result_partial_path.unlink(missing_ok=True)
-            metadata_path.unlink()
+            for artifact_path in cleanup_paths[:-1]:
+                artifact_path.unlink(missing_ok=True)
+            cleanup_paths[-1].unlink()
         except FileNotFoundError as exc:
             raise SourceNotFoundError(source_id) from exc
         except OSError as exc:
@@ -327,76 +280,74 @@ class RequirementSourceStorage:
     ) -> StoredRequirementSource:
         if not SOURCE_ID_PATTERN.fullmatch(source_id):
             raise SourceNotFoundError(source_id)
-        project_directory = self._project_directory(agent_project_id)
-        metadata_path = self._contained(
-            project_directory, f"{source_id}.metadata.json"
+        metadata_path = self._source_artifact_path(
+            agent_project_id,
+            source_id,
+            RequirementArtifactKind.SOURCE_METADATA,
         )
         metadata = self._load_metadata(
             metadata_path, agent_project_id, owner_user_id, source_id
         )
-        file_path = self._contained(
-            project_directory, f"{source_id}{metadata.extension}"
+        file_path = self._source_artifact_path(
+            agent_project_id,
+            source_id,
+            RequirementArtifactKind.UPLOADED_SOURCE,
+            extension=metadata.extension,
         )
         if require_file and not file_path.is_file():
             raise SourceStorageError(
                 "Requirement source metadata references a missing file"
             )
+
+        def artifact(kind: RequirementArtifactKind, *, partial: bool = False) -> Path:
+            return self._source_artifact_path(
+                agent_project_id, source_id, kind, partial=partial
+            )
+
         return StoredRequirementSource(
             metadata=metadata,
             file_path=file_path,
-            processing_path=self._contained(
-                project_directory, f"{source_id}.document-processing.json"
+            processing_path=artifact(RequirementArtifactKind.DOCUMENT_PROCESSING),
+            processing_partial_path=artifact(
+                RequirementArtifactKind.DOCUMENT_PROCESSING, partial=True
             ),
-            processing_partial_path=self._contained(
-                project_directory, f"{source_id}.document-processing.json.part"
+            result_path=artifact(RequirementArtifactKind.DOCUMENT_RESULT),
+            result_partial_path=artifact(
+                RequirementArtifactKind.DOCUMENT_RESULT, partial=True
             ),
-            result_path=self._contained(
-                project_directory, f"{source_id}.document-result.json"
+            audio_processing_path=artifact(
+                RequirementArtifactKind.AUDIO_PROCESSING
             ),
-            result_partial_path=self._contained(
-                project_directory, f"{source_id}.document-result.json.part"
+            audio_processing_partial_path=artifact(
+                RequirementArtifactKind.AUDIO_PROCESSING, partial=True
             ),
-            audio_processing_path=self._contained(
-                project_directory, f"{source_id}.audio-processing.json"
+            audio_result_path=artifact(RequirementArtifactKind.AUDIO_RESULT),
+            audio_result_partial_path=artifact(
+                RequirementArtifactKind.AUDIO_RESULT, partial=True
             ),
-            audio_processing_partial_path=self._contained(
-                project_directory, f"{source_id}.audio-processing.json.part"
+            video_processing_path=artifact(
+                RequirementArtifactKind.VIDEO_PROCESSING
             ),
-            audio_result_path=self._contained(
-                project_directory, f"{source_id}.audio-result.json"
+            video_processing_partial_path=artifact(
+                RequirementArtifactKind.VIDEO_PROCESSING, partial=True
             ),
-            audio_result_partial_path=self._contained(
-                project_directory, f"{source_id}.audio-result.json.part"
+            video_result_path=artifact(RequirementArtifactKind.VIDEO_RESULT),
+            video_result_partial_path=artifact(
+                RequirementArtifactKind.VIDEO_RESULT, partial=True
             ),
-            video_processing_path=self._contained(
-                project_directory, f"{source_id}.video-processing.json"
+            preparation_path=artifact(
+                RequirementArtifactKind.EVIDENCE_PREPARATION
             ),
-            video_processing_partial_path=self._contained(
-                project_directory, f"{source_id}.video-processing.json.part"
+            preparation_partial_path=artifact(
+                RequirementArtifactKind.EVIDENCE_PREPARATION, partial=True
             ),
-            video_result_path=self._contained(
-                project_directory, f"{source_id}.video-result.json"
+            normalized_result_path=artifact(RequirementArtifactKind.NORMALIZED_RESULT),
+            normalized_result_partial_path=artifact(
+                RequirementArtifactKind.NORMALIZED_RESULT, partial=True
             ),
-            video_result_partial_path=self._contained(
-                project_directory, f"{source_id}.video-result.json.part"
-            ),
-            preparation_path=self._contained(
-                project_directory, f"{source_id}.evidence-preparation.json"
-            ),
-            preparation_partial_path=self._contained(
-                project_directory, f"{source_id}.evidence-preparation.json.part"
-            ),
-            normalized_result_path=self._contained(
-                project_directory, f"{source_id}.normalized-result.json"
-            ),
-            normalized_result_partial_path=self._contained(
-                project_directory, f"{source_id}.normalized-result.json.part"
-            ),
-            chunk_result_path=self._contained(
-                project_directory, f"{source_id}.chunk-result.json"
-            ),
-            chunk_result_partial_path=self._contained(
-                project_directory, f"{source_id}.chunk-result.json.part"
+            chunk_result_path=artifact(RequirementArtifactKind.CHUNK_RESULT),
+            chunk_result_partial_path=artifact(
+                RequirementArtifactKind.CHUNK_RESULT, partial=True
             ),
         )
 
@@ -480,13 +431,40 @@ class RequirementSourceStorage:
         return metadata
 
     def _project_directory(self, agent_project_id: str) -> Path:
-        root = self._root.resolve()
-        project_directory = (root / agent_project_id / "inputs").resolve()
         try:
-            project_directory.relative_to(root)
-        except ValueError as exc:
+            return self._artifact_paths.inputs_directory(agent_project_id)
+        except ArtifactPathError as exc:
             raise SourceStorageError("Unsafe requirement source storage path") from exc
-        return project_directory
+
+    def _source_artifact_path(
+        self,
+        agent_project_id: str,
+        source_id: str,
+        kind: RequirementArtifactKind,
+        *,
+        extension: str | None = None,
+        partial: bool = False,
+    ) -> Path:
+        try:
+            return self._artifact_paths.for_source(
+                agent_project_id,
+                source_id,
+                kind,
+                extension=extension,
+                partial=partial,
+            )
+        except ArtifactPathError as exc:
+            raise SourceStorageError("Unsafe requirement source storage path") from exc
+
+    def _source_cleanup_paths(
+        self, agent_project_id: str, source_id: str, extension: str
+    ) -> tuple[Path, ...]:
+        try:
+            return self._artifact_paths.source_cleanup_paths(
+                agent_project_id, source_id, extension
+            )
+        except ArtifactPathError as exc:
+            raise SourceStorageError("Unsafe requirement source storage path") from exc
 
     @staticmethod
     def _contained(directory: Path, filename: str) -> Path:
