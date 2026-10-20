@@ -25,7 +25,7 @@ from app.modules.agents.requirements.processing.preparation.service import (
     EvidencePreparationService,
     EvidencePreparationStorageError,
 )
-from app.modules.agents.requirements.service import WrongAgentProjectTypeError
+from app.modules.agents.requirements.contracts.errors import WrongAgentProjectTypeError
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.standalone.service import (

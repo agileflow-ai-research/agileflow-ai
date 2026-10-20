@@ -10,7 +10,7 @@ from app.modules.agents.requirements.api.dependencies import (
 )
 from app.modules.agents.requirements.api.errors import requirement_error, requirement_project_error
 from app.modules.agents.requirements.infrastructure.storage import SourceStorageError
-from app.modules.agents.requirements.service import WrongAgentProjectTypeError
+from app.modules.agents.requirements.contracts.errors import WrongAgentProjectTypeError
 from app.modules.agents.requirements.workflow.schemas import (
     RequirementOutputSelectionUpdate,
     RequirementWorkflowResponse,

@@ -1,7 +1,7 @@
 from fastapi.responses import JSONResponse
 
 from app.common.response import ErrorDetail, ErrorResponse
-from app.modules.agents.requirements.service import WrongAgentProjectTypeError
+from app.modules.agents.requirements.contracts.errors import WrongAgentProjectTypeError
 from app.modules.standalone.service import (
     AgentProjectNotFoundError,
     ArchivedAgentProjectError,

@@ -6,7 +6,7 @@ from app.modules.agents.requirements.contracts.schemas import (
     RequirementSourceType,
 )
 from app.modules.agents.requirements.infrastructure.storage import RequirementSourceStorage
-from app.modules.agents.requirements.service import WrongAgentProjectTypeError
+from app.modules.agents.requirements.contracts.errors import WrongAgentProjectTypeError
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.standalone.service import StandaloneService
 

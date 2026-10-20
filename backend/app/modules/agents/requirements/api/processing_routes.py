@@ -46,7 +46,7 @@ from app.modules.agents.requirements.processing.service import (
     DocumentProcessingStorageError,
     UnsupportedDocumentSourceError,
 )
-from app.modules.agents.requirements.service import WrongAgentProjectTypeError
+from app.modules.agents.requirements.contracts.errors import WrongAgentProjectTypeError
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.standalone.service import (

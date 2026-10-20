@@ -1,5 +1,6 @@
 from app.common.model_provider import ModelProviderError
 from app.common.status import AgentRunMode, AgentType
+from app.modules.agents.requirements.contracts.errors import WrongAgentProjectTypeError
 from app.modules.agents.requirements.engine import Agent1Engine, StructuredOutputInvalidError
 from app.modules.agents.requirements.schemas import (
     Agent1InputContext,
@@ -9,11 +10,6 @@ from app.modules.agents.requirements.schemas import (
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.standalone.schemas import AgentProject, AgentRun, AgentRunMessage
 from app.modules.standalone.service import StandaloneService
-
-
-class WrongAgentProjectTypeError(ValueError):
-    pass
-
 
 class Agent1Service:
     def __init__(

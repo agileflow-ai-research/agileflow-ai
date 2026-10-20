@@ -1,8 +1,7 @@
-import hashlib
-import json
 from collections.abc import Callable
 from datetime import datetime, timezone
 
+from app.modules.agents.requirements.infrastructure.digests import stable_json_sha256
 from app.modules.agents.requirements.infrastructure.storage import RequirementSourceStorage
 from app.modules.agents.requirements.inputs.upload.service import require_requirements_project
 from app.modules.agents.requirements.workflow.constants import (
@@ -36,10 +35,7 @@ def utc_now() -> datetime:
 
 
 def _digest(payload: dict[str, object]) -> str:
-    canonical = json.dumps(
-        payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    return stable_json_sha256(payload)
 
 
 def canonical_outputs(

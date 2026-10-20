@@ -19,7 +19,7 @@ from app.modules.agents.requirements.infrastructure.storage import (
     SourceValidationError,
 )
 from app.modules.agents.requirements.inputs.upload.service import RequirementSourceService
-from app.modules.agents.requirements.service import WrongAgentProjectTypeError
+from app.modules.agents.requirements.contracts.errors import WrongAgentProjectTypeError
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.standalone.service import (

@@ -1,9 +1,8 @@
-import hashlib
-import json
 from concurrent.futures import Executor
 from datetime import datetime, timezone
 from threading import Lock
 
+from app.modules.agents.requirements.infrastructure.digests import stable_json_sha256
 from app.modules.agents.requirements.infrastructure.storage import RequirementSourceStorage
 from app.modules.agents.requirements.inputs.upload.service import require_requirements_project
 from app.modules.agents.requirements.processing.facade import RequirementProcessingService
@@ -44,10 +43,7 @@ def utc_now() -> datetime:
 
 
 def _canonical_digest(payload: dict[str, object]) -> str:
-    encoded = json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    return stable_json_sha256(payload)
 
 
 def n2_execution_key(
