@@ -1,9 +1,16 @@
 import { useEffect, useRef } from 'react'
 
-import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
-import { getWorkflowStatePresentation } from '../constants/workflow.js'
+import StatusBadge from '../../ui/StatusBadge.jsx'
+import { getWorkflowStatePresentation } from '../workflowState.js'
 
-function WorkflowNodeModal({ node, open, onClose, children, footer }) {
+function WorkflowNodeModal({
+  node,
+  open,
+  onClose,
+  children,
+  footer,
+  eyebrow = 'Workflow',
+}) {
   const closeRef = useRef(null)
   const dialogRef = useRef(null)
   const restoreFocusRef = useRef(null)
@@ -52,7 +59,7 @@ function WorkflowNodeModal({ node, open, onClose, children, footer }) {
         <header className="sticky top-0 z-10 shrink-0 border-b border-default bg-sidebar px-4 py-4 sm:px-6" data-testid="workflow-modal-header">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-content-muted">Agent 3 workflow</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-content-muted">{eyebrow}</p>
               <h2 id={titleId} className="mt-1 text-section-heading font-semibold text-content-primary">{node?.title}</h2>
               {node?.purpose ? <p className="mt-2 max-w-3xl text-sm text-content-secondary">{node.purpose}</p> : null}
               <div className="mt-2"><StatusBadge label={node?.statusLabel ?? status.label} tone={status.tone} /></div>

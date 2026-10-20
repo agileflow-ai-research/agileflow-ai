@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { WORKFLOW_NODE_STATES } from '../../../../components/agents/workflowState.js'
-import { REQUIREMENTS_NODE_IDS } from './nodeDefinitions.js'
-import { deriveRequirementsWorkflowPresentation } from './presentation.js'
+import { REQUIREMENTS_NODE_IDS, REQUIREMENTS_NODE_REGISTRY } from './nodeDefinitions.js'
+import { deriveRequirementsCurrentNodeId, deriveRequirementsWorkflowPresentation } from './presentation.js'
 
 const source = { source_id: 'DOC-001', source_type: 'DOCUMENT' }
 
 function nodeState(presentation, id) {
-  return presentation.nodes.find((node) => node.id === id).state
+  return presentation[id].status
 }
 
 describe('requirements workflow presentation', () => {
@@ -17,7 +17,19 @@ describe('requirements workflow presentation', () => {
     })
     expect(nodeState(result, REQUIREMENTS_NODE_IDS.INPUT_COLLECTION)).toBe(WORKFLOW_NODE_STATES.NOT_STARTED)
     expect(nodeState(result, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.NOT_STARTED)
-    expect(result.currentNodeId).toBe(REQUIREMENTS_NODE_IDS.INPUT_COLLECTION)
+    expect(deriveRequirementsCurrentNodeId({ loadStatus: 'success', sources: [] })).toBe(REQUIREMENTS_NODE_IDS.INPUT_COLLECTION)
+  })
+
+  it('does not complete N1 for malformed or unsupported persisted sources', () => {
+    const result = deriveRequirementsWorkflowPresentation({
+      sources: [
+        { source_id: '', source_type: 'DOCUMENT' },
+        { source_id: 'TXT-001', source_type: 'TEXT' },
+      ],
+      processingStates: {},
+      preparationStates: {},
+    })
+    expect(nodeState(result, REQUIREMENTS_NODE_IDS.INPUT_COLLECTION)).toBe(WORKFLOW_NODE_STATES.NOT_STARTED)
   })
 
   it('requires completed processing, completed preparation, and a valid chunk result', () => {
@@ -27,7 +39,7 @@ describe('requirements workflow presentation', () => {
       processingStates: { 'DOC-001': { status: 'COMPLETED' } },
       preparationStates: { 'DOC-001': { status: 'COMPLETED', chunks: null } },
     })
-    expect(nodeState(incomplete, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.NOT_STARTED)
+    expect(nodeState(incomplete, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.RUNNING)
 
     const complete = deriveRequirementsWorkflowPresentation({
       loadStatus: 'success',
@@ -47,6 +59,42 @@ describe('requirements workflow presentation', () => {
       preparationStates: { 'DOC-001': { status: 'READY' } },
     })
     expect(nodeState(result, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.FAILED)
-    expect(result.nodes.slice(2).every((node) => node.state === WORKFLOW_NODE_STATES.LOCKED)).toBe(true)
+    expect(REQUIREMENTS_NODE_REGISTRY.slice(2).every(
+      (node) => nodeState(result, node.id) === WORKFLOW_NODE_STATES.LOCKED,
+    )).toBe(true)
+  })
+
+  it('reports persisted partial progress as running while untouched sources stay not started', () => {
+    const untouched = deriveRequirementsWorkflowPresentation({
+      loadStatus: 'success',
+      sources: [source],
+      processingStates: { 'DOC-001': { status: 'READY' } },
+      preparationStates: { 'DOC-001': { status: 'READY' } },
+    })
+    expect(nodeState(untouched, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.NOT_STARTED)
+
+    const partial = deriveRequirementsWorkflowPresentation({
+      loadStatus: 'success',
+      sources: [source],
+      processingStates: { 'DOC-001': { status: 'COMPLETED' } },
+      preparationStates: { 'DOC-001': { status: 'READY' } },
+    })
+    expect(nodeState(partial, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.RUNNING)
+  })
+
+  it('gives validation/load errors precedence over completion', () => {
+    const result = deriveRequirementsWorkflowPresentation({
+      loadStatus: 'success',
+      sources: [source],
+      processingStates: { 'DOC-001': { status: 'COMPLETED' } },
+      preparationStates: {
+        'DOC-001': {
+          status: 'COMPLETED',
+          chunks: { chunks: [{ chunk_id: 'CHK-1' }] },
+          requestError: 'Invalid prepared evidence.',
+        },
+      },
+    })
+    expect(nodeState(result, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.FAILED)
   })
 })

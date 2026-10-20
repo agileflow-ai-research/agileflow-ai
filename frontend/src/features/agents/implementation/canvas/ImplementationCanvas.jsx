@@ -1,104 +1,26 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import {
-  Background,
-  BackgroundVariant,
-  Controls,
-  ReactFlow,
-  ReactFlowProvider,
-  useNodesState,
-} from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
+import { forwardRef, useMemo } from 'react'
 
-import WorkflowNode from '../nodes/WorkflowNode.jsx'
-import FloatingWorkflowEdge from './FloatingWorkflowEdge.jsx'
-import { positionWorkflowNodes } from './layout.js'
+import WorkflowCanvas from '../../../../components/agents/workflow/WorkflowCanvas.jsx'
+import { DEFAULT_NODE_POSITIONS } from './layout.js'
 import { createWorkflowNodes, IMPLEMENTATION_WORKFLOW_EDGES } from './workflowGraph.js'
 
-const nodeTypes = Object.freeze({ workflow: WorkflowNode })
-const edgeTypes = Object.freeze({ floating: FloatingWorkflowEdge })
-
-const ImplementationCanvasInner = forwardRef(function ImplementationCanvasInner(
+const ImplementationCanvas = forwardRef(function ImplementationCanvas(
   { presentation, selectedNodeId, onSelectNode, onLayoutChange },
   ref,
 ) {
-  const initialNodes = useRef(createWorkflowNodes(presentation))
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes.current)
-  const flowInstance = useRef(null)
-
-  useEffect(() => {
-    const updatedNodes = new Map(
-      createWorkflowNodes(presentation).map((node) => [node.id, node]),
-    )
-    setNodes((current) => current.map((node) => {
-      const definition = updatedNodes.get(node.id)
-      return {
-        ...node,
-        selected: node.id === selectedNodeId,
-        data: definition.data,
-      }
-    }))
-  }, [presentation, selectedNodeId, setNodes])
-
-  function arrange() {
-    setNodes((current) => positionWorkflowNodes(current))
-    window.setTimeout(() => flowInstance.current?.fitView({ padding: 0.16, duration: 250 }), 0)
-  }
-
-  useImperativeHandle(ref, () => ({
-    autoArrange: arrange,
-    resetLayout: arrange,
-    fitView: () => flowInstance.current?.fitView({ padding: 0.16, duration: 250 }),
-    focusNode: (nodeId) => {
-      const node = nodes.find((item) => item.id === nodeId)
-      if (node) flowInstance.current?.fitView({ nodes: [node], padding: 0.8, duration: 250, maxZoom: 1 })
-    },
-  }))
-
-  function handleNodesChange(changes) {
-    onNodesChange(changes)
-    if (changes.some((change) => change.type === 'position' && change.position)) {
-      onLayoutChange?.(changes)
-    }
-  }
+  const nodes = useMemo(() => createWorkflowNodes(presentation), [presentation])
 
   return (
-    <div className="h-[36rem] min-h-[28rem] w-full" aria-label="Agent 3 implementation workflow canvas">
-      <ReactFlow
-        nodes={nodes}
-        edges={IMPLEMENTATION_WORKFLOW_EDGES}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onNodesChange={handleNodesChange}
-        onNodeClick={(_, node) => onSelectNode(node.id)}
-        onInit={(instance) => { flowInstance.current = instance }}
-        fitView
-        fitViewOptions={{ padding: 0.16 }}
-        minZoom={0.45}
-        maxZoom={1.5}
-        nodesConnectable={false}
-        connectOnClick={false}
-        edgesReconnectable={false}
-        nodesDraggable
-        panOnDrag
-        selectionOnDrag={false}
-        nodeClickDistance={4}
-        elementsSelectable
-        deleteKeyCode={null}
-        colorMode="dark"
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--color-border-default)" />
-        <Controls position="bottom-left" showInteractive={false} />
-      </ReactFlow>
-    </div>
-  )
-})
-
-const ImplementationCanvas = forwardRef(function ImplementationCanvas(props, ref) {
-  return (
-    <ReactFlowProvider>
-      <ImplementationCanvasInner {...props} ref={ref} />
-    </ReactFlowProvider>
+    <WorkflowCanvas
+      ref={ref}
+      nodes={nodes}
+      edges={IMPLEMENTATION_WORKFLOW_EDGES}
+      defaultPositions={DEFAULT_NODE_POSITIONS}
+      selectedNodeId={selectedNodeId}
+      onSelectNode={onSelectNode}
+      onLayoutChange={onLayoutChange}
+      ariaLabel="Agent 3 implementation workflow canvas"
+    />
   )
 })
 

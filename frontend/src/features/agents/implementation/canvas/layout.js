@@ -1,3 +1,5 @@
+import { positionWorkflowNodes as applyWorkflowPositions } from '../../../../components/agents/workflow/layout.js'
+
 export const DEFAULT_NODE_POSITIONS = Object.freeze({
   PROJECT_SOURCES: Object.freeze({ x: 0, y: 20 }),
   INPUT_ANALYSIS: Object.freeze({ x: 270, y: 20 }),
@@ -11,8 +13,5 @@ export const DEFAULT_NODE_POSITIONS = Object.freeze({
 })
 
 export function positionWorkflowNodes(nodes) {
-  return nodes.map((node) => ({
-    ...node,
-    position: { ...DEFAULT_NODE_POSITIONS[node.id] },
-  }))
+  return applyWorkflowPositions(nodes, DEFAULT_NODE_POSITIONS)
 }

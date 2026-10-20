@@ -42,6 +42,14 @@ vi.mock('../features/agents/implementation/pages/ImplementationProjectPage.jsx',
     </section>
   ),
 }))
+vi.mock('../features/agents/requirements/pages/RequirementsProjectPage.jsx', () => ({
+  default: ({ project, entryMode }) => (
+    <section aria-label="Agent 1 requirements project" data-entry-mode={entryMode}>
+      <h1>{project.name}</h1>
+      <div aria-label="Agent 1 requirements workflow canvas" />
+    </section>
+  ),
+}))
 vi.mock('../features/agents/implementation/services/implementationAgentService.js', () => ({
   uploadImplementationInputFile: vi.fn(),
   deleteImplementationInputFile: vi.fn(),
@@ -187,14 +195,34 @@ describe('AgentProjectOverviewPage', () => {
     await waitFor(() => expect(getAgentProjectRuns).toHaveBeenCalled())
   })
 
-  it('mounts Agent 1 source collection without starting a run', async () => {
+  it('mounts the Agent 1 canvas without starting a run', async () => {
     getAgentProjectById.mockResolvedValue({ data: { ...project, agent_type: 'REQUIREMENTS', name: 'BookEase' } })
     getAgentProjectRuns.mockResolvedValue({ data: [] })
     renderOverview()
     await screen.findByRole('heading', { level: 1, name: 'BookEase' })
-    expect(await screen.findByRole('heading', { name: 'Client Requirement Sources' })).toBeInTheDocument()
-    expect(listRequirementSources).toHaveBeenCalledWith('AGP-001')
+    expect(await screen.findByLabelText('Agent 1 requirements project')).toHaveAttribute('data-entry-mode', 'existing')
+    expect(screen.getByLabelText('Agent 1 requirements workflow canvas')).toBeInTheDocument()
+    expect(screen.getByLabelText('Agent 1 requirements project').compareDocumentPosition(
+      screen.getByRole('region', { name: 'Run History' }),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(listRequirementSources).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
+  })
+
+  it('keeps archived Agent 1 projects read-only and outside the active canvas page', async () => {
+    getAgentProjectById.mockResolvedValue({ data: {
+      ...project,
+      agent_type: 'REQUIREMENTS',
+      name: 'Archived Requirements',
+      status: 'ARCHIVED',
+    } })
+    getAgentProjectRuns.mockResolvedValue({ data: [] })
+    renderOverview()
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Archived Requirements' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Agent 1 requirements project')).not.toBeInTheDocument()
+    expect(screen.getByText(/execution controls are unavailable while this project is archived/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reactivate Project' })).toBeInTheDocument()
   })
 
   it('reloads and renders persisted Agent 1 output_manifest content', async () => {

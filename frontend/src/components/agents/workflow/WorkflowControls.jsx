@@ -1,4 +1,4 @@
-import Button from '../../../../components/ui/Button.jsx'
+import Button from '../../ui/Button.jsx'
 
 function WorkflowControls({ onAutoArrange, onResetLayout }) {
   return (

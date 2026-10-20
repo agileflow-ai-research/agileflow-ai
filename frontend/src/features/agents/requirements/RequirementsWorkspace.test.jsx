@@ -21,6 +21,8 @@ import {
   uploadRequirementSource,
 } from './requirementsAgentService.js'
 import RequirementsWorkspace from './RequirementsWorkspace.jsx'
+import { REQUIREMENTS_NODE_IDS } from './workflow/nodeDefinitions.js'
+import { deriveRequirementsWorkflowPresentation } from './workflow/presentation.js'
 
 vi.mock('./requirementsAgentService.js', () => ({
   deleteRequirementSource: vi.fn(),
@@ -70,11 +72,6 @@ function chunksFor(sourceId, sourceType = 'DOCUMENT', provenance = []) {
   } }
 }
 
-async function openNode(name) {
-  const navigation = await screen.findByRole('navigation', { name: 'Agent 1 pipeline' })
-  await userEvent.click(within(navigation).getByRole('button', { name }))
-}
-
 describe('RequirementsWorkspace seven-node pipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -87,37 +84,22 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
     ))
   })
 
-  it('shows exactly seven ordered top-level nodes and keeps N3-N7 locked', async () => {
-    const user = userEvent.setup()
-    render(<RequirementsWorkspace project={project} />)
-    const navigation = await screen.findByRole('navigation', { name: 'Agent 1 pipeline' })
-    const nodes = within(navigation).getAllByRole('button')
-
-    expect(nodes).toHaveLength(7)
-    expect(nodes.map((node) => node.textContent)).toEqual([
-      expect.stringContaining('Input Collection'),
-      expect.stringContaining('Processing & Chunking'),
-      expect.stringContaining('Discovery & Structuring'),
-      expect.stringContaining('Quality Engineering'),
-      expect.stringContaining('Clarification & Refinement'),
-      expect.stringContaining('Re-check & Artifacts'),
-      expect.stringContaining('Review & Baseline'),
-    ])
-    nodes.slice(2).forEach((node) => expect(node).toHaveAttribute('aria-disabled', 'true'))
-
-    await user.click(nodes[2])
-    expect(screen.getByRole('heading', { name: 'Requirement Discovery & Structuring' })).toBeInTheDocument()
+  it('renders locked informational content for an unimplemented active section', async () => {
+    render(
+      <RequirementsWorkspace
+        project={project}
+        activeSection={REQUIREMENTS_NODE_IDS.DISCOVERY_AND_STRUCTURING}
+      />,
+    )
+    expect(await screen.findByRole('heading', { name: 'Requirement Discovery & Structuring' })).toBeInTheDocument()
     expect(screen.getByText(/backend stage is implemented/i)).toBeInTheDocument()
     expect(screen.queryByText(/functional requirement/i)).not.toBeInTheDocument()
   })
 
   it('keeps completed N1 reviewable and contains only collection controls', async () => {
-    const user = userEvent.setup()
     render(<RequirementsWorkspace project={project} />)
-    const navigation = await screen.findByRole('navigation', { name: 'Agent 1 pipeline' })
-    await user.click(within(navigation).getByRole('button', { name: /Input Collection/ }))
 
-    expect(screen.getByRole('heading', { name: 'Client Requirement Sources' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Client Requirement Sources' })).toBeInTheDocument()
     ;['Add Documents', 'Add Audio', 'Add Video'].forEach((label) => {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     })
@@ -125,7 +107,6 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
       expect(screen.getByText(text)).toBeInTheDocument()
     })
     expect(screen.queryByRole('button', { name: /Process Document|Process Audio|Process Video|Prepare Evidence/ })).not.toBeInTheDocument()
-    expect(within(navigation).getByRole('button', { name: /Input Collection/ })).toHaveTextContent('Complete')
   })
 
   it('uploads mixed sources, removes one, and reloads persisted sources', async () => {
@@ -156,13 +137,12 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
 
     listRequirementSources.mockResolvedValue({ data: persistedSources.slice(1) })
     render(<RequirementsWorkspace project={project} />)
-    await openNode(/Input Collection/)
     expect(await screen.findByText('AUD-001')).toBeInTheDocument()
     expect(screen.queryByText('DOC-001')).not.toBeInTheDocument()
   })
 
   it('navigates to N2 and provides document, audio, video, and preparation actions', async () => {
-    render(<RequirementsWorkspace project={project} />)
+    render(<RequirementsWorkspace project={project} activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING} />)
     expect(await screen.findByRole('heading', { name: 'Multimodal Processing & Chunking' })).toBeInTheDocument()
     ;['Document Processing', 'Audio Transcription', 'Video Processing', 'Evidence Preparation'].forEach((label) => {
       expect(screen.getByText(label)).toBeInTheDocument()
@@ -191,7 +171,7 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
     ))
     prepareRequirementEvidence.mockResolvedValue(preparationStatus('AUD-001', 'COMPLETED'))
     getRequirementEvidenceChunks.mockResolvedValue(chunksFor('AUD-001', 'AUDIO'))
-    render(<RequirementsWorkspace project={project} />)
+    render(<RequirementsWorkspace project={project} activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING} />)
     const documentCard = (await screen.findByText(/DOC-001 · requirements.pdf/)).closest('[data-variant]')
     const audioCard = screen.getByText(/AUD-001 · interview.mp3/).closest('[data-variant]')
     const videoCard = screen.getByText(/VID-001 · workflow.mp4/).closest('[data-variant]')
@@ -219,15 +199,19 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
       sourceId,
       sourceId.startsWith('DOC') ? 'DOCUMENT' : sourceId.startsWith('AUD') ? 'AUDIO' : 'VIDEO',
     )))
-    render(<RequirementsWorkspace project={project} />)
-    const navigation = await screen.findByRole('navigation', { name: 'Agent 1 pipeline' })
+    let snapshot
+    render(
+      <RequirementsWorkspace
+        project={project}
+        activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING}
+        onPresentationChange={(value) => { snapshot = value }}
+      />,
+    )
 
     await waitFor(() => {
-      expect(within(navigation).getByRole('button', { name: /Processing & Chunking/ })).toHaveTextContent('Complete')
+      expect(deriveRequirementsWorkflowPresentation(snapshot)[REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING].status).toBe('COMPLETE')
     })
-    expect(within(navigation).getByRole('button', { name: /Input Collection/ })).toHaveTextContent('Complete')
     expect(getRequirementEvidenceChunks).toHaveBeenCalledTimes(3)
-    expect(within(navigation).getByRole('button', { name: /Discovery & Structuring/ })).toHaveTextContent('Locked')
   })
 
   it('does not mark N2 complete when a persisted chunk result cannot be validated', async () => {
@@ -238,11 +222,17 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
       Promise.resolve(preparationStatus(sourceId, 'COMPLETED'))
     ))
     getRequirementEvidenceChunks.mockRejectedValue({ status: 404, errors: [{ message: 'Prepared evidence is unavailable.' }] })
-    render(<RequirementsWorkspace project={project} />)
-    const navigation = await screen.findByRole('navigation', { name: 'Agent 1 pipeline' })
+    let snapshot
+    render(
+      <RequirementsWorkspace
+        project={project}
+        activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING}
+        onPresentationChange={(value) => { snapshot = value }}
+      />,
+    )
 
     await waitFor(() => {
-      expect(within(navigation).getByRole('button', { name: /Processing & Chunking/ })).toHaveTextContent('Failed')
+      expect(deriveRequirementsWorkflowPresentation(snapshot)[REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING].status).toBe('FAILED')
     })
     expect(await screen.findAllByText('Prepared evidence is unavailable.')).toHaveLength(3)
   })
@@ -261,7 +251,7 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
       source_id: 'VID-001', transcript: 'Video requirement.', detected_language: 'en', language_probability: 0.94,
       processed_at: '2026-10-20T08:00:00Z', segments: [{ start_seconds: 1, end_seconds: 3.5, text: 'Video requirement.' }],
     } })
-    render(<RequirementsWorkspace project={project} />)
+    render(<RequirementsWorkspace project={project} activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING} />)
     const documentCard = (await screen.findByText(/DOC-001 · requirements.pdf/)).closest('[data-variant]')
     const audioCard = screen.getByText(/AUD-001 · interview.mp3/).closest('[data-variant]')
     const videoCard = screen.getByText(/VID-001 · workflow.mp4/).closest('[data-variant]')
@@ -290,7 +280,7 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
     getNormalizedRequirementEvidence.mockResolvedValue({ data: {
       source_id: 'DOC-001', normalized_text: 'The client needs secure access.',
     } })
-    render(<RequirementsWorkspace project={project} />)
+    render(<RequirementsWorkspace project={project} activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING} />)
     const documentCard = (await screen.findByText(/DOC-001 · requirements.pdf/)).closest('[data-variant]')
 
     await user.click(within(documentCard).getByRole('button', { name: 'Prepare Evidence' }))
@@ -322,7 +312,7 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
     getNormalizedRequirementEvidence.mockResolvedValue({ data: {
       source_id: 'AUD-001', normalized_text: 'Appointment reminders are required.',
     } })
-    render(<RequirementsWorkspace project={project} />)
+    render(<RequirementsWorkspace project={project} activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING} />)
     const audioCard = (await screen.findByText(/AUD-001 · interview.mp3/)).closest('[data-variant]')
 
     await user.click(await within(audioCard).findByRole('button', { name: 'View Prepared Evidence' }))

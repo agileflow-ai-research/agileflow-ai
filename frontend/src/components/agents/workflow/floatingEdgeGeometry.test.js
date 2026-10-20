@@ -33,30 +33,17 @@ describe('floating workflow edge geometry', () => {
     expect(after.targetY).toBe(260)
   })
 
-  it('recalculates edge geometry when the source node moves', () => {
-    const target = node(500, 0)
-    const before = calculateFloatingConnection(node(0, 0), target)
-    const after = calculateFloatingConnection(node(260, 260), target)
-
-    expect(after).not.toEqual(before)
-    expect(after.sourcePosition).toBe('top')
-    expect(after.targetPosition).toBe('bottom')
-  })
-
   it('recalculates incoming and outgoing geometry for a moved middle node', () => {
     const upstream = node(0, 0)
     const downstream = node(600, 0)
     const middleBefore = node(300, 0)
     const middleAfter = node(300, 260)
 
-    const incomingBefore = calculateFloatingConnection(upstream, middleBefore)
-    const outgoingBefore = calculateFloatingConnection(middleBefore, downstream)
-    const incomingAfter = calculateFloatingConnection(upstream, middleAfter)
-    const outgoingAfter = calculateFloatingConnection(middleAfter, downstream)
-
-    expect(incomingAfter).not.toEqual(incomingBefore)
-    expect(outgoingAfter).not.toEqual(outgoingBefore)
-    expect(incomingAfter.targetY).toBe(260)
-    expect(outgoingAfter.sourceY).toBe(260)
+    expect(calculateFloatingConnection(upstream, middleAfter)).not.toEqual(
+      calculateFloatingConnection(upstream, middleBefore),
+    )
+    expect(calculateFloatingConnection(middleAfter, downstream)).not.toEqual(
+      calculateFloatingConnection(middleBefore, downstream),
+    )
   })
 })

@@ -11,7 +11,7 @@ vi.mock('@xyflow/react', () => ({
 import WorkflowNode from './WorkflowNode.jsx'
 
 function renderNode(status, selected = false) {
-  render(<WorkflowNode data={{ title: 'Input Analysis', summary: 'Summary', status }} selected={selected} />)
+  render(<WorkflowNode data={{ title: 'Input Analysis', summary: 'Summary', status, locked: status === 'LOCKED' }} selected={selected} />)
   return screen.getByRole('button', { name: 'Open Input Analysis' }).parentElement
 }
 
@@ -24,23 +24,24 @@ describe('WorkflowNode status presentation', () => {
     ['BLOCKED', 'blocked'],
     ['COMPLETE', 'success'],
     ['LOCKED', 'locked'],
-  ])('maps %s through the reusable visual system', (status, visual) => {
+  ])('maps %s through the shared visual system', (status, visual) => {
     const node = renderNode(status)
     expect(node).toHaveAttribute('data-workflow-status', status)
     expect(node).toHaveAttribute('data-workflow-visual', visual)
-    expect(node).toHaveClass(`implementation-workflow-node--${visual}`)
-    expect(node).not.toHaveClass('implementation-workflow-node--selected')
+    expect(node).toHaveClass(`workflow-node--${visual}`)
+    expect(node).not.toHaveClass('workflow-node--selected')
   })
 
   it('keeps selection independent from processing status', () => {
     const node = renderNode('RUNNING', true)
-    expect(node).toHaveClass('implementation-workflow-node--processing')
-    expect(node).toHaveClass('implementation-workflow-node--selected')
+    expect(node).toHaveClass('workflow-node--processing')
+    expect(node).toHaveClass('workflow-node--selected')
     expect(node).toHaveAttribute('data-selected', 'true')
   })
 
-  it('keeps required edge handles invisible and non-interactive', () => {
-    renderNode('NOT_STARTED')
+  it('renders locked state and keeps required edge handles non-interactive', () => {
+    const node = renderNode('LOCKED')
+    expect(node).toHaveTextContent('Not implemented yet')
     ;['target', 'source'].forEach((type) => {
       const handle = screen.getByTestId(`handle-${type}`)
       expect(handle).toHaveClass('pointer-events-none', 'opacity-0')

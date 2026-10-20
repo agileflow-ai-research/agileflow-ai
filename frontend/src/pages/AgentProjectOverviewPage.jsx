@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import AgentWorkspaceShell from '../components/agents/AgentWorkspaceShell.jsx'
-import RequirementsWorkspace from '../features/agents/requirements/RequirementsWorkspace.jsx'
 import DesignPlanningWorkspace from '../features/agents/designPlanning/DesignPlanningWorkspace.jsx'
 import ImplementationProjectPage from '../features/agents/implementation/pages/ImplementationProjectPage.jsx'
+import RequirementsProjectPage from '../features/agents/requirements/pages/RequirementsProjectPage.jsx'
 import TestingValidationWorkspace from '../features/agents/testingValidation/TestingValidationWorkspace.jsx'
 import RunDetail from '../components/agents/RunDetail.jsx'
 import RunHistory from '../components/agents/RunHistory.jsx'
@@ -142,12 +142,18 @@ function AgentProjectOverviewPage() {
     </Button>
   )
 
-  if (project.agent_type === 'IMPLEMENTATION' && project.status !== 'ARCHIVED') {
+  if (
+    (project.agent_type === 'IMPLEMENTATION' || project.agent_type === 'REQUIREMENTS')
+    && project.status !== 'ARCHIVED'
+  ) {
+    const ProjectPage = project.agent_type === 'IMPLEMENTATION'
+      ? ImplementationProjectPage
+      : RequirementsProjectPage
     return (
       <main className="mx-auto w-full max-w-[96rem] space-y-8 px-page py-8 sm:py-10">
         <Button variant="ghost" size="small" onClick={() => navigate(agentListPath)}>Back to projects</Button>
         {statusError && <ErrorState title="Status update failed" message={statusError} onRetry={handleStatusChange} />}
-        <ImplementationProjectPage
+        <ProjectPage
           key={project.agent_project_id}
           project={project}
           projectStatus={status}
@@ -203,8 +209,6 @@ function AgentProjectOverviewPage() {
       >
         {project.status === 'ARCHIVED' ? (
           <p className="text-sm text-content-secondary">Agent-specific input and execution controls are unavailable while this project is archived.</p>
-        ) : project.agent_type === 'REQUIREMENTS' ? (
-          <RequirementsWorkspace project={project} onRunCompleted={handleRunCompleted} />
         ) : project.agent_type === 'DESIGN_PLANNING' ? (
           <DesignPlanningWorkspace project={project} onRunCompleted={handleRunCompleted} />
         ) : project.agent_type === 'TESTING_VALIDATION' ? (

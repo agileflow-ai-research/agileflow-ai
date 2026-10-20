@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import WorkflowControls from '../../../../components/agents/workflow/WorkflowControls.jsx'
+import WorkflowNodeModal from '../../../../components/agents/workflow/WorkflowNodeModal.jsx'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import { WORKFLOW_MODAL_ORIGINS, WORKFLOW_NODE_IDS } from '../constants/workflow.js'
 import ImplementationCanvas from '../canvas/ImplementationCanvas.jsx'
-import WorkflowControls from '../canvas/WorkflowControls.jsx'
 import ImplementationWorkspace from '../ImplementationWorkspace.jsx'
-import WorkflowNodeModal from '../panels/WorkflowNodeModal.jsx'
 import WorkflowNextStepNotice from '../components/common/WorkflowNextStepNotice.jsx'
 import ProjectOverviewModal from '../components/ProjectOverviewModal.jsx'
 import {
@@ -135,7 +135,12 @@ function ImplementationProjectPage({ project, projectStatus, projectActions, ent
             onSelectNode={handleManualNavigation}
           />
         </div>
-          <WorkflowNodeModal node={selectedPresentation} open={Boolean(selectedDefinition)} onClose={handleCloseModal}>
+          <WorkflowNodeModal
+            node={selectedPresentation}
+            open={Boolean(selectedDefinition)}
+            onClose={handleCloseModal}
+            eyebrow="Agent 3 workflow"
+          >
             {nextStepNotice ? (
               <WorkflowNextStepNotice {...nextStepNotice} onNavigate={handleManualNavigation} />
             ) : null}
