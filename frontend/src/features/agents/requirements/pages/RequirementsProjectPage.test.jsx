@@ -20,6 +20,7 @@ vi.mock('../canvas/RequirementsCanvas.jsx', async () => {
       return (
         <div aria-label="Agent 1 requirements workflow canvas" data-selected-node={selectedNodeId ?? ''}>
           <span data-testid="n1-status">{presentation.INPUT_COLLECTION?.status}</span>
+          <span data-testid="n2-status">{presentation.PROCESSING_AND_CHUNKING?.status}</span>
           <button type="button" onClick={() => onSelectNode('INPUT_COLLECTION')}>Select N1</button>
           <button type="button" onClick={() => onSelectNode('PROCESSING_AND_CHUNKING')}>Select N2</button>
           <button type="button" onClick={() => onSelectNode('DISCOVERY_AND_STRUCTURING')}>Select N3</button>
@@ -43,6 +44,38 @@ vi.mock('../RequirementsWorkspace.jsx', () => ({
         })}
       >
         Publish snapshot
+      </button>
+      <button
+        type="button"
+        onClick={() => onPresentationChange({
+          loadStatus: 'success',
+          sources: [{ source_id: 'AUD-001', source_type: 'AUDIO' }],
+          workflowState: {
+            n1_state: 'COMPLETE',
+            n2_is_current: true,
+            n2_execution: { execution_id: 'N2-AAAAAAAAAAAAAAAA-001', status: 'RUNNING' },
+          },
+          processingStates: {},
+          preparationStates: {},
+        })}
+      >
+        Publish N2 running
+      </button>
+      <button
+        type="button"
+        onClick={() => onPresentationChange({
+          loadStatus: 'success',
+          sources: [{ source_id: 'AUD-001', source_type: 'AUDIO' }],
+          workflowState: {
+            n1_state: 'COMPLETE',
+            n2_is_current: true,
+            n2_execution: { execution_id: 'N2-AAAAAAAAAAAAAAAA-001', status: 'COMPLETE' },
+          },
+          processingStates: { 'AUD-001': { status: 'COMPLETED' } },
+          preparationStates: { 'AUD-001': { status: 'COMPLETED', chunks: { chunks: Array(7).fill({}) } } },
+        })}
+      >
+        Publish N2 complete
       </button>
     </div>
   ),
@@ -99,6 +132,33 @@ describe('RequirementsProjectPage', () => {
     expect(screen.getByTestId('requirements-workspace')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Select N2' }))
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('updates the canvas and open modal from RUNNING to COMPLETE without a remount', async () => {
+    const user = userEvent.setup()
+    render(<RequirementsProjectPage project={project} projectStatus={projectStatus} entryMode="existing" />)
+    await user.click(screen.getByRole('button', { name: 'Select N2' }))
+    await user.click(screen.getByRole('button', { name: 'Publish N2 running' }))
+    expect(screen.getByTestId('n2-status')).toHaveTextContent('RUNNING')
+    expect(screen.getByRole('dialog')).toHaveTextContent('In Progress')
+
+    await user.click(screen.getByRole('button', { name: 'Publish N2 complete' }))
+    expect(screen.getByTestId('n2-status')).toHaveTextContent('COMPLETE')
+    expect(screen.getByRole('dialog')).toHaveTextContent('Complete')
+  })
+
+  it('keeps workflow publication active while the modal is closed and reopens at COMPLETE', async () => {
+    const user = userEvent.setup()
+    render(<RequirementsProjectPage project={project} projectStatus={projectStatus} entryMode="existing" />)
+    await user.click(screen.getByRole('button', { name: 'Select N2' }))
+    await user.click(screen.getByRole('button', { name: 'Publish N2 running' }))
+    await user.click(screen.getByRole('button', { name: 'Close workflow modal' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Publish N2 complete', hidden: true }))
+    expect(screen.getByTestId('n2-status')).toHaveTextContent('COMPLETE')
+
+    await user.click(screen.getByRole('button', { name: 'Select N2' }))
+    expect(screen.getByRole('dialog')).toHaveTextContent('Complete')
   })
 
   it('routes Auto Arrange and Reset Layout through the shared canvas ref', () => {

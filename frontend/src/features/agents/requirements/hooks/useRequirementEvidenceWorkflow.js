@@ -45,6 +45,38 @@ function errorMessage(error, fallback) {
   return error?.errors?.[0]?.message || fallback
 }
 
+const ACTIVE_N2_STATUSES = new Set(['QUEUED', 'RUNNING'])
+const TERMINAL_N2_STATUSES = new Set(['COMPLETE', 'FAILED', 'BLOCKED'])
+const N2_POLL_INTERVAL_MS = 2000
+
+function terminalTransitionKey(workflowState) {
+  const execution = workflowState?.n2_execution
+  if (!execution || !TERMINAL_N2_STATUSES.has(execution.status)) return null
+  return [
+    execution.execution_id,
+    execution.attempt_number ?? execution.attempt_id ?? '',
+    execution.status,
+  ].join(':')
+}
+
+function workflowExecutionVersion(workflowState) {
+  const execution = workflowState?.n2_execution
+  return execution
+    ? `${execution.execution_id}:${execution.status}`
+    : `n1:${workflowState?.n1_state ?? ''}:${workflowState?.selection_revision ?? ''}`
+}
+
+function isStaleActiveResponse(current, next) {
+  const currentExecution = current?.n2_execution
+  const nextExecution = next?.n2_execution
+  return Boolean(
+    currentExecution?.execution_id
+    && currentExecution.execution_id === nextExecution?.execution_id
+    && TERMINAL_N2_STATUSES.has(currentExecution.status)
+    && ACTIVE_N2_STATUSES.has(nextExecution.status),
+  )
+}
+
 function orchestrationProgress(workflowState, sourceId) {
   if (workflowState?.n2_is_current === false) return null
   return workflowState?.n2_execution?.source_progress?.find(
@@ -142,6 +174,9 @@ async function loadPersistedSourceStates(agentProjectId, sources, workflowState)
 
 export default function useRequirementEvidenceWorkflow(agentProjectId) {
   const requestSequence = useRef(0)
+  const latestWorkflow = useRef(null)
+  const latestSources = useRef([])
+  const terminalDetailRefreshes = useRef(new Set())
   const [reloadSequence, setReloadSequence] = useState(0)
   const [sources, setSources] = useState([])
   const [loadStatus, setLoadStatus] = useState('loading')
@@ -155,6 +190,23 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
   const [n2Retrying, setN2Retrying] = useState(false)
   const [workflowError, setWorkflowError] = useState('')
   const [error, setError] = useState('')
+  const [detailsLoading, setDetailsLoading] = useState(false)
+
+  latestSources.current = sources
+
+  const acceptWorkflowState = useCallback((nextWorkflowState) => {
+    if (isStaleActiveResponse(latestWorkflow.current, nextWorkflowState)) return false
+    latestWorkflow.current = nextWorkflowState
+    setWorkflowState(nextWorkflowState)
+    return true
+  }, [])
+
+  useEffect(() => {
+    latestWorkflow.current = null
+    latestSources.current = []
+    terminalDetailRefreshes.current.clear()
+    setDetailsLoading(false)
+  }, [agentProjectId])
 
   useEffect(() => {
     const requestId = requestSequence.current + 1
@@ -170,7 +222,7 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
         if (requestSequence.current !== requestId) return
         if (!Array.isArray(response?.data)) throw new Error('Invalid requirement sources response')
         if (!workflowResponse?.data?.n1_state) throw new Error('Invalid requirements workflow response')
-        setWorkflowState(workflowResponse.data)
+        acceptWorkflowState(workflowResponse.data)
         const nextSources = response.data.filter((source) => (
           ['DOCUMENT', 'AUDIO', 'VIDEO'].includes(source.source_type)
         ))
@@ -181,8 +233,13 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
           workflowResponse.data,
         )
         if (requestSequence.current !== requestId) return
-        setProcessingStates(detailedStates.processing)
-        setPreparationStates(detailedStates.preparation)
+        if (
+          workflowExecutionVersion(latestWorkflow.current)
+          === workflowExecutionVersion(workflowResponse.data)
+        ) {
+          setProcessingStates(detailedStates.processing)
+          setPreparationStates(detailedStates.preparation)
+        }
         setLoadStatus('success')
       })
       .catch((requestError) => {
@@ -192,46 +249,76 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
       })
 
     return () => { requestSequence.current += 1 }
-  }, [agentProjectId, reloadSequence])
+  }, [acceptWorkflowState, agentProjectId, reloadSequence])
 
   const n2ExecutionId = workflowState?.n2_execution?.execution_id
   const n2Status = workflowState?.n2_execution?.status
 
+  const refreshTerminalDetails = useCallback(async (terminalWorkflowState) => {
+    const transitionKey = terminalTransitionKey(terminalWorkflowState)
+    if (!transitionKey || terminalDetailRefreshes.current.has(transitionKey)) return
+    terminalDetailRefreshes.current.add(transitionKey)
+    setDetailsLoading(true)
+    try {
+      const detailedStates = await loadPersistedSourceStates(
+        agentProjectId,
+        latestSources.current,
+        terminalWorkflowState,
+      )
+      if (terminalTransitionKey(latestWorkflow.current) !== transitionKey) return
+      setProcessingStates(detailedStates.processing)
+      setPreparationStates(detailedStates.preparation)
+    } finally {
+      if (terminalTransitionKey(latestWorkflow.current) === transitionKey) {
+        setDetailsLoading(false)
+      }
+    }
+  }, [agentProjectId])
+
   useEffect(() => {
-    if (!['QUEUED', 'RUNNING'].includes(n2Status)) return undefined
+    if (!ACTIVE_N2_STATUSES.has(n2Status)) return undefined
     let active = true
-    const timer = window.setTimeout(() => {
-      void getRequirementWorkflow(agentProjectId)
-        .then((response) => {
-          if (active && response?.data?.n1_state) {
-            setWorkflowState(response.data)
-            if (
-              response.data.n2_execution?.status !== n2Status
-              && ['COMPLETE', 'FAILED', 'BLOCKED'].includes(response.data.n2_execution?.status)
-            ) {
-              setLoadStatus('loading')
-              setReloadSequence((value) => value + 1)
-            }
-          }
-        })
-        .catch((requestError) => {
-          if (active && requestError?.status !== 401) {
-            setWorkflowError(errorMessage(requestError, 'N2 status could not be refreshed.'))
-          }
-        })
-    }, 750)
+    let timer = null
+
+    const scheduleNextPoll = () => {
+      if (active) timer = window.setTimeout(pollWorkflow, N2_POLL_INTERVAL_MS)
+    }
+
+    const pollWorkflow = async () => {
+      try {
+        const response = await getRequirementWorkflow(agentProjectId)
+        if (!active || !response?.data?.n1_state) return
+        if (!acceptWorkflowState(response.data)) {
+          scheduleNextPoll()
+          return
+        }
+        setWorkflowError('')
+        const nextStatus = response.data.n2_execution?.status
+        if (TERMINAL_N2_STATUSES.has(nextStatus)) {
+          void refreshTerminalDetails(response.data)
+          return
+        }
+        if (ACTIVE_N2_STATUSES.has(nextStatus)) scheduleNextPoll()
+      } catch (requestError) {
+        if (!active || requestError?.status === 401) return
+        setWorkflowError(errorMessage(requestError, 'N2 status could not be refreshed.'))
+        scheduleNextPoll()
+      }
+    }
+
+    scheduleNextPoll()
     return () => {
       active = false
-      window.clearTimeout(timer)
+      if (timer !== null) window.clearTimeout(timer)
     }
-  }, [agentProjectId, n2ExecutionId, n2Status])
+  }, [acceptWorkflowState, agentProjectId, n2ExecutionId, n2Status, refreshTerminalDetails])
 
   const reload = useCallback(() => setReloadSequence((value) => value + 1), [])
 
   async function refreshWorkflow() {
     const response = await getRequirementWorkflow(agentProjectId)
     if (!response?.data?.n1_state) throw new Error('Invalid requirements workflow response')
-    setWorkflowState(response.data)
+    acceptWorkflowState(response.data)
     return response.data
   }
 
@@ -455,7 +542,7 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
     try {
       const response = await updateRequirementOutputs(agentProjectId, selectedOutputs)
       if (!response?.data?.n1_state) throw new Error('Invalid requested outputs response')
-      setWorkflowState(response.data)
+      acceptWorkflowState(response.data)
     } catch (requestError) {
       if (requestError?.status !== 401) {
         setWorkflowError(errorMessage(requestError, 'Requested outputs could not be saved.'))
@@ -472,7 +559,7 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
     try {
       const response = await continueRequirementN1(agentProjectId)
       if (!response?.data?.n1_state) throw new Error('Invalid N1 confirmation response')
-      setWorkflowState(response.data)
+      acceptWorkflowState(response.data)
     } catch (requestError) {
       if (requestError?.status !== 401) {
         setWorkflowError(errorMessage(requestError, 'The requirements input could not be confirmed.'))
@@ -489,7 +576,7 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
     try {
       const response = await retryRequirementN2(agentProjectId)
       if (!response?.data?.n1_state) throw new Error('Invalid N2 retry response')
-      setWorkflowState(response.data)
+      acceptWorkflowState(response.data)
     } catch (requestError) {
       if (requestError?.status !== 401) {
         setWorkflowError(errorMessage(requestError, 'N2 could not be retried.'))
@@ -504,6 +591,7 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
     changeSelectedOutputs,
     continueN1,
     continueSubmitting,
+    detailsLoading,
     error,
     loadPreparedEvidence,
     loadProcessingResult,

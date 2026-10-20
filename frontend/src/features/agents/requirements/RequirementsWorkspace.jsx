@@ -75,6 +75,11 @@ function RequirementsWorkspace({
             error={workflow.workflowError}
             onRetry={workflow.retryN2}
           />
+          {workflow.detailsLoading ? (
+            <p role="status" className="text-sm text-content-secondary">
+              Refreshing persisted source details...
+            </p>
+          ) : null}
           <EvidenceProcessingNode
             sources={workflow.sources}
             processingStates={workflow.processingStates}

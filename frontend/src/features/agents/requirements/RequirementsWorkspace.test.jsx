@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -78,6 +78,12 @@ function chunksFor(sourceId, sourceType = 'DOCUMENT', provenance = []) {
       provenance,
     }],
   } }
+}
+
+function deferred() {
+  let resolve
+  const promise = new Promise((next) => { resolve = next })
+  return { promise, resolve }
 }
 
 describe('RequirementsWorkspace seven-node pipeline', () => {
@@ -195,37 +201,151 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
     await waitFor(() => expect(retryRequirementN2).toHaveBeenCalledWith('AGP-001'))
   })
 
-  it('polls authoritative workflow state while N2 is active without issuing another start', async () => {
-    const queued = {
+  it('keeps one poll loop active across unchanged RUNNING responses and publishes COMPLETE immediately', async () => {
+    vi.useFakeTimers()
+    const running = {
       selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
       n2_execution: {
-        execution_id: 'N2-AAAAAAAAAAAAAAAA-001', status: 'QUEUED', retryable: false,
+        execution_id: 'N2-AAAAAAAAAAAAAAAA-001', status: 'RUNNING', retryable: false,
         input_sources: [{ source_id: 'DOC-001' }],
         source_progress: [{ source_id: 'DOC-001', processing_status: 'READY', preparation_status: 'READY', chunk_count: 0 }],
       },
     }
     getRequirementWorkflow
-      .mockResolvedValueOnce({ data: queued })
+      .mockResolvedValueOnce({ data: running })
+      .mockResolvedValueOnce({ data: running })
       .mockResolvedValue({ data: {
-        ...queued,
-        n2_execution: { ...queued.n2_execution, status: 'COMPLETE' },
+        ...running,
+        n2_execution: { ...running.n2_execution, status: 'COMPLETE' },
       } })
     let snapshot
-    render(
-      <RequirementsWorkspace
-        project={project}
-        activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING}
-        onPresentationChange={(value) => { snapshot = value }}
-      />,
-    )
+    try {
+      render(
+        <RequirementsWorkspace
+          project={project}
+          activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING}
+          onPresentationChange={(value) => { snapshot = value }}
+        />,
+      )
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(deriveRequirementsWorkflowPresentation(snapshot)[REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING].status).toBe('RUNNING')
 
-    await waitFor(() => {
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(2)
+      expect(deriveRequirementsWorkflowPresentation(snapshot)[REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING].status).toBe('RUNNING')
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
       expect(deriveRequirementsWorkflowPresentation(snapshot)[REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING].status).toBe('COMPLETE')
-    }, { timeout: 2000 })
-    expect(continueRequirementN1).not.toHaveBeenCalled()
-    await waitFor(() => expect(getRequirementWorkflow).toHaveBeenCalledTimes(3))
-    await new Promise((resolve) => window.setTimeout(resolve, 850))
-    expect(getRequirementWorkflow).toHaveBeenCalledTimes(3)
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(3)
+      expect(continueRequirementN1).not.toHaveBeenCalled()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['FAILED', 'BLOCKED'])('stops polling after %s', async (terminalStatus) => {
+    vi.useFakeTimers()
+    const running = {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
+      n2_execution: {
+        execution_id: 'N2-DDDDDDDDDDDDDDDD-001', status: 'RUNNING', retryable: false,
+        input_sources: [{ source_id: 'DOC-001' }],
+        source_progress: [{ source_id: 'DOC-001', processing_status: 'RUNNING', preparation_status: 'READY', chunk_count: 0 }],
+      },
+    }
+    getRequirementWorkflow
+      .mockResolvedValueOnce({ data: running })
+      .mockResolvedValue({ data: {
+        ...running,
+        n2_execution: { ...running.n2_execution, status: terminalStatus },
+      } })
+    try {
+      render(<RequirementsWorkspace project={project} activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING} />)
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(screen.getByLabelText('N2 orchestration status')).toHaveTextContent(
+        terminalStatus === 'FAILED' ? 'Failed' : 'Blocked',
+      )
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cleans up its pending poll when the workspace unmounts', async () => {
+    vi.useFakeTimers()
+    getRequirementWorkflow.mockResolvedValue({ data: {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
+      n2_execution: {
+        execution_id: 'N2-EEEEEEEEEEEEEEEE-001', status: 'RUNNING', retryable: false,
+        input_sources: [{ source_id: 'DOC-001' }], source_progress: [],
+      },
+    } })
+    try {
+      const view = render(<RequirementsWorkspace project={project} />)
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      view.unmount()
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores an older RUNNING poll response after a newer terminal workflow is accepted', async () => {
+    vi.useFakeTimers()
+    const stalePoll = deferred()
+    const running = {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
+      n2_execution: {
+        execution_id: 'N2-9999999999999999-001', status: 'RUNNING', retryable: false,
+        input_sources: [{ source_id: 'DOC-001' }], source_progress: [],
+      },
+    }
+    const complete = {
+      ...running,
+      n2_execution: { ...running.n2_execution, status: 'COMPLETE' },
+    }
+    let firstProjectRequestCount = 0
+    getRequirementWorkflow.mockImplementation((projectId) => {
+      if (projectId === 'AGP-002') return Promise.resolve({ data: complete })
+      firstProjectRequestCount += 1
+      return firstProjectRequestCount === 1
+        ? Promise.resolve({ data: running })
+        : stalePoll.promise
+    })
+    let snapshot
+    try {
+      const view = render(
+        <RequirementsWorkspace
+          project={project}
+          activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING}
+          onPresentationChange={(value) => { snapshot = value }}
+        />,
+      )
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+
+      view.rerender(
+        <RequirementsWorkspace
+          project={{ ...project, agent_project_id: 'AGP-002' }}
+          activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING}
+          onPresentationChange={(value) => { snapshot = value }}
+        />,
+      )
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
+      expect(deriveRequirementsWorkflowPresentation(snapshot)[REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING].status).toBe('COMPLETE')
+
+      stalePoll.resolve({ data: running })
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(deriveRequirementsWorkflowPresentation(snapshot)[REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING].status).toBe('COMPLETE')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('keeps Continue disabled when sources exist but no output is selected', async () => {
@@ -435,6 +555,82 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
     expect(getRequirementPreparationStatus).toHaveBeenCalledTimes(2)
     expect(getRequirementEvidenceChunks).toHaveBeenCalledWith('AGP-001', 'DOC-001')
     expect(continueRequirementN1).not.toHaveBeenCalled()
+  })
+
+  it('publishes terminal audio workflow state before detail hydration and then shows seven persisted chunks', async () => {
+    vi.useFakeTimers()
+    const audioOnly = [persistedSources[1]]
+    const running = {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
+      n2_execution: {
+        execution_id: 'N2-FFFFFFFFFFFFFFFF-001', attempt_number: 1, status: 'RUNNING',
+        input_sources: audioOnly,
+        source_progress: [{
+          source_id: 'AUD-001', processing_status: 'RUNNING', preparation_status: 'READY', chunk_count: 0,
+        }],
+      },
+    }
+    const complete = {
+      ...running,
+      n2_execution: {
+        ...running.n2_execution,
+        status: 'COMPLETE',
+        source_progress: [{
+          source_id: 'AUD-001', processing_status: 'COMPLETE', preparation_status: 'COMPLETE', chunk_count: 7,
+        }],
+      },
+    }
+    const processingRefresh = deferred()
+    const preparationRefresh = deferred()
+    listRequirementSources.mockResolvedValue({ data: audioOnly })
+    getRequirementWorkflow
+      .mockResolvedValueOnce({ data: running })
+      .mockResolvedValue({ data: complete })
+    getRequirementAudioProcessingStatus
+      .mockResolvedValueOnce(processingStatus('AUD-001', 'PROCESSING'))
+      .mockReturnValueOnce(processingRefresh.promise)
+    getRequirementPreparationStatus
+      .mockResolvedValueOnce(preparationStatus('AUD-001', 'READY'))
+      .mockReturnValueOnce(preparationRefresh.promise)
+    getRequirementEvidenceChunks.mockResolvedValue({ data: {
+      source_id: 'AUD-001', source_type: 'AUDIO',
+      chunks: Array.from({ length: 7 }, (_, index) => ({
+        chunk_id: `CHK-${String(index + 1).padStart(16, '0')}`,
+        content: `Audio chunk ${index + 1}`,
+        provenance: [],
+      })),
+    } })
+    let snapshot
+    try {
+      render(
+        <RequirementsWorkspace
+          project={project}
+          activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING}
+          onPresentationChange={(value) => { snapshot = value }}
+        />,
+      )
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+
+      expect(deriveRequirementsWorkflowPresentation(snapshot)[REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING].status).toBe('COMPLETE')
+      expect(screen.getByLabelText('N2 orchestration status')).toHaveTextContent('Complete')
+      expect(screen.getByRole('status')).toHaveTextContent('Refreshing persisted source details')
+
+      processingRefresh.resolve(processingStatus('AUD-001', 'COMPLETED'))
+      preparationRefresh.resolve(preparationStatus('AUD-001', 'COMPLETED'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+
+      const audioCard = screen.getByText(/AUD-001 .* interview.mp3/).closest('[data-variant]')
+      expect(within(within(audioCard).getByLabelText('Transcription for interview.mp3')).getByText('Complete')).toBeInTheDocument()
+      expect(within(within(audioCard).getByLabelText('Evidence preparation for interview.mp3')).getByText('Complete')).toBeInTheDocument()
+      expect(within(audioCard).getByText('7 chunks')).toBeInTheDocument()
+      expect(getRequirementAudioProcessingStatus).toHaveBeenCalledTimes(2)
+      expect(getRequirementPreparationStatus).toHaveBeenCalledTimes(2)
+      expect(getRequirementEvidenceChunks).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('renders an integrity failure instead of READY when COMPLETE detail artifacts disagree', async () => {
