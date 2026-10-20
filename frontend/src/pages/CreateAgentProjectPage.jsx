@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
 
 import ErrorState from '../components/feedback/ErrorState.jsx'
 import FormError from '../components/feedback/FormError.jsx'
@@ -32,6 +32,7 @@ function mapFieldErrors(errors) {
 function CreateAgentProjectPage() {
   const { agentSlug } = useParams()
   const navigate = useNavigate()
+  const { refreshAgentProjects } = useOutletContext() ?? {}
   const agent = getAgentPresentationBySlug(agentSlug)
   const requestInFlight = useRef(false)
   const [form, setForm] = useState(initialForm)
@@ -78,6 +79,7 @@ function CreateAgentProjectPage() {
       })
       const projectId = response?.data?.agent_project_id
       if (typeof projectId !== 'string' || !projectId.trim()) throw new Error('Missing agent project ID')
+      await refreshAgentProjects?.()
       navigate(`/agent-projects/${encodeURIComponent(projectId.trim())}`, {
         replace: true,
         state: { agentProjectEntry: 'created' },

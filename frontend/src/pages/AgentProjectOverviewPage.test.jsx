@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -73,13 +73,15 @@ const runs = [
   { run_id: 'RUN-001', run_mode: 'DEFAULT', status: 'QUEUED', selected_outputs: ['SUMMARY'], created_at: '2026-10-14T09:00:00Z' },
 ]
 
-function renderOverview(path = '/agent-projects/AGP-001') {
+function renderOverview(path = '/agent-projects/AGP-001', refreshAgentProjects) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/agent-projects/:agentProjectId" element={<AgentProjectOverviewPage />} />
-        <Route path="/agents/:agentSlug" element={<h1>Agent list</h1>} />
-        <Route path="/agents" element={<h1>Hub</h1>} />
+        <Route element={<Outlet context={{ refreshAgentProjects }} />}>
+          <Route path="/agent-projects/:agentProjectId" element={<AgentProjectOverviewPage />} />
+          <Route path="/agents/:agentSlug" element={<h1>Agent list</h1>} />
+          <Route path="/agents" element={<h1>Hub</h1>} />
+        </Route>
       </Routes>
     </MemoryRouter>,
   )
@@ -148,9 +150,10 @@ describe('AgentProjectOverviewPage', () => {
 
   it('archives after confirmation and reactivates archived projects', async () => {
     const user = userEvent.setup()
+    const refreshAgentProjects = vi.fn().mockResolvedValue([])
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     updateAgentProject.mockResolvedValue({ data: { ...project, status: 'ARCHIVED' } })
-    const view = renderOverview()
+    const view = renderOverview('/agent-projects/AGP-001', refreshAgentProjects)
     await screen.findByRole('heading', { name: 'Quality Gate' })
     await user.click(screen.getByRole('button', { name: 'Archive Project' }))
     expect(updateAgentProject).toHaveBeenCalledWith('AGP-001', { status: 'ARCHIVED' })
@@ -160,6 +163,7 @@ describe('AgentProjectOverviewPage', () => {
     updateAgentProject.mockResolvedValue({ data: project })
     await user.click(screen.getByRole('button', { name: 'Reactivate Project' }))
     expect(updateAgentProject).toHaveBeenLastCalledWith('AGP-001', { status: 'ACTIVE' })
+    expect(refreshAgentProjects).toHaveBeenCalledTimes(2)
     view.unmount()
     vi.restoreAllMocks()
   })

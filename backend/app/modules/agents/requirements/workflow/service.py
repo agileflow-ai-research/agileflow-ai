@@ -19,6 +19,7 @@ from app.modules.agents.requirements.workflow.schemas import (
     RequirementWorkflowResponse,
 )
 from app.modules.agents.requirements.workflow.storage import (
+    WORKFLOW_STATE_LOCK,
     RequirementWorkflowStorage,
     RequirementWorkflowStorageError,
 )
@@ -89,11 +90,12 @@ class RequirementWorkflowService:
     def get(
         self, agent_project_id: str, current_user: UserPublicResponse
     ) -> RequirementWorkflowResponse:
-        project = require_requirements_project(
-            self._standalone, agent_project_id, current_user
-        )
-        record, sources = self._load_current(project.agent_project_id, current_user)
-        return self._response(record, len(sources))
+        with WORKFLOW_STATE_LOCK:
+            project = require_requirements_project(
+                self._standalone, agent_project_id, current_user
+            )
+            record, sources = self._load_current(project.agent_project_id, current_user)
+            return self._response(record, len(sources))
 
     def update_outputs(
         self,
@@ -101,55 +103,57 @@ class RequirementWorkflowService:
         current_user: UserPublicResponse,
         outputs: list[RequirementOutputCode],
     ) -> RequirementWorkflowResponse:
-        project = require_requirements_project(
-            self._standalone, agent_project_id, current_user
-        )
-        record, sources = self._load_current(project.agent_project_id, current_user)
-        next_outputs = canonical_outputs(outputs)
-        if next_outputs != record.selected_outputs:
-            record = record.model_copy(
-                update={
-                    "selected_outputs": next_outputs,
-                    "selection_revision": record.selection_revision + 1,
-                    "selection_digest": selection_digest(next_outputs),
-                    "updated_at": self._clock(),
-                }
+        with WORKFLOW_STATE_LOCK:
+            project = require_requirements_project(
+                self._standalone, agent_project_id, current_user
             )
-            self._workflow.save(record)
-        return self._response(record, len(sources))
+            record, sources = self._load_current(project.agent_project_id, current_user)
+            next_outputs = canonical_outputs(outputs)
+            if next_outputs != record.selected_outputs:
+                record = record.model_copy(
+                    update={
+                        "selected_outputs": next_outputs,
+                        "selection_revision": record.selection_revision + 1,
+                        "selection_digest": selection_digest(next_outputs),
+                        "updated_at": self._clock(),
+                    }
+                )
+                self._workflow.save(record)
+            return self._response(record, len(sources))
 
     def continue_n1(
         self, agent_project_id: str, current_user: UserPublicResponse
     ) -> RequirementWorkflowResponse:
-        project = require_requirements_project(
-            self._standalone, agent_project_id, current_user
-        )
-        record, sources = self._load_current(project.agent_project_id, current_user)
-        if not sources:
-            raise RequirementWorkflowGateError(
-                "Add at least one valid requirement source before continuing"
+        with WORKFLOW_STATE_LOCK:
+            project = require_requirements_project(
+                self._standalone, agent_project_id, current_user
             )
-        if not record.selected_outputs:
-            raise RequirementWorkflowGateError(
-                "Select at least one requested output before continuing"
-            )
-        confirmation = record.n1_confirmation
-        if not self._confirmation_current(record):
-            now = self._clock()
-            record = record.model_copy(
-                update={
-                    "n1_confirmation": RequirementN1Confirmation(
-                        source_set_digest=record.source_set_digest,
-                        selection_digest=record.selection_digest,
-                        confirmed_at=now,
-                    ),
-                    "updated_at": now,
-                }
-            )
-            self._workflow.save(record)
-        elif confirmation is None:  # pragma: no cover - defensive invariant
-            raise RequirementWorkflowGateError("N1 confirmation is unavailable")
-        return self._response(record, len(sources))
+            record, sources = self._load_current(project.agent_project_id, current_user)
+            if not sources:
+                raise RequirementWorkflowGateError(
+                    "Add at least one valid requirement source before continuing"
+                )
+            if not record.selected_outputs:
+                raise RequirementWorkflowGateError(
+                    "Select at least one requested output before continuing"
+                )
+            confirmation = record.n1_confirmation
+            if not self._confirmation_current(record):
+                now = self._clock()
+                record = record.model_copy(
+                    update={
+                        "n1_confirmation": RequirementN1Confirmation(
+                            source_set_digest=record.source_set_digest,
+                            selection_digest=record.selection_digest,
+                            confirmed_at=now,
+                        ),
+                        "updated_at": now,
+                    }
+                )
+                self._workflow.save(record)
+            elif confirmation is None:  # pragma: no cover - defensive invariant
+                raise RequirementWorkflowGateError("N1 confirmation is unavailable")
+            return self._response(record, len(sources))
 
     def _load_current(self, agent_project_id: str, current_user: UserPublicResponse):
         sources = self._sources.list_for_project(
@@ -173,6 +177,15 @@ class RequirementWorkflowService:
                 source_set_digest=current_source_digest,
                 created_at=now,
                 updated_at=now,
+            )
+            self._workflow.save(record)
+        elif record.schema_version == "1" and record.workflow_version == "W1":
+            record = record.model_copy(
+                update={
+                    "schema_version": REQUIREMENTS_WORKFLOW_SCHEMA_VERSION,
+                    "workflow_version": REQUIREMENTS_WORKFLOW_VERSION,
+                    "updated_at": self._clock(),
+                }
             )
             self._workflow.save(record)
         else:
@@ -215,6 +228,23 @@ class RequirementWorkflowService:
         else:
             state = RequirementN1State.WAITING_FOR_HUMAN
         confirmation = record.n1_confirmation
+        execution = next(
+            (
+                item
+                for item in reversed(record.n2_executions)
+                if item.execution_id == record.current_n2_execution_id
+            ),
+            None,
+        )
+        n2_is_current = bool(
+            current
+            and execution
+            and confirmation
+            and execution.confirmed_source_set_digest
+            == confirmation.source_set_digest
+            and execution.confirmed_selection_digest
+            == confirmation.selection_digest
+        )
         return RequirementWorkflowResponse(
             schema_version=record.schema_version,
             workflow_version=record.workflow_version,
@@ -233,6 +263,9 @@ class RequirementWorkflowService:
                 confirmation.selection_digest if confirmation else None
             ),
             confirmed_at=confirmation.confirmed_at if confirmation else None,
+            n2_execution=execution,
+            n2_is_current=n2_is_current,
+            n2_execution_count=len(record.n2_executions),
             created_at=record.created_at,
             updated_at=record.updated_at,
         )

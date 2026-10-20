@@ -18,6 +18,7 @@ import {
   processRequirementAudio,
   processRequirementDocument,
   processRequirementVideo,
+  retryRequirementN2,
   uploadRequirementSource,
   updateRequirementOutputs,
 } from '../requirementsAgentService.js'
@@ -44,6 +45,101 @@ function errorMessage(error, fallback) {
   return error?.errors?.[0]?.message || fallback
 }
 
+function orchestrationProgress(workflowState, sourceId) {
+  if (workflowState?.n2_is_current === false) return null
+  return workflowState?.n2_execution?.source_progress?.find(
+    (progress) => progress.source_id === sourceId,
+  ) ?? null
+}
+
+function processingFallback(workflowState, sourceId) {
+  const status = orchestrationProgress(workflowState, sourceId)?.processing_status
+  return {
+    status: status === 'COMPLETE' ? 'COMPLETED' : status === 'RUNNING' ? 'PROCESSING' : status ?? 'READY',
+    result: null,
+    requestError: '',
+  }
+}
+
+function preparationFallback(workflowState, sourceId) {
+  const status = orchestrationProgress(workflowState, sourceId)?.preparation_status
+  return {
+    status: status === 'COMPLETE' ? 'COMPLETED' : status === 'RUNNING' ? 'PROCESSING' : status ?? 'READY',
+    normalized: null,
+    chunks: null,
+    requestError: '',
+  }
+}
+
+async function loadPersistedSourceStates(agentProjectId, sources, workflowState) {
+  const entries = await Promise.all(sources.map(async (source) => {
+    const sourceId = source.source_id
+    const processing = processingFallback(workflowState, sourceId)
+    const preparation = preparationFallback(workflowState, sourceId)
+    const [processingRequest, preparationRequest] = await Promise.allSettled([
+      processingClient(source.source_type).getStatus(agentProjectId, sourceId),
+      getRequirementPreparationStatus(agentProjectId, sourceId),
+    ])
+
+    if (processingRequest.status === 'fulfilled' && processingRequest.value?.data?.status) {
+      Object.assign(processing, processingRequest.value.data)
+    } else if (processingRequest.status === 'rejected' && processingRequest.reason?.status !== 401) {
+      processing.requestError = errorMessage(
+        processingRequest.reason,
+        'Processing status could not be loaded.',
+      )
+    }
+
+    if (preparationRequest.status === 'fulfilled' && preparationRequest.value?.data?.status) {
+      Object.assign(preparation, preparationRequest.value.data)
+      if (preparation.status === 'COMPLETED') {
+        try {
+          const chunksResponse = await getRequirementEvidenceChunks(agentProjectId, sourceId)
+          if (!Array.isArray(chunksResponse?.data?.chunks) || chunksResponse.data.chunks.length === 0) {
+            throw new Error('Invalid prepared evidence response')
+          }
+          preparation.chunks = chunksResponse.data
+        } catch (chunksError) {
+          if (chunksError?.status !== 401) {
+            preparation.requestError = errorMessage(
+              chunksError,
+              'Prepared evidence could not be validated.',
+            )
+          }
+        }
+      }
+    } else if (preparationRequest.status === 'rejected' && preparationRequest.reason?.status !== 401) {
+      preparation.requestError = errorMessage(
+        preparationRequest.reason,
+        'Preparation status could not be loaded.',
+      )
+    }
+
+    const progress = orchestrationProgress(workflowState, sourceId)
+    if (workflowState?.n2_execution?.status === 'COMPLETE' && progress) {
+      if (processing.status !== 'COMPLETED') {
+        processing.status = 'FAILED'
+        processing.requestError = 'Completed N2 processing could not be validated from persisted source artifacts.'
+      }
+      if (
+        preparation.status !== 'COMPLETED'
+        || !Array.isArray(preparation.chunks?.chunks)
+        || preparation.chunks.chunks.length === 0
+      ) {
+        preparation.status = 'FAILED'
+        preparation.requestError = 'Completed N2 preparation could not be validated from persisted source artifacts.'
+      }
+    }
+
+    return [sourceId, processing, preparation]
+  }))
+
+  return {
+    processing: Object.fromEntries(entries.map(([sourceId, state]) => [sourceId, state])),
+    preparation: Object.fromEntries(entries.map(([sourceId, , state]) => [sourceId, state])),
+  }
+}
+
 export default function useRequirementEvidenceWorkflow(agentProjectId) {
   const requestSequence = useRef(0)
   const [reloadSequence, setReloadSequence] = useState(0)
@@ -56,6 +152,7 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
   const [workflowState, setWorkflowState] = useState(null)
   const [outputSaving, setOutputSaving] = useState(false)
   const [continueSubmitting, setContinueSubmitting] = useState(false)
+  const [n2Retrying, setN2Retrying] = useState(false)
   const [workflowError, setWorkflowError] = useState('')
   const [error, setError] = useState('')
 
@@ -78,75 +175,15 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
           ['DOCUMENT', 'AUDIO', 'VIDEO'].includes(source.source_type)
         ))
         setSources(nextSources)
-        setProcessingStates(Object.fromEntries(nextSources.map((source) => [
-          source.source_id,
-          { status: 'READY', result: null, requestError: '' },
-        ])))
-        setPreparationStates(Object.fromEntries(nextSources.map((source) => [
-          source.source_id,
-          { status: 'READY', normalized: null, chunks: null, requestError: '' },
-        ])))
+        const detailedStates = await loadPersistedSourceStates(
+          agentProjectId,
+          nextSources,
+          workflowResponse.data,
+        )
+        if (requestSequence.current !== requestId) return
+        setProcessingStates(detailedStates.processing)
+        setPreparationStates(detailedStates.preparation)
         setLoadStatus('success')
-
-        await Promise.all(nextSources.map(async (source) => {
-          const [processingRequest, preparationRequest] = await Promise.allSettled([
-            processingClient(source.source_type).getStatus(agentProjectId, source.source_id),
-            getRequirementPreparationStatus(agentProjectId, source.source_id),
-          ])
-          if (requestSequence.current !== requestId) return
-
-          if (processingRequest.status === 'fulfilled' && processingRequest.value?.data?.status) {
-            setProcessingStates((current) => ({
-              ...current,
-              [source.source_id]: { ...processingRequest.value.data, result: null, requestError: '' },
-            }))
-          } else if (processingRequest.status === 'rejected' && processingRequest.reason?.status !== 401) {
-            setProcessingStates((current) => ({
-              ...current,
-              [source.source_id]: {
-                ...(current[source.source_id] ?? { status: 'READY' }),
-                requestError: errorMessage(processingRequest.reason, 'Processing status could not be loaded.'),
-              },
-            }))
-          }
-
-          if (preparationRequest.status === 'fulfilled' && preparationRequest.value?.data?.status) {
-            const preparation = preparationRequest.value.data
-            let chunks = null
-            let requestError = ''
-            if (preparation.status === 'COMPLETED') {
-              try {
-                const chunksResponse = await getRequirementEvidenceChunks(agentProjectId, source.source_id)
-                if (!Array.isArray(chunksResponse?.data?.chunks) || chunksResponse.data.chunks.length === 0) {
-                  throw new Error('Invalid prepared evidence response')
-                }
-                chunks = chunksResponse.data
-              } catch (chunksError) {
-                if (chunksError?.status !== 401) {
-                  requestError = errorMessage(chunksError, 'Prepared evidence could not be validated.')
-                }
-              }
-            }
-            if (requestSequence.current !== requestId) return
-            setPreparationStates((current) => ({
-              ...current,
-              [source.source_id]: {
-                ...preparation,
-                normalized: null,
-                chunks,
-                requestError,
-              },
-            }))
-          } else if (preparationRequest.status === 'rejected' && preparationRequest.reason?.status !== 401) {
-            setPreparationStates((current) => ({
-              ...current,
-              [source.source_id]: {
-                ...(current[source.source_id] ?? { status: 'READY' }),
-                requestError: errorMessage(preparationRequest.reason, 'Preparation status could not be loaded.'),
-              },
-            }))
-          }
-        }))
       })
       .catch((requestError) => {
         if (requestSequence.current !== requestId || requestError?.status === 401) return
@@ -156,6 +193,38 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
 
     return () => { requestSequence.current += 1 }
   }, [agentProjectId, reloadSequence])
+
+  const n2ExecutionId = workflowState?.n2_execution?.execution_id
+  const n2Status = workflowState?.n2_execution?.status
+
+  useEffect(() => {
+    if (!['QUEUED', 'RUNNING'].includes(n2Status)) return undefined
+    let active = true
+    const timer = window.setTimeout(() => {
+      void getRequirementWorkflow(agentProjectId)
+        .then((response) => {
+          if (active && response?.data?.n1_state) {
+            setWorkflowState(response.data)
+            if (
+              response.data.n2_execution?.status !== n2Status
+              && ['COMPLETE', 'FAILED', 'BLOCKED'].includes(response.data.n2_execution?.status)
+            ) {
+              setLoadStatus('loading')
+              setReloadSequence((value) => value + 1)
+            }
+          }
+        })
+        .catch((requestError) => {
+          if (active && requestError?.status !== 401) {
+            setWorkflowError(errorMessage(requestError, 'N2 status could not be refreshed.'))
+          }
+        })
+    }, 750)
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [agentProjectId, n2ExecutionId, n2Status])
 
   const reload = useCallback(() => setReloadSequence((value) => value + 1), [])
 
@@ -413,6 +482,23 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
     }
   }
 
+  async function retryN2() {
+    if (n2Retrying) return
+    setN2Retrying(true)
+    setWorkflowError('')
+    try {
+      const response = await retryRequirementN2(agentProjectId)
+      if (!response?.data?.n1_state) throw new Error('Invalid N2 retry response')
+      setWorkflowState(response.data)
+    } catch (requestError) {
+      if (requestError?.status !== 401) {
+        setWorkflowError(errorMessage(requestError, 'N2 could not be retried.'))
+      }
+    } finally {
+      setN2Retrying(false)
+    }
+  }
+
   return {
     addFiles,
     changeSelectedOutputs,
@@ -422,11 +508,13 @@ export default function useRequirementEvidenceWorkflow(agentProjectId) {
     loadPreparedEvidence,
     loadProcessingResult,
     loadStatus,
+    n2Retrying,
     preparationStates,
     prepareSource,
     processingStates,
     processSource,
     reload,
+    retryN2,
     removeSource,
     removingId,
     sources,

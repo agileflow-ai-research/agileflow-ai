@@ -20,6 +20,7 @@ import {
   processRequirementAudio,
   processRequirementDocument,
   processRequirementVideo,
+  retryRequirementN2,
   uploadRequirementSource,
   updateRequirementOutputs,
 } from './requirementsAgentService.js'
@@ -45,6 +46,7 @@ vi.mock('./requirementsAgentService.js', () => ({
   processRequirementAudio: vi.fn(),
   processRequirementDocument: vi.fn(),
   processRequirementVideo: vi.fn(),
+  retryRequirementN2: vi.fn(),
   uploadRequirementSource: vi.fn(),
   updateRequirementOutputs: vi.fn(),
 }))
@@ -90,6 +92,19 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
     } })
     continueRequirementN1.mockResolvedValue({ data: {
       selected_outputs: ['SRS'], n1_state: 'COMPLETE', selection_revision: 1,
+      n2_is_current: true,
+      n2_execution: {
+        execution_id: 'N2-AAAAAAAAAAAAAAAA-001', status: 'QUEUED', retryable: false,
+        input_sources: persistedSources, source_progress: [],
+      },
+    } })
+    retryRequirementN2.mockResolvedValue({ data: {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', selection_revision: 1,
+      n2_is_current: true,
+      n2_execution: {
+        execution_id: 'N2-AAAAAAAAAAAAAAAA-002', status: 'QUEUED', retryable: false,
+        input_sources: persistedSources, source_progress: [],
+      },
     } })
     getRequirementDocumentProcessingStatus.mockResolvedValue(processingStatus('DOC-001'))
     getRequirementAudioProcessingStatus.mockResolvedValue(processingStatus('AUD-001'))
@@ -155,6 +170,62 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
     } })
     render(<RequirementsWorkspace project={project} />)
     expect(await screen.findByRole('button', { name: 'Continue — Process Evidence' })).toBeDisabled()
+  })
+
+  it('shows safe N2 failure progress and sends the explicit retry command', async () => {
+    const user = userEvent.setup()
+    getRequirementWorkflow.mockResolvedValue({ data: {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
+      n2_execution: {
+        execution_id: 'N2-AAAAAAAAAAAAAAAA-001', status: 'FAILED', retryable: true,
+        input_sources: [{ source_id: 'DOC-001' }],
+        source_progress: [{
+          source_id: 'DOC-001', processing_status: 'FAILED', preparation_status: 'READY', chunk_count: 0,
+        }],
+        error: { code: 'SOURCE_PROCESSING_FAILED', message: 'A confirmed source could not be processed.' },
+      },
+    } })
+    render(<RequirementsWorkspace project={project} activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING} />)
+
+    expect(await screen.findByLabelText('N2 orchestration status')).toHaveTextContent('SOURCE_PROCESSING_FAILED')
+    expect(screen.getByLabelText('N2 orchestration status')).toHaveTextContent('Processing: FAILED')
+    await new Promise((resolve) => window.setTimeout(resolve, 850))
+    expect(getRequirementWorkflow).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('button', { name: 'Retry N2' }))
+    await waitFor(() => expect(retryRequirementN2).toHaveBeenCalledWith('AGP-001'))
+  })
+
+  it('polls authoritative workflow state while N2 is active without issuing another start', async () => {
+    const queued = {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
+      n2_execution: {
+        execution_id: 'N2-AAAAAAAAAAAAAAAA-001', status: 'QUEUED', retryable: false,
+        input_sources: [{ source_id: 'DOC-001' }],
+        source_progress: [{ source_id: 'DOC-001', processing_status: 'READY', preparation_status: 'READY', chunk_count: 0 }],
+      },
+    }
+    getRequirementWorkflow
+      .mockResolvedValueOnce({ data: queued })
+      .mockResolvedValue({ data: {
+        ...queued,
+        n2_execution: { ...queued.n2_execution, status: 'COMPLETE' },
+      } })
+    let snapshot
+    render(
+      <RequirementsWorkspace
+        project={project}
+        activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING}
+        onPresentationChange={(value) => { snapshot = value }}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(deriveRequirementsWorkflowPresentation(snapshot)[REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING].status).toBe('COMPLETE')
+    }, { timeout: 2000 })
+    expect(continueRequirementN1).not.toHaveBeenCalled()
+    await waitFor(() => expect(getRequirementWorkflow).toHaveBeenCalledTimes(3))
+    await new Promise((resolve) => window.setTimeout(resolve, 850))
+    expect(getRequirementWorkflow).toHaveBeenCalledTimes(3)
   })
 
   it('keeps Continue disabled when sources exist but no output is selected', async () => {
@@ -245,6 +316,10 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
   })
 
   it('reloads real completed processing/preparation data and marks N2 complete only with chunks', async () => {
+    getRequirementWorkflow.mockResolvedValue({ data: {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
+      n2_execution: { execution_id: 'N2-AAAAAAAAAAAAAAAA-001', status: 'COMPLETE' },
+    } })
     getRequirementDocumentProcessingStatus.mockResolvedValue(processingStatus('DOC-001', 'COMPLETED'))
     getRequirementAudioProcessingStatus.mockResolvedValue(processingStatus('AUD-001', 'COMPLETED'))
     getRequirementVideoProcessingStatus.mockResolvedValue(processingStatus('VID-001', 'COMPLETED'))
@@ -270,7 +345,124 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
     expect(getRequirementEvidenceChunks).toHaveBeenCalledTimes(3)
   })
 
+  it('hydrates completed W2 detail state on reload and shows neutral zero-source modalities', async () => {
+    const documentOnly = [persistedSources[0]]
+    listRequirementSources.mockResolvedValue({ data: documentOnly })
+    getRequirementWorkflow.mockResolvedValue({ data: {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
+      n2_execution: {
+        execution_id: 'N2-AAAAAAAAAAAAAAAA-001', status: 'COMPLETE',
+        input_sources: documentOnly,
+        source_progress: [{
+          source_id: 'DOC-001', processing_status: 'COMPLETE', preparation_status: 'COMPLETE', chunk_count: 5,
+        }],
+      },
+    } })
+    getRequirementDocumentProcessingStatus.mockResolvedValue(processingStatus('DOC-001', 'COMPLETED'))
+    getRequirementPreparationStatus.mockResolvedValue(preparationStatus('DOC-001', 'COMPLETED'))
+    getRequirementEvidenceChunks.mockResolvedValue({ data: {
+      source_id: 'DOC-001', source_type: 'DOCUMENT',
+      chunks: Array.from({ length: 5 }, (_, index) => ({
+        chunk_id: `CHK-${String(index + 1).padStart(16, '0')}`,
+        content: `Chunk ${index + 1}`,
+        provenance: [],
+      })),
+    } })
+
+    render(<RequirementsWorkspace project={project} activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING} />)
+
+    const documentCard = (await screen.findByText(/requirements\.pdf/)).closest('[data-variant]')
+    expect(within(documentCard).getAllByText('Complete')).toHaveLength(2)
+    expect(within(documentCard).getByText('5 chunks')).toBeInTheDocument()
+    expect(within(documentCard).getByRole('button', { name: 'View Extraction' })).toBeInTheDocument()
+    expect(within(documentCard).getByRole('button', { name: 'View Prepared Evidence' })).toBeInTheDocument()
+    expect(within(documentCard).queryByRole('button', { name: /Process Document|Reprocess|Prepare Evidence|Reprepare/ })).not.toBeInTheDocument()
+
+    const progress = screen.getByRole('heading', { name: 'N2 Progress' }).parentElement
+    expect(within(progress).getByText('1 document source')).toBeInTheDocument()
+    expect(within(progress).getByText('1 of 1 source prepared')).toBeInTheDocument()
+    expect(within(progress).getByText('No audio sources')).toBeInTheDocument()
+    expect(within(progress).getByText('No video sources')).toBeInTheDocument()
+    expect(within(progress).getAllByText('No sources')).toHaveLength(2)
+    expect(within(progress).queryByText('Not Started')).not.toBeInTheDocument()
+  })
+
+  it('refreshes detailed source artifacts when terminal polling reports COMPLETE', async () => {
+    const documentOnly = [persistedSources[0]]
+    const queued = {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
+      n2_execution: {
+        execution_id: 'N2-BBBBBBBBBBBBBBBB-001', status: 'QUEUED',
+        input_sources: documentOnly,
+        source_progress: [{
+          source_id: 'DOC-001', processing_status: 'READY', preparation_status: 'READY', chunk_count: 0,
+        }],
+      },
+    }
+    const complete = {
+      ...queued,
+      n2_execution: {
+        ...queued.n2_execution,
+        status: 'COMPLETE',
+        source_progress: [{
+          source_id: 'DOC-001', processing_status: 'COMPLETE', preparation_status: 'COMPLETE', chunk_count: 1,
+        }],
+      },
+    }
+    listRequirementSources.mockResolvedValue({ data: documentOnly })
+    getRequirementWorkflow
+      .mockResolvedValueOnce({ data: queued })
+      .mockResolvedValueOnce({ data: complete })
+      .mockResolvedValue({ data: complete })
+    getRequirementDocumentProcessingStatus
+      .mockResolvedValueOnce(processingStatus('DOC-001', 'READY'))
+      .mockResolvedValue(processingStatus('DOC-001', 'COMPLETED'))
+    getRequirementPreparationStatus
+      .mockResolvedValueOnce(preparationStatus('DOC-001', 'READY'))
+      .mockResolvedValue(preparationStatus('DOC-001', 'COMPLETED'))
+    getRequirementEvidenceChunks.mockResolvedValue(chunksFor('DOC-001'))
+
+    render(<RequirementsWorkspace project={project} activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING} />)
+
+    await screen.findByText(/requirements\.pdf/)
+    await waitFor(() => {
+      expect(within(screen.getByLabelText('Extraction for requirements.pdf')).getByText('Complete')).toBeInTheDocument()
+      expect(within(screen.getByLabelText('Evidence preparation for requirements.pdf')).getByText('Complete')).toBeInTheDocument()
+    }, { timeout: 2500 })
+    const documentCard = screen.getByText(/requirements\.pdf/).closest('[data-variant]')
+    expect(within(documentCard).queryByText('Ready')).not.toBeInTheDocument()
+    expect(getRequirementDocumentProcessingStatus).toHaveBeenCalledTimes(2)
+    expect(getRequirementPreparationStatus).toHaveBeenCalledTimes(2)
+    expect(getRequirementEvidenceChunks).toHaveBeenCalledWith('AGP-001', 'DOC-001')
+    expect(continueRequirementN1).not.toHaveBeenCalled()
+  })
+
+  it('renders an integrity failure instead of READY when COMPLETE detail artifacts disagree', async () => {
+    const documentOnly = [persistedSources[0]]
+    listRequirementSources.mockResolvedValue({ data: documentOnly })
+    getRequirementWorkflow.mockResolvedValue({ data: {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
+      n2_execution: {
+        execution_id: 'N2-CCCCCCCCCCCCCCCC-001', status: 'COMPLETE',
+        input_sources: documentOnly,
+        source_progress: [{
+          source_id: 'DOC-001', processing_status: 'COMPLETE', preparation_status: 'COMPLETE', chunk_count: 5,
+        }],
+      },
+    } })
+
+    render(<RequirementsWorkspace project={project} activeSection={REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING} />)
+
+    expect(await screen.findByText(/Completed N2 processing could not be validated/)).toBeInTheDocument()
+    expect(screen.getByText(/Completed N2 preparation could not be validated/)).toBeInTheDocument()
+    expect(screen.queryByText('Ready')).not.toBeInTheDocument()
+  })
+
   it('does not mark N2 complete when a persisted chunk result cannot be validated', async () => {
+    getRequirementWorkflow.mockResolvedValue({ data: {
+      selected_outputs: ['SRS'], n1_state: 'COMPLETE', n2_is_current: true,
+      n2_execution: { execution_id: 'N2-AAAAAAAAAAAAAAAA-001', status: 'FAILED' },
+    } })
     getRequirementDocumentProcessingStatus.mockResolvedValue(processingStatus('DOC-001', 'COMPLETED'))
     getRequirementAudioProcessingStatus.mockResolvedValue(processingStatus('AUD-001', 'COMPLETED'))
     getRequirementVideoProcessingStatus.mockResolvedValue(processingStatus('VID-001', 'COMPLETED'))

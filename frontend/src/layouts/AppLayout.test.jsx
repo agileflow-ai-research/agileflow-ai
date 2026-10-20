@@ -4,7 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import AppLayout from './AppLayout.jsx'
-import { getAgentProjects } from '../services/agentProjectService.js'
+import CreateAgentProjectPage from '../pages/CreateAgentProjectPage.jsx'
+import { createAgentProject, getAgentProjects } from '../services/agentProjectService.js'
 import { getProjects } from '../services/projectService.js'
 
 const logout = vi.fn()
@@ -22,7 +23,10 @@ vi.mock('../features/auth/useAuth.js', () => ({
 }))
 
 vi.mock('../services/projectService.js', () => ({ getProjects: vi.fn() }))
-vi.mock('../services/agentProjectService.js', () => ({ getAgentProjects: vi.fn() }))
+vi.mock('../services/agentProjectService.js', () => ({
+  createAgentProject: vi.fn(),
+  getAgentProjects: vi.fn(),
+}))
 
 function renderLayout(path = '/projects') {
   return render(
@@ -32,6 +36,8 @@ function renderLayout(path = '/projects') {
           <Route path="/projects" element={<h1>Protected projects</h1>} />
           <Route path="/projects/new" element={<h1>Create project</h1>} />
           <Route path="/agents" element={<h1>AI agents</h1>} />
+          <Route path="/agents/:agentSlug/new" element={<CreateAgentProjectPage />} />
+          <Route path="/agents/:agentSlug" element={<h1>Agent projects</h1>} />
           <Route path="/agent-projects/:agentProjectId" element={<h1>Agent project</h1>} />
         </Route>
       </Routes>
@@ -132,5 +138,62 @@ describe('AppLayout', () => {
     expect(
       screen.queryByRole('complementary', { name: 'Mobile navigation' }),
     ).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['requirements', 'REQUIREMENTS', 'Agent 1 Created'],
+    ['design-planning', 'DESIGN_PLANNING', 'Agent 2 Created'],
+    ['implementation', 'IMPLEMENTATION', 'Agent 3 Created'],
+    ['testing-validation', 'TESTING_VALIDATION', 'Agent 4 Created'],
+  ])('refreshes the shared sidebar after creating a %s project', async (slug, agentType, name) => {
+    const user = userEvent.setup()
+    const existing = {
+      agent_project_id: 'AGP-001', agent_type: agentType, name: 'Existing Project', status: 'ACTIVE',
+    }
+    const created = {
+      agent_project_id: 'AGP-009', agent_type: agentType, name, status: 'ACTIVE',
+    }
+    getAgentProjects
+      .mockResolvedValueOnce({ data: [existing] })
+      .mockResolvedValue({ data: [existing, created] })
+    createAgentProject.mockResolvedValue({ data: created })
+    renderLayout(`/agents/${slug}/new`)
+    await screen.findByRole('link', { name: /Existing Project/ })
+
+    await user.type(screen.getByRole('textbox', { name: /project name/i }), name)
+    await user.type(screen.getByRole('textbox', { name: /domain/i }), 'SaaS')
+    await user.click(screen.getByRole('button', { name: 'Create Project' }))
+
+    expect(await screen.findByRole('heading', { name: 'Agent project' })).toBeInTheDocument()
+    expect(createAgentProject).toHaveBeenCalledWith({
+      agentType, name, domain: 'SaaS', description: '',
+    })
+    expect(getAgentProjects).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('link', { name: new RegExp(name) })).toHaveAttribute(
+      'href',
+      '/agent-projects/AGP-009',
+    )
+    expect(screen.getAllByRole('link', { name: /Existing Project/ })).toHaveLength(1)
+    expect(screen.getAllByRole('link', { name: new RegExp(name) })).toHaveLength(1)
+  })
+
+  it('keeps existing sidebar data and does not navigate when creation fails', async () => {
+    const user = userEvent.setup()
+    getAgentProjects.mockResolvedValue({ data: [{
+      agent_project_id: 'AGP-001', agent_type: 'REQUIREMENTS', name: 'Existing Project', status: 'ACTIVE',
+    }] })
+    createAgentProject.mockRejectedValue({ status: 503 })
+    renderLayout('/agents/requirements/new')
+    await screen.findByRole('link', { name: /Existing Project/ })
+
+    await user.type(screen.getByRole('textbox', { name: /project name/i }), 'Failed Project')
+    await user.type(screen.getByRole('textbox', { name: /domain/i }), 'SaaS')
+    await user.click(screen.getByRole('button', { name: 'Create Project' }))
+
+    expect(await screen.findByText(/couldn't create this agent project/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Create Requirements Project' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Existing Project/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Failed Project/ })).not.toBeInTheDocument()
+    expect(getAgentProjects).toHaveBeenCalledOnce()
   })
 })

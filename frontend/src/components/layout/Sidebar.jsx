@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 
-import { getAgentProjects } from '../../services/agentProjectService.js'
 import { getProjects } from '../../services/projectService.js'
 import Button from '../ui/Button.jsx'
 import Brand from './Brand.jsx'
@@ -36,24 +35,29 @@ function SidebarContent({ projectsState, agentProjectsState, onNavigate, user, o
   )
 }
 
-function Sidebar({ isOpen, isCollapsed, onClose, onNavigate, onToggleCollapse, user, onLogout }) {
+function Sidebar({
+  isOpen,
+  isCollapsed,
+  onClose,
+  onNavigate,
+  onToggleCollapse,
+  agentProjectsState,
+  user,
+  onLogout,
+}) {
   const [projectsState, setProjectsState] = useState({ status: 'loading', data: [] })
-  const [agentProjectsState, setAgentProjectsState] = useState({ status: 'loading', data: [] })
 
   useEffect(() => {
     let active = true
-    Promise.allSettled([getProjects(), getAgentProjects()]).then(([projectsResult, agentProjectsResult]) => {
+    getProjects().then((projectsResult) => {
       if (!active) return
       setProjectsState(
-        projectsResult.status === 'fulfilled' && Array.isArray(projectsResult.value?.data)
-          ? { status: 'success', data: projectsResult.value.data }
+        Array.isArray(projectsResult?.data)
+          ? { status: 'success', data: projectsResult.data }
           : { status: 'error', data: [] },
       )
-      setAgentProjectsState(
-        agentProjectsResult.status === 'fulfilled' && Array.isArray(agentProjectsResult.value?.data)
-          ? { status: 'success', data: agentProjectsResult.value.data }
-          : { status: 'error', data: [] },
-      )
+    }).catch(() => {
+      if (active) setProjectsState({ status: 'error', data: [] })
     })
     return () => { active = false }
   }, [])

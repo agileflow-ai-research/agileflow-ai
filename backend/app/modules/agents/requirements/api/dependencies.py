@@ -1,4 +1,5 @@
 from functools import lru_cache
+from concurrent.futures import Executor
 from typing import Annotated
 
 from fastapi import Depends
@@ -38,6 +39,10 @@ from app.modules.agents.requirements.processing.video.service import (
     VideoProcessingService,
 )
 from app.modules.agents.requirements.workflow.service import RequirementWorkflowService
+from app.modules.agents.requirements.workflow.orchestration import (
+    RequirementN2OrchestrationService,
+)
+from app.modules.agents.requirements.workflow.executor import AGENT1_N2_EXECUTOR
 from app.modules.agents.requirements.workflow.storage import RequirementWorkflowStorage
 from app.modules.standalone.router import get_standalone_service
 from app.modules.standalone.service import StandaloneService
@@ -49,6 +54,10 @@ def get_requirement_source_storage() -> RequirementSourceStorage:
 
 def get_requirement_workflow_storage() -> RequirementWorkflowStorage:
     return RequirementWorkflowStorage(settings.agent1_source_root)
+
+
+def get_agent1_n2_executor() -> Executor:
+    return AGENT1_N2_EXECUTOR
 
 
 def get_requirement_workflow_service(
@@ -182,5 +191,37 @@ def get_evidence_preparation_service(
         storage,
         processing,
         DeterministicChunker(configuration, segmenter),
+    )
+
+
+def get_requirement_n2_orchestration_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    source_storage: Annotated[
+        RequirementSourceStorage, Depends(get_requirement_source_storage)
+    ],
+    workflow_storage: Annotated[
+        RequirementWorkflowStorage, Depends(get_requirement_workflow_storage)
+    ],
+    workflow_service: Annotated[
+        RequirementWorkflowService, Depends(get_requirement_workflow_service)
+    ],
+    processing_service: Annotated[
+        RequirementProcessingService, Depends(get_requirement_processing_service)
+    ],
+    preparation_service: Annotated[
+        EvidencePreparationService, Depends(get_evidence_preparation_service)
+    ],
+    executor: Annotated[Executor, Depends(get_agent1_n2_executor)],
+) -> RequirementN2OrchestrationService:
+    return RequirementN2OrchestrationService(
+        standalone_service,
+        source_storage,
+        workflow_storage,
+        workflow_service,
+        processing_service,
+        preparation_service,
+        executor=executor,
     )
 

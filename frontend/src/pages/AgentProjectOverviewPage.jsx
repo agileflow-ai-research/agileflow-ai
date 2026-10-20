@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 
 import AgentWorkspaceShell from '../components/agents/AgentWorkspaceShell.jsx'
 import DesignPlanningWorkspace from '../features/agents/designPlanning/DesignPlanningWorkspace.jsx'
@@ -43,6 +43,7 @@ function AgentProjectOverviewPage() {
   const { agentProjectId } = useParams()
   const location = useLocation()
   const navigate = useNavigate()
+  const { refreshAgentProjects } = useOutletContext() ?? {}
   const requestSequence = useRef(0)
   const [loadStatus, setLoadStatus] = useState('loading')
   const [project, setProject] = useState(null)
@@ -94,6 +95,7 @@ function AgentProjectOverviewPage() {
       const response = await updateAgentProject(agentProjectId, { status: nextStatus })
       if (!response?.data) throw new Error('Invalid update response')
       setProject(response.data)
+      await refreshAgentProjects?.()
       setStatusUpdate('idle')
     } catch (error) {
       if (error?.status === 401) return

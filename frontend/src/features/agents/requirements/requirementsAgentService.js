@@ -23,6 +23,14 @@ export function continueRequirementN1(agentProjectId) {
   )
 }
 
+export function retryRequirementN2(agentProjectId) {
+  return apiClient.post(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/workflow/n2/retry`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
 export function listRequirementSources(agentProjectId) {
   return apiClient.get(
     `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources`,

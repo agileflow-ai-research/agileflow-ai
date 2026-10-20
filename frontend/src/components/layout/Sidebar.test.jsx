@@ -1,14 +1,12 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getAgentProjects } from '../../services/agentProjectService.js'
 import { getProjects } from '../../services/projectService.js'
 import Sidebar from './Sidebar.jsx'
 
 vi.mock('../../services/projectService.js', () => ({ getProjects: vi.fn() }))
-vi.mock('../../services/agentProjectService.js', () => ({ getAgentProjects: vi.fn() }))
 
 const projects = [
   { project_id: 'PRJ-001', name: 'Real Full Project', status: 'ACTIVE' },
@@ -29,6 +27,7 @@ function renderSidebar(path = '/agent-projects/AGP-301', props = {}) {
         onClose={vi.fn()}
         onNavigate={vi.fn()}
         onToggleCollapse={vi.fn()}
+        agentProjectsState={{ status: 'success', data: agentProjects }}
         user={{ name: 'Ada Lovelace', email: 'ada@example.com' }}
         onLogout={vi.fn()}
         {...props}
@@ -44,7 +43,6 @@ describe('global project sidebar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getProjects.mockResolvedValue({ data: projects })
-    getAgentProjects.mockResolvedValue({ data: agentProjects })
   })
 
   it('renders exactly the project and standalone-agent information groups from real services', async () => {
@@ -52,7 +50,6 @@ describe('global project sidebar', () => {
     expect(await screen.findByRole('heading', { name: 'Projects' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Standalone Agents' })).toBeInTheDocument()
     expect(getProjects).toHaveBeenCalledOnce()
-    expect(getAgentProjects).toHaveBeenCalledWith()
     expect(screen.getByRole('link', { name: /Real Full Project/ })).toHaveAttribute('href', '/projects/PRJ-001')
     expect(screen.queryByText(/QuickBook|POS/i)).not.toBeInTheDocument()
   })
@@ -110,6 +107,5 @@ describe('global project sidebar', () => {
     renderSidebar('/projects', { isOpen: true })
     const mobile = await screen.findByRole('complementary', { name: 'Mobile navigation' })
     expect(within(mobile).getByText('No full-workflow projects yet.')).toBeInTheDocument()
-    await waitFor(() => expect(getAgentProjects).toHaveBeenCalledOnce())
   })
 })

@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import { WORKFLOW_NODE_STATES } from '../../../../components/agents/workflowState.js'
 import { REQUIREMENTS_NODE_IDS, REQUIREMENTS_NODE_REGISTRY } from './nodeDefinitions.js'
-import { deriveRequirementsCurrentNodeId, deriveRequirementsWorkflowPresentation } from './presentation.js'
+import {
+  aggregateExecutionStageState,
+  deriveRequirementsCurrentNodeId,
+  deriveRequirementsWorkflowPresentation,
+} from './presentation.js'
 
 const source = { source_id: 'DOC-001', source_type: 'DOCUMENT' }
 
@@ -39,14 +43,16 @@ describe('requirements workflow presentation', () => {
       processingStates: { 'DOC-001': { status: 'COMPLETED' } },
       preparationStates: { 'DOC-001': { status: 'COMPLETED', chunks: null } },
     })
-    expect(nodeState(incomplete, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.RUNNING)
+    expect(nodeState(incomplete, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.NOT_STARTED)
 
     const complete = deriveRequirementsWorkflowPresentation({
       loadStatus: 'success',
       sources: [source],
       processingStates: { 'DOC-001': { status: 'COMPLETED' } },
       preparationStates: { 'DOC-001': { status: 'COMPLETED', chunks: { chunks: [{ chunk_id: 'CHK-1' }] } } },
-      workflowState: { n1_state: 'COMPLETE' },
+      workflowState: {
+        n1_state: 'COMPLETE', n2_is_current: true, n2_execution: { status: 'COMPLETE' },
+      },
     })
     expect(nodeState(complete, REQUIREMENTS_NODE_IDS.INPUT_COLLECTION)).toBe(WORKFLOW_NODE_STATES.COMPLETE)
     expect(nodeState(complete, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.COMPLETE)
@@ -74,6 +80,9 @@ describe('requirements workflow presentation', () => {
       sources: [source],
       processingStates: { 'DOC-001': { status: 'FAILED' } },
       preparationStates: { 'DOC-001': { status: 'READY' } },
+      workflowState: {
+        n1_state: 'COMPLETE', n2_is_current: true, n2_execution: { status: 'FAILED' },
+      },
     })
     expect(nodeState(result, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.FAILED)
     expect(REQUIREMENTS_NODE_REGISTRY.slice(2).every(
@@ -81,7 +90,7 @@ describe('requirements workflow presentation', () => {
     )).toBe(true)
   })
 
-  it('reports persisted partial progress as running while untouched sources stay not started', () => {
+  it('uses authoritative queued/running state instead of detailed inspection state', () => {
     const untouched = deriveRequirementsWorkflowPresentation({
       loadStatus: 'success',
       sources: [source],
@@ -95,6 +104,9 @@ describe('requirements workflow presentation', () => {
       sources: [source],
       processingStates: { 'DOC-001': { status: 'COMPLETED' } },
       preparationStates: { 'DOC-001': { status: 'READY' } },
+      workflowState: {
+        n1_state: 'COMPLETE', n2_is_current: true, n2_execution: { status: 'RUNNING' },
+      },
     })
     expect(nodeState(partial, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.RUNNING)
   })
@@ -111,7 +123,47 @@ describe('requirements workflow presentation', () => {
           requestError: 'Invalid prepared evidence.',
         },
       },
+      workflowState: {
+        n1_state: 'COMPLETE', n2_is_current: true, n2_execution: { status: 'COMPLETE' },
+      },
     })
-    expect(nodeState(result, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.FAILED)
+    expect(nodeState(result, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.COMPLETE)
+  })
+
+  it('blocks a historical N2 execution after current N1 inputs become stale', () => {
+    const result = deriveRequirementsWorkflowPresentation({
+      workflowState: {
+        n1_state: 'WAITING_FOR_HUMAN',
+        n2_is_current: false,
+        n2_execution: { status: 'COMPLETE' },
+      },
+    })
+    expect(nodeState(result, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.BLOCKED)
+  })
+
+  it('aggregates current orchestration progress by modality and preparation', () => {
+    const workflowState = {
+      n2_is_current: true,
+      n2_execution: {
+        status: 'RUNNING',
+        input_sources: [
+          { source_id: 'DOC-001', source_type: 'DOCUMENT' },
+          { source_id: 'AUD-001', source_type: 'AUDIO' },
+          { source_id: 'VID-001', source_type: 'VIDEO' },
+        ],
+        source_progress: [
+          { source_id: 'DOC-001', processing_status: 'COMPLETE', preparation_status: 'COMPLETE', chunk_count: 5 },
+          { source_id: 'AUD-001', processing_status: 'RUNNING', preparation_status: 'READY', chunk_count: 0 },
+          { source_id: 'VID-001', processing_status: 'FAILED', preparation_status: 'READY', chunk_count: 0 },
+        ],
+      },
+    }
+    expect(aggregateExecutionStageState(workflowState, 'DOCUMENT')).toBe(WORKFLOW_NODE_STATES.COMPLETE)
+    expect(aggregateExecutionStageState(workflowState, 'AUDIO')).toBe(WORKFLOW_NODE_STATES.RUNNING)
+    expect(aggregateExecutionStageState(workflowState, 'VIDEO')).toBe(WORKFLOW_NODE_STATES.FAILED)
+    expect(aggregateExecutionStageState(workflowState, null, { preparation: true })).toBe(WORKFLOW_NODE_STATES.RUNNING)
+
+    workflowState.n2_is_current = false
+    expect(aggregateExecutionStageState(workflowState, 'DOCUMENT')).toBe(WORKFLOW_NODE_STATES.BLOCKED)
   })
 })

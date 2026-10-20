@@ -19,6 +19,7 @@ import {
   processRequirementDocument,
   processRequirementAudio,
   processRequirementVideo,
+  retryRequirementN2,
   prepareRequirementEvidence,
   uploadRequirementSource,
   updateRequirementOutputs,
@@ -44,6 +45,7 @@ describe('requirementsAgentService source collection', () => {
     getRequirementWorkflow('AGP-007')
     updateRequirementOutputs('AGP-007', ['SRS'])
     continueRequirementN1('AGP-007')
+    retryRequirementN2('AGP-007')
 
     expect(apiClient.get).toHaveBeenCalledWith('/agents/requirements/AGP-007/workflow', { authenticated: true })
     expect(apiClient.put).toHaveBeenCalledWith(
@@ -53,6 +55,11 @@ describe('requirementsAgentService source collection', () => {
     )
     expect(apiClient.post).toHaveBeenCalledWith(
       '/agents/requirements/AGP-007/workflow/n1/continue',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/requirements/AGP-007/workflow/n2/retry',
       undefined,
       { authenticated: true },
     )

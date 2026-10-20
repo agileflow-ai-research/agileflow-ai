@@ -4,7 +4,7 @@ import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import {
   getWorkflowStatePresentation,
 } from '../../../../components/agents/workflowState.js'
-import { aggregateStageState } from '../workflow/presentation.js'
+import { aggregateExecutionStageState, aggregateStageState } from '../workflow/presentation.js'
 
 const processingTones = {
   READY: 'neutral',
@@ -15,6 +15,12 @@ const processingTones = {
 
 function sourceLabel(value) {
   return value.charAt(0) + value.slice(1).toLowerCase()
+}
+
+function detailStatusLabel(status) {
+  if (status === 'COMPLETED') return 'Complete'
+  if (status === 'PROCESSING') return 'In Progress'
+  return sourceLabel(status)
 }
 
 function timestamp(seconds) {
@@ -40,7 +46,7 @@ function resultAction(sourceType) {
   return sourceType === 'DOCUMENT' ? 'View Extraction' : 'View Transcript'
 }
 
-function StageCard({ title, state, detail }) {
+function StageCard({ title, state, detail, noSources = false }) {
   const presentation = getWorkflowStatePresentation(state)
   return (
     <Card variant="elevated" className="flex min-h-28 flex-col justify-between gap-3">
@@ -48,7 +54,10 @@ function StageCard({ title, state, detail }) {
         <p className="font-semibold text-content-primary">{title}</p>
         <p className="mt-1 text-xs text-content-secondary">{detail}</p>
       </div>
-      <StatusBadge label={presentation.label} tone={presentation.tone} />
+      <StatusBadge
+        label={noSources ? 'No sources' : presentation.label}
+        tone={noSources ? 'neutral' : presentation.tone}
+      />
     </Card>
   )
 }
@@ -171,15 +180,23 @@ function EvidenceProcessingNode({
   onPrepareSource,
   onLoadPreparedEvidence,
   onOpenCollection,
+  orchestrationManaged = false,
+  workflowState,
 }) {
   const documents = sources.filter((source) => source.source_type === 'DOCUMENT')
   const audio = sources.filter((source) => source.source_type === 'AUDIO')
   const video = sources.filter((source) => source.source_type === 'VIDEO')
+  const preparedCount = workflowState?.n2_execution?.source_progress?.filter(
+    (source) => source.preparation_status === 'COMPLETE' && source.chunk_count > 0,
+  ).length ?? sources.filter((source) => (
+    preparationStates[source.source_id]?.status === 'COMPLETED'
+    && preparationStates[source.source_id]?.chunks?.chunks?.length > 0
+  )).length
   const stages = [
-    { title: 'Document Processing', sources: documents, states: processingStates, detail: `${documents.length} document source${documents.length === 1 ? '' : 's'}` },
-    { title: 'Audio Transcription', sources: audio, states: processingStates, detail: `${audio.length} audio source${audio.length === 1 ? '' : 's'}` },
-    { title: 'Video Processing', sources: video, states: processingStates, detail: `${video.length} video source${video.length === 1 ? '' : 's'}` },
-    { title: 'Evidence Preparation', sources, states: preparationStates, detail: `${sources.length} source${sources.length === 1 ? '' : 's'} to normalize and chunk`, requireChunks: true },
+    { title: 'Document Processing', sourceType: 'DOCUMENT', sources: documents, states: processingStates, detail: documents.length ? `${documents.length} document source${documents.length === 1 ? '' : 's'}` : 'No document sources' },
+    { title: 'Audio Transcription', sourceType: 'AUDIO', sources: audio, states: processingStates, detail: audio.length ? `${audio.length} audio source${audio.length === 1 ? '' : 's'}` : 'No audio sources' },
+    { title: 'Video Processing', sourceType: 'VIDEO', sources: video, states: processingStates, detail: video.length ? `${video.length} video source${video.length === 1 ? '' : 's'}` : 'No video sources' },
+    { title: 'Evidence Preparation', sourceType: null, sources, states: preparationStates, detail: sources.length ? `${preparedCount} of ${sources.length} source${sources.length === 1 ? '' : 's'} prepared` : 'No sources to prepare', requireChunks: true },
   ]
 
   return (
@@ -202,7 +219,12 @@ function EvidenceProcessingNode({
               key={stage.title}
               title={stage.title}
               detail={stage.detail}
-              state={aggregateStageState(stage.sources, stage.states, { requireChunks: stage.requireChunks })}
+              noSources={stage.sources.length === 0}
+              state={aggregateExecutionStageState(
+                workflowState,
+                stage.sourceType,
+                { preparation: stage.requireChunks },
+              ) ?? aggregateStageState(stage.sources, stage.states, { requireChunks: stage.requireChunks })}
             />
           ))}
         </div>
@@ -236,7 +258,7 @@ function EvidenceProcessingNode({
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-content-primary">{processingLabel(source.source_type)}</p>
-                      <StatusBadge label={sourceLabel(processingStatus)} tone={processingTones[processingStatus] ?? 'neutral'} />
+                      <StatusBadge label={detailStatusLabel(processingStatus)} tone={processingTones[processingStatus] ?? 'neutral'} />
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {processingStatus === 'COMPLETED' ? (
@@ -250,16 +272,18 @@ function EvidenceProcessingNode({
                           {resultAction(source.source_type)}
                         </Button>
                       ) : null}
-                      <Button
-                        variant="outline"
-                        size="small"
-                        loading={processingStatus === 'PROCESSING'}
-                        loadingLabel={`Processing ${source.source_type.toLowerCase()}`}
-                        disabled={preparationStatus === 'PROCESSING'}
-                        onClick={() => { void onProcessSource(source, ['FAILED', 'COMPLETED'].includes(processingStatus)) }}
-                      >
-                        {processingAction(source.source_type, processingStatus)}
-                      </Button>
+                      {!orchestrationManaged ? (
+                        <Button
+                          variant="outline"
+                          size="small"
+                          loading={processingStatus === 'PROCESSING'}
+                          loadingLabel={`Processing ${source.source_type.toLowerCase()}`}
+                          disabled={preparationStatus === 'PROCESSING'}
+                          onClick={() => { void onProcessSource(source, ['FAILED', 'COMPLETED'].includes(processingStatus)) }}
+                        >
+                          {processingAction(source.source_type, processingStatus)}
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                   {processing.requestError ? <p role="alert" className="text-sm text-state-danger">{processing.requestError}</p> : null}
@@ -273,7 +297,12 @@ function EvidenceProcessingNode({
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-content-primary">Preparation</p>
-                      <StatusBadge label={sourceLabel(preparationStatus)} tone={processingTones[preparationStatus] ?? 'neutral'} />
+                      <StatusBadge label={detailStatusLabel(preparationStatus)} tone={processingTones[preparationStatus] ?? 'neutral'} />
+                      {preparationStatus === 'COMPLETED' && preparation.chunks?.chunks?.length ? (
+                        <span className="text-xs text-content-secondary">
+                          {preparation.chunks.chunks.length} chunks
+                        </span>
+                      ) : null}
                     </div>
                     {processingStatus === 'COMPLETED' ? (
                       <div className="flex flex-wrap gap-2">
@@ -288,17 +317,19 @@ function EvidenceProcessingNode({
                             View Prepared Evidence
                           </Button>
                         ) : null}
-                        <Button
-                          variant="outline"
-                          size="small"
-                          loading={preparationStatus === 'PROCESSING'}
-                          loadingLabel="Preparing evidence"
-                          onClick={() => { void onPrepareSource(source, ['FAILED', 'COMPLETED'].includes(preparationStatus)) }}
-                        >
-                          {preparationStatus === 'FAILED'
-                            ? 'Retry Preparation'
-                            : preparationStatus === 'COMPLETED' ? 'Reprepare' : 'Prepare Evidence'}
-                        </Button>
+                        {!orchestrationManaged ? (
+                          <Button
+                            variant="outline"
+                            size="small"
+                            loading={preparationStatus === 'PROCESSING'}
+                            loadingLabel="Preparing evidence"
+                            onClick={() => { void onPrepareSource(source, ['FAILED', 'COMPLETED'].includes(preparationStatus)) }}
+                          >
+                            {preparationStatus === 'FAILED'
+                              ? 'Retry Preparation'
+                              : preparationStatus === 'COMPLETED' ? 'Reprepare' : 'Prepare Evidence'}
+                          </Button>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>

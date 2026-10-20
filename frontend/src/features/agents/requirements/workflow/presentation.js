@@ -4,49 +4,17 @@ import { REQUIREMENTS_NODE_IDS, REQUIREMENTS_NODE_REGISTRY } from './nodeDefinit
 const completed = (state) => state?.status === 'COMPLETED'
 const failed = (state) => state?.status === 'FAILED' || Boolean(state?.requestError)
 const hasProgress = (state) => Boolean(state) && ![undefined, null, 'READY'].includes(state.status)
-const validSource = (source) => (
-  typeof source?.source_id === 'string'
-  && source.source_id.trim().length > 0
-  && ['DOCUMENT', 'AUDIO', 'VIDEO'].includes(source?.source_type)
-)
-
 export function deriveRequirementsWorkflowPresentation({
-  sources,
-  processingStates,
-  preparationStates,
   workflowState,
 }) {
-  const sourceList = Array.isArray(sources)
-    ? sources.filter(validSource)
-    : []
-  const processingBySource = processingStates ?? {}
-  const preparationBySource = preparationStates ?? {}
-  const hasSources = sourceList.length > 0
-  const sourceStates = sourceList.map((source) => ({
-    processing: processingBySource[source.source_id],
-    preparation: preparationBySource[source.source_id],
-  }))
-
-  const hasFailure = sourceStates.some(({ processing, preparation }) => (
-    failed(processing) || failed(preparation)
-  ))
-  const hasActiveWork = sourceStates.some(({ processing, preparation }) => (
-    processing?.status === 'PROCESSING' || preparation?.status === 'PROCESSING'
-  ))
-  const hasPersistedProgress = sourceStates.some(({ processing, preparation }) => (
-    hasProgress(processing) || hasProgress(preparation)
-  ))
-  const allPrepared = hasSources && sourceStates.every(({ processing, preparation }) => (
-    completed(processing)
-    && completed(preparation)
-    && Array.isArray(preparation?.chunks?.chunks)
-    && preparation.chunks.chunks.length > 0
-  ))
-
+  const authoritativeN2 = workflowState?.n2_execution
   let n2State = WORKFLOW_NODE_STATES.NOT_STARTED
-  if (hasFailure) n2State = WORKFLOW_NODE_STATES.FAILED
-  else if (allPrepared) n2State = WORKFLOW_NODE_STATES.COMPLETE
-  else if (hasActiveWork || hasPersistedProgress) n2State = WORKFLOW_NODE_STATES.RUNNING
+  if (authoritativeN2 && workflowState?.n2_is_current === false) {
+    n2State = WORKFLOW_NODE_STATES.BLOCKED
+  } else if (authoritativeN2?.status) {
+    n2State = WORKFLOW_NODE_STATES[authoritativeN2.status]
+      ?? WORKFLOW_NODE_STATES.NOT_STARTED
+  }
 
   const states = {
     [REQUIREMENTS_NODE_IDS.INPUT_COLLECTION]: Object.values(WORKFLOW_NODE_STATES).includes(workflowState?.n1_state)
@@ -82,4 +50,43 @@ export function aggregateStageState(sources, stateBySource, { requireChunks = fa
   ))
   if (allComplete) return WORKFLOW_NODE_STATES.COMPLETE
   return states.some(hasProgress) ? WORKFLOW_NODE_STATES.RUNNING : WORKFLOW_NODE_STATES.NOT_STARTED
+}
+
+export function aggregateExecutionStageState(
+  workflowState,
+  sourceType,
+  { preparation = false } = {},
+) {
+  const execution = workflowState?.n2_execution
+  if (!execution) return null
+  const sourceIds = (execution.input_sources ?? [])
+    .filter((source) => !sourceType || source.source_type === sourceType)
+    .map((source) => source.source_id)
+  if (sourceIds.length === 0) return null
+  if (workflowState?.n2_is_current === false || execution.status === 'BLOCKED') {
+    return WORKFLOW_NODE_STATES.BLOCKED
+  }
+
+  const progress = sourceIds.map((sourceId) => (
+    execution.source_progress?.find((source) => source.source_id === sourceId)
+  ))
+  const statusField = preparation ? 'preparation_status' : 'processing_status'
+  if (progress.some((source) => source?.[statusField] === 'FAILED')) {
+    return WORKFLOW_NODE_STATES.FAILED
+  }
+  const allComplete = progress.every((source) => (
+    source?.[statusField] === 'COMPLETE'
+    && (!preparation || source.chunk_count > 0)
+  ))
+  if (allComplete) return WORKFLOW_NODE_STATES.COMPLETE
+  if (execution.status === 'COMPLETE') return WORKFLOW_NODE_STATES.FAILED
+  if (
+    ['QUEUED', 'RUNNING'].includes(execution.status)
+    || progress.some((source) => source?.[statusField] === 'RUNNING')
+  ) {
+    return WORKFLOW_NODE_STATES.RUNNING
+  }
+  return execution.status === 'FAILED'
+    ? WORKFLOW_NODE_STATES.FAILED
+    : WORKFLOW_NODE_STATES.NOT_STARTED
 }

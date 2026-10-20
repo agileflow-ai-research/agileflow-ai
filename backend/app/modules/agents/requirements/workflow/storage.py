@@ -1,12 +1,12 @@
 from pathlib import Path
-from threading import Lock
+from threading import RLock
 
 from pydantic import ValidationError
 
 from app.modules.agents.requirements.workflow.schemas import RequirementWorkflowRecord
 
 
-_WORKFLOW_WRITE_LOCK = Lock()
+WORKFLOW_STATE_LOCK = RLock()
 
 
 class RequirementWorkflowStorageError(RuntimeError):
@@ -49,7 +49,7 @@ class RequirementWorkflowStorage:
         try:
             project_directory.mkdir(parents=True, exist_ok=True)
             payload = record.model_dump_json()
-            with _WORKFLOW_WRITE_LOCK:
+            with WORKFLOW_STATE_LOCK:
                 partial_path.write_text(payload, encoding="utf-8")
                 partial_path.replace(path)
         except OSError as exc:
