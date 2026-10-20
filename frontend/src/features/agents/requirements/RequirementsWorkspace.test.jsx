@@ -14,7 +14,6 @@ import {
   processRequirementDocument,
   processRequirementAudio,
   processRequirementVideo,
-  runRequirementsAgent,
   uploadRequirementSource,
 } from './requirementsAgentService.js'
 import RequirementsWorkspace from './RequirementsWorkspace.jsx'
@@ -31,7 +30,6 @@ vi.mock('./requirementsAgentService.js', () => ({
   processRequirementDocument: vi.fn(),
   processRequirementAudio: vi.fn(),
   processRequirementVideo: vi.fn(),
-  runRequirementsAgent: vi.fn(),
   uploadRequirementSource: vi.fn(),
 }))
 
@@ -71,7 +69,6 @@ describe('RequirementsWorkspace Node 1', () => {
     })
     expect(screen.getAllByText('Ready').length).toBeGreaterThanOrEqual(3)
     expect(listRequirementSources).toHaveBeenCalledWith('AGP-001')
-    expect(runRequirementsAgent).not.toHaveBeenCalled()
   })
 
   it('uploads multiple files and mixed source types without calling a run endpoint', async () => {
@@ -95,7 +92,6 @@ describe('RequirementsWorkspace Node 1', () => {
     expect(uploadRequirementSource).toHaveBeenNthCalledWith(3, 'AGP-001', 'AUDIO', audio)
     expect(await screen.findByText('DOC-002')).toBeInTheDocument()
     expect(screen.getByText('AUD-001')).toBeInTheDocument()
-    expect(runRequirementsAgent).not.toHaveBeenCalled()
   })
 
   it('removes a source and reloads persisted sources when remounted', async () => {
@@ -145,7 +141,6 @@ describe('RequirementsWorkspace Node 1', () => {
 
     expect(await screen.findByText('Completed')).toBeInTheDocument()
     expect(processRequirementDocument).toHaveBeenCalledWith('AGP-001', 'DOC-001', { force: false })
-    expect(runRequirementsAgent).not.toHaveBeenCalled()
   })
 
   it('shows safe failure details and retries with force', async () => {
@@ -199,7 +194,6 @@ describe('RequirementsWorkspace Node 1', () => {
 
     await user.click(within(audioCard).getByRole('button', { name: 'Reprocess' }))
     expect(processRequirementAudio).toHaveBeenCalledWith('AGP-001', 'AUD-001', { force: true })
-    expect(runRequirementsAgent).not.toHaveBeenCalled()
   })
 
   it('shows audio failure and retries using the audio processor', async () => {

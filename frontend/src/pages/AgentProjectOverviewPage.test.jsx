@@ -28,7 +28,6 @@ vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({
   processRequirementDocument: vi.fn(),
   processRequirementAudio: vi.fn(),
   processRequirementVideo: vi.fn(),
-  runRequirementsAgent: vi.fn(),
   uploadRequirementSource: vi.fn(),
 }))
 vi.mock('../features/agents/implementation/pages/ImplementationProjectPage.jsx', () => ({

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '../../../services/apiClient.js'
+import * as requirementsAgentService from './requirementsAgentService.js'
 import {
   deleteRequirementSource,
   getRequirementAudioProcessingResult,
@@ -22,6 +23,10 @@ vi.mock('../../../services/apiClient.js', () => ({
 
 describe('requirementsAgentService source collection', () => {
   beforeEach(() => vi.clearAllMocks())
+
+  it('does not expose the retired direct run client', () => {
+    expect(requirementsAgentService).not.toHaveProperty('runRequirementsAgent')
+  })
 
   it('lists persisted project sources with authentication', () => {
     listRequirementSources('AGP-007')
