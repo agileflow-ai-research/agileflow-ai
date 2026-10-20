@@ -9,14 +9,19 @@ import {
   getAgentProjectRuns,
   updateAgentProject,
 } from '../services/agentProjectService.js'
-import { runRequirementsAgent } from '../features/agents/requirements/requirementsAgentService.js'
+import { listRequirementSources } from '../features/agents/requirements/requirementsAgentService.js'
 import { getGitHubConnection } from '../features/agents/implementation/services/implementationAgentService.js'
 import AgentProjectOverviewPage from './AgentProjectOverviewPage.jsx'
 
 vi.mock('../services/agentProjectService.js', () => ({
   getAgentProjectById: vi.fn(), getAgentProjectRuns: vi.fn(), getAgentProjectRun: vi.fn(), updateAgentProject: vi.fn(),
 }))
-vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({ runRequirementsAgent: vi.fn() }))
+vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({
+  deleteRequirementSource: vi.fn(),
+  listRequirementSources: vi.fn(),
+  runRequirementsAgent: vi.fn(),
+  uploadRequirementSource: vi.fn(),
+}))
 vi.mock('../features/agents/implementation/pages/ImplementationProjectPage.jsx', () => ({
   default: ({ project, entryMode }) => (
     <section aria-label="Agent 3 implementation project" data-entry-mode={entryMode}>
@@ -66,6 +71,7 @@ describe('AgentProjectOverviewPage', () => {
     getAgentProjectById.mockResolvedValue({ data: project })
     getAgentProjectRuns.mockResolvedValue({ data: runs })
     getGitHubConnection.mockResolvedValue({ data: { connected: false } })
+    listRequirementSources.mockResolvedValue({ data: [] })
   })
 
   it('loads the AGP project and real run history with all shared presentations', async () => {
@@ -169,27 +175,14 @@ describe('AgentProjectOverviewPage', () => {
     await waitFor(() => expect(getAgentProjectRuns).toHaveBeenCalled())
   })
 
-  it('runs Agent 1 through the backend service and adds the returned run to history', async () => {
-    const user = userEvent.setup()
+  it('mounts Agent 1 source collection without starting a run', async () => {
     getAgentProjectById.mockResolvedValue({ data: { ...project, agent_type: 'REQUIREMENTS', name: 'BookEase' } })
     getAgentProjectRuns.mockResolvedValue({ data: [] })
-    runRequirementsAgent.mockResolvedValue({ data: {
-      run_id: 'RUN-101', status: 'COMPLETED', run_mode: 'DEFAULT', selected_outputs: ['FUNCTIONAL_REQUIREMENTS'],
-      created_at: '2026-10-14T12:00:00Z', started_at: '2026-10-14T12:00:01Z', completed_at: '2026-10-14T12:00:02Z',
-      outputs: { FUNCTIONAL_REQUIREMENTS: [{ id: 'FR-001', statement: 'Search books', source_refs: ['TEXT-001'] }] },
-      warnings: [], errors: [],
-    } })
     renderOverview()
     await screen.findByRole('heading', { level: 1, name: 'BookEase' })
-    await user.type(screen.getByLabelText(/requirement text/i), 'Members need book search.')
-    await user.click(screen.getByRole('button', { name: 'Next' }))
-    await user.click(screen.getByRole('checkbox', { name: 'Functional Requirements' }))
-    await user.click(screen.getByRole('button', { name: 'Next' }))
-    await user.click(screen.getByRole('button', { name: 'Run Agent' }))
-    expect(await screen.findByText('RUN-101')).toBeInTheDocument()
-    expect(runRequirementsAgent).toHaveBeenCalledWith('AGP-001', {
-      text: 'Members need book search.', selected_outputs: ['FUNCTIONAL_REQUIREMENTS'],
-    })
+    expect(await screen.findByRole('heading', { name: 'Client Requirement Sources' })).toBeInTheDocument()
+    expect(listRequirementSources).toHaveBeenCalledWith('AGP-001')
+    expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
   })
 
   it('reloads and renders persisted Agent 1 output_manifest content', async () => {

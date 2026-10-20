@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     model_name: str = "gpt-4.1-mini"
     model_base_url: str = "https://api.openai.com/v1"
     model_timeout_seconds: float = 60.0
+    agent1_source_root: Path = (
+        BACKEND_DIR / "storage" / "standalone" / "requirements"
+    )
     agent3_upload_root: Path = (
         BACKEND_DIR / "storage" / "standalone" / "implementation"
     )

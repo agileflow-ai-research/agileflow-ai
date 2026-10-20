@@ -1,0 +1,168 @@
+import { useEffect, useRef, useState } from 'react'
+
+import Button from '../../../../components/ui/Button.jsx'
+import Card from '../../../../components/ui/Card.jsx'
+import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
+import {
+  deleteRequirementSource,
+  listRequirementSources,
+  uploadRequirementSource,
+} from '../requirementsAgentService.js'
+
+const sourceActions = [
+  { type: 'DOCUMENT', label: 'Add Documents', accept: '.pdf,.docx,.txt' },
+  { type: 'AUDIO', label: 'Add Audio', accept: '.mp3,.wav,.m4a' },
+  { type: 'VIDEO', label: 'Add Video', accept: '.mp4,.mov,.webm' },
+]
+
+function sourceLabel(value) {
+  return value.charAt(0) + value.slice(1).toLowerCase()
+}
+
+export default function RequirementSourcesNode({ project }) {
+  const inputRefs = useRef({})
+  const requestSequence = useRef(0)
+  const [sources, setSources] = useState([])
+  const [loadStatus, setLoadStatus] = useState('loading')
+  const [uploadingType, setUploadingType] = useState(null)
+  const [removingId, setRemovingId] = useState(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const requestId = requestSequence.current + 1
+    requestSequence.current = requestId
+    void listRequirementSources(project.agent_project_id)
+      .then((response) => {
+        if (requestSequence.current !== requestId) return
+        if (!Array.isArray(response?.data)) throw new Error('Invalid requirement sources response')
+        setSources(response.data)
+        setLoadStatus('success')
+      })
+      .catch((requestError) => {
+        if (requestSequence.current !== requestId || requestError?.status === 401) return
+        setError(requestError?.errors?.[0]?.message || 'Requirement sources could not be loaded.')
+        setLoadStatus('error')
+      })
+    return () => { requestSequence.current += 1 }
+  }, [project.agent_project_id])
+
+  async function addFiles(sourceType, fileList) {
+    const files = Array.from(fileList ?? [])
+    if (files.length === 0 || uploadingType) return
+    setUploadingType(sourceType)
+    setError('')
+    try {
+      for (const file of files) {
+        const response = await uploadRequirementSource(
+          project.agent_project_id,
+          sourceType,
+          file,
+        )
+        if (!response?.data) throw new Error('Invalid requirement source response')
+        setSources((current) => [...current, response.data])
+      }
+    } catch (requestError) {
+      if (requestError?.status !== 401) {
+        setError(requestError?.errors?.[0]?.message || 'One or more sources could not be uploaded.')
+      }
+    } finally {
+      const input = inputRefs.current[sourceType]
+      if (input) input.value = ''
+      setUploadingType(null)
+    }
+  }
+
+  async function removeSource(sourceId) {
+    if (removingId) return
+    setRemovingId(sourceId)
+    setError('')
+    try {
+      await deleteRequirementSource(project.agent_project_id, sourceId)
+      setSources((current) => current.filter((source) => source.source_id !== sourceId))
+    } catch (requestError) {
+      if (requestError?.status !== 401) {
+        setError(requestError?.errors?.[0]?.message || 'The source could not be removed.')
+      }
+    } finally {
+      setRemovingId(null)
+    }
+  }
+
+  return (
+    <section aria-labelledby="requirement-sources-title" className="space-y-5">
+      <div>
+        <h3 id="requirement-sources-title" className="text-card-heading font-semibold text-content-primary">
+          Client Requirement Sources
+        </h3>
+        <p className="mt-1 text-sm text-content-secondary">
+          Collect source evidence for this project. Processing begins in a later node.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-3" aria-label="Requirement source actions">
+        {sourceActions.map((action) => (
+          <div key={action.type}>
+            <input
+              ref={(element) => { inputRefs.current[action.type] = element }}
+              className="sr-only"
+              type="file"
+              multiple
+              accept={action.accept}
+              aria-label={`${sourceLabel(action.type)} files`}
+              onChange={(event) => { void addFiles(action.type, event.target.files) }}
+            />
+            <Button
+              variant="outline"
+              loading={uploadingType === action.type}
+              loadingLabel={`Uploading ${sourceLabel(action.type).toLowerCase()} files`}
+              disabled={Boolean(uploadingType || removingId)}
+              onClick={() => inputRefs.current[action.type]?.click()}
+            >
+              {action.label}
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      {error ? <p role="alert" className="text-sm text-state-danger">{error}</p> : null}
+
+      <section aria-labelledby="uploaded-sources-title" className="space-y-3">
+        <h4 id="uploaded-sources-title" className="font-semibold text-content-primary">
+          Uploaded Sources
+        </h4>
+        {loadStatus === 'loading' ? (
+          <p role="status" className="text-sm text-content-secondary">Loading uploaded sources...</p>
+        ) : loadStatus === 'error' ? (
+          <p className="text-sm text-content-secondary">Uploaded sources are currently unavailable.</p>
+        ) : sources.length === 0 ? (
+          <Card variant="elevated">
+            <p className="text-sm text-content-secondary">No requirement sources uploaded yet.</p>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {sources.map((source) => (
+              <Card key={source.source_id} variant="elevated" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="grid min-w-0 flex-1 gap-2 text-sm sm:grid-cols-[6rem_7rem_minmax(0,1fr)_auto] sm:items-center">
+                  <p className="font-semibold text-content-primary">{source.source_id}</p>
+                  <p className="text-content-secondary">{sourceLabel(source.source_type)}</p>
+                  <p className="truncate text-content-primary" title={source.original_filename}>{source.original_filename}</p>
+                  <StatusBadge label={sourceLabel(source.status)} tone="success" />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="small"
+                  loading={removingId === source.source_id}
+                  loadingLabel={`Removing ${source.original_filename}`}
+                  disabled={Boolean(uploadingType || removingId)}
+                  onClick={() => { void removeSource(source.source_id) }}
+                >
+                  Remove
+                </Button>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
+    </section>
+  )
+}

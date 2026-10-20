@@ -1,22 +1,39 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '../../../services/apiClient.js'
-import { runRequirementsAgent } from './requirementsAgentService.js'
+import {
+  deleteRequirementSource,
+  listRequirementSources,
+  uploadRequirementSource,
+} from './requirementsAgentService.js'
 
 vi.mock('../../../services/apiClient.js', () => ({
-  apiClient: { post: vi.fn() },
+  apiClient: { delete: vi.fn(), get: vi.fn(), post: vi.fn() },
 }))
 
-describe('requirementsAgentService', () => {
+describe('requirementsAgentService source collection', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('calls the real Agent 1 execution route with authentication', () => {
-    const payload = { text: 'The system shall search.', selected_outputs: ['SRS'] }
-    runRequirementsAgent('AGP-007', payload)
-    expect(apiClient.post).toHaveBeenCalledWith(
-      '/agents/requirements/AGP-007/run',
-      payload,
-      { authenticated: true },
+  it('lists persisted project sources with authentication', () => {
+    listRequirementSources('AGP-007')
+    expect(apiClient.get).toHaveBeenCalledWith('/agents/requirements/AGP-007/sources', { authenticated: true })
+  })
+
+  it('uploads a typed source as multipart form data', () => {
+    const file = new File(['requirements'], 'requirements.txt', { type: 'text/plain' })
+    uploadRequirementSource('AGP-007', 'DOCUMENT', file)
+    const [path, body, options] = apiClient.post.mock.calls[0]
+    expect(path).toBe('/agents/requirements/AGP-007/sources')
+    expect(body).toBeInstanceOf(FormData)
+    expect(body.get('source_type')).toBe('DOCUMENT')
+    expect(body.get('file')).toBe(file)
+    expect(options).toEqual({ authenticated: true })
+  })
+
+  it('removes one independently traceable source', () => {
+    deleteRequirementSource('AGP-007', 'AUD-001')
+    expect(apiClient.delete).toHaveBeenCalledWith(
+      '/agents/requirements/AGP-007/sources/AUD-001', { authenticated: true },
     )
   })
 })
