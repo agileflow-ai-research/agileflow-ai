@@ -4,40 +4,40 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   deleteRequirementSource,
+  getNormalizedRequirementEvidence,
   getRequirementAudioProcessingResult,
   getRequirementAudioProcessingStatus,
   getRequirementDocumentProcessingResult,
   getRequirementDocumentProcessingStatus,
-  getNormalizedRequirementEvidence,
   getRequirementEvidenceChunks,
   getRequirementPreparationStatus,
   getRequirementVideoProcessingResult,
   getRequirementVideoProcessingStatus,
   listRequirementSources,
-  processRequirementDocument,
-  processRequirementAudio,
-  processRequirementVideo,
   prepareRequirementEvidence,
+  processRequirementAudio,
+  processRequirementDocument,
+  processRequirementVideo,
   uploadRequirementSource,
 } from './requirementsAgentService.js'
 import RequirementsWorkspace from './RequirementsWorkspace.jsx'
 
 vi.mock('./requirementsAgentService.js', () => ({
   deleteRequirementSource: vi.fn(),
+  getNormalizedRequirementEvidence: vi.fn(),
   getRequirementAudioProcessingResult: vi.fn(),
   getRequirementAudioProcessingStatus: vi.fn(),
   getRequirementDocumentProcessingResult: vi.fn(),
   getRequirementDocumentProcessingStatus: vi.fn(),
-  getNormalizedRequirementEvidence: vi.fn(),
   getRequirementEvidenceChunks: vi.fn(),
   getRequirementPreparationStatus: vi.fn(),
   getRequirementVideoProcessingResult: vi.fn(),
   getRequirementVideoProcessingStatus: vi.fn(),
   listRequirementSources: vi.fn(),
-  processRequirementDocument: vi.fn(),
-  processRequirementAudio: vi.fn(),
-  processRequirementVideo: vi.fn(),
   prepareRequirementEvidence: vi.fn(),
+  processRequirementAudio: vi.fn(),
+  processRequirementDocument: vi.fn(),
+  processRequirementVideo: vi.fn(),
   uploadRequirementSource: vi.fn(),
 }))
 
@@ -50,66 +50,105 @@ const persistedSources = [
   { source_id: 'VID-001', source_type: 'VIDEO', original_filename: 'workflow.mp4', status: 'READY' },
 ]
 
-describe('RequirementsWorkspace Node 1', () => {
+function processingStatus(sourceId, status = 'READY', error = null) {
+  return { data: { source_id: sourceId, status, error } }
+}
+
+function preparationStatus(sourceId, status = 'READY', error = null) {
+  return { data: { source_id: sourceId, status, error } }
+}
+
+function chunksFor(sourceId, sourceType = 'DOCUMENT', provenance = []) {
+  return { data: {
+    source_id: sourceId,
+    source_type: sourceType,
+    chunks: [{
+      chunk_id: `CHK-${sourceId.replace('-', '').padEnd(16, '0')}`,
+      content: `Prepared evidence for ${sourceId}.`,
+      provenance,
+    }],
+  } }
+}
+
+async function openNode(name) {
+  const navigation = await screen.findByRole('navigation', { name: 'Agent 1 pipeline' })
+  await userEvent.click(within(navigation).getByRole('button', { name }))
+}
+
+describe('RequirementsWorkspace seven-node pipeline', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     listRequirementSources.mockResolvedValue({ data: persistedSources })
-    getRequirementDocumentProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'DOC-001', status: 'READY', error: null,
-    } })
-    getRequirementAudioProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'AUD-001', status: 'READY', error: null,
-    } })
-    getRequirementVideoProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'VID-001', status: 'READY', error: null,
-    } })
-    getRequirementPreparationStatus.mockImplementation((_, sourceId) => Promise.resolve({ data: {
-      source_id: sourceId, status: 'READY', error: null,
-    } }))
+    getRequirementDocumentProcessingStatus.mockResolvedValue(processingStatus('DOC-001'))
+    getRequirementAudioProcessingStatus.mockResolvedValue(processingStatus('AUD-001'))
+    getRequirementVideoProcessingStatus.mockResolvedValue(processingStatus('VID-001'))
+    getRequirementPreparationStatus.mockImplementation((_, sourceId) => (
+      Promise.resolve(preparationStatus(sourceId))
+    ))
   })
 
-  it('renders actions and persisted IDs, types, filenames, and statuses', async () => {
+  it('shows exactly seven ordered top-level nodes and keeps N3-N7 locked', async () => {
+    const user = userEvent.setup()
     render(<RequirementsWorkspace project={project} />)
+    const navigation = await screen.findByRole('navigation', { name: 'Agent 1 pipeline' })
+    const nodes = within(navigation).getAllByRole('button')
+
+    expect(nodes).toHaveLength(7)
+    expect(nodes.map((node) => node.textContent)).toEqual([
+      expect.stringContaining('Input Collection'),
+      expect.stringContaining('Processing & Chunking'),
+      expect.stringContaining('Discovery & Structuring'),
+      expect.stringContaining('Quality Engineering'),
+      expect.stringContaining('Clarification & Refinement'),
+      expect.stringContaining('Re-check & Artifacts'),
+      expect.stringContaining('Review & Baseline'),
+    ])
+    nodes.slice(2).forEach((node) => expect(node).toHaveAttribute('aria-disabled', 'true'))
+
+    await user.click(nodes[2])
+    expect(screen.getByRole('heading', { name: 'Requirement Discovery & Structuring' })).toBeInTheDocument()
+    expect(screen.getByText(/backend stage is implemented/i)).toBeInTheDocument()
+    expect(screen.queryByText(/functional requirement/i)).not.toBeInTheDocument()
+  })
+
+  it('keeps completed N1 reviewable and contains only collection controls', async () => {
+    const user = userEvent.setup()
+    render(<RequirementsWorkspace project={project} />)
+    const navigation = await screen.findByRole('navigation', { name: 'Agent 1 pipeline' })
+    await user.click(within(navigation).getByRole('button', { name: /Input Collection/ }))
+
     expect(screen.getByRole('heading', { name: 'Client Requirement Sources' })).toBeInTheDocument()
     ;['Add Documents', 'Add Audio', 'Add Video'].forEach((label) => {
       expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
     })
-    expect(await screen.findByText('DOC-001')).toBeInTheDocument()
-    ;['AUD-001', 'VID-001', 'Document', 'Audio', 'Video', 'requirements.pdf', 'interview.mp3', 'workflow.mp4'].forEach((text) => {
+    ;['DOC-001', 'AUD-001', 'VID-001', 'requirements.pdf', 'interview.mp3', 'workflow.mp4'].forEach((text) => {
       expect(screen.getByText(text)).toBeInTheDocument()
     })
-    expect(screen.getAllByText('Ready').length).toBeGreaterThanOrEqual(3)
-    expect(listRequirementSources).toHaveBeenCalledWith('AGP-001')
+    expect(screen.queryByRole('button', { name: /Process Document|Process Audio|Process Video|Prepare Evidence/ })).not.toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { name: /Input Collection/ })).toHaveTextContent('Complete')
   })
 
-  it('uploads multiple files and mixed source types without calling a run endpoint', async () => {
+  it('uploads mixed sources, removes one, and reloads persisted sources', async () => {
     const user = userEvent.setup()
-    listRequirementSources.mockResolvedValue({ data: [] })
+    listRequirementSources.mockResolvedValueOnce({ data: [] })
     uploadRequirementSource
       .mockResolvedValueOnce({ data: { source_id: 'DOC-001', source_type: 'DOCUMENT', original_filename: 'one.pdf', status: 'READY' } })
       .mockResolvedValueOnce({ data: { source_id: 'DOC-002', source_type: 'DOCUMENT', original_filename: 'two.txt', status: 'READY' } })
       .mockResolvedValueOnce({ data: { source_id: 'AUD-001', source_type: 'AUDIO', original_filename: 'call.mp3', status: 'READY' } })
-    render(<RequirementsWorkspace project={project} />)
-    await screen.findByText('No requirement sources uploaded yet.')
-    const one = new File(['pdf'], 'one.pdf', { type: 'application/pdf' })
-    const two = new File(['notes'], 'two.txt', { type: 'text/plain' })
-    await user.upload(screen.getByLabelText('Document files'), [one, two])
-    const audio = new File(['audio'], 'call.mp3', { type: 'audio/mpeg' })
-    await user.upload(screen.getByLabelText('Audio files'), audio)
-
-    await waitFor(() => expect(uploadRequirementSource).toHaveBeenCalledTimes(3))
-    expect(uploadRequirementSource).toHaveBeenNthCalledWith(1, 'AGP-001', 'DOCUMENT', one)
-    expect(uploadRequirementSource).toHaveBeenNthCalledWith(2, 'AGP-001', 'DOCUMENT', two)
-    expect(uploadRequirementSource).toHaveBeenNthCalledWith(3, 'AGP-001', 'AUDIO', audio)
-    expect(await screen.findByText('DOC-002')).toBeInTheDocument()
-    expect(screen.getByText('AUD-001')).toBeInTheDocument()
-  })
-
-  it('removes a source and reloads persisted sources when remounted', async () => {
-    const user = userEvent.setup()
     deleteRequirementSource.mockResolvedValue({ data: { source_id: 'DOC-001' } })
     const firstView = render(<RequirementsWorkspace project={project} />)
-    await screen.findByText('DOC-001')
+    await screen.findByText('No requirement sources uploaded yet.')
+
+    const document = new File(['pdf'], 'one.pdf', { type: 'application/pdf' })
+    const text = new File(['notes'], 'two.txt', { type: 'text/plain' })
+    const audio = new File(['audio'], 'call.mp3', { type: 'audio/mpeg' })
+    await user.upload(screen.getByLabelText('Document files'), [document, text])
+    await user.upload(screen.getByLabelText('Audio files'), audio)
+    expect(await screen.findByText('AUD-001')).toBeInTheDocument()
+    expect(uploadRequirementSource).toHaveBeenNthCalledWith(1, 'AGP-001', 'DOCUMENT', document)
+    expect(uploadRequirementSource).toHaveBeenNthCalledWith(2, 'AGP-001', 'DOCUMENT', text)
+    expect(uploadRequirementSource).toHaveBeenNthCalledWith(3, 'AGP-001', 'AUDIO', audio)
+
     await user.click(screen.getAllByRole('button', { name: 'Remove' })[0])
     await waitFor(() => expect(screen.queryByText('DOC-001')).not.toBeInTheDocument())
     expect(deleteRequirementSource).toHaveBeenCalledWith('AGP-001', 'DOC-001')
@@ -117,269 +156,178 @@ describe('RequirementsWorkspace Node 1', () => {
 
     listRequirementSources.mockResolvedValue({ data: persistedSources.slice(1) })
     render(<RequirementsWorkspace project={project} />)
+    await openNode(/Input Collection/)
     expect(await screen.findByText('AUD-001')).toBeInTheDocument()
     expect(screen.queryByText('DOC-001')).not.toBeInTheDocument()
-    expect(listRequirementSources).toHaveBeenCalledTimes(2)
   })
 
-  it('shows persisted processing state after reload and loads the extracted result', async () => {
-    const user = userEvent.setup()
-    getRequirementDocumentProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'DOC-001', status: 'COMPLETED', error: null,
-    } })
-    getRequirementDocumentProcessingResult.mockResolvedValue({ data: {
-      source_id: 'DOC-001', document_type: 'PDF', text: 'Persisted extracted requirement',
-    } })
+  it('navigates to N2 and provides document, audio, video, and preparation actions', async () => {
     render(<RequirementsWorkspace project={project} />)
-
-    expect(await screen.findByText('Completed')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'View Result' }))
-
-    expect(await screen.findByText('Persisted extracted requirement')).toBeInTheDocument()
-    expect(getRequirementDocumentProcessingResult).toHaveBeenCalledWith('AGP-001', 'DOC-001')
-  })
-
-  it('shows processing immediately and completes document processing', async () => {
-    const user = userEvent.setup()
-    let finishProcessing
-    processRequirementDocument.mockReturnValue(new Promise((resolve) => { finishProcessing = resolve }))
-    render(<RequirementsWorkspace project={project} />)
-    await screen.findByRole('button', { name: 'Process Document' })
-
-    await user.click(screen.getByRole('button', { name: 'Process Document' }))
-    expect(screen.getByText('Processing')).toBeInTheDocument()
-    finishProcessing({ data: { source_id: 'DOC-001', status: 'COMPLETED', error: null } })
-
-    expect(await screen.findByText('Completed')).toBeInTheDocument()
-    expect(processRequirementDocument).toHaveBeenCalledWith('AGP-001', 'DOC-001', { force: false })
-  })
-
-  it('shows safe failure details and retries with force', async () => {
-    const user = userEvent.setup()
-    getRequirementDocumentProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'DOC-001', status: 'FAILED',
-      error: { code: 'NO_MACHINE_READABLE_TEXT', message: 'OCR is not available in N2A.' },
-    } })
-    processRequirementDocument.mockResolvedValue({ data: {
-      source_id: 'DOC-001', status: 'COMPLETED', error: null,
-    } })
-    render(<RequirementsWorkspace project={project} />)
-
-    expect(await screen.findByText('Failed')).toBeInTheDocument()
-    expect(screen.getByText(/NO_MACHINE_READABLE_TEXT/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Retry Processing' }))
-
-    expect(processRequirementDocument).toHaveBeenCalledWith('AGP-001', 'DOC-001', { force: true })
-    expect(await screen.findByText('Completed')).toBeInTheDocument()
-  })
-
-  it('reloads audio state, reprocesses, and displays transcript metadata and segments', async () => {
-    const user = userEvent.setup()
-    getRequirementAudioProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'AUD-001', status: 'COMPLETED', error: null,
-    } })
-    getRequirementAudioProcessingResult.mockResolvedValue({ data: {
-      source_id: 'AUD-001',
-      transcript: 'The client needs appointment reminders.',
-      detected_language: 'en',
-      language_probability: 0.96,
-      segments: [
-        { start_seconds: 0, end_seconds: 2.4, text: 'The client needs appointment reminders.' },
-      ],
-    } })
-    processRequirementAudio.mockResolvedValue({ data: {
-      source_id: 'AUD-001', status: 'COMPLETED', error: null,
-    } })
-    render(<RequirementsWorkspace project={project} />)
-
-    const audioCard = (await screen.findByText('AUD-001')).closest('[data-variant]')
-    expect(within(audioCard).getByText('Completed')).toBeInTheDocument()
-    await user.click(within(audioCard).getByRole('button', { name: 'View Transcript' }))
-
-    await waitFor(() => {
-      expect(within(audioCard).getAllByText('The client needs appointment reminders.')).toHaveLength(2)
+    expect(await screen.findByRole('heading', { name: 'Multimodal Processing & Chunking' })).toBeInTheDocument()
+    ;['Document Processing', 'Audio Transcription', 'Video Processing', 'Evidence Preparation'].forEach((label) => {
+      expect(screen.getByText(label)).toBeInTheDocument()
     })
-    expect(within(audioCard).getByText('Detected language: en (96%)')).toBeInTheDocument()
-    expect(within(audioCard).getByText('0:00.00–0:02.40')).toBeInTheDocument()
-    expect(getRequirementAudioProcessingResult).toHaveBeenCalledWith('AGP-001', 'AUD-001')
+    expect(screen.getByRole('button', { name: 'Process Document' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Process Audio' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Process Video' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add Documents' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Prepare Evidence' })).not.toBeInTheDocument()
+  })
 
+  it('uses the correct processor actions, including retry and force reprocessing', async () => {
+    const user = userEvent.setup()
+    getRequirementDocumentProcessingStatus.mockResolvedValue(processingStatus('DOC-001', 'FAILED', {
+      code: 'NO_MACHINE_READABLE_TEXT', message: 'OCR is not available.',
+    }))
+    getRequirementAudioProcessingStatus.mockResolvedValue(processingStatus('AUD-001', 'COMPLETED'))
+    getRequirementVideoProcessingStatus.mockResolvedValue(processingStatus('VID-001', 'FAILED', {
+      code: 'VIDEO_NO_AUDIO_TRACK', message: 'The video has no usable audio track.',
+    }))
+    processRequirementDocument.mockResolvedValue(processingStatus('DOC-001', 'COMPLETED'))
+    processRequirementAudio.mockResolvedValue(processingStatus('AUD-001', 'COMPLETED'))
+    processRequirementVideo.mockResolvedValue(processingStatus('VID-001', 'COMPLETED'))
+    getRequirementPreparationStatus.mockImplementation((_, sourceId) => Promise.resolve(
+      preparationStatus(sourceId, sourceId === 'AUD-001' ? 'FAILED' : 'READY'),
+    ))
+    prepareRequirementEvidence.mockResolvedValue(preparationStatus('AUD-001', 'COMPLETED'))
+    getRequirementEvidenceChunks.mockResolvedValue(chunksFor('AUD-001', 'AUDIO'))
+    render(<RequirementsWorkspace project={project} />)
+    const documentCard = (await screen.findByText(/DOC-001 · requirements.pdf/)).closest('[data-variant]')
+    const audioCard = screen.getByText(/AUD-001 · interview.mp3/).closest('[data-variant]')
+    const videoCard = screen.getByText(/VID-001 · workflow.mp4/).closest('[data-variant]')
+
+    expect(within(documentCard).getByText(/NO_MACHINE_READABLE_TEXT/)).toBeInTheDocument()
+    await user.click(within(documentCard).getByRole('button', { name: 'Retry Processing' }))
+    expect(processRequirementDocument).toHaveBeenCalledWith('AGP-001', 'DOC-001', { force: true })
+    await user.click(within(audioCard).getByRole('button', { name: 'Retry Preparation' }))
+    expect(prepareRequirementEvidence).toHaveBeenCalledWith('AGP-001', 'AUD-001', { force: true })
     await user.click(within(audioCard).getByRole('button', { name: 'Reprocess' }))
     expect(processRequirementAudio).toHaveBeenCalledWith('AGP-001', 'AUD-001', { force: true })
-  })
-
-  it('shows audio failure and retries using the audio processor', async () => {
-    const user = userEvent.setup()
-    getRequirementAudioProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'AUD-001', status: 'FAILED',
-      error: { code: 'AUDIO_UNREADABLE', message: 'The audio source could not be decoded safely.' },
-    } })
-    processRequirementAudio.mockResolvedValue({ data: {
-      source_id: 'AUD-001', status: 'COMPLETED', error: null,
-    } })
-    render(<RequirementsWorkspace project={project} />)
-
-    const audioCard = (await screen.findByText('AUD-001')).closest('[data-variant]')
-    expect(within(audioCard).getByText(/AUDIO_UNREADABLE/)).toBeInTheDocument()
-    await user.click(within(audioCard).getByRole('button', { name: 'Retry' }))
-
-    expect(processRequirementAudio).toHaveBeenCalledWith('AGP-001', 'AUD-001', { force: true })
-    expect(await within(audioCard).findByText('Completed')).toBeInTheDocument()
-  })
-
-  it('shows audio processing immediately before the request completes', async () => {
-    const user = userEvent.setup()
-    let finishProcessing
-    processRequirementAudio.mockReturnValue(new Promise((resolve) => { finishProcessing = resolve }))
-    render(<RequirementsWorkspace project={project} />)
-
-    const audioCard = (await screen.findByText('AUD-001')).closest('[data-variant]')
-    await user.click(within(audioCard).getByRole('button', { name: 'Process Audio' }))
-    expect(within(audioCard).getByText('Processing')).toBeInTheDocument()
-
-    finishProcessing({ data: { source_id: 'AUD-001', status: 'COMPLETED', error: null } })
-    expect(await within(audioCard).findByText('Completed')).toBeInTheDocument()
-    expect(processRequirementAudio).toHaveBeenCalledWith('AGP-001', 'AUD-001', { force: false })
-  })
-
-  it('shows video processing immediately before the request completes', async () => {
-    const user = userEvent.setup()
-    let finishProcessing
-    processRequirementVideo.mockReturnValue(new Promise((resolve) => { finishProcessing = resolve }))
-    render(<RequirementsWorkspace project={project} />)
-
-    const videoCard = (await screen.findByText('VID-001')).closest('[data-variant]')
-    await user.click(within(videoCard).getByRole('button', { name: 'Process Video' }))
-    expect(within(videoCard).getByText('Processing')).toBeInTheDocument()
-
-    finishProcessing({ data: { source_id: 'VID-001', status: 'COMPLETED', error: null } })
-    expect(await within(videoCard).findByText('Completed')).toBeInTheDocument()
-    expect(processRequirementVideo).toHaveBeenCalledWith('AGP-001', 'VID-001', { force: false })
-  })
-
-  it('reloads completed video state and displays the persisted transcript result', async () => {
-    const user = userEvent.setup()
-    getRequirementVideoProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'VID-001', status: 'COMPLETED', error: null,
-    } })
-    getRequirementVideoProcessingResult.mockResolvedValue({ data: {
-      source_id: 'VID-001',
-      transcript: 'The workflow demonstration includes approval.',
-      detected_language: 'en',
-      language_probability: 0.94,
-      processed_at: '2026-10-20T08:00:00Z',
-      segments: [
-        { start_seconds: 0, end_seconds: 1, text: 'The workflow demonstration' },
-        { start_seconds: 1, end_seconds: 2.5, text: ' includes approval.' },
-      ],
-    } })
-    processRequirementVideo.mockResolvedValue({ data: {
-      source_id: 'VID-001', status: 'COMPLETED', error: null,
-    } })
-    render(<RequirementsWorkspace project={project} />)
-
-    const videoCard = (await screen.findByText('VID-001')).closest('[data-variant]')
-    expect(within(videoCard).getByText('Completed')).toBeInTheDocument()
-    await user.click(within(videoCard).getByRole('button', { name: 'View Transcript' }))
-
-    expect(await within(videoCard).findByText('The workflow demonstration includes approval.')).toBeInTheDocument()
-    expect(within(videoCard).getByText('Detected language: en (94%)')).toBeInTheDocument()
-    expect(within(videoCard).getByText(/2 timestamped segments/)).toBeInTheDocument()
-    expect(getRequirementVideoProcessingResult).toHaveBeenCalledWith('AGP-001', 'VID-001')
-    await user.click(within(videoCard).getByRole('button', { name: 'Reprocess' }))
-    expect(processRequirementVideo).toHaveBeenCalledWith('AGP-001', 'VID-001', { force: true })
-  })
-
-  it('shows video failure and retries through the shared processing API', async () => {
-    const user = userEvent.setup()
-    getRequirementVideoProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'VID-001', status: 'FAILED',
-      error: { code: 'VIDEO_NO_AUDIO_TRACK', message: 'The video does not contain a usable audio track.' },
-    } })
-    processRequirementVideo.mockResolvedValue({ data: {
-      source_id: 'VID-001', status: 'COMPLETED', error: null,
-    } })
-    render(<RequirementsWorkspace project={project} />)
-
-    const videoCard = (await screen.findByText('VID-001')).closest('[data-variant]')
     expect(within(videoCard).getByText(/VIDEO_NO_AUDIO_TRACK/)).toBeInTheDocument()
     await user.click(within(videoCard).getByRole('button', { name: 'Retry' }))
-
     expect(processRequirementVideo).toHaveBeenCalledWith('AGP-001', 'VID-001', { force: true })
-    expect(await within(videoCard).findByText('Completed')).toBeInTheDocument()
   })
 
-  it('prepares completed evidence and displays normalized chunks with provenance', async () => {
+  it('reloads real completed processing/preparation data and marks N2 complete only with chunks', async () => {
+    getRequirementDocumentProcessingStatus.mockResolvedValue(processingStatus('DOC-001', 'COMPLETED'))
+    getRequirementAudioProcessingStatus.mockResolvedValue(processingStatus('AUD-001', 'COMPLETED'))
+    getRequirementVideoProcessingStatus.mockResolvedValue(processingStatus('VID-001', 'COMPLETED'))
+    getRequirementPreparationStatus.mockImplementation((_, sourceId) => (
+      Promise.resolve(preparationStatus(sourceId, 'COMPLETED'))
+    ))
+    getRequirementEvidenceChunks.mockImplementation((_, sourceId) => Promise.resolve(chunksFor(
+      sourceId,
+      sourceId.startsWith('DOC') ? 'DOCUMENT' : sourceId.startsWith('AUD') ? 'AUDIO' : 'VIDEO',
+    )))
+    render(<RequirementsWorkspace project={project} />)
+    const navigation = await screen.findByRole('navigation', { name: 'Agent 1 pipeline' })
+
+    await waitFor(() => {
+      expect(within(navigation).getByRole('button', { name: /Processing & Chunking/ })).toHaveTextContent('Complete')
+    })
+    expect(within(navigation).getByRole('button', { name: /Input Collection/ })).toHaveTextContent('Complete')
+    expect(getRequirementEvidenceChunks).toHaveBeenCalledTimes(3)
+    expect(within(navigation).getByRole('button', { name: /Discovery & Structuring/ })).toHaveTextContent('Locked')
+  })
+
+  it('does not mark N2 complete when a persisted chunk result cannot be validated', async () => {
+    getRequirementDocumentProcessingStatus.mockResolvedValue(processingStatus('DOC-001', 'COMPLETED'))
+    getRequirementAudioProcessingStatus.mockResolvedValue(processingStatus('AUD-001', 'COMPLETED'))
+    getRequirementVideoProcessingStatus.mockResolvedValue(processingStatus('VID-001', 'COMPLETED'))
+    getRequirementPreparationStatus.mockImplementation((_, sourceId) => (
+      Promise.resolve(preparationStatus(sourceId, 'COMPLETED'))
+    ))
+    getRequirementEvidenceChunks.mockRejectedValue({ status: 404, errors: [{ message: 'Prepared evidence is unavailable.' }] })
+    render(<RequirementsWorkspace project={project} />)
+    const navigation = await screen.findByRole('navigation', { name: 'Agent 1 pipeline' })
+
+    await waitFor(() => {
+      expect(within(navigation).getByRole('button', { name: /Processing & Chunking/ })).toHaveTextContent('Failed')
+    })
+    expect(await screen.findAllByText('Prepared evidence is unavailable.')).toHaveLength(3)
+  })
+
+  it('displays extraction and transcript results for every implemented modality', async () => {
     const user = userEvent.setup()
-    let finishPreparation
-    getRequirementDocumentProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'DOC-001', status: 'COMPLETED', error: null,
+    getRequirementDocumentProcessingStatus.mockResolvedValue(processingStatus('DOC-001', 'COMPLETED'))
+    getRequirementAudioProcessingStatus.mockResolvedValue(processingStatus('AUD-001', 'COMPLETED'))
+    getRequirementVideoProcessingStatus.mockResolvedValue(processingStatus('VID-001', 'COMPLETED'))
+    getRequirementDocumentProcessingResult.mockResolvedValue({ data: { source_id: 'DOC-001', text: 'Extracted client requirement.' } })
+    getRequirementAudioProcessingResult.mockResolvedValue({ data: {
+      source_id: 'AUD-001', transcript: 'Audio requirement.', detected_language: 'en', language_probability: 0.96,
+      segments: [{ start_seconds: 0, end_seconds: 2.4, text: 'Audio requirement.' }],
     } })
-    prepareRequirementEvidence.mockReturnValue(new Promise((resolve) => { finishPreparation = resolve }))
+    getRequirementVideoProcessingResult.mockResolvedValue({ data: {
+      source_id: 'VID-001', transcript: 'Video requirement.', detected_language: 'en', language_probability: 0.94,
+      processed_at: '2026-10-20T08:00:00Z', segments: [{ start_seconds: 1, end_seconds: 3.5, text: 'Video requirement.' }],
+    } })
+    render(<RequirementsWorkspace project={project} />)
+    const documentCard = (await screen.findByText(/DOC-001 · requirements.pdf/)).closest('[data-variant]')
+    const audioCard = screen.getByText(/AUD-001 · interview.mp3/).closest('[data-variant]')
+    const videoCard = screen.getByText(/VID-001 · workflow.mp4/).closest('[data-variant]')
+
+    await user.click(within(documentCard).getByRole('button', { name: 'View Extraction' }))
+    await user.click(within(audioCard).getByRole('button', { name: 'View Transcript' }))
+    await user.click(within(videoCard).getByRole('button', { name: 'View Transcript' }))
+    expect(await within(documentCard).findByText('Extracted client requirement.')).toBeInTheDocument()
+    expect(await within(audioCard).findAllByText('Audio requirement.')).toHaveLength(2)
+    expect(within(audioCard).getByText('0:00.00–0:02.40')).toBeInTheDocument()
+    expect(await within(videoCard).findAllByText('Video requirement.')).toHaveLength(2)
+    expect(within(videoCard).getByText('0:01.00–0:03.50')).toBeInTheDocument()
+  })
+
+  it('prepares evidence, persists the action state, and shows chunk provenance', async () => {
+    const user = userEvent.setup()
+    getRequirementDocumentProcessingStatus.mockResolvedValue(processingStatus('DOC-001', 'COMPLETED'))
+    prepareRequirementEvidence.mockResolvedValue(preparationStatus('DOC-001', 'COMPLETED'))
+    getRequirementEvidenceChunks.mockResolvedValue(chunksFor('DOC-001', 'DOCUMENT', [{
+      parent_start_offset: 10,
+      parent_end_offset: 42,
+      page_numbers: [2],
+      document_blocks: [{ block_index: 3, block_type: 'TABLE' }],
+      media_segments: [],
+    }]))
     getNormalizedRequirementEvidence.mockResolvedValue({ data: {
       source_id: 'DOC-001', normalized_text: 'The client needs secure access.',
     } })
-    getRequirementEvidenceChunks.mockResolvedValue({ data: {
-      source_id: 'DOC-001',
-      chunks: [{
-        chunk_id: 'CHK-0123456789ABCDEF',
-        content: 'The client needs secure access.',
-        provenance: [{ page_numbers: [2], document_blocks: [], media_segments: [] }],
-      }],
-    } })
     render(<RequirementsWorkspace project={project} />)
+    const documentCard = (await screen.findByText(/DOC-001 · requirements.pdf/)).closest('[data-variant]')
 
-    const documentCard = (await screen.findByText('DOC-001')).closest('[data-variant]')
     await user.click(within(documentCard).getByRole('button', { name: 'Prepare Evidence' }))
     expect(prepareRequirementEvidence).toHaveBeenCalledWith('AGP-001', 'DOC-001', { force: false })
-    const preparationSection = within(documentCard).getByRole('region', { name: 'Evidence preparation for requirements.pdf' })
-    expect(within(preparationSection).getByText('Processing')).toBeInTheDocument()
-    finishPreparation({ data: { source_id: 'DOC-001', status: 'COMPLETED', error: null } })
-    expect(await within(documentCard).findByText('Prepared evidence')).toBeInTheDocument()
+    expect(await within(documentCard).findByRole('button', { name: 'View Prepared Evidence' })).toBeInTheDocument()
     await user.click(within(documentCard).getByRole('button', { name: 'View Prepared Evidence' }))
 
-    expect(await within(documentCard).findAllByText('The client needs secure access.')).toHaveLength(2)
-    expect(within(documentCard).getByText('CHK-0123456789ABCDEF')).toBeInTheDocument()
-    expect(within(documentCard).getByText('Pages 2')).toBeInTheDocument()
-    expect(within(documentCard).getByText('1 evidence chunks')).toBeInTheDocument()
+    expect(await within(documentCard).findByText('The client needs secure access.')).toBeInTheDocument()
+    expect(within(documentCard).getByText(/CHK-DOC001/)).toBeInTheDocument()
+    expect(within(documentCard).getByText('Pages')).toBeInTheDocument()
+    expect(within(documentCard).getByText('2')).toBeInTheDocument()
+    expect(within(documentCard).getByText('3 (Table)')).toBeInTheDocument()
+    expect(within(documentCard).getByText('10-42')).toBeInTheDocument()
   })
 
-  it('reloads persisted completed preparation state', async () => {
-    getRequirementVideoProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'VID-001', status: 'COMPLETED', error: null,
-    } })
-    getRequirementPreparationStatus.mockImplementation((_, sourceId) => Promise.resolve({ data: {
-      source_id: sourceId,
-      status: sourceId === 'VID-001' ? 'COMPLETED' : 'READY',
-      error: null,
-    } }))
-    render(<RequirementsWorkspace project={project} />)
-
-    const videoCard = (await screen.findByText('VID-001')).closest('[data-variant]')
-    const preparationSection = await within(videoCard).findByRole('region', { name: 'Evidence preparation for workflow.mp4' })
-    expect(within(preparationSection).getByText('Completed')).toBeInTheDocument()
-    expect(within(preparationSection).getByRole('button', { name: 'View Prepared Evidence' })).toBeInTheDocument()
-  })
-
-  it('reloads failed preparation and retries with force', async () => {
+  it('shows audio/video timestamp provenance from persisted prepared evidence', async () => {
     const user = userEvent.setup()
-    getRequirementAudioProcessingStatus.mockResolvedValue({ data: {
-      source_id: 'AUD-001', status: 'COMPLETED', error: null,
-    } })
-    getRequirementPreparationStatus.mockImplementation((_, sourceId) => Promise.resolve({ data: sourceId === 'AUD-001' ? {
-      source_id: sourceId,
-      status: 'FAILED',
-      error: { code: 'PREPARATION_RESULT_INVALID', message: 'Retry preparation.' },
-    } : { source_id: sourceId, status: 'READY', error: null } }))
-    prepareRequirementEvidence.mockResolvedValue({ data: {
-      source_id: 'AUD-001', status: 'COMPLETED', error: null,
+    getRequirementAudioProcessingStatus.mockResolvedValue(processingStatus('AUD-001', 'COMPLETED'))
+    getRequirementPreparationStatus.mockImplementation((_, sourceId) => Promise.resolve(
+      preparationStatus(sourceId, sourceId === 'AUD-001' ? 'COMPLETED' : 'READY'),
+    ))
+    getRequirementEvidenceChunks.mockResolvedValue(chunksFor('AUD-001', 'AUDIO', [{
+      parent_start_offset: 0,
+      parent_end_offset: 26,
+      page_numbers: [],
+      document_blocks: [],
+      media_segments: [{ segment_index: 0, start_seconds: 4, end_seconds: 7.25 }],
+    }]))
+    getNormalizedRequirementEvidence.mockResolvedValue({ data: {
+      source_id: 'AUD-001', normalized_text: 'Appointment reminders are required.',
     } })
     render(<RequirementsWorkspace project={project} />)
+    const audioCard = (await screen.findByText(/AUD-001 · interview.mp3/)).closest('[data-variant]')
 
-    const audioCard = (await screen.findByText('AUD-001')).closest('[data-variant]')
-    expect(await within(audioCard).findByText(/PREPARATION_RESULT_INVALID/)).toBeInTheDocument()
-    await user.click(within(audioCard).getByRole('button', { name: 'Retry Preparation' }))
-
-    expect(prepareRequirementEvidence).toHaveBeenCalledWith('AGP-001', 'AUD-001', { force: true })
-    expect(await within(audioCard).findByRole('button', { name: 'View Prepared Evidence' })).toBeInTheDocument()
+    await user.click(await within(audioCard).findByRole('button', { name: 'View Prepared Evidence' }))
+    expect(await within(audioCard).findByText('Segments')).toBeInTheDocument()
+    expect(within(audioCard).getByText('0:04.00–0:07.25')).toBeInTheDocument()
+    expect(within(audioCard).getByText('AUD-001 · Audio')).toBeInTheDocument()
   })
 })
