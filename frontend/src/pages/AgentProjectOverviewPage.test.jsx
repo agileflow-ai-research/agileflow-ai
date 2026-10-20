@@ -22,12 +22,16 @@ vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({
   getRequirementAudioProcessingStatus: vi.fn(),
   getRequirementDocumentProcessingResult: vi.fn(),
   getRequirementDocumentProcessingStatus: vi.fn(),
+  getNormalizedRequirementEvidence: vi.fn(),
+  getRequirementEvidenceChunks: vi.fn(),
+  getRequirementPreparationStatus: vi.fn(),
   getRequirementVideoProcessingResult: vi.fn(),
   getRequirementVideoProcessingStatus: vi.fn(),
   listRequirementSources: vi.fn(),
   processRequirementDocument: vi.fn(),
   processRequirementAudio: vi.fn(),
   processRequirementVideo: vi.fn(),
+  prepareRequirementEvidence: vi.fn(),
   uploadRequirementSource: vi.fn(),
 }))
 vi.mock('../features/agents/implementation/pages/ImplementationProjectPage.jsx', () => ({

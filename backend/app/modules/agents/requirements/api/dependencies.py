@@ -19,6 +19,14 @@ from app.modules.agents.requirements.processing.audio.service import (
 from app.modules.agents.requirements.processing.facade import (
     RequirementProcessingService,
 )
+from app.modules.agents.requirements.processing.preparation.chunker import (
+    DeterministicChunker,
+    SentenceSegmenter,
+    build_chunker_configuration,
+)
+from app.modules.agents.requirements.processing.preparation.service import (
+    EvidencePreparationService,
+)
 from app.modules.agents.requirements.processing.service import DocumentProcessingService
 from app.modules.agents.requirements.processing.video.providers.base import (
     VideoAudioExtractor,
@@ -122,4 +130,35 @@ def get_requirement_processing_service(
     ],
 ) -> RequirementProcessingService:
     return RequirementProcessingService(documents, audio, video)
+
+
+@lru_cache(maxsize=1)
+def get_sentence_segmenter() -> SentenceSegmenter:
+    return SentenceSegmenter()
+
+
+def get_evidence_preparation_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    storage: Annotated[
+        RequirementSourceStorage, Depends(get_requirement_source_storage)
+    ],
+    processing: Annotated[
+        RequirementProcessingService, Depends(get_requirement_processing_service)
+    ],
+    segmenter: Annotated[SentenceSegmenter, Depends(get_sentence_segmenter)],
+) -> EvidencePreparationService:
+    configuration = build_chunker_configuration(
+        target_chars=settings.agent1_chunk_target_chars,
+        max_chars=settings.agent1_chunk_max_chars,
+        overlap_sentences=settings.agent1_chunk_overlap_sentences,
+        segmenter=segmenter,
+    )
+    return EvidencePreparationService(
+        standalone_service,
+        storage,
+        processing,
+        DeterministicChunker(configuration, segmenter),
+    )
 

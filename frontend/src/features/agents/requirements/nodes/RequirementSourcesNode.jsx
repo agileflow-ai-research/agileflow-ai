@@ -9,12 +9,16 @@ import {
   getRequirementAudioProcessingStatus,
   getRequirementDocumentProcessingResult,
   getRequirementDocumentProcessingStatus,
+  getNormalizedRequirementEvidence,
+  getRequirementEvidenceChunks,
+  getRequirementPreparationStatus,
   getRequirementVideoProcessingResult,
   getRequirementVideoProcessingStatus,
   listRequirementSources,
   processRequirementDocument,
   processRequirementAudio,
   processRequirementVideo,
+  prepareRequirementEvidence,
   uploadRequirementSource,
 } from '../requirementsAgentService.js'
 
@@ -62,6 +66,18 @@ function timestamp(seconds) {
   return `${minutes}:${(seconds % 60).toFixed(2).padStart(5, '0')}`
 }
 
+function provenanceLabel(provenance) {
+  const pages = [...new Set(provenance.flatMap((span) => span.page_numbers ?? []))]
+  if (pages.length) return `Pages ${pages.join(', ')}`
+  const blocks = provenance.flatMap((span) => span.document_blocks ?? [])
+  if (blocks.length) return `Blocks ${blocks.map((block) => `${block.block_index} (${sourceLabel(block.block_type)})`).join(', ')}`
+  const segments = provenance.flatMap((span) => span.media_segments ?? [])
+  if (segments.length) {
+    return `Segments ${segments.map((segment) => segment.segment_index).join(', ')} Â· ${timestamp(segments[0].start_seconds)}â€“${timestamp(segments.at(-1).end_seconds)}`
+  }
+  return 'Source text range'
+}
+
 export default function RequirementSourcesNode({ project }) {
   const inputRefs = useRef({})
   const requestSequence = useRef(0)
@@ -70,6 +86,7 @@ export default function RequirementSourcesNode({ project }) {
   const [uploadingType, setUploadingType] = useState(null)
   const [removingId, setRemovingId] = useState(null)
   const [processingStates, setProcessingStates] = useState({})
+  const [preparationStates, setPreparationStates] = useState({})
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -86,24 +103,52 @@ export default function RequirementSourcesNode({ project }) {
           source.source_id,
           { status: 'READY', result: null, requestError: '' },
         ])))
+        setPreparationStates(Object.fromEntries(processableSources.map((source) => [
+          source.source_id,
+          { status: 'READY', normalized: null, chunks: null, requestError: '' },
+        ])))
         return Promise.all(processableSources.map(async (source) => {
-          try {
-            const statusResponse = await processingClient(source.source_type).getStatus(
+          const [processingRequest, preparationRequest] = await Promise.allSettled([
+            processingClient(source.source_type).getStatus(
               project.agent_project_id,
               source.source_id,
-            )
-            if (requestSequence.current !== requestId || !statusResponse?.data?.status) return
+            ),
+            getRequirementPreparationStatus(
+              project.agent_project_id,
+              source.source_id,
+            ),
+          ])
+          if (requestSequence.current !== requestId) return
+          if (processingRequest.status === 'fulfilled' && processingRequest.value?.data?.status) {
             setProcessingStates((current) => ({
               ...current,
-              [source.source_id]: { ...statusResponse.data, result: null, requestError: '' },
+              [source.source_id]: { ...processingRequest.value.data, result: null, requestError: '' },
             }))
-          } catch (requestError) {
-            if (requestSequence.current !== requestId || requestError?.status === 401) return
+          } else if (processingRequest.status === 'rejected' && processingRequest.reason?.status !== 401) {
             setProcessingStates((current) => ({
               ...current,
               [source.source_id]: {
                 ...(current[source.source_id] ?? { status: 'READY' }),
-                requestError: requestError?.errors?.[0]?.message || 'Processing status could not be loaded.',
+                requestError: processingRequest.reason?.errors?.[0]?.message || 'Processing status could not be loaded.',
+              },
+            }))
+          }
+          if (preparationRequest.status === 'fulfilled' && preparationRequest.value?.data?.status) {
+            setPreparationStates((current) => ({
+              ...current,
+              [source.source_id]: {
+                ...preparationRequest.value.data,
+                normalized: null,
+                chunks: null,
+                requestError: '',
+              },
+            }))
+          } else if (preparationRequest.status === 'rejected' && preparationRequest.reason?.status !== 401) {
+            setPreparationStates((current) => ({
+              ...current,
+              [source.source_id]: {
+                ...(current[source.source_id] ?? { status: 'READY' }),
+                requestError: preparationRequest.reason?.errors?.[0]?.message || 'Preparation status could not be loaded.',
               },
             }))
           }
@@ -136,6 +181,12 @@ export default function RequirementSourcesNode({ project }) {
             ...current,
             [response.data.source_id]: { status: 'READY', result: null, requestError: '' },
           }))
+          setPreparationStates((current) => ({
+            ...current,
+            [response.data.source_id]: {
+              status: 'READY', normalized: null, chunks: null, requestError: '',
+            },
+          }))
         }
       }
     } catch (requestError) {
@@ -157,6 +208,11 @@ export default function RequirementSourcesNode({ project }) {
       await deleteRequirementSource(project.agent_project_id, sourceId)
       setSources((current) => current.filter((source) => source.source_id !== sourceId))
       setProcessingStates((current) => {
+        const next = { ...current }
+        delete next[sourceId]
+        return next
+      })
+      setPreparationStates((current) => {
         const next = { ...current }
         delete next[sourceId]
         return next
@@ -187,6 +243,10 @@ export default function RequirementSourcesNode({ project }) {
         ...current,
         [sourceId]: { ...response.data, result: null, requestError: '' },
       }))
+      setPreparationStates((current) => ({
+        ...current,
+        [sourceId]: { status: 'READY', normalized: null, chunks: null, requestError: '' },
+      }))
     } catch (requestError) {
       if (requestError?.status === 401) return
       setProcessingStates((current) => ({
@@ -197,6 +257,87 @@ export default function RequirementSourcesNode({ project }) {
           error: null,
           requestError: requestError?.errors?.[0]?.message || `${sourceLabel(source.source_type)} processing could not be completed.`,
           result: null,
+        },
+      }))
+    }
+  }
+
+  async function prepareEvidence(source, force = false) {
+    const sourceId = source.source_id
+    setPreparationStates((current) => ({
+      ...current,
+      [sourceId]: {
+        ...(current[sourceId] ?? {}),
+        status: 'PROCESSING',
+        error: null,
+        requestError: '',
+        normalized: null,
+        chunks: null,
+      },
+    }))
+    try {
+      const response = await prepareRequirementEvidence(
+        project.agent_project_id,
+        sourceId,
+        { force },
+      )
+      if (!response?.data?.status) throw new Error('Invalid evidence preparation response')
+      setPreparationStates((current) => ({
+        ...current,
+        [sourceId]: {
+          ...response.data,
+          normalized: null,
+          chunks: null,
+          requestError: '',
+        },
+      }))
+    } catch (requestError) {
+      if (requestError?.status === 401) return
+      setPreparationStates((current) => ({
+        ...current,
+        [sourceId]: {
+          ...(current[sourceId] ?? {}),
+          status: 'FAILED',
+          error: null,
+          requestError: requestError?.errors?.[0]?.message || 'Evidence preparation could not be completed.',
+          normalized: null,
+          chunks: null,
+        },
+      }))
+    }
+  }
+
+  async function loadPreparedEvidence(source) {
+    const sourceId = source.source_id
+    setPreparationStates((current) => ({
+      ...current,
+      [sourceId]: { ...current[sourceId], resultLoading: true, requestError: '' },
+    }))
+    try {
+      const [normalizedResponse, chunksResponse] = await Promise.all([
+        getNormalizedRequirementEvidence(project.agent_project_id, sourceId),
+        getRequirementEvidenceChunks(project.agent_project_id, sourceId),
+      ])
+      if (!normalizedResponse?.data?.normalized_text || !Array.isArray(chunksResponse?.data?.chunks)) {
+        throw new Error('Invalid prepared evidence response')
+      }
+      setPreparationStates((current) => ({
+        ...current,
+        [sourceId]: {
+          ...current[sourceId],
+          normalized: normalizedResponse.data,
+          chunks: chunksResponse.data,
+          resultLoading: false,
+        },
+      }))
+    } catch (requestError) {
+      if (requestError?.status === 401) return
+      setPreparationStates((current) => ({
+        ...current,
+        [sourceId]: {
+          ...current[sourceId],
+          resultLoading: false,
+          requestError: requestError?.errors?.[0]?.message || 'Prepared evidence could not be loaded.',
         },
       }))
     }
@@ -240,7 +381,7 @@ export default function RequirementSourcesNode({ project }) {
           Client Requirement Sources
         </h3>
         <p className="mt-1 text-sm text-content-secondary">
-          Collect source evidence for this project. Processing begins in a later node.
+          Collect, process, and prepare independently traceable evidence for this project.
         </p>
       </div>
 
@@ -299,7 +440,7 @@ export default function RequirementSourcesNode({ project }) {
                     size="small"
                     loading={removingId === source.source_id}
                     loadingLabel={`Removing ${source.original_filename}`}
-                    disabled={Boolean(uploadingType || removingId || processingStates[source.source_id]?.status === 'PROCESSING')}
+                    disabled={Boolean(uploadingType || removingId || processingStates[source.source_id]?.status === 'PROCESSING' || preparationStates[source.source_id]?.status === 'PROCESSING')}
                     onClick={() => { void removeSource(source.source_id) }}
                   >
                     Remove
@@ -332,7 +473,7 @@ export default function RequirementSourcesNode({ project }) {
                           size="small"
                           loading={processingStates[source.source_id]?.status === 'PROCESSING'}
                           loadingLabel={`Processing ${source.source_type.toLowerCase()}`}
-                          disabled={Boolean(uploadingType || removingId)}
+                          disabled={Boolean(uploadingType || removingId || preparationStates[source.source_id]?.status === 'PROCESSING')}
                           onClick={() => { void processSource(
                             source,
                             ['FAILED', 'COMPLETED'].includes(processingStates[source.source_id]?.status),
@@ -399,6 +540,81 @@ export default function RequirementSourcesNode({ project }) {
                                 </li>
                               ))}
                             </ol>
+                          </div>
+                        ) : null}
+                      </section>
+                    ) : null}
+                    {processingStates[source.source_id]?.status === 'COMPLETED' ? (
+                      <section className="space-y-3 border-t border-default pt-4" aria-label={`Evidence preparation for ${source.original_filename}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-content-primary">Prepared evidence</p>
+                            <StatusBadge
+                              label={sourceLabel(preparationStates[source.source_id]?.status ?? 'READY')}
+                              tone={processingTones[preparationStates[source.source_id]?.status] ?? 'neutral'}
+                            />
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {preparationStates[source.source_id]?.status === 'COMPLETED' ? (
+                              <Button
+                                variant="outline"
+                                size="small"
+                                loading={preparationStates[source.source_id]?.resultLoading}
+                                loadingLabel="Loading prepared evidence"
+                                onClick={() => { void loadPreparedEvidence(source) }}
+                              >
+                                View Prepared Evidence
+                              </Button>
+                            ) : null}
+                            <Button
+                              variant="outline"
+                              size="small"
+                              loading={preparationStates[source.source_id]?.status === 'PROCESSING'}
+                              loadingLabel="Preparing evidence"
+                              disabled={Boolean(uploadingType || removingId)}
+                              onClick={() => { void prepareEvidence(
+                                source,
+                                ['FAILED', 'COMPLETED'].includes(preparationStates[source.source_id]?.status),
+                              ) }}
+                            >
+                              {preparationStates[source.source_id]?.status === 'FAILED'
+                                ? 'Retry Preparation'
+                                : preparationStates[source.source_id]?.status === 'COMPLETED'
+                                  ? 'Reprepare'
+                                  : 'Prepare Evidence'}
+                            </Button>
+                          </div>
+                        </div>
+                        {preparationStates[source.source_id]?.requestError ? (
+                          <p role="alert" className="text-sm text-state-danger">{preparationStates[source.source_id].requestError}</p>
+                        ) : null}
+                        {preparationStates[source.source_id]?.error?.message ? (
+                          <p className="text-sm text-state-danger">
+                            {preparationStates[source.source_id].error.code}: {preparationStates[source.source_id].error.message}
+                          </p>
+                        ) : null}
+                        {preparationStates[source.source_id]?.normalized && preparationStates[source.source_id]?.chunks ? (
+                          <div className="space-y-3">
+                            <section aria-label={`Normalized evidence for ${source.original_filename}`}>
+                              <p className="text-sm font-medium text-content-primary">Normalized text</p>
+                              <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-control border border-default bg-surface p-3 text-sm text-content-secondary">
+                                {preparationStates[source.source_id].normalized.normalized_text}
+                              </pre>
+                            </section>
+                            <section aria-label={`Evidence chunks for ${source.original_filename}`}>
+                              <p className="text-sm font-medium text-content-primary">
+                                {preparationStates[source.source_id].chunks.chunks.length} evidence chunks
+                              </p>
+                              <ol className="mt-2 space-y-2">
+                                {preparationStates[source.source_id].chunks.chunks.map((chunk) => (
+                                  <li key={chunk.chunk_id} className="rounded-control border border-default bg-surface p-3 text-sm">
+                                    <p className="font-semibold text-content-primary">{chunk.chunk_id}</p>
+                                    <p className="mt-1 text-content-secondary">{chunk.content}</p>
+                                    <p className="mt-2 text-xs text-content-secondary">{provenanceLabel(chunk.provenance)}</p>
+                                  </li>
+                                ))}
+                              </ol>
+                            </section>
                           </div>
                         ) : null}
                       </section>

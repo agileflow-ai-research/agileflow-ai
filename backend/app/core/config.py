@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     faster_whisper_language: str = ""
     video_ffmpeg_path: str = "ffmpeg"
     video_ffmpeg_timeout_seconds: float = 120.0
+    agent1_chunk_target_chars: int = 900
+    agent1_chunk_max_chars: int = 1200
+    agent1_chunk_overlap_sentences: int = 1
     agent3_upload_root: Path = (
         BACKEND_DIR / "storage" / "standalone" / "implementation"
     )

@@ -8,12 +8,16 @@ import {
   getRequirementAudioProcessingStatus,
   getRequirementDocumentProcessingResult,
   getRequirementDocumentProcessingStatus,
+  getNormalizedRequirementEvidence,
+  getRequirementEvidenceChunks,
+  getRequirementPreparationStatus,
   getRequirementVideoProcessingResult,
   getRequirementVideoProcessingStatus,
   listRequirementSources,
   processRequirementDocument,
   processRequirementAudio,
   processRequirementVideo,
+  prepareRequirementEvidence,
   uploadRequirementSource,
 } from './requirementsAgentService.js'
 
@@ -113,6 +117,34 @@ describe('requirementsAgentService source collection', () => {
     expect(apiClient.get).toHaveBeenNthCalledWith(
       2,
       '/agents/requirements/AGP-007/sources/VID-001/processing/result',
+      { authenticated: true },
+    )
+  })
+
+  it('prepares evidence and retrieves normalized and chunk artifacts', () => {
+    prepareRequirementEvidence('AGP-007', 'VID-001', { force: true })
+    getRequirementPreparationStatus('AGP-007', 'VID-001')
+    getNormalizedRequirementEvidence('AGP-007', 'VID-001')
+    getRequirementEvidenceChunks('AGP-007', 'VID-001')
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/requirements/AGP-007/sources/VID-001/preparation?force=true',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenNthCalledWith(
+      1,
+      '/agents/requirements/AGP-007/sources/VID-001/preparation/status',
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenNthCalledWith(
+      2,
+      '/agents/requirements/AGP-007/sources/VID-001/preparation/normalized',
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenNthCalledWith(
+      3,
+      '/agents/requirements/AGP-007/sources/VID-001/preparation/chunks',
       { authenticated: true },
     )
   })

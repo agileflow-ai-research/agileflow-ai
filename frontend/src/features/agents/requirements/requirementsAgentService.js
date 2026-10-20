@@ -93,3 +93,33 @@ export function getRequirementVideoProcessingResult(agentProjectId, sourceId) {
     { authenticated: true },
   )
 }
+
+export function prepareRequirementEvidence(agentProjectId, sourceId, { force = false } = {}) {
+  const suffix = force ? '?force=true' : ''
+  return apiClient.post(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/preparation${suffix}`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getRequirementPreparationStatus(agentProjectId, sourceId) {
+  return apiClient.get(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/preparation/status`,
+    { authenticated: true },
+  )
+}
+
+export function getNormalizedRequirementEvidence(agentProjectId, sourceId) {
+  return apiClient.get(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/preparation/normalized`,
+    { authenticated: true },
+  )
+}
+
+export function getRequirementEvidenceChunks(agentProjectId, sourceId) {
+  return apiClient.get(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/preparation/chunks`,
+    { authenticated: true },
+  )
+}

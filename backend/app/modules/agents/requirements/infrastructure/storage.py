@@ -89,6 +89,12 @@ class StoredRequirementSource:
     video_processing_partial_path: Path
     video_result_path: Path
     video_result_partial_path: Path
+    preparation_path: Path
+    preparation_partial_path: Path
+    normalized_result_path: Path
+    normalized_result_partial_path: Path
+    chunk_result_path: Path
+    chunk_result_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -267,6 +273,24 @@ class RequirementSourceStorage:
         video_result_partial_path = self._contained(
             project_directory, f"{source_id}.video-result.json.part"
         )
+        preparation_path = self._contained(
+            project_directory, f"{source_id}.evidence-preparation.json"
+        )
+        preparation_partial_path = self._contained(
+            project_directory, f"{source_id}.evidence-preparation.json.part"
+        )
+        normalized_result_path = self._contained(
+            project_directory, f"{source_id}.normalized-result.json"
+        )
+        normalized_result_partial_path = self._contained(
+            project_directory, f"{source_id}.normalized-result.json.part"
+        )
+        chunk_result_path = self._contained(
+            project_directory, f"{source_id}.chunk-result.json"
+        )
+        chunk_result_partial_path = self._contained(
+            project_directory, f"{source_id}.chunk-result.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
             processing_path.unlink(missing_ok=True)
@@ -281,6 +305,12 @@ class RequirementSourceStorage:
             video_processing_partial_path.unlink(missing_ok=True)
             video_result_path.unlink(missing_ok=True)
             video_result_partial_path.unlink(missing_ok=True)
+            preparation_path.unlink(missing_ok=True)
+            preparation_partial_path.unlink(missing_ok=True)
+            normalized_result_path.unlink(missing_ok=True)
+            normalized_result_partial_path.unlink(missing_ok=True)
+            chunk_result_path.unlink(missing_ok=True)
+            chunk_result_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise SourceNotFoundError(source_id) from exc
@@ -349,6 +379,24 @@ class RequirementSourceStorage:
             ),
             video_result_partial_path=self._contained(
                 project_directory, f"{source_id}.video-result.json.part"
+            ),
+            preparation_path=self._contained(
+                project_directory, f"{source_id}.evidence-preparation.json"
+            ),
+            preparation_partial_path=self._contained(
+                project_directory, f"{source_id}.evidence-preparation.json.part"
+            ),
+            normalized_result_path=self._contained(
+                project_directory, f"{source_id}.normalized-result.json"
+            ),
+            normalized_result_partial_path=self._contained(
+                project_directory, f"{source_id}.normalized-result.json.part"
+            ),
+            chunk_result_path=self._contained(
+                project_directory, f"{source_id}.chunk-result.json"
+            ),
+            chunk_result_partial_path=self._contained(
+                project_directory, f"{source_id}.chunk-result.json.part"
             ),
         )
 

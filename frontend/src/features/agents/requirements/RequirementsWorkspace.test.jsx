@@ -8,12 +8,16 @@ import {
   getRequirementAudioProcessingStatus,
   getRequirementDocumentProcessingResult,
   getRequirementDocumentProcessingStatus,
+  getNormalizedRequirementEvidence,
+  getRequirementEvidenceChunks,
+  getRequirementPreparationStatus,
   getRequirementVideoProcessingResult,
   getRequirementVideoProcessingStatus,
   listRequirementSources,
   processRequirementDocument,
   processRequirementAudio,
   processRequirementVideo,
+  prepareRequirementEvidence,
   uploadRequirementSource,
 } from './requirementsAgentService.js'
 import RequirementsWorkspace from './RequirementsWorkspace.jsx'
@@ -24,12 +28,16 @@ vi.mock('./requirementsAgentService.js', () => ({
   getRequirementAudioProcessingStatus: vi.fn(),
   getRequirementDocumentProcessingResult: vi.fn(),
   getRequirementDocumentProcessingStatus: vi.fn(),
+  getNormalizedRequirementEvidence: vi.fn(),
+  getRequirementEvidenceChunks: vi.fn(),
+  getRequirementPreparationStatus: vi.fn(),
   getRequirementVideoProcessingResult: vi.fn(),
   getRequirementVideoProcessingStatus: vi.fn(),
   listRequirementSources: vi.fn(),
   processRequirementDocument: vi.fn(),
   processRequirementAudio: vi.fn(),
   processRequirementVideo: vi.fn(),
+  prepareRequirementEvidence: vi.fn(),
   uploadRequirementSource: vi.fn(),
 }))
 
@@ -55,6 +63,9 @@ describe('RequirementsWorkspace Node 1', () => {
     getRequirementVideoProcessingStatus.mockResolvedValue({ data: {
       source_id: 'VID-001', status: 'READY', error: null,
     } })
+    getRequirementPreparationStatus.mockImplementation((_, sourceId) => Promise.resolve({ data: {
+      source_id: sourceId, status: 'READY', error: null,
+    } }))
   })
 
   it('renders actions and persisted IDs, types, filenames, and statuses', async () => {
@@ -295,5 +306,80 @@ describe('RequirementsWorkspace Node 1', () => {
 
     expect(processRequirementVideo).toHaveBeenCalledWith('AGP-001', 'VID-001', { force: true })
     expect(await within(videoCard).findByText('Completed')).toBeInTheDocument()
+  })
+
+  it('prepares completed evidence and displays normalized chunks with provenance', async () => {
+    const user = userEvent.setup()
+    let finishPreparation
+    getRequirementDocumentProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'DOC-001', status: 'COMPLETED', error: null,
+    } })
+    prepareRequirementEvidence.mockReturnValue(new Promise((resolve) => { finishPreparation = resolve }))
+    getNormalizedRequirementEvidence.mockResolvedValue({ data: {
+      source_id: 'DOC-001', normalized_text: 'The client needs secure access.',
+    } })
+    getRequirementEvidenceChunks.mockResolvedValue({ data: {
+      source_id: 'DOC-001',
+      chunks: [{
+        chunk_id: 'CHK-0123456789ABCDEF',
+        content: 'The client needs secure access.',
+        provenance: [{ page_numbers: [2], document_blocks: [], media_segments: [] }],
+      }],
+    } })
+    render(<RequirementsWorkspace project={project} />)
+
+    const documentCard = (await screen.findByText('DOC-001')).closest('[data-variant]')
+    await user.click(within(documentCard).getByRole('button', { name: 'Prepare Evidence' }))
+    expect(prepareRequirementEvidence).toHaveBeenCalledWith('AGP-001', 'DOC-001', { force: false })
+    const preparationSection = within(documentCard).getByRole('region', { name: 'Evidence preparation for requirements.pdf' })
+    expect(within(preparationSection).getByText('Processing')).toBeInTheDocument()
+    finishPreparation({ data: { source_id: 'DOC-001', status: 'COMPLETED', error: null } })
+    expect(await within(documentCard).findByText('Prepared evidence')).toBeInTheDocument()
+    await user.click(within(documentCard).getByRole('button', { name: 'View Prepared Evidence' }))
+
+    expect(await within(documentCard).findAllByText('The client needs secure access.')).toHaveLength(2)
+    expect(within(documentCard).getByText('CHK-0123456789ABCDEF')).toBeInTheDocument()
+    expect(within(documentCard).getByText('Pages 2')).toBeInTheDocument()
+    expect(within(documentCard).getByText('1 evidence chunks')).toBeInTheDocument()
+  })
+
+  it('reloads persisted completed preparation state', async () => {
+    getRequirementVideoProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'VID-001', status: 'COMPLETED', error: null,
+    } })
+    getRequirementPreparationStatus.mockImplementation((_, sourceId) => Promise.resolve({ data: {
+      source_id: sourceId,
+      status: sourceId === 'VID-001' ? 'COMPLETED' : 'READY',
+      error: null,
+    } }))
+    render(<RequirementsWorkspace project={project} />)
+
+    const videoCard = (await screen.findByText('VID-001')).closest('[data-variant]')
+    const preparationSection = await within(videoCard).findByRole('region', { name: 'Evidence preparation for workflow.mp4' })
+    expect(within(preparationSection).getByText('Completed')).toBeInTheDocument()
+    expect(within(preparationSection).getByRole('button', { name: 'View Prepared Evidence' })).toBeInTheDocument()
+  })
+
+  it('reloads failed preparation and retries with force', async () => {
+    const user = userEvent.setup()
+    getRequirementAudioProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'AUD-001', status: 'COMPLETED', error: null,
+    } })
+    getRequirementPreparationStatus.mockImplementation((_, sourceId) => Promise.resolve({ data: sourceId === 'AUD-001' ? {
+      source_id: sourceId,
+      status: 'FAILED',
+      error: { code: 'PREPARATION_RESULT_INVALID', message: 'Retry preparation.' },
+    } : { source_id: sourceId, status: 'READY', error: null } }))
+    prepareRequirementEvidence.mockResolvedValue({ data: {
+      source_id: 'AUD-001', status: 'COMPLETED', error: null,
+    } })
+    render(<RequirementsWorkspace project={project} />)
+
+    const audioCard = (await screen.findByText('AUD-001')).closest('[data-variant]')
+    expect(await within(audioCard).findByText(/PREPARATION_RESULT_INVALID/)).toBeInTheDocument()
+    await user.click(within(audioCard).getByRole('button', { name: 'Retry Preparation' }))
+
+    expect(prepareRequirementEvidence).toHaveBeenCalledWith('AGP-001', 'AUD-001', { force: true })
+    expect(await within(audioCard).findByRole('button', { name: 'View Prepared Evidence' })).toBeInTheDocument()
   })
 })
