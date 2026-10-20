@@ -19,11 +19,16 @@ from app.modules.agents.requirements.processing.adapters.pdf import (
 from app.modules.agents.requirements.processing.adapters.text import extract_text
 from app.modules.agents.requirements.processing.constants import PROCESSOR_VERSION
 from app.modules.agents.requirements.processing.schemas import (
+    DocumentBlockSpan,
+    DocumentBlockType,
+    DocumentPageSpan,
     DocumentProcessingError,
     DocumentProcessingErrorCode,
     DocumentProcessingRecord,
     DocumentProcessingResult,
     DocumentProcessingStatus,
+    DocumentStructuralProvenance,
+    DocumentTextRange,
     DocumentType,
 )
 from app.modules.auth.schemas import UserPublicResponse
@@ -239,12 +244,47 @@ class DocumentProcessingService:
         page_count = None
         paragraph_count = None
         table_count = None
+        provenance = DocumentStructuralProvenance()
         if document_type is DocumentType.PDF:
-            text, page_count = extract_pdf_text(stored.file_path)
+            text, page_count, pages = extract_pdf_text(stored.file_path)
+            provenance = DocumentStructuralProvenance(
+                pages=[
+                    DocumentPageSpan(
+                        page_number=page_number,
+                        text=page_text,
+                        start_offset=start_offset,
+                        end_offset=end_offset,
+                    )
+                    for page_number, page_text, start_offset, end_offset in pages
+                ]
+            )
         elif document_type is DocumentType.DOCX:
-            text, paragraph_count, table_count = extract_docx_text(stored.file_path)
+            text, paragraph_count, table_count, blocks = extract_docx_text(
+                stored.file_path
+            )
+            provenance = DocumentStructuralProvenance(
+                blocks=[
+                    DocumentBlockSpan(
+                        block_index=block_index,
+                        block_type=DocumentBlockType(block_type),
+                        text=block_text,
+                        start_offset=start_offset,
+                        end_offset=end_offset,
+                    )
+                    for block_index, block_type, block_text, start_offset, end_offset in blocks
+                ]
+            )
         else:
             text = extract_text(stored.file_path)
+            provenance = DocumentStructuralProvenance(
+                text_ranges=[
+                    DocumentTextRange(
+                        text=text,
+                        start_offset=0,
+                        end_offset=len(text),
+                    )
+                ]
+            )
         if not text.strip():
             raise NoMachineReadableTextError()
         return DocumentProcessingResult(
@@ -258,6 +298,7 @@ class DocumentProcessingService:
             page_count=page_count,
             paragraph_count=paragraph_count,
             table_count=table_count,
+            structural_provenance=provenance,
             processed_at=self._clock(),
         )
 

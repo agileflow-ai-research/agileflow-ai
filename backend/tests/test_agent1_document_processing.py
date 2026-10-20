@@ -33,6 +33,17 @@ def pdf_bytes(text: str | None = None) -> bytes:
     return value
 
 
+def multipage_pdf_bytes(page_texts: list[str]) -> bytes:
+    document = fitz.open()
+    for text in page_texts:
+        page = document.new_page()
+        if text:
+            page.insert_text((72, 72), text)
+    value = document.tobytes()
+    document.close()
+    return value
+
+
 def docx_bytes() -> bytes:
     output = BytesIO()
     document = Document()
@@ -42,6 +53,18 @@ def docx_bytes() -> bytes:
     table.cell(0, 1).text = "Goal"
     table.cell(1, 0).text = "Patient"
     table.cell(1, 1).text = "Book online"
+    document.save(output)
+    return output.getvalue()
+
+
+def ordered_docx_bytes() -> bytes:
+    output = BytesIO()
+    document = Document()
+    document.add_paragraph("First paragraph")
+    table = document.add_table(rows=1, cols=2)
+    table.cell(0, 0).text = "Role"
+    table.cell(0, 1).text = "Goal"
+    document.add_paragraph("Final paragraph")
     document.save(output)
     return output.getvalue()
 
@@ -113,6 +136,12 @@ def test_txt_extraction_and_ready_completed_status(processing_context):
     assert extracted.json()["data"]["text"] == "Line one\nLine two"
     assert extracted.json()["data"]["document_type"] == "TXT"
     assert extracted.json()["data"]["source_id"] == "DOC-001"
+    text_range = extracted.json()["data"]["structural_provenance"]["text_ranges"][0]
+    assert text_range == {
+        "text": "Line one\nLine two",
+        "start_offset": 0,
+        "end_offset": len("Line one\nLine two"),
+    }
     assert runs.documents == {}
 
 
@@ -145,6 +174,26 @@ def test_pdf_machine_readable_extraction(processing_context):
     assert extracted["page_count"] == 1
 
 
+def test_multipage_pdf_preserves_ordered_page_offsets(processing_context):
+    authentication, _, _, _ = processing_context
+    client = authentication.client()
+    project_id = create_project(client)["agent_project_id"]
+    page_texts = ["First page requirement", "Second page constraint", "Third page note"]
+    source = upload(
+        client, project_id, "multipage.pdf", multipage_pdf_bytes(page_texts)
+    ).json()["data"]
+
+    process(client, project_id, source["source_id"])
+    extracted = result(client, project_id, source["source_id"]).json()["data"]
+    pages = extracted["structural_provenance"]["pages"]
+
+    assert extracted["text"] == "\n\n".join(page_texts)
+    assert [page["page_number"] for page in pages] == [1, 2, 3]
+    assert [page["text"] for page in pages] == page_texts
+    for page in pages:
+        assert extracted["text"][page["start_offset"] : page["end_offset"]] == page["text"]
+
+
 def test_docx_paragraphs_and_tables(processing_context):
     authentication, _, _, _ = processing_context
     client = authentication.client()
@@ -159,6 +208,33 @@ def test_docx_paragraphs_and_tables(processing_context):
     assert "Patient\tBook online" in extracted["text"]
     assert extracted["paragraph_count"] == 1
     assert extracted["table_count"] == 1
+
+
+def test_docx_preserves_paragraph_table_order_and_offsets(processing_context):
+    authentication, _, _, _ = processing_context
+    client = authentication.client()
+    project_id = create_project(client)["agent_project_id"]
+    source = upload(
+        client, project_id, "ordered.docx", ordered_docx_bytes()
+    ).json()["data"]
+
+    process(client, project_id, source["source_id"])
+    extracted = result(client, project_id, source["source_id"]).json()["data"]
+    blocks = extracted["structural_provenance"]["blocks"]
+
+    assert [block["block_index"] for block in blocks] == [0, 1, 2]
+    assert [block["block_type"] for block in blocks] == [
+        "PARAGRAPH",
+        "TABLE",
+        "PARAGRAPH",
+    ]
+    assert [block["text"] for block in blocks] == [
+        "First paragraph",
+        "Role\tGoal",
+        "Final paragraph",
+    ]
+    for block in blocks:
+        assert extracted["text"][block["start_offset"] : block["end_offset"]] == block["text"]
 
 
 def test_scanned_or_empty_pdf_fails_without_ocr(processing_context):
@@ -295,10 +371,48 @@ def test_checksum_and_processor_version_bind_cached_results(processing_context, 
 
     cached_status = processing_path.read_text(encoding="utf-8")
     processing_path.write_text(
-        cached_status.replace('"processor_version":"1"', '"processor_version":"999"'),
+        cached_status.replace('"processor_version":"2"', '"processor_version":"999"'),
         encoding="utf-8",
     )
     assert status(client, project_id, source["source_id"]).json()["data"]["status"] == "READY"
+
+
+def test_v1_document_result_is_invalidated_and_reprocessed(processing_context, monkeypatch):
+    authentication, _, _, root = processing_context
+    client = authentication.client()
+    project_id = create_project(client)["agent_project_id"]
+    source_id = upload(client, project_id, "legacy.txt", b"Legacy content").json()["data"]["source_id"]
+    process(client, project_id, source_id)
+    directory = root / project_id / "inputs"
+    processing_path = directory / "DOC-001.document-processing.json"
+    result_path = directory / "DOC-001.document-result.json"
+    processing_payload = json.loads(processing_path.read_text(encoding="utf-8"))
+    result_payload = json.loads(result_path.read_text(encoding="utf-8"))
+    processing_payload["processor_version"] = "1"
+    result_payload["processor_version"] = "1"
+    result_payload.pop("structural_provenance")
+    processing_path.write_text(json.dumps(processing_payload), encoding="utf-8")
+    result_path.write_text(json.dumps(result_payload), encoding="utf-8")
+    original_extract_text = processing_module.extract_text
+    extraction_calls = 0
+
+    def counted_extract_text(path):
+        nonlocal extraction_calls
+        extraction_calls += 1
+        return original_extract_text(path)
+
+    monkeypatch.setattr(processing_module, "extract_text", counted_extract_text)
+
+    assert status(client, project_id, source_id).json()["data"]["status"] == "READY"
+    assert result(client, project_id, source_id).status_code == 404
+    reprocessed = process(client, project_id, source_id).json()["data"]
+
+    assert reprocessed["status"] == "COMPLETED"
+    assert reprocessed["processor_version"] == "2"
+    assert extraction_calls == 1
+    refreshed = result(client, project_id, source_id).json()["data"]
+    assert refreshed["processor_version"] == "2"
+    assert refreshed["structural_provenance"]["text_ranges"][0]["text"] == "Legacy content"
 
 
 def test_changed_source_bytes_fail_checksum_without_mutating_metadata(processing_context):
