@@ -27,3 +27,7 @@ are never copied; later delivery must reacquire ephemeral credentials.
 An idempotency key identifies one explicit approval attempt. Retrying the same
 attempt returns its existing run. A later deliberate attempt supplies a new
 key and may create another run from the same still-current approved state.
+
+For the complete current-capability boundary, including the distinction between
+implemented approval handoff and future generation/build/delivery work, see the
+[Agent 3 Implementation Status](../../../../../../docs/standalone/AGENT_3_IMPLEMENTATION_STATUS.md).
