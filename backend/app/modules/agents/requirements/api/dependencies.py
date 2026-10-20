@@ -37,12 +37,34 @@ from app.modules.agents.requirements.processing.video.providers.ffmpeg import (
 from app.modules.agents.requirements.processing.video.service import (
     VideoProcessingService,
 )
+from app.modules.agents.requirements.workflow.service import RequirementWorkflowService
+from app.modules.agents.requirements.workflow.storage import RequirementWorkflowStorage
 from app.modules.standalone.router import get_standalone_service
 from app.modules.standalone.service import StandaloneService
 
 
 def get_requirement_source_storage() -> RequirementSourceStorage:
     return RequirementSourceStorage(settings.agent1_source_root)
+
+
+def get_requirement_workflow_storage() -> RequirementWorkflowStorage:
+    return RequirementWorkflowStorage(settings.agent1_source_root)
+
+
+def get_requirement_workflow_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    source_storage: Annotated[
+        RequirementSourceStorage, Depends(get_requirement_source_storage)
+    ],
+    workflow_storage: Annotated[
+        RequirementWorkflowStorage, Depends(get_requirement_workflow_storage)
+    ],
+) -> RequirementWorkflowService:
+    return RequirementWorkflowService(
+        standalone_service, source_storage, workflow_storage
+    )
 
 
 def get_requirement_source_service(
