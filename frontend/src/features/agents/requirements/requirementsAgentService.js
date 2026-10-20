@@ -55,3 +55,26 @@ export function getRequirementDocumentProcessingResult(agentProjectId, sourceId)
     { authenticated: true },
   )
 }
+
+export function processRequirementAudio(agentProjectId, sourceId, { force = false } = {}) {
+  const suffix = force ? '?force=true' : ''
+  return apiClient.post(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/processing${suffix}`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getRequirementAudioProcessingStatus(agentProjectId, sourceId) {
+  return apiClient.get(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/processing/status`,
+    { authenticated: true },
+  )
+}
+
+export function getRequirementAudioProcessingResult(agentProjectId, sourceId) {
+  return apiClient.get(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/processing/result`,
+    { authenticated: true },
+  )
+}

@@ -5,10 +5,13 @@ import Card from '../../../../components/ui/Card.jsx'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import {
   deleteRequirementSource,
+  getRequirementAudioProcessingResult,
+  getRequirementAudioProcessingStatus,
   getRequirementDocumentProcessingResult,
   getRequirementDocumentProcessingStatus,
   listRequirementSources,
   processRequirementDocument,
+  processRequirementAudio,
   uploadRequirementSource,
 } from '../requirementsAgentService.js'
 
@@ -27,6 +30,25 @@ const processingTones = {
   PROCESSING: 'info',
   COMPLETED: 'success',
   FAILED: 'danger',
+}
+
+function processingClient(sourceType) {
+  return sourceType === 'AUDIO'
+    ? {
+        getStatus: getRequirementAudioProcessingStatus,
+        getResult: getRequirementAudioProcessingResult,
+        process: processRequirementAudio,
+      }
+    : {
+        getStatus: getRequirementDocumentProcessingStatus,
+        getResult: getRequirementDocumentProcessingResult,
+        process: processRequirementDocument,
+      }
+}
+
+function timestamp(seconds) {
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}:${(seconds % 60).toFixed(2).padStart(5, '0')}`
 }
 
 export default function RequirementSourcesNode({ project }) {
@@ -48,14 +70,14 @@ export default function RequirementSourcesNode({ project }) {
         if (!Array.isArray(response?.data)) throw new Error('Invalid requirement sources response')
         setSources(response.data)
         setLoadStatus('success')
-        const documents = response.data.filter((source) => source.source_type === 'DOCUMENT')
-        setProcessingStates(Object.fromEntries(documents.map((source) => [
+        const processableSources = response.data.filter((source) => ['DOCUMENT', 'AUDIO'].includes(source.source_type))
+        setProcessingStates(Object.fromEntries(processableSources.map((source) => [
           source.source_id,
           { status: 'READY', result: null, requestError: '' },
         ])))
-        return Promise.all(documents.map(async (source) => {
+        return Promise.all(processableSources.map(async (source) => {
           try {
-            const statusResponse = await getRequirementDocumentProcessingStatus(
+            const statusResponse = await processingClient(source.source_type).getStatus(
               project.agent_project_id,
               source.source_id,
             )
@@ -98,7 +120,7 @@ export default function RequirementSourcesNode({ project }) {
         )
         if (!response?.data) throw new Error('Invalid requirement source response')
         setSources((current) => [...current, response.data])
-        if (response.data.source_type === 'DOCUMENT') {
+        if (['DOCUMENT', 'AUDIO'].includes(response.data.source_type)) {
           setProcessingStates((current) => ({
             ...current,
             [response.data.source_id]: { status: 'READY', result: null, requestError: '' },
@@ -137,18 +159,19 @@ export default function RequirementSourcesNode({ project }) {
     }
   }
 
-  async function processDocument(sourceId, force = false) {
+  async function processSource(source, force = false) {
+    const sourceId = source.source_id
     setProcessingStates((current) => ({
       ...current,
       [sourceId]: { ...(current[sourceId] ?? {}), status: 'PROCESSING', error: null, requestError: '', result: null },
     }))
     try {
-      const response = await processRequirementDocument(
+      const response = await processingClient(source.source_type).process(
         project.agent_project_id,
         sourceId,
         { force },
       )
-      if (!response?.data?.status) throw new Error('Invalid document processing response')
+      if (!response?.data?.status) throw new Error('Invalid source processing response')
       setProcessingStates((current) => ({
         ...current,
         [sourceId]: { ...response.data, result: null, requestError: '' },
@@ -161,24 +184,27 @@ export default function RequirementSourcesNode({ project }) {
           ...(current[sourceId] ?? {}),
           status: 'FAILED',
           error: null,
-          requestError: requestError?.errors?.[0]?.message || 'Document processing could not be completed.',
+          requestError: requestError?.errors?.[0]?.message || `${sourceLabel(source.source_type)} processing could not be completed.`,
           result: null,
         },
       }))
     }
   }
 
-  async function loadResult(sourceId) {
+  async function loadResult(source) {
+    const sourceId = source.source_id
     setProcessingStates((current) => ({
       ...current,
       [sourceId]: { ...current[sourceId], resultLoading: true, requestError: '' },
     }))
     try {
-      const response = await getRequirementDocumentProcessingResult(
+      const response = await processingClient(source.source_type).getResult(
         project.agent_project_id,
         sourceId,
       )
-      if (!response?.data?.text) throw new Error('Invalid document processing result')
+      if (!response?.data?.[source.source_type === 'AUDIO' ? 'transcript' : 'text']) {
+        throw new Error('Invalid source processing result')
+      }
       setProcessingStates((current) => ({
         ...current,
         [sourceId]: { ...current[sourceId], result: response.data, resultLoading: false },
@@ -190,7 +216,7 @@ export default function RequirementSourcesNode({ project }) {
         [sourceId]: {
           ...current[sourceId],
           resultLoading: false,
-          requestError: requestError?.errors?.[0]?.message || 'The extracted document text could not be loaded.',
+          requestError: requestError?.errors?.[0]?.message || `The ${source.source_type === 'AUDIO' ? 'transcript' : 'extracted document text'} could not be loaded.`,
         },
       }))
     }
@@ -268,11 +294,11 @@ export default function RequirementSourcesNode({ project }) {
                     Remove
                   </Button>
                 </div>
-                {source.source_type === 'DOCUMENT' ? (
-                  <div className="space-y-3 border-t border-default pt-4" aria-label={`Document processing for ${source.original_filename}`}>
+                {['DOCUMENT', 'AUDIO'].includes(source.source_type) ? (
+                  <div className="space-y-3 border-t border-default pt-4" aria-label={`${sourceLabel(source.source_type)} processing for ${source.original_filename}`}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-content-primary">Document processing</p>
+                        <p className="text-sm font-medium text-content-primary">{sourceLabel(source.source_type)} processing</p>
                         <StatusBadge
                           label={sourceLabel(processingStates[source.source_id]?.status ?? 'READY')}
                           tone={processingTones[processingStates[source.source_id]?.status] ?? 'neutral'}
@@ -284,28 +310,28 @@ export default function RequirementSourcesNode({ project }) {
                             variant="outline"
                             size="small"
                             loading={processingStates[source.source_id]?.resultLoading}
-                            loadingLabel="Loading extracted text"
-                            onClick={() => { void loadResult(source.source_id) }}
+                            loadingLabel={source.source_type === 'AUDIO' ? 'Loading transcript' : 'Loading extracted text'}
+                            onClick={() => { void loadResult(source) }}
                           >
-                            View Result
+                            {source.source_type === 'AUDIO' ? 'View Transcript' : 'View Result'}
                           </Button>
                         ) : null}
                         <Button
                           variant="outline"
                           size="small"
                           loading={processingStates[source.source_id]?.status === 'PROCESSING'}
-                          loadingLabel="Processing document"
+                          loadingLabel={`Processing ${source.source_type.toLowerCase()}`}
                           disabled={Boolean(uploadingType || removingId)}
-                          onClick={() => { void processDocument(
-                            source.source_id,
+                          onClick={() => { void processSource(
+                            source,
                             ['FAILED', 'COMPLETED'].includes(processingStates[source.source_id]?.status),
                           ) }}
                         >
                           {processingStates[source.source_id]?.status === 'FAILED'
-                            ? 'Retry Processing'
+                            ? (source.source_type === 'AUDIO' ? 'Retry' : 'Retry Processing')
                             : processingStates[source.source_id]?.status === 'COMPLETED'
                               ? 'Reprocess'
-                              : 'Process Document'}
+                              : source.source_type === 'AUDIO' ? 'Process Audio' : 'Process Document'}
                         </Button>
                       </div>
                     </div>
@@ -317,12 +343,45 @@ export default function RequirementSourcesNode({ project }) {
                         {processingStates[source.source_id].error.code}: {processingStates[source.source_id].error.message}
                       </p>
                     ) : null}
-                    {processingStates[source.source_id]?.result ? (
+                    {processingStates[source.source_id]?.result && source.source_type === 'DOCUMENT' ? (
                       <section aria-label={`Extracted text for ${source.original_filename}`}>
                         <p className="text-sm font-medium text-content-primary">Extracted text</p>
                         <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-control border border-default bg-surface p-3 text-sm text-content-secondary">
                           {processingStates[source.source_id].result.text}
                         </pre>
+                      </section>
+                    ) : null}
+                    {processingStates[source.source_id]?.result && source.source_type === 'AUDIO' ? (
+                      <section aria-label={`Transcript for ${source.original_filename}`} className="space-y-3">
+                        <div>
+                          <p className="text-sm font-medium text-content-primary">Transcript</p>
+                          {processingStates[source.source_id].result.detected_language ? (
+                            <p className="mt-1 text-sm text-content-secondary">
+                              Detected language: {processingStates[source.source_id].result.detected_language}
+                              {processingStates[source.source_id].result.language_probability != null
+                                ? ` (${Math.round(processingStates[source.source_id].result.language_probability * 100)}%)`
+                                : ''}
+                            </p>
+                          ) : null}
+                          <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-control border border-default bg-surface p-3 text-sm text-content-secondary">
+                            {processingStates[source.source_id].result.transcript}
+                          </pre>
+                        </div>
+                        {processingStates[source.source_id].result.segments?.length ? (
+                          <div>
+                            <p className="text-sm font-medium text-content-primary">Timestamped segments</p>
+                            <ol className="mt-2 space-y-1 text-sm text-content-secondary">
+                              {processingStates[source.source_id].result.segments.map((segment, index) => (
+                                <li key={`${segment.start_seconds}-${index}`}>
+                                  <span className="font-medium text-content-primary">
+                                    {timestamp(segment.start_seconds)}–{timestamp(segment.end_seconds)}
+                                  </span>{' '}
+                                  {segment.text}
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        ) : null}
                       </section>
                     ) : null}
                   </div>

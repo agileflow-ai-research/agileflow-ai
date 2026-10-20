@@ -260,10 +260,10 @@ def test_owner_type_archive_and_document_guards(processing_context):
     foreign = authentication.client("USR-002")
     project_id = create_project(owner)["agent_project_id"]
     document = upload(owner, project_id, "requirements.txt", b"Requirement").json()["data"]
-    audio = upload(owner, project_id, "interview.mp3", b"ID3\x04\x00\x00audio", "AUDIO").json()["data"]
+    video = upload(owner, project_id, "workflow.mp4", b"\x00\x00\x00\x18ftypmp42video", "VIDEO").json()["data"]
 
     assert process(foreign, project_id, document["source_id"]).status_code == 404
-    assert process(owner, project_id, audio["source_id"]).status_code == 422
+    assert process(owner, project_id, video["source_id"]).status_code == 422
     wrong_id = create_project(owner, "IMPLEMENTATION")["agent_project_id"]
     assert status(owner, wrong_id, "DOC-001").status_code == 422
 

@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     agent1_source_root: Path = (
         BACKEND_DIR / "storage" / "standalone" / "requirements"
     )
+    transcription_provider: str = "faster_whisper"
+    faster_whisper_model: str = "small"
+    faster_whisper_device: str = "cpu"
+    faster_whisper_compute_type: str = "int8"
+    faster_whisper_language: str = ""
     agent3_upload_root: Path = (
         BACKEND_DIR / "storage" / "standalone" / "implementation"
     )

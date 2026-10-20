@@ -18,10 +18,13 @@ vi.mock('../services/agentProjectService.js', () => ({
 }))
 vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({
   deleteRequirementSource: vi.fn(),
+  getRequirementAudioProcessingResult: vi.fn(),
+  getRequirementAudioProcessingStatus: vi.fn(),
   getRequirementDocumentProcessingResult: vi.fn(),
   getRequirementDocumentProcessingStatus: vi.fn(),
   listRequirementSources: vi.fn(),
   processRequirementDocument: vi.fn(),
+  processRequirementAudio: vi.fn(),
   runRequirementsAgent: vi.fn(),
   uploadRequirementSource: vi.fn(),
 }))

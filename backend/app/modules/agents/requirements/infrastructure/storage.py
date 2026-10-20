@@ -81,6 +81,10 @@ class StoredRequirementSource:
     processing_partial_path: Path
     result_path: Path
     result_partial_path: Path
+    audio_processing_path: Path
+    audio_processing_partial_path: Path
+    audio_result_path: Path
+    audio_result_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -235,12 +239,28 @@ class RequirementSourceStorage:
         result_partial_path = self._contained(
             project_directory, f"{source_id}.document-result.json.part"
         )
+        audio_processing_path = self._contained(
+            project_directory, f"{source_id}.audio-processing.json"
+        )
+        audio_processing_partial_path = self._contained(
+            project_directory, f"{source_id}.audio-processing.json.part"
+        )
+        audio_result_path = self._contained(
+            project_directory, f"{source_id}.audio-result.json"
+        )
+        audio_result_partial_path = self._contained(
+            project_directory, f"{source_id}.audio-result.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
             processing_path.unlink(missing_ok=True)
             processing_partial_path.unlink(missing_ok=True)
             result_path.unlink(missing_ok=True)
             result_partial_path.unlink(missing_ok=True)
+            audio_processing_path.unlink(missing_ok=True)
+            audio_processing_partial_path.unlink(missing_ok=True)
+            audio_result_path.unlink(missing_ok=True)
+            audio_result_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise SourceNotFoundError(source_id) from exc
@@ -284,6 +304,18 @@ class RequirementSourceStorage:
             ),
             result_partial_path=self._contained(
                 project_directory, f"{source_id}.document-result.json.part"
+            ),
+            audio_processing_path=self._contained(
+                project_directory, f"{source_id}.audio-processing.json"
+            ),
+            audio_processing_partial_path=self._contained(
+                project_directory, f"{source_id}.audio-processing.json.part"
+            ),
+            audio_result_path=self._contained(
+                project_directory, f"{source_id}.audio-result.json"
+            ),
+            audio_result_partial_path=self._contained(
+                project_directory, f"{source_id}.audio-result.json.part"
             ),
         )
 

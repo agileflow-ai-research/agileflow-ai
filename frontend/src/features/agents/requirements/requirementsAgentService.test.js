@@ -3,10 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiClient } from '../../../services/apiClient.js'
 import {
   deleteRequirementSource,
+  getRequirementAudioProcessingResult,
+  getRequirementAudioProcessingStatus,
   getRequirementDocumentProcessingResult,
   getRequirementDocumentProcessingStatus,
   listRequirementSources,
   processRequirementDocument,
+  processRequirementAudio,
   uploadRequirementSource,
 } from './requirementsAgentService.js'
 
@@ -58,6 +61,28 @@ describe('requirementsAgentService source collection', () => {
     expect(apiClient.get).toHaveBeenNthCalledWith(
       2,
       '/agents/requirements/AGP-007/sources/DOC-001/processing/result',
+      { authenticated: true },
+    )
+  })
+
+  it('uses the shared processing endpoints for audio sources', () => {
+    processRequirementAudio('AGP-007', 'AUD-001')
+    getRequirementAudioProcessingStatus('AGP-007', 'AUD-001')
+    getRequirementAudioProcessingResult('AGP-007', 'AUD-001')
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/requirements/AGP-007/sources/AUD-001/processing',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenNthCalledWith(
+      1,
+      '/agents/requirements/AGP-007/sources/AUD-001/processing/status',
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenNthCalledWith(
+      2,
+      '/agents/requirements/AGP-007/sources/AUD-001/processing/result',
       { authenticated: true },
     )
   })

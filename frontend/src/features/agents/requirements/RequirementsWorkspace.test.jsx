@@ -1,13 +1,16 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   deleteRequirementSource,
+  getRequirementAudioProcessingResult,
+  getRequirementAudioProcessingStatus,
   getRequirementDocumentProcessingResult,
   getRequirementDocumentProcessingStatus,
   listRequirementSources,
   processRequirementDocument,
+  processRequirementAudio,
   runRequirementsAgent,
   uploadRequirementSource,
 } from './requirementsAgentService.js'
@@ -15,10 +18,13 @@ import RequirementsWorkspace from './RequirementsWorkspace.jsx'
 
 vi.mock('./requirementsAgentService.js', () => ({
   deleteRequirementSource: vi.fn(),
+  getRequirementAudioProcessingResult: vi.fn(),
+  getRequirementAudioProcessingStatus: vi.fn(),
   getRequirementDocumentProcessingResult: vi.fn(),
   getRequirementDocumentProcessingStatus: vi.fn(),
   listRequirementSources: vi.fn(),
   processRequirementDocument: vi.fn(),
+  processRequirementAudio: vi.fn(),
   runRequirementsAgent: vi.fn(),
   uploadRequirementSource: vi.fn(),
 }))
@@ -38,6 +44,9 @@ describe('RequirementsWorkspace Node 1', () => {
     listRequirementSources.mockResolvedValue({ data: persistedSources })
     getRequirementDocumentProcessingStatus.mockResolvedValue({ data: {
       source_id: 'DOC-001', status: 'READY', error: null,
+    } })
+    getRequirementAudioProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'AUD-001', status: 'READY', error: null,
     } })
   })
 
@@ -147,5 +156,74 @@ describe('RequirementsWorkspace Node 1', () => {
 
     expect(processRequirementDocument).toHaveBeenCalledWith('AGP-001', 'DOC-001', { force: true })
     expect(await screen.findByText('Completed')).toBeInTheDocument()
+  })
+
+  it('reloads audio state, reprocesses, and displays transcript metadata and segments', async () => {
+    const user = userEvent.setup()
+    getRequirementAudioProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'AUD-001', status: 'COMPLETED', error: null,
+    } })
+    getRequirementAudioProcessingResult.mockResolvedValue({ data: {
+      source_id: 'AUD-001',
+      transcript: 'The client needs appointment reminders.',
+      detected_language: 'en',
+      language_probability: 0.96,
+      segments: [
+        { start_seconds: 0, end_seconds: 2.4, text: 'The client needs appointment reminders.' },
+      ],
+    } })
+    processRequirementAudio.mockResolvedValue({ data: {
+      source_id: 'AUD-001', status: 'COMPLETED', error: null,
+    } })
+    render(<RequirementsWorkspace project={project} />)
+
+    const audioCard = (await screen.findByText('AUD-001')).closest('[data-variant]')
+    expect(within(audioCard).getByText('Completed')).toBeInTheDocument()
+    await user.click(within(audioCard).getByRole('button', { name: 'View Transcript' }))
+
+    await waitFor(() => {
+      expect(within(audioCard).getAllByText('The client needs appointment reminders.')).toHaveLength(2)
+    })
+    expect(within(audioCard).getByText('Detected language: en (96%)')).toBeInTheDocument()
+    expect(within(audioCard).getByText('0:00.00–0:02.40')).toBeInTheDocument()
+    expect(getRequirementAudioProcessingResult).toHaveBeenCalledWith('AGP-001', 'AUD-001')
+
+    await user.click(within(audioCard).getByRole('button', { name: 'Reprocess' }))
+    expect(processRequirementAudio).toHaveBeenCalledWith('AGP-001', 'AUD-001', { force: true })
+    expect(runRequirementsAgent).not.toHaveBeenCalled()
+  })
+
+  it('shows audio failure and retries using the audio processor', async () => {
+    const user = userEvent.setup()
+    getRequirementAudioProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'AUD-001', status: 'FAILED',
+      error: { code: 'AUDIO_UNREADABLE', message: 'The audio source could not be decoded safely.' },
+    } })
+    processRequirementAudio.mockResolvedValue({ data: {
+      source_id: 'AUD-001', status: 'COMPLETED', error: null,
+    } })
+    render(<RequirementsWorkspace project={project} />)
+
+    const audioCard = (await screen.findByText('AUD-001')).closest('[data-variant]')
+    expect(within(audioCard).getByText(/AUDIO_UNREADABLE/)).toBeInTheDocument()
+    await user.click(within(audioCard).getByRole('button', { name: 'Retry' }))
+
+    expect(processRequirementAudio).toHaveBeenCalledWith('AGP-001', 'AUD-001', { force: true })
+    expect(await within(audioCard).findByText('Completed')).toBeInTheDocument()
+  })
+
+  it('shows audio processing immediately before the request completes', async () => {
+    const user = userEvent.setup()
+    let finishProcessing
+    processRequirementAudio.mockReturnValue(new Promise((resolve) => { finishProcessing = resolve }))
+    render(<RequirementsWorkspace project={project} />)
+
+    const audioCard = (await screen.findByText('AUD-001')).closest('[data-variant]')
+    await user.click(within(audioCard).getByRole('button', { name: 'Process Audio' }))
+    expect(within(audioCard).getByText('Processing')).toBeInTheDocument()
+
+    finishProcessing({ data: { source_id: 'AUD-001', status: 'COMPLETED', error: null } })
+    expect(await within(audioCard).findByText('Completed')).toBeInTheDocument()
+    expect(processRequirementAudio).toHaveBeenCalledWith('AGP-001', 'AUD-001', { force: false })
   })
 })
