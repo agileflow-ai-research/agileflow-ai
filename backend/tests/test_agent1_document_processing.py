@@ -254,7 +254,7 @@ def test_changed_source_bytes_fail_checksum_without_mutating_metadata(processing
     assert runs.documents == {}
 
 
-def test_owner_type_archive_and_document_guards(processing_context):
+def test_owner_type_archive_and_source_dispatch_guards(processing_context):
     authentication, _, _, _ = processing_context
     owner = authentication.client("USR-001")
     foreign = authentication.client("USR-002")
@@ -263,7 +263,9 @@ def test_owner_type_archive_and_document_guards(processing_context):
     video = upload(owner, project_id, "workflow.mp4", b"\x00\x00\x00\x18ftypmp42video", "VIDEO").json()["data"]
 
     assert process(foreign, project_id, document["source_id"]).status_code == 404
-    assert process(owner, project_id, video["source_id"]).status_code == 422
+    video_status = status(owner, project_id, video["source_id"])
+    assert video_status.status_code == 200
+    assert video_status.json()["data"]["status"] == "READY"
     wrong_id = create_project(owner, "IMPLEMENTATION")["agent_project_id"]
     assert status(owner, wrong_id, "DOC-001").status_code == 422
 

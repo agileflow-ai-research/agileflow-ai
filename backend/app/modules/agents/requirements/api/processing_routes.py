@@ -28,6 +28,15 @@ from app.modules.agents.requirements.processing.audio.service import (
     AudioProcessingStorageError,
     UnsupportedAudioSourceError,
 )
+from app.modules.agents.requirements.processing.video.schemas import (
+    VideoProcessingRecord,
+    VideoProcessingResult,
+)
+from app.modules.agents.requirements.processing.video.service import (
+    UnsupportedVideoSourceError,
+    VideoProcessingNotFoundError,
+    VideoProcessingStorageError,
+)
 from app.modules.agents.requirements.processing.facade import (
     RequirementProcessingService,
     UnsupportedProcessingSourceError,
@@ -58,7 +67,9 @@ def _processing_error(
 
 @router.post(
     "/{agent_project_id}/sources/{source_id}/processing",
-    response_model=SuccessResponse[DocumentProcessingRecord | AudioProcessingRecord],
+    response_model=SuccessResponse[
+        DocumentProcessingRecord | AudioProcessingRecord | VideoProcessingRecord
+    ],
 )
 def process_source(
     agent_project_id: str,
@@ -68,7 +79,9 @@ def process_source(
     ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
     force: Annotated[bool, Query()] = False,
-) -> SuccessResponse[DocumentProcessingRecord | AudioProcessingRecord] | JSONResponse:
+) -> SuccessResponse[
+    DocumentProcessingRecord | AudioProcessingRecord | VideoProcessingRecord
+] | JSONResponse:
     try:
         record = service.process(
             agent_project_id, source_id, current_user, force=force
@@ -86,6 +99,7 @@ def process_source(
     except (
         UnsupportedDocumentSourceError,
         UnsupportedAudioSourceError,
+        UnsupportedVideoSourceError,
         UnsupportedProcessingSourceError,
     ) as exc:
         return _processing_error(422, "Source processing unavailable", str(exc))
@@ -94,6 +108,7 @@ def process_source(
         SourceStorageError,
         DocumentProcessingStorageError,
         AudioProcessingStorageError,
+        VideoProcessingStorageError,
     ):
         return _processing_error(
             503,
@@ -105,7 +120,9 @@ def process_source(
 
 @router.get(
     "/{agent_project_id}/sources/{source_id}/processing/status",
-    response_model=SuccessResponse[DocumentProcessingRecord | AudioProcessingRecord],
+    response_model=SuccessResponse[
+        DocumentProcessingRecord | AudioProcessingRecord | VideoProcessingRecord
+    ],
 )
 def get_processing_status(
     agent_project_id: str,
@@ -114,7 +131,9 @@ def get_processing_status(
         RequirementProcessingService, Depends(get_requirement_processing_service)
     ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
-) -> SuccessResponse[DocumentProcessingRecord | AudioProcessingRecord] | JSONResponse:
+) -> SuccessResponse[
+    DocumentProcessingRecord | AudioProcessingRecord | VideoProcessingRecord
+] | JSONResponse:
     try:
         record = service.get_status(agent_project_id, source_id, current_user)
     except (
@@ -130,6 +149,7 @@ def get_processing_status(
     except (
         UnsupportedDocumentSourceError,
         UnsupportedAudioSourceError,
+        UnsupportedVideoSourceError,
         UnsupportedProcessingSourceError,
     ) as exc:
         return _processing_error(422, "Source processing unavailable", str(exc))
@@ -144,7 +164,9 @@ def get_processing_status(
 
 @router.get(
     "/{agent_project_id}/sources/{source_id}/processing/result",
-    response_model=SuccessResponse[DocumentProcessingResult | AudioProcessingResult],
+    response_model=SuccessResponse[
+        DocumentProcessingResult | AudioProcessingResult | VideoProcessingResult
+    ],
 )
 def get_processing_result(
     agent_project_id: str,
@@ -153,7 +175,9 @@ def get_processing_result(
         RequirementProcessingService, Depends(get_requirement_processing_service)
     ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
-) -> SuccessResponse[DocumentProcessingResult | AudioProcessingResult] | JSONResponse:
+) -> SuccessResponse[
+    DocumentProcessingResult | AudioProcessingResult | VideoProcessingResult
+] | JSONResponse:
     try:
         result = service.get_result(agent_project_id, source_id, current_user)
     except (
@@ -166,7 +190,11 @@ def get_processing_result(
         return _processing_error(
             404, "Requirement source not found", "Requirement source not found"
         )
-    except (DocumentProcessingNotFoundError, AudioProcessingNotFoundError):
+    except (
+        DocumentProcessingNotFoundError,
+        AudioProcessingNotFoundError,
+        VideoProcessingNotFoundError,
+    ):
         return _processing_error(
             404,
             "Source processing result not found",
@@ -175,6 +203,7 @@ def get_processing_result(
     except (
         UnsupportedDocumentSourceError,
         UnsupportedAudioSourceError,
+        UnsupportedVideoSourceError,
         UnsupportedProcessingSourceError,
     ) as exc:
         return _processing_error(422, "Source processing unavailable", str(exc))

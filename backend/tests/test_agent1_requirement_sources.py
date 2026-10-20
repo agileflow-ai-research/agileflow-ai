@@ -172,6 +172,7 @@ def test_deleted_last_source_id_is_not_reused(source_context):
         ("AUDIO", "fake.mp3", b"not audio", "audio/mpeg"),
         ("AUDIO", "unsupported.aac", b"ADIFaudio", "audio/aac"),
         ("VIDEO", "fake.mp4", b"not video", "video/mp4"),
+        ("VIDEO", "unsupported.avi", b"RIFFvideo", "video/x-msvideo"),
         ("AUDIO", "interview.mp3", MP3, "video/mp4"),
     ],
 )
@@ -193,6 +194,7 @@ def test_empty_source_is_rejected(source_context):
     project_id = create_project(client)["agent_project_id"]
     assert upload(client, project_id, "DOCUMENT", "empty.txt", b"").status_code == 422
     assert upload(client, project_id, "AUDIO", "empty.mp3", b"").status_code == 422
+    assert upload(client, project_id, "VIDEO", "empty.mp4", b"").status_code == 422
 
 
 def test_owner_type_archive_authentication_and_list_isolation(source_context):

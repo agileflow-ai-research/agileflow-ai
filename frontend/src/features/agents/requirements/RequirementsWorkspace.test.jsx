@@ -8,9 +8,12 @@ import {
   getRequirementAudioProcessingStatus,
   getRequirementDocumentProcessingResult,
   getRequirementDocumentProcessingStatus,
+  getRequirementVideoProcessingResult,
+  getRequirementVideoProcessingStatus,
   listRequirementSources,
   processRequirementDocument,
   processRequirementAudio,
+  processRequirementVideo,
   runRequirementsAgent,
   uploadRequirementSource,
 } from './requirementsAgentService.js'
@@ -22,9 +25,12 @@ vi.mock('./requirementsAgentService.js', () => ({
   getRequirementAudioProcessingStatus: vi.fn(),
   getRequirementDocumentProcessingResult: vi.fn(),
   getRequirementDocumentProcessingStatus: vi.fn(),
+  getRequirementVideoProcessingResult: vi.fn(),
+  getRequirementVideoProcessingStatus: vi.fn(),
   listRequirementSources: vi.fn(),
   processRequirementDocument: vi.fn(),
   processRequirementAudio: vi.fn(),
+  processRequirementVideo: vi.fn(),
   runRequirementsAgent: vi.fn(),
   uploadRequirementSource: vi.fn(),
 }))
@@ -47,6 +53,9 @@ describe('RequirementsWorkspace Node 1', () => {
     } })
     getRequirementAudioProcessingStatus.mockResolvedValue({ data: {
       source_id: 'AUD-001', status: 'READY', error: null,
+    } })
+    getRequirementVideoProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'VID-001', status: 'READY', error: null,
     } })
   })
 
@@ -225,5 +234,72 @@ describe('RequirementsWorkspace Node 1', () => {
     finishProcessing({ data: { source_id: 'AUD-001', status: 'COMPLETED', error: null } })
     expect(await within(audioCard).findByText('Completed')).toBeInTheDocument()
     expect(processRequirementAudio).toHaveBeenCalledWith('AGP-001', 'AUD-001', { force: false })
+  })
+
+  it('shows video processing immediately before the request completes', async () => {
+    const user = userEvent.setup()
+    let finishProcessing
+    processRequirementVideo.mockReturnValue(new Promise((resolve) => { finishProcessing = resolve }))
+    render(<RequirementsWorkspace project={project} />)
+
+    const videoCard = (await screen.findByText('VID-001')).closest('[data-variant]')
+    await user.click(within(videoCard).getByRole('button', { name: 'Process Video' }))
+    expect(within(videoCard).getByText('Processing')).toBeInTheDocument()
+
+    finishProcessing({ data: { source_id: 'VID-001', status: 'COMPLETED', error: null } })
+    expect(await within(videoCard).findByText('Completed')).toBeInTheDocument()
+    expect(processRequirementVideo).toHaveBeenCalledWith('AGP-001', 'VID-001', { force: false })
+  })
+
+  it('reloads completed video state and displays the persisted transcript result', async () => {
+    const user = userEvent.setup()
+    getRequirementVideoProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'VID-001', status: 'COMPLETED', error: null,
+    } })
+    getRequirementVideoProcessingResult.mockResolvedValue({ data: {
+      source_id: 'VID-001',
+      transcript: 'The workflow demonstration includes approval.',
+      detected_language: 'en',
+      language_probability: 0.94,
+      processed_at: '2026-10-20T08:00:00Z',
+      segments: [
+        { start_seconds: 0, end_seconds: 1, text: 'The workflow demonstration' },
+        { start_seconds: 1, end_seconds: 2.5, text: ' includes approval.' },
+      ],
+    } })
+    processRequirementVideo.mockResolvedValue({ data: {
+      source_id: 'VID-001', status: 'COMPLETED', error: null,
+    } })
+    render(<RequirementsWorkspace project={project} />)
+
+    const videoCard = (await screen.findByText('VID-001')).closest('[data-variant]')
+    expect(within(videoCard).getByText('Completed')).toBeInTheDocument()
+    await user.click(within(videoCard).getByRole('button', { name: 'View Transcript' }))
+
+    expect(await within(videoCard).findByText('The workflow demonstration includes approval.')).toBeInTheDocument()
+    expect(within(videoCard).getByText('Detected language: en (94%)')).toBeInTheDocument()
+    expect(within(videoCard).getByText(/2 timestamped segments/)).toBeInTheDocument()
+    expect(getRequirementVideoProcessingResult).toHaveBeenCalledWith('AGP-001', 'VID-001')
+    await user.click(within(videoCard).getByRole('button', { name: 'Reprocess' }))
+    expect(processRequirementVideo).toHaveBeenCalledWith('AGP-001', 'VID-001', { force: true })
+  })
+
+  it('shows video failure and retries through the shared processing API', async () => {
+    const user = userEvent.setup()
+    getRequirementVideoProcessingStatus.mockResolvedValue({ data: {
+      source_id: 'VID-001', status: 'FAILED',
+      error: { code: 'VIDEO_NO_AUDIO_TRACK', message: 'The video does not contain a usable audio track.' },
+    } })
+    processRequirementVideo.mockResolvedValue({ data: {
+      source_id: 'VID-001', status: 'COMPLETED', error: null,
+    } })
+    render(<RequirementsWorkspace project={project} />)
+
+    const videoCard = (await screen.findByText('VID-001')).closest('[data-variant]')
+    expect(within(videoCard).getByText(/VIDEO_NO_AUDIO_TRACK/)).toBeInTheDocument()
+    await user.click(within(videoCard).getByRole('button', { name: 'Retry' }))
+
+    expect(processRequirementVideo).toHaveBeenCalledWith('AGP-001', 'VID-001', { force: true })
+    expect(await within(videoCard).findByText('Completed')).toBeInTheDocument()
   })
 })

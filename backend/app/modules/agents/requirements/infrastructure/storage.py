@@ -85,6 +85,10 @@ class StoredRequirementSource:
     audio_processing_partial_path: Path
     audio_result_path: Path
     audio_result_partial_path: Path
+    video_processing_path: Path
+    video_processing_partial_path: Path
+    video_result_path: Path
+    video_result_partial_path: Path
 
 
 def utc_now() -> datetime:
@@ -251,6 +255,18 @@ class RequirementSourceStorage:
         audio_result_partial_path = self._contained(
             project_directory, f"{source_id}.audio-result.json.part"
         )
+        video_processing_path = self._contained(
+            project_directory, f"{source_id}.video-processing.json"
+        )
+        video_processing_partial_path = self._contained(
+            project_directory, f"{source_id}.video-processing.json.part"
+        )
+        video_result_path = self._contained(
+            project_directory, f"{source_id}.video-result.json"
+        )
+        video_result_partial_path = self._contained(
+            project_directory, f"{source_id}.video-result.json.part"
+        )
         try:
             stored_path.unlink(missing_ok=True)
             processing_path.unlink(missing_ok=True)
@@ -261,6 +277,10 @@ class RequirementSourceStorage:
             audio_processing_partial_path.unlink(missing_ok=True)
             audio_result_path.unlink(missing_ok=True)
             audio_result_partial_path.unlink(missing_ok=True)
+            video_processing_path.unlink(missing_ok=True)
+            video_processing_partial_path.unlink(missing_ok=True)
+            video_result_path.unlink(missing_ok=True)
+            video_result_partial_path.unlink(missing_ok=True)
             metadata_path.unlink()
         except FileNotFoundError as exc:
             raise SourceNotFoundError(source_id) from exc
@@ -273,6 +293,7 @@ class RequirementSourceStorage:
         agent_project_id: str,
         owner_user_id: str,
         source_id: str,
+        require_file: bool = True,
     ) -> StoredRequirementSource:
         if not SOURCE_ID_PATTERN.fullmatch(source_id):
             raise SourceNotFoundError(source_id)
@@ -286,7 +307,7 @@ class RequirementSourceStorage:
         file_path = self._contained(
             project_directory, f"{source_id}{metadata.extension}"
         )
-        if not file_path.is_file():
+        if require_file and not file_path.is_file():
             raise SourceStorageError(
                 "Requirement source metadata references a missing file"
             )
@@ -316,6 +337,18 @@ class RequirementSourceStorage:
             ),
             audio_result_partial_path=self._contained(
                 project_directory, f"{source_id}.audio-result.json.part"
+            ),
+            video_processing_path=self._contained(
+                project_directory, f"{source_id}.video-processing.json"
+            ),
+            video_processing_partial_path=self._contained(
+                project_directory, f"{source_id}.video-processing.json.part"
+            ),
+            video_result_path=self._contained(
+                project_directory, f"{source_id}.video-result.json"
+            ),
+            video_result_partial_path=self._contained(
+                project_directory, f"{source_id}.video-result.json.part"
             ),
         )
 

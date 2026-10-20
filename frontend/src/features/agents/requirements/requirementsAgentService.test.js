@@ -7,9 +7,12 @@ import {
   getRequirementAudioProcessingStatus,
   getRequirementDocumentProcessingResult,
   getRequirementDocumentProcessingStatus,
+  getRequirementVideoProcessingResult,
+  getRequirementVideoProcessingStatus,
   listRequirementSources,
   processRequirementDocument,
   processRequirementAudio,
+  processRequirementVideo,
   uploadRequirementSource,
 } from './requirementsAgentService.js'
 
@@ -83,6 +86,28 @@ describe('requirementsAgentService source collection', () => {
     expect(apiClient.get).toHaveBeenNthCalledWith(
       2,
       '/agents/requirements/AGP-007/sources/AUD-001/processing/result',
+      { authenticated: true },
+    )
+  })
+
+  it('uses the shared processing endpoints for video sources', () => {
+    processRequirementVideo('AGP-007', 'VID-001', { force: true })
+    getRequirementVideoProcessingStatus('AGP-007', 'VID-001')
+    getRequirementVideoProcessingResult('AGP-007', 'VID-001')
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/requirements/AGP-007/sources/VID-001/processing?force=true',
+      undefined,
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenNthCalledWith(
+      1,
+      '/agents/requirements/AGP-007/sources/VID-001/processing/status',
+      { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenNthCalledWith(
+      2,
+      '/agents/requirements/AGP-007/sources/VID-001/processing/result',
       { authenticated: true },
     )
   })

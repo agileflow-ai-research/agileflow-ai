@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     faster_whisper_device: str = "cpu"
     faster_whisper_compute_type: str = "int8"
     faster_whisper_language: str = ""
+    video_ffmpeg_path: str = "ffmpeg"
+    video_ffmpeg_timeout_seconds: float = 120.0
     agent3_upload_root: Path = (
         BACKEND_DIR / "storage" / "standalone" / "implementation"
     )

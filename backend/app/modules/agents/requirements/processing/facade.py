@@ -4,6 +4,9 @@ from app.modules.agents.requirements.processing.audio.service import (
 from app.modules.agents.requirements.processing.service import (
     DocumentProcessingService,
 )
+from app.modules.agents.requirements.processing.video.service import (
+    VideoProcessingService,
+)
 
 
 class UnsupportedProcessingSourceError(ValueError):
@@ -17,9 +20,11 @@ class RequirementProcessingService:
         self,
         documents: DocumentProcessingService,
         audio: AudioProcessingService,
+        video: VideoProcessingService,
     ) -> None:
         self._documents = documents
         self._audio = audio
+        self._video = video
 
     def process(self, agent_project_id, source_id, current_user, *, force=False):
         return self._service(source_id).process(
@@ -41,6 +46,8 @@ class RequirementProcessingService:
             return self._documents
         if source_id.startswith("AUD-"):
             return self._audio
+        if source_id.startswith("VID-"):
+            return self._video
         raise UnsupportedProcessingSourceError(
-            "Processing is available for DOCUMENT and AUDIO sources only"
+            "Processing is available for DOCUMENT, AUDIO, and VIDEO sources only"
         )

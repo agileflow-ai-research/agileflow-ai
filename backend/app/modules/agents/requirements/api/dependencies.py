@@ -20,6 +20,15 @@ from app.modules.agents.requirements.processing.facade import (
     RequirementProcessingService,
 )
 from app.modules.agents.requirements.processing.service import DocumentProcessingService
+from app.modules.agents.requirements.processing.video.providers.base import (
+    VideoAudioExtractor,
+)
+from app.modules.agents.requirements.processing.video.providers.ffmpeg import (
+    FFmpegAudioExtractor,
+)
+from app.modules.agents.requirements.processing.video.service import (
+    VideoProcessingService,
+)
 from app.modules.standalone.router import get_standalone_service
 from app.modules.standalone.service import StandaloneService
 
@@ -76,6 +85,31 @@ def get_audio_processing_service(
     return AudioProcessingService(standalone_service, storage, provider)
 
 
+@lru_cache(maxsize=1)
+def get_video_audio_extractor() -> VideoAudioExtractor:
+    return FFmpegAudioExtractor(
+        executable=settings.video_ffmpeg_path,
+        timeout_seconds=settings.video_ffmpeg_timeout_seconds,
+    )
+
+
+def get_video_processing_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    storage: Annotated[
+        RequirementSourceStorage, Depends(get_requirement_source_storage)
+    ],
+    extractor: Annotated[
+        VideoAudioExtractor, Depends(get_video_audio_extractor)
+    ],
+    provider: Annotated[
+        SpeechToTextProvider, Depends(get_speech_to_text_provider)
+    ],
+) -> VideoProcessingService:
+    return VideoProcessingService(standalone_service, storage, extractor, provider)
+
+
 def get_requirement_processing_service(
     documents: Annotated[
         DocumentProcessingService, Depends(get_document_processing_service)
@@ -83,6 +117,9 @@ def get_requirement_processing_service(
     audio: Annotated[
         AudioProcessingService, Depends(get_audio_processing_service)
     ],
+    video: Annotated[
+        VideoProcessingService, Depends(get_video_processing_service)
+    ],
 ) -> RequirementProcessingService:
-    return RequirementProcessingService(documents, audio)
+    return RequirementProcessingService(documents, audio, video)
 

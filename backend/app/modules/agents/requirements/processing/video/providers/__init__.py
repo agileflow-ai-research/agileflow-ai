@@ -1,0 +1,1 @@
+"""Video media extraction providers."""

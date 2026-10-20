@@ -9,9 +9,12 @@ import {
   getRequirementAudioProcessingStatus,
   getRequirementDocumentProcessingResult,
   getRequirementDocumentProcessingStatus,
+  getRequirementVideoProcessingResult,
+  getRequirementVideoProcessingStatus,
   listRequirementSources,
   processRequirementDocument,
   processRequirementAudio,
+  processRequirementVideo,
   uploadRequirementSource,
 } from '../requirementsAgentService.js'
 
@@ -33,17 +36,25 @@ const processingTones = {
 }
 
 function processingClient(sourceType) {
-  return sourceType === 'AUDIO'
-    ? {
-        getStatus: getRequirementAudioProcessingStatus,
-        getResult: getRequirementAudioProcessingResult,
-        process: processRequirementAudio,
-      }
-    : {
-        getStatus: getRequirementDocumentProcessingStatus,
-        getResult: getRequirementDocumentProcessingResult,
-        process: processRequirementDocument,
-      }
+  if (sourceType === 'AUDIO') return {
+    getStatus: getRequirementAudioProcessingStatus,
+    getResult: getRequirementAudioProcessingResult,
+    process: processRequirementAudio,
+  }
+  if (sourceType === 'VIDEO') return {
+    getStatus: getRequirementVideoProcessingStatus,
+    getResult: getRequirementVideoProcessingResult,
+    process: processRequirementVideo,
+  }
+  return {
+    getStatus: getRequirementDocumentProcessingStatus,
+    getResult: getRequirementDocumentProcessingResult,
+    process: processRequirementDocument,
+  }
+}
+
+function isTranscriptSource(sourceType) {
+  return ['AUDIO', 'VIDEO'].includes(sourceType)
 }
 
 function timestamp(seconds) {
@@ -70,7 +81,7 @@ export default function RequirementSourcesNode({ project }) {
         if (!Array.isArray(response?.data)) throw new Error('Invalid requirement sources response')
         setSources(response.data)
         setLoadStatus('success')
-        const processableSources = response.data.filter((source) => ['DOCUMENT', 'AUDIO'].includes(source.source_type))
+        const processableSources = response.data.filter((source) => ['DOCUMENT', 'AUDIO', 'VIDEO'].includes(source.source_type))
         setProcessingStates(Object.fromEntries(processableSources.map((source) => [
           source.source_id,
           { status: 'READY', result: null, requestError: '' },
@@ -120,7 +131,7 @@ export default function RequirementSourcesNode({ project }) {
         )
         if (!response?.data) throw new Error('Invalid requirement source response')
         setSources((current) => [...current, response.data])
-        if (['DOCUMENT', 'AUDIO'].includes(response.data.source_type)) {
+        if (['DOCUMENT', 'AUDIO', 'VIDEO'].includes(response.data.source_type)) {
           setProcessingStates((current) => ({
             ...current,
             [response.data.source_id]: { status: 'READY', result: null, requestError: '' },
@@ -202,7 +213,7 @@ export default function RequirementSourcesNode({ project }) {
         project.agent_project_id,
         sourceId,
       )
-      if (!response?.data?.[source.source_type === 'AUDIO' ? 'transcript' : 'text']) {
+      if (!response?.data?.[isTranscriptSource(source.source_type) ? 'transcript' : 'text']) {
         throw new Error('Invalid source processing result')
       }
       setProcessingStates((current) => ({
@@ -216,7 +227,7 @@ export default function RequirementSourcesNode({ project }) {
         [sourceId]: {
           ...current[sourceId],
           resultLoading: false,
-          requestError: requestError?.errors?.[0]?.message || `The ${source.source_type === 'AUDIO' ? 'transcript' : 'extracted document text'} could not be loaded.`,
+          requestError: requestError?.errors?.[0]?.message || `The ${isTranscriptSource(source.source_type) ? 'transcript' : 'extracted document text'} could not be loaded.`,
         },
       }))
     }
@@ -294,7 +305,7 @@ export default function RequirementSourcesNode({ project }) {
                     Remove
                   </Button>
                 </div>
-                {['DOCUMENT', 'AUDIO'].includes(source.source_type) ? (
+                {['DOCUMENT', 'AUDIO', 'VIDEO'].includes(source.source_type) ? (
                   <div className="space-y-3 border-t border-default pt-4" aria-label={`${sourceLabel(source.source_type)} processing for ${source.original_filename}`}>
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-2">
@@ -310,10 +321,10 @@ export default function RequirementSourcesNode({ project }) {
                             variant="outline"
                             size="small"
                             loading={processingStates[source.source_id]?.resultLoading}
-                            loadingLabel={source.source_type === 'AUDIO' ? 'Loading transcript' : 'Loading extracted text'}
+                            loadingLabel={isTranscriptSource(source.source_type) ? 'Loading transcript' : 'Loading extracted text'}
                             onClick={() => { void loadResult(source) }}
                           >
-                            {source.source_type === 'AUDIO' ? 'View Transcript' : 'View Result'}
+                            {isTranscriptSource(source.source_type) ? 'View Transcript' : 'View Result'}
                           </Button>
                         ) : null}
                         <Button
@@ -328,10 +339,10 @@ export default function RequirementSourcesNode({ project }) {
                           ) }}
                         >
                           {processingStates[source.source_id]?.status === 'FAILED'
-                            ? (source.source_type === 'AUDIO' ? 'Retry' : 'Retry Processing')
+                            ? (isTranscriptSource(source.source_type) ? 'Retry' : 'Retry Processing')
                             : processingStates[source.source_id]?.status === 'COMPLETED'
                               ? 'Reprocess'
-                              : source.source_type === 'AUDIO' ? 'Process Audio' : 'Process Document'}
+                              : `Process ${sourceLabel(source.source_type)}`}
                         </Button>
                       </div>
                     </div>
@@ -351,7 +362,7 @@ export default function RequirementSourcesNode({ project }) {
                         </pre>
                       </section>
                     ) : null}
-                    {processingStates[source.source_id]?.result && source.source_type === 'AUDIO' ? (
+                    {processingStates[source.source_id]?.result && isTranscriptSource(source.source_type) ? (
                       <section aria-label={`Transcript for ${source.original_filename}`} className="space-y-3">
                         <div>
                           <p className="text-sm font-medium text-content-primary">Transcript</p>
@@ -360,6 +371,14 @@ export default function RequirementSourcesNode({ project }) {
                               Detected language: {processingStates[source.source_id].result.detected_language}
                               {processingStates[source.source_id].result.language_probability != null
                                 ? ` (${Math.round(processingStates[source.source_id].result.language_probability * 100)}%)`
+                                : ''}
+                            </p>
+                          ) : null}
+                          {source.source_type === 'VIDEO' ? (
+                            <p className="mt-1 text-sm text-content-secondary">
+                              {processingStates[source.source_id].result.segments?.length ?? 0} timestamped segments
+                              {processingStates[source.source_id].result.processed_at
+                                ? ` · Processed ${new Date(processingStates[source.source_id].result.processed_at).toLocaleString()}`
                                 : ''}
                             </p>
                           ) : null}

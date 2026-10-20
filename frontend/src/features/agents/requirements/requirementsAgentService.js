@@ -78,3 +78,26 @@ export function getRequirementAudioProcessingResult(agentProjectId, sourceId) {
     { authenticated: true },
   )
 }
+
+export function processRequirementVideo(agentProjectId, sourceId, { force = false } = {}) {
+  const suffix = force ? '?force=true' : ''
+  return apiClient.post(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/processing${suffix}`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getRequirementVideoProcessingStatus(agentProjectId, sourceId) {
+  return apiClient.get(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/processing/status`,
+    { authenticated: true },
+  )
+}
+
+export function getRequirementVideoProcessingResult(agentProjectId, sourceId) {
+  return apiClient.get(
+    `/agents/requirements/${encodeURIComponent(agentProjectId)}/sources/${encodeURIComponent(sourceId)}/processing/result`,
+    { authenticated: true },
+  )
+}
