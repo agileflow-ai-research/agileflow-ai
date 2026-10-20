@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     model_api_key: str | None = None
     model_name: str = "gpt-4.1-mini"
     model_base_url: str = "https://api.openai.com/v1"
-    model_timeout_seconds: float = 60.0
+    model_timeout_seconds: float = 120.0
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",

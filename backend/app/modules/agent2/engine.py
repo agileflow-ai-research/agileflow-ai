@@ -51,7 +51,8 @@ Use generic numbered team slots unless a name appears in team_composition.
 
 JIRA_PLAN is Jira-compatible export data only. Set synchronization to NOT_PERFORMED. Never claim remote Jira
 creation or synchronization. Never generate AGP/RUN ownership or lifecycle metadata. Return strict JSON with
-exactly the requested top-level keys."""
+exactly the requested top-level keys. Return only valid structured JSON conforming to the schema; do not output
+markdown code fences, think tags, or commentary outside the JSON."""
 
 
 def _make_schema_strict(node: Any) -> None:
