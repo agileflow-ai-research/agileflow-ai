@@ -2,8 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import WorkflowControls from '../../../../components/agents/workflow/WorkflowControls.jsx'
 import WorkflowNodeModal from '../../../../components/agents/workflow/WorkflowNodeModal.jsx'
+import ErrorState from '../../../../components/feedback/ErrorState.jsx'
+import LoadingState from '../../../../components/feedback/LoadingState.jsx'
+import { getWorkflowStatePresentation } from '../../../../components/agents/workflowState.js'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import TestingValidationCanvas from '../canvas/TestingValidationCanvas.jsx'
+import useTestingValidationWorkflow from '../hooks/useTestingValidationWorkflow.js'
 import ContextTestabilityPanel from '../panels/ContextTestabilityPanel.jsx'
 import InputOutputSetupPanel from '../panels/InputOutputSetupPanel.jsx'
 import InputPreparationPanel from '../panels/InputPreparationPanel.jsx'
@@ -14,7 +18,7 @@ import {
   getTestingValidationNodeDefinition,
   TESTING_VALIDATION_NODE_IDS,
 } from '../workflow/nodeDefinitions.js'
-import { createTestingValidationShellPresentation } from '../workflow/presentation.js'
+import { createTestingValidationWorkflowPresentation } from '../workflow/presentation.js'
 
 const panelByNodeId = Object.freeze({
   [TESTING_VALIDATION_NODE_IDS.INPUT_OUTPUT_SETUP]: InputOutputSetupPanel,
@@ -31,8 +35,18 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
   const [selectedNodeId, setSelectedNodeId] = useState(
     enteringExistingProject ? null : TESTING_VALIDATION_NODE_IDS.INPUT_OUTPUT_SETUP,
   )
-  const presentation = useMemo(() => createTestingValidationShellPresentation(), [])
-  const selectedDefinition = getTestingValidationNodeDefinition(selectedNodeId)
+  const { loadError, loadStatus, retry, workflowState } = useTestingValidationWorkflow(
+    project.agent_project_id,
+  )
+  const presentation = useMemo(
+    () => workflowState
+      ? createTestingValidationWorkflowPresentation(workflowState)
+      : null,
+    [workflowState],
+  )
+  const selectedDefinition = presentation
+    ? getTestingValidationNodeDefinition(selectedNodeId)
+    : null
   const selectedPresentation = selectedDefinition
     ? { ...selectedDefinition, ...presentation[selectedDefinition.id] }
     : null
@@ -47,10 +61,10 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
   }, [])
 
   useEffect(() => {
-    if (!enteringExistingProject) {
+    if (!enteringExistingProject && loadStatus === 'success') {
       canvasRef.current?.focusNode(TESTING_VALIDATION_NODE_IDS.INPUT_OUTPUT_SETUP)
     }
-  }, [enteringExistingProject, project.agent_project_id])
+  }, [enteringExistingProject, loadStatus, project.agent_project_id])
 
   return (
     <section className="min-w-0 space-y-4" aria-labelledby="testing-validation-canvas-title">
@@ -72,25 +86,44 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
       </header>
 
       <div className="overflow-hidden rounded-panel border border-default bg-surface">
-        <div className="min-w-0 bg-canvas">
-          <TestingValidationCanvas
-            ref={canvasRef}
-            presentation={presentation}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={handleSelectNode}
-          />
-        </div>
+        {loadStatus === 'loading' ? (
+          <LoadingState message="Loading Test Generation workflow" />
+        ) : loadStatus === 'error' ? (
+          <div className="p-4 sm:p-6">
+            <ErrorState
+              title="Workflow unavailable"
+              message={loadError}
+              onRetry={retry}
+            />
+          </div>
+        ) : (
+          <div className="min-w-0 bg-canvas">
+            <TestingValidationCanvas
+              ref={canvasRef}
+              presentation={presentation}
+              selectedNodeId={selectedNodeId ?? workflowState.current_node_id}
+              onSelectNode={handleSelectNode}
+            />
+          </div>
+        )}
         <WorkflowNodeModal
           node={selectedPresentation}
           open={Boolean(selectedDefinition)}
           onClose={handleCloseModal}
           eyebrow="Agent 4 · Test Generation workflow"
         >
-          {SelectedPanel ? <SelectedPanel definition={selectedDefinition} /> : null}
+          {SelectedPanel ? (
+            <SelectedPanel
+              definition={selectedDefinition}
+              statusLabel={selectedPresentation.statusLabel ?? getWorkflowStatePresentation(
+                selectedPresentation.status,
+              ).label}
+            />
+          ) : null}
         </WorkflowNodeModal>
       </div>
 
-      <p className="text-xs text-content-muted">This canvas is a presentation-only Stage 1 shell. Node positions are visual, and no workflow state or processing is persisted yet.</p>
+      <p className="text-xs text-content-muted">Workflow status is loaded from the persisted Stage 1 record. Node positions remain visual only, and no node processing is implemented yet.</p>
     </section>
   )
 }

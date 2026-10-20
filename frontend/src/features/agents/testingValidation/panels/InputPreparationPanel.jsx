@@ -1,10 +1,10 @@
 import NodeShellPanel from './NodeShellPanel.jsx'
 
-function InputPreparationPanel({ definition }) {
+function InputPreparationPanel({ definition, statusLabel }) {
   return (
     <NodeShellPanel
       definition={definition}
-      availability="Locked · Waiting for Input & Output Setup"
+      availability={statusLabel}
       note="Input preparation is not implemented yet. No extraction, normalization, or chunking is performed by this shell."
     />
   )

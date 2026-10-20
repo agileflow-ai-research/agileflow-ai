@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '../../../services/apiClient.js'
-import { runTestingValidationAgent } from './testingValidationAgentService.js'
+import {
+  getTestGenerationWorkflow,
+  runTestingValidationAgent,
+} from './testingValidationAgentService.js'
 
-vi.mock('../../../services/apiClient.js', () => ({ apiClient: { post: vi.fn() } }))
+vi.mock('../../../services/apiClient.js', () => ({
+  apiClient: { get: vi.fn(), post: vi.fn() },
+}))
 
 describe('testingValidationAgentService', () => {
   beforeEach(() => vi.clearAllMocks())
@@ -13,6 +18,14 @@ describe('testingValidationAgentService', () => {
     runTestingValidationAgent('AGP-004', payload)
     expect(apiClient.post).toHaveBeenCalledWith(
       '/agents/testing-validation/AGP-004/run', payload, { authenticated: true },
+    )
+  })
+
+  it('loads the persisted Test Generation workflow through the feature service', () => {
+    getTestGenerationWorkflow('AGP-004')
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/testing-validation/AGP-004/test-generation/workflow',
+      { authenticated: true },
     )
   })
 })

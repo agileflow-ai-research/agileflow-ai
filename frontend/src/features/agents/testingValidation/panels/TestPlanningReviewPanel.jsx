@@ -1,10 +1,10 @@
 import NodeShellPanel from './NodeShellPanel.jsx'
 
-function TestPlanningReviewPanel({ definition }) {
+function TestPlanningReviewPanel({ definition, statusLabel }) {
   return (
     <NodeShellPanel
       definition={definition}
-      availability="Locked · Waiting for Context & Testability"
+      availability={statusLabel}
       note="Planning and review are not implemented yet. No Test Case Plan or review decision is created by this shell."
     >
       <div className="rounded-control border border-state-warning/40 bg-state-warning/10 p-4">

@@ -1,10 +1,10 @@
 import NodeShellPanel from './NodeShellPanel.jsx'
 
-function TestGenerationResultsPanel({ definition }) {
+function TestGenerationResultsPanel({ definition, statusLabel }) {
   return (
     <NodeShellPanel
       definition={definition}
-      availability="Locked · Waiting for approved Test Case Plan"
+      availability={statusLabel}
       note="Test generation and results are not implemented yet. This shell generates no tests and performs no execution."
     >
       <div className="rounded-control border border-default bg-elevated p-4">

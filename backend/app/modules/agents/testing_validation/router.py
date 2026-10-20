@@ -18,6 +18,18 @@ from app.modules.standalone.service import (
 from app.modules.agents.testing_validation.engine import Agent4Engine
 from app.modules.agents.testing_validation.schemas import Agent4RunRequest, Agent4RunResult
 from app.modules.agents.testing_validation.service import Agent4Service, WrongAgentProjectTypeError
+from app.modules.agents.testing_validation.workflow.schemas import (
+    Agent4TestGenerationWorkflowResponse,
+)
+from app.modules.agents.testing_validation.workflow.service import (
+    Agent4WorkflowService,
+    Agent4WorkflowStageError,
+    WrongAgent4WorkflowProjectError,
+)
+from app.modules.agents.testing_validation.workflow.storage import (
+    Agent4WorkflowStorage,
+    Agent4WorkflowStorageError,
+)
 
 
 router = APIRouter(prefix="/agents/testing-validation", tags=["testing-validation-agent"])
@@ -34,9 +46,89 @@ def get_agent4_service(
     return Agent4Service(standalone_service, engine)
 
 
+def get_agent4_workflow_storage() -> Agent4WorkflowStorage:
+    return Agent4WorkflowStorage(settings.agent4_storage_root)
+
+
+def get_agent4_workflow_service(
+    standalone_service: Annotated[StandaloneService, Depends(get_standalone_service)],
+    workflow_storage: Annotated[
+        Agent4WorkflowStorage, Depends(get_agent4_workflow_storage)
+    ],
+) -> Agent4WorkflowService:
+    return Agent4WorkflowService(standalone_service, workflow_storage)
+
+
 def _error(status_code: int, message: str, field: str, detail: str) -> JSONResponse:
     payload = ErrorResponse(message=message, errors=[ErrorDetail(field=field, message=detail)])
     return JSONResponse(status_code=status_code, content=payload.model_dump(mode="json"))
+
+
+@router.get(
+    "/{agent_project_id}/test-generation/workflow",
+    response_model=SuccessResponse[Agent4TestGenerationWorkflowResponse],
+)
+def get_test_generation_workflow(
+    agent_project_id: str,
+    service: Annotated[
+        Agent4WorkflowService, Depends(get_agent4_workflow_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
+    try:
+        workflow = service.get(agent_project_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(
+            status.HTTP_404_NOT_FOUND,
+            "Agent project not found",
+            "agent_project_id",
+            "Agent project not found",
+        )
+    except ArchivedAgentProjectError:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Agent project is archived",
+            "agent_project_id",
+            "Reactivate the agent project before loading its workflow",
+        )
+    except WrongAgent4WorkflowProjectError as exc:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Wrong agent project type",
+            "agent_project_id",
+            str(exc),
+        )
+    except Agent4WorkflowStageError as exc:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Agent project stage is unavailable",
+            "agent_stage",
+            str(exc),
+        )
+    except Agent4WorkflowStorageError:
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Workflow storage failed",
+            "workflow",
+            "The Agent 4 workflow could not be loaded",
+        )
+    except ValueError:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Invalid agent project ID",
+            "agent_project_id",
+            "Agent project ID is invalid",
+        )
+    except StandaloneServiceError:
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Project storage failed",
+            "database",
+            "The Agent 4 project could not be loaded",
+        )
+    return SuccessResponse(
+        message="Agent 4 Test Generation workflow retrieved", data=workflow
+    )
 
 
 @router.post("/{agent_project_id}/run", response_model=SuccessResponse[Agent4RunResult])

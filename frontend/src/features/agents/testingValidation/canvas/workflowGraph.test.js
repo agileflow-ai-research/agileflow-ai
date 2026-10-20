@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { WORKFLOW_NODE_STATES } from '../../../../components/agents/workflowState.js'
 import { TESTING_VALIDATION_NODE_REGISTRY } from '../workflow/nodeDefinitions.js'
-import { createTestingValidationShellPresentation } from '../workflow/presentation.js'
+import { createTestingValidationWorkflowPresentation } from '../workflow/presentation.js'
 import { TESTING_VALIDATION_DEFAULT_NODE_POSITIONS } from './layout.js'
 import {
   createTestingValidationWorkflowNodes,
@@ -19,6 +19,13 @@ const expectedIds = [
   'TEST_PLANNING_REVIEW',
   'TEST_GENERATION_RESULTS',
 ]
+const initialWorkflow = {
+  current_node_id: 'INPUT_OUTPUT_SETUP',
+  nodes: expectedIds.map((nodeId, index) => ({
+    node_id: nodeId,
+    status: index === 0 ? 'WAITING_FOR_HUMAN' : 'LOCKED',
+  })),
+}
 
 describe('Agent 4 Test Generation workflow graph', () => {
   it('defines the frozen six-node order and linear graph', () => {
@@ -33,8 +40,8 @@ describe('Agent 4 Test Generation workflow graph', () => {
     )).toBe(true)
   })
 
-  it('uses presentation-only availability without inventing backend workflow state', () => {
-    const presentation = createTestingValidationShellPresentation()
+  it('projects authoritative backend node status and current-node state', () => {
+    const presentation = createTestingValidationWorkflowPresentation(initialWorkflow)
     const nodes = createTestingValidationWorkflowNodes(presentation)
 
     expect(nodes).toHaveLength(6)
@@ -42,15 +49,25 @@ describe('Agent 4 Test Generation workflow graph', () => {
       expectedIds.map((id) => TESTING_VALIDATION_DEFAULT_NODE_POSITIONS[id]),
     )
     expect(nodes[0].data).toMatchObject({
-      status: WORKFLOW_NODE_STATES.NOT_STARTED,
-      statusLabel: 'Available · Current',
+      status: WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN,
+      statusLabel: 'Available - Waiting for Setup',
       locked: false,
     })
     expect(nodes.slice(1).every((node) => (
-      node.data.status === WORKFLOW_NODE_STATES.LOCKED
-      && node.data.statusLabel === 'Locked · Not Available Yet'
-      && node.data.locked
+      node.data.status === WORKFLOW_NODE_STATES.LOCKED && node.data.locked
     ))).toBe(true)
+    expect(presentation.INPUT_OUTPUT_SETUP.current).toBe(true)
+    expect(presentation.INPUT_PREPARATION.current).toBe(false)
+  })
+
+  it('uses backend current_node_id instead of deriving current from sequence', () => {
+    const presentation = createTestingValidationWorkflowPresentation({
+      ...initialWorkflow,
+      current_node_id: 'CONTEXT_TESTABILITY',
+    })
+
+    expect(presentation.INPUT_OUTPUT_SETUP.current).toBe(false)
+    expect(presentation.CONTEXT_TESTABILITY.current).toBe(true)
   })
 
   it('keeps all modal and canvas metadata in the central registry', () => {

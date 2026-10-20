@@ -15,12 +15,12 @@ function ItemGroup({ title, items }) {
   )
 }
 
-function InputOutputSetupPanel({ definition }) {
+function InputOutputSetupPanel({ definition, statusLabel }) {
   return (
     <NodeShellPanel
       definition={definition}
-      availability="Available · Current node"
-      note="Input and output setup will be implemented next. This shell does not collect, upload, or persist data."
+      availability={statusLabel}
+      note="Waiting for input/output setup. Collection and confirmation will be implemented next; this shell does not collect, upload, or persist data."
     >
       <div className="space-y-4">
         <ItemGroup title="Inputs" items={artifactGroups} />

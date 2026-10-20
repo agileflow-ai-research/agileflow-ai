@@ -3,13 +3,14 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runTestingValidationAgent } from '../testingValidationAgentService.js'
+import {
+  getTestGenerationWorkflow,
+  runTestingValidationAgent,
+} from '../testingValidationAgentService.js'
 import TestingValidationProjectPage from './TestingValidationProjectPage.jsx'
 
 const canvasActions = vi.hoisted(() => ({
-  autoArrange: vi.fn(),
-  resetLayout: vi.fn(),
-  focusNode: vi.fn(),
+  autoArrange: vi.fn(), resetLayout: vi.fn(), focusNode: vi.fn(),
 }))
 const canvasNodes = vi.hoisted(() => ([
   ['INPUT_OUTPUT_SETUP', 'Input & Output Setup'],
@@ -19,8 +20,24 @@ const canvasNodes = vi.hoisted(() => ([
   ['TEST_PLANNING_REVIEW', 'Test Planning & Human Review'],
   ['TEST_GENERATION_RESULTS', 'Test Generation & Results'],
 ]))
+const workflow = {
+  schema_version: '1',
+  workflow_version: 'W1',
+  agent_project_id: 'AGP-404',
+  agent_stage: 'TEST_GENERATION',
+  pipeline_status: 'WAITING_FOR_HUMAN',
+  current_node_id: 'INPUT_OUTPUT_SETUP',
+  nodes: canvasNodes.map(([nodeId], index) => ({
+    node_id: nodeId,
+    status: index === 0 ? 'WAITING_FOR_HUMAN' : 'LOCKED',
+    updated_at: '2026-10-21T00:00:00Z',
+  })),
+  created_at: '2026-10-21T00:00:00Z',
+  updated_at: '2026-10-21T00:00:00Z',
+}
 
 vi.mock('../testingValidationAgentService.js', () => ({
+  getTestGenerationWorkflow: vi.fn(),
   runTestingValidationAgent: vi.fn(),
 }))
 
@@ -35,7 +52,7 @@ vi.mock('../canvas/TestingValidationCanvas.jsx', () => ({
         {canvasNodes.map(([id, title]) => (
           <button key={id} type="button" onClick={() => onSelectNode(id)}>
             Open {title}
-            <span>{presentation[id].statusLabel}</span>
+            <span>{presentation[id].statusLabel ?? presentation[id].status}</span>
           </button>
         ))}
       </div>
@@ -44,11 +61,8 @@ vi.mock('../canvas/TestingValidationCanvas.jsx', () => ({
 }))
 
 const project = {
-  agent_project_id: 'AGP-404',
-  agent_type: 'TESTING_VALIDATION',
-  agent_stage: 'TEST_GENERATION',
-  name: 'Quality Gate',
-  status: 'ACTIVE',
+  agent_project_id: 'AGP-404', agent_type: 'TESTING_VALIDATION',
+  agent_stage: 'TEST_GENERATION', name: 'Quality Gate', status: 'ACTIVE',
 }
 const projectStatus = { label: 'Active', tone: 'success' }
 
@@ -64,22 +78,30 @@ function renderPage(entryMode = 'existing') {
 }
 
 describe('TestingValidationProjectPage', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getTestGenerationWorkflow.mockResolvedValue({ data: workflow })
+  })
 
-  it('renders the six-node Stage 1 canvas with only N1 available', () => {
+  it('loads the authoritative workflow and renders its six node states', async () => {
     renderPage()
 
-    expect(screen.getByLabelText('Agent 4 test generation workflow canvas')).toBeInTheDocument()
+    expect(screen.getByText('Loading Test Generation workflow')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Agent 4 test generation workflow canvas')).toHaveAttribute(
+      'data-selected-node', 'INPUT_OUTPUT_SETUP',
+    )
+    expect(getTestGenerationWorkflow).toHaveBeenCalledWith('AGP-404')
     expect(screen.getAllByRole('button', { name: /Open / })).toHaveLength(6)
-    expect(screen.getAllByText('Available · Current')).toHaveLength(1)
-    expect(screen.getAllByText('Locked · Not Available Yet')).toHaveLength(5)
+    expect(screen.getAllByText('Available - Waiting for Setup')).toHaveLength(1)
+    expect(screen.getAllByText('LOCKED')).toHaveLength(5)
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/upload/i)).not.toBeInTheDocument()
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
+    expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(1)
   })
 
   it.each([
-    ['Input & Output Setup', /Input and output setup will be implemented next/],
+    ['Input & Output Setup', /Waiting for input\/output setup/],
     ['Input Preparation', /No extraction, normalization, or chunking/],
     ['Testing Intelligence', /performs no model inference/],
     ['Context & Testability', /performs no traceability, readiness, or feasibility/],
@@ -88,18 +110,18 @@ describe('TestingValidationProjectPage', () => {
   ])('opens the %s shell panel without processing', async (title, expectedContent) => {
     const user = userEvent.setup()
     renderPage()
+    await screen.findByLabelText('Agent 4 test generation workflow canvas')
 
     await user.click(screen.getByRole('button', { name: new RegExp(`Open ${title}`) }))
-    const dialog = screen.getByRole('dialog', { name: title })
-    expect(dialog).toHaveTextContent(expectedContent)
+    expect(screen.getByRole('dialog', { name: title })).toHaveTextContent(expectedContent)
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
   })
 
-  it('opens N1 for a newly created project and exposes only layout controls', async () => {
+  it('opens N1 after a newly created project loads and exposes only layout controls', async () => {
     const user = userEvent.setup()
     renderPage('created')
 
-    expect(screen.getByRole('dialog', { name: 'Input & Output Setup' })).toBeInTheDocument()
+    expect(await screen.findByRole('dialog', { name: 'Input & Output Setup' })).toBeInTheDocument()
     expect(canvasActions.focusNode).toHaveBeenCalledWith('INPUT_OUTPUT_SETUP')
     await user.click(screen.getByRole('button', { name: 'Auto Arrange' }))
     await user.click(screen.getByRole('button', { name: 'Reset Layout' }))
@@ -108,13 +130,29 @@ describe('TestingValidationProjectPage', () => {
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
   })
 
-  it('closes a selected node normally and keeps processing unavailable', async () => {
+  it('shows a project workflow error and retries explicitly without fake state', async () => {
+    const user = userEvent.setup()
+    getTestGenerationWorkflow
+      .mockRejectedValueOnce({ status: 503, errors: [{ message: 'Workflow temporarily unavailable' }] })
+      .mockResolvedValueOnce({ data: workflow })
+    renderPage()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Workflow temporarily unavailable')
+    expect(screen.queryByLabelText('Agent 4 test generation workflow canvas')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByLabelText('Agent 4 test generation workflow canvas')).toBeInTheDocument()
+    expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps backend current-node emphasis after closing a manually selected panel', async () => {
     const user = userEvent.setup()
     renderPage()
+    const canvas = await screen.findByLabelText('Agent 4 test generation workflow canvas')
     await user.click(screen.getByRole('button', { name: /Open Input Preparation/ }))
+    expect(canvas).toHaveAttribute('data-selected-node', 'INPUT_PREPARATION')
     await user.click(screen.getByRole('button', { name: 'Close workflow modal' }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Agent 4 test generation workflow canvas')).toHaveAttribute('data-selected-node', '')
+    expect(canvas).toHaveAttribute('data-selected-node', 'INPUT_OUTPUT_SETUP')
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
   })
 })
