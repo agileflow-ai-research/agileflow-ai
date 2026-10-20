@@ -148,12 +148,15 @@ class DocumentProcessingService:
         current_user: UserPublicResponse,
     ) -> DocumentProcessingRecord:
         stored = self._require_source(agent_project_id, source_id, current_user)
-        record = self._load_valid_record(stored, agent_project_id)
-        if record is not None:
-            return record
-        return self._record(
-            stored, agent_project_id, DocumentProcessingStatus.READY
-        )
+        with self._processing_lock:
+            record = self._load_valid_record(stored, agent_project_id)
+            if record is not None:
+                return self._reconcile_completed_record(
+                    stored, agent_project_id, record
+                )
+            return self._record(
+                stored, agent_project_id, DocumentProcessingStatus.READY
+            )
 
     def get_result(
         self,
@@ -162,15 +165,47 @@ class DocumentProcessingService:
         current_user: UserPublicResponse,
     ) -> DocumentProcessingResult:
         stored = self._require_source(agent_project_id, source_id, current_user)
-        result = self._load_valid_result(stored, agent_project_id)
-        record = self._load_valid_record(stored, agent_project_id)
-        if (
-            result is None
-            or record is None
-            or record.status is not DocumentProcessingStatus.COMPLETED
-        ):
-            raise DocumentProcessingNotFoundError(source_id)
-        return result
+        with self._processing_lock:
+            result = self._load_valid_result(stored, agent_project_id)
+            record = self._load_valid_record(stored, agent_project_id)
+            if record is not None and record.status is DocumentProcessingStatus.COMPLETED:
+                record = self._reconcile_completed_record(
+                    stored, agent_project_id, record, result=result
+                )
+            if (
+                result is None
+                or record is None
+                or record.status is not DocumentProcessingStatus.COMPLETED
+            ):
+                raise DocumentProcessingNotFoundError(source_id)
+            return result
+
+    def _reconcile_completed_record(
+        self,
+        stored: StoredRequirementSource,
+        agent_project_id: str,
+        record: DocumentProcessingRecord,
+        *,
+        result: DocumentProcessingResult | None = None,
+    ) -> DocumentProcessingRecord:
+        if record.status is not DocumentProcessingStatus.COMPLETED:
+            return record
+        compatible_result = result or self._load_valid_result(stored, agent_project_id)
+        if compatible_result is not None:
+            return record
+        reconciled = self._record(
+            stored,
+            agent_project_id,
+            DocumentProcessingStatus.FAILED,
+            started_at=record.started_at,
+            completed_at=self._clock(),
+            error=DocumentProcessingError(
+                code=DocumentProcessingErrorCode.PROCESSING_RESULT_INVALID,
+                message="The completed processing result is missing or incompatible. Retry processing.",
+            ),
+        )
+        self._persist_record(stored, reconciled)
+        return reconciled
 
     def _require_source(
         self,

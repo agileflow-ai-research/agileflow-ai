@@ -229,6 +229,60 @@ def test_completed_result_reuse_and_force_reprocessing(audio_context):
     assert provider.calls == 2
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "deleted",
+        "corrupt",
+        "stale_source",
+        "stale_checksum",
+        "stale_processor",
+        "stale_model",
+    ],
+)
+def test_completed_audio_status_reconciles_invalid_result_and_retries(
+    audio_context, mutation
+):
+    authentication, _, _, root, provider = audio_context
+    client = authentication.client()
+    project_id = create_project(client)["agent_project_id"]
+    source = upload(client, project_id).json()["data"]
+    source_id = source["source_id"]
+    process(client, project_id, source_id)
+    result_path = root / project_id / "inputs" / "AUD-001.audio-result.json"
+
+    if mutation == "deleted":
+        result_path.unlink()
+    elif mutation == "corrupt":
+        result_path.write_text("{not-json", encoding="utf-8")
+    else:
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        if mutation == "stale_source":
+            payload["source_id"] = "AUD-999"
+        elif mutation == "stale_checksum":
+            payload["source_sha256"] = "0" * 64
+        elif mutation == "stale_processor":
+            payload["processor_version"] = "999"
+        else:
+            payload["transcription"]["fingerprint"] = "b" * 64
+        result_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    reconciled = status(client, project_id, source_id).json()["data"]
+
+    assert reconciled["status"] == "FAILED"
+    assert reconciled["error"]["code"] == "PROCESSING_RESULT_INVALID"
+    assert "not-json" not in json.dumps(reconciled)
+    persisted = json.loads(
+        (root / project_id / "inputs" / "AUD-001.audio-processing.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert persisted["status"] == "FAILED"
+    assert result(client, project_id, source_id).status_code == 404
+    assert process(client, project_id, source_id).json()["data"]["status"] == "COMPLETED"
+    assert provider.calls == 2
+
+
 def test_checksum_version_and_configuration_bind_results(audio_context):
     authentication, _, _, root, provider = audio_context
     client = authentication.client()

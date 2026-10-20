@@ -202,21 +202,57 @@ class VideoProcessingService:
 
     def get_status(self, agent_project_id, source_id, current_user):
         stored = self._require_source(agent_project_id, source_id, current_user)
-        return self._load_valid_record(stored, agent_project_id) or self._record(
-            stored, agent_project_id, VideoProcessingStatus.READY
-        )
+        with self._processing_lock:
+            record = self._load_valid_record(stored, agent_project_id)
+            if record is not None:
+                return self._reconcile_completed_record(
+                    stored, agent_project_id, record
+                )
+            return self._record(stored, agent_project_id, VideoProcessingStatus.READY)
 
     def get_result(self, agent_project_id, source_id, current_user):
         stored = self._require_source(agent_project_id, source_id, current_user)
-        result = self._load_valid_result(stored, agent_project_id)
-        record = self._load_valid_record(stored, agent_project_id)
-        if (
-            result is None
-            or record is None
-            or record.status is not VideoProcessingStatus.COMPLETED
-        ):
-            raise VideoProcessingNotFoundError(source_id)
-        return result
+        with self._processing_lock:
+            result = self._load_valid_result(stored, agent_project_id)
+            record = self._load_valid_record(stored, agent_project_id)
+            if record is not None and record.status is VideoProcessingStatus.COMPLETED:
+                record = self._reconcile_completed_record(
+                    stored, agent_project_id, record, result=result
+                )
+            if (
+                result is None
+                or record is None
+                or record.status is not VideoProcessingStatus.COMPLETED
+            ):
+                raise VideoProcessingNotFoundError(source_id)
+            return result
+
+    def _reconcile_completed_record(
+        self,
+        stored,
+        agent_project_id,
+        record,
+        *,
+        result=None,
+    ):
+        if record.status is not VideoProcessingStatus.COMPLETED:
+            return record
+        compatible_result = result or self._load_valid_result(stored, agent_project_id)
+        if compatible_result is not None:
+            return record
+        reconciled = self._record(
+            stored,
+            agent_project_id,
+            VideoProcessingStatus.FAILED,
+            started_at=record.started_at,
+            completed_at=self._clock(),
+            error=VideoProcessingError(
+                code=VideoProcessingErrorCode.PROCESSING_RESULT_INVALID,
+                message="The completed processing result is missing or incompatible. Retry processing.",
+            ),
+        )
+        self._persist_record(stored, reconciled)
+        return reconciled
 
     def _require_source(self, agent_project_id, source_id, current_user):
         project = require_requirements_project(

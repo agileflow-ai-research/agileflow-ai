@@ -1,3 +1,4 @@
+import json
 from io import BytesIO
 
 import fitz
@@ -210,6 +211,69 @@ def test_retry_reprocesses_failed_document(processing_context, monkeypatch):
 
     assert retried.json()["data"]["status"] == "COMPLETED"
     assert result(client, project_id, source["source_id"]).json()["data"]["text"] == "Retry content"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["deleted", "corrupt", "stale_source", "stale_checksum", "stale_processor"],
+)
+def test_completed_document_status_reconciles_invalid_result_and_retries(
+    processing_context, mutation
+):
+    authentication, _, _, root = processing_context
+    client = authentication.client()
+    project_id = create_project(client)["agent_project_id"]
+    source = upload(client, project_id, "integrity.txt", b"Integrity content").json()["data"]
+    source_id = source["source_id"]
+    process(client, project_id, source_id)
+    directory = root / project_id / "inputs"
+    result_path = directory / "DOC-001.document-result.json"
+
+    if mutation == "deleted":
+        result_path.unlink()
+    elif mutation == "corrupt":
+        result_path.write_text("{not-json", encoding="utf-8")
+    else:
+        payload = json.loads(result_path.read_text(encoding="utf-8"))
+        if mutation == "stale_source":
+            payload["source_id"] = "DOC-999"
+        elif mutation == "stale_checksum":
+            payload["source_sha256"] = "0" * 64
+        else:
+            payload["processor_version"] = "999"
+        result_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    reconciled = status(client, project_id, source_id).json()["data"]
+
+    assert reconciled["status"] == "FAILED"
+    assert reconciled["error"] == {
+        "code": "PROCESSING_RESULT_INVALID",
+        "message": "The completed processing result is missing or incompatible. Retry processing.",
+    }
+    persisted = json.loads(
+        (directory / "DOC-001.document-processing.json").read_text(encoding="utf-8")
+    )
+    assert persisted["status"] == "FAILED"
+    assert result(client, project_id, source_id).status_code == 404
+    assert process(client, project_id, source_id).json()["data"]["status"] == "COMPLETED"
+    assert result(client, project_id, source_id).json()["data"]["text"] == "Integrity content"
+
+
+def test_valid_completed_document_result_is_reused(processing_context, monkeypatch):
+    authentication, _, _, _ = processing_context
+    client = authentication.client()
+    project_id = create_project(client)["agent_project_id"]
+    source_id = upload(client, project_id, "cached.txt", b"Cached content").json()["data"]["source_id"]
+    process(client, project_id, source_id)
+    monkeypatch.setattr(
+        processing_module,
+        "extract_text",
+        lambda path: pytest.fail(f"unexpected reprocessing of {path.name}"),
+    )
+
+    reused = process(client, project_id, source_id).json()["data"]
+
+    assert reused["status"] == "COMPLETED"
 
 
 def test_checksum_and_processor_version_bind_cached_results(processing_context, monkeypatch):
