@@ -13,7 +13,7 @@ from app.modules.agents.requirements.infrastructure.sidecar import (
     remove_sidecar,
     save_model_sidecar,
 )
-from app.modules.agents.requirements.workflow.orchestration import (
+from app.modules.agents.requirements.workflow.orchestration.identity import (
     n2_chunk_set_digest,
     n2_execution_key,
 )

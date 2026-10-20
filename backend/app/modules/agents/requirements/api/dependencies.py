@@ -39,7 +39,7 @@ from app.modules.agents.requirements.processing.video.service import (
     VideoProcessingService,
 )
 from app.modules.agents.requirements.workflow.service import RequirementWorkflowService
-from app.modules.agents.requirements.workflow.orchestration import (
+from app.modules.agents.requirements.workflow.orchestration.n2_service import (
     RequirementN2OrchestrationService,
 )
 from app.modules.agents.requirements.workflow.executor import AGENT1_N2_EXECUTOR

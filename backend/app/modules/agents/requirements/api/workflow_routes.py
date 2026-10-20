@@ -17,7 +17,7 @@ from app.modules.agents.requirements.workflow.contracts.n1 import (
 from app.modules.agents.requirements.workflow.contracts.responses import (
     RequirementWorkflowResponse,
 )
-from app.modules.agents.requirements.workflow.orchestration import (
+from app.modules.agents.requirements.workflow.orchestration.n2_service import (
     RequirementN2OrchestrationService,
 )
 from app.modules.agents.requirements.workflow.service import (
