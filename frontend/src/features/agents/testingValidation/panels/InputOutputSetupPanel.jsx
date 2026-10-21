@@ -2,11 +2,16 @@ import { useMemo, useState } from 'react'
 
 import Button from '../../../../components/ui/Button.jsx'
 import Card from '../../../../components/ui/Card.jsx'
+import OutputSelector from '../../../../components/agents/OutputSelector.jsx'
 import Input from '../../../../components/ui/Input.jsx'
 import Select from '../../../../components/ui/Select.jsx'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import Textarea from '../../../../components/ui/Textarea.jsx'
 import useTestingValidationSources from '../hooks/useTestingValidationSources.js'
+import {
+  canonicalTestGenerationOutputs,
+  TEST_GENERATION_OUTPUT_OPTIONS,
+} from '../workflow/outputDefinitions.js'
 import NodeShellPanel from './NodeShellPanel.jsx'
 
 const groups = [
@@ -38,6 +43,13 @@ const sourceTypeOptions = [
   { value: 'IMAGE', label: 'IMAGE' },
 ]
 
+const primaryFunctionalArtifactTypes = new Set([
+  'FUNCTIONAL_REQUIREMENTS',
+  'USER_STORIES',
+  'ACCEPTANCE_CRITERIA',
+  'SRS',
+])
+
 const statusPresentation = {
   READY: { label: 'Ready', tone: 'success' },
   UPLOADED: { label: 'Uploaded', tone: 'info' },
@@ -62,7 +74,22 @@ function formatBytes(size) {
   return `${(size / 1024).toFixed(size < 10240 ? 1 : 0)} KB`
 }
 
-function InputOutputSetupPanel({ agentProjectId, definition, statusLabel }) {
+function InputOutputSetupPanel({
+  agentProjectId,
+  confirmationError = '',
+  confirmationSubmitting = false,
+  definition,
+  n1Confirmation = null,
+  onConfirmN1,
+  onSaveOutputs,
+  outputSaveError = '',
+  outputSaving = false,
+  selectedOutputs = [],
+  selectionRevision = 0,
+  statusLabel,
+  pipelineStatus = 'WAITING_FOR_HUMAN',
+  workflowNodeStatus = 'WAITING_FOR_HUMAN',
+}) {
   const {
     addText,
     error,
@@ -82,6 +109,9 @@ function InputOutputSetupPanel({ agentProjectId, definition, statusLabel }) {
   const [file, setFile] = useState(null)
   const [formError, setFormError] = useState('')
   const [fileInputKey, setFileInputKey] = useState(0)
+  const [draftOutputs, setDraftOutputs] = useState(
+    () => canonicalTestGenerationOutputs(selectedOutputs),
+  )
 
   const selectedArtifact = artifacts.find((item) => item.value === artifactType)
   const artifactOptions = useMemo(
@@ -94,7 +124,29 @@ function InputOutputSetupPanel({ agentProjectId, definition, statusLabel }) {
   const selectedOrigin = selectedArtifact?.origins.length === 1
     ? selectedArtifact.origins[0]
     : origin
-  const busy = Boolean(mutationType || removingId)
+  const setupConfirmed = workflowNodeStatus === 'COMPLETED' && Boolean(n1Confirmation)
+  const sourceMutating = Boolean(mutationType || removingId)
+  const busy = Boolean(sourceMutating || outputSaving || confirmationSubmitting || setupConfirmed)
+  const canonicalDraftOutputs = canonicalTestGenerationOutputs(draftOutputs)
+  const canonicalSavedOutputs = canonicalTestGenerationOutputs(selectedOutputs)
+  const outputsDirty = canonicalDraftOutputs.join('|') !== canonicalSavedOutputs.join('|')
+  const hasSources = sources.length > 0
+  const hasPrimaryFunctionalSource = sources.some(
+    (source) => primaryFunctionalArtifactTypes.has(source.artifact_type),
+  )
+  const hasSavedOutputs = canonicalSavedOutputs.length > 0
+  const confirmationEnabled = (
+    loadStatus === 'success'
+    && hasSources
+    && hasPrimaryFunctionalSource
+    && hasSavedOutputs
+    && !outputsDirty
+    && !sourceMutating
+    && !outputSaving
+    && !confirmationSubmitting
+    && pipelineStatus === 'WAITING_FOR_HUMAN'
+    && workflowNodeStatus === 'WAITING_FOR_HUMAN'
+  )
 
   function changeGroup(event) {
     setGroup(event.target.value)
@@ -149,11 +201,20 @@ function InputOutputSetupPanel({ agentProjectId, definition, statusLabel }) {
     }
   }
 
+  async function saveOutputs() {
+    const workflow = await onSaveOutputs?.(canonicalDraftOutputs)
+    if (workflow?.selected_outputs) {
+      setDraftOutputs(canonicalTestGenerationOutputs(workflow.selected_outputs))
+    }
+  }
+
   return (
     <NodeShellPanel
       definition={definition}
       availability={statusLabel}
-      note="Sources are collected only. Output selection and N1 confirmation are coming next, so N1 remains Waiting for Human and N2 remains locked."
+      note={setupConfirmed
+        ? 'N1 is complete and frozen. Input Preparation is current and Not Started; no N2 processing has begun.'
+        : 'Sources and desired outputs remain editable draft setup until the human confirmation gate is completed.'}
     >
       <section aria-labelledby="agent4-source-collection-title" className="space-y-4">
         <div>
@@ -261,9 +322,94 @@ function InputOutputSetupPanel({ agentProjectId, definition, statusLabel }) {
         })}
       </section>
 
-      <section aria-labelledby="agent4-output-coming-next" className="rounded-control border border-default bg-surface p-4">
-        <h4 id="agent4-output-coming-next" className="font-semibold text-content-primary">Output selection · Coming next</h4>
-        <p className="mt-1 text-sm text-content-secondary">N1.3 will add output selection. There is no Confirm or Continue action in this step.</p>
+      <section aria-labelledby="agent4-desired-outputs-title" className="space-y-4 border-t border-default pt-5">
+        <div>
+          <h4 id="agent4-desired-outputs-title" className="font-semibold text-content-primary">Desired Test Outputs</h4>
+          <p className="mt-1 text-sm text-content-secondary">
+            Choose the artifacts Agent 4 should eventually produce. Selection does not imply readiness, feasibility, or generation.
+          </p>
+        </div>
+        <OutputSelector
+          label="Desired Test Outputs"
+          options={TEST_GENERATION_OUTPUT_OPTIONS.map((option) => ({
+            ...option,
+            disabled: busy,
+          }))}
+          selectedValues={draftOutputs}
+          onChange={setDraftOutputs}
+        />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm">
+            <p className="font-medium text-content-primary">
+              {canonicalDraftOutputs.length} output{canonicalDraftOutputs.length === 1 ? '' : 's'} selected
+            </p>
+            {outputsDirty ? (
+              <p className="text-content-muted">Unsaved changes</p>
+            ) : selectionRevision > 0 ? (
+              <p className="text-content-muted">Saved revision {selectionRevision}</p>
+            ) : (
+              <p className="text-content-muted">No desired outputs saved yet</p>
+            )}
+          </div>
+          {!setupConfirmed ? (
+            <Button
+              loading={outputSaving}
+              loadingLabel="Saving output selection"
+              disabled={!outputsDirty || busy}
+              onClick={() => { void saveOutputs() }}
+            >
+              Save Output Selection
+            </Button>
+          ) : null}
+        </div>
+        {outputSaveError ? <p role="alert" className="text-sm text-state-danger">{outputSaveError}</p> : null}
+        <p className="rounded-control border border-default bg-surface p-3 text-sm text-content-secondary">
+          {setupConfirmed
+            ? 'The confirmed desired outputs are frozen until a future correction workflow is available.'
+            : 'Save desired-output changes before confirming the setup.'}
+        </p>
+      </section>
+
+      <section aria-labelledby="agent4-setup-confirmation-title" className="space-y-4 border-t border-default pt-5">
+        <div>
+          <h4 id="agent4-setup-confirmation-title" className="font-semibold text-content-primary">Setup Confirmation</h4>
+          <p className="mt-1 text-sm text-content-secondary">
+            Confirm this input and output setup for Test Generation. Confirmation freezes N1 and makes Input Preparation the next node; no tests or preparation work start yet.
+          </p>
+        </div>
+        {setupConfirmed ? (
+          <Card variant="elevated">
+            <div className="space-y-2 text-sm">
+              <p className="font-semibold text-state-success">Setup Confirmed</p>
+              <p className="text-content-secondary">Sources: {n1Confirmation.source_count}</p>
+              <p className="text-content-secondary">Outputs: {n1Confirmation.selected_output_count}</p>
+              <p className="text-content-secondary">
+                Confirmed at: {new Date(n1Confirmation.confirmed_at).toLocaleString()}
+              </p>
+            </div>
+          </Card>
+        ) : (
+          <>
+            <ul aria-label="Setup confirmation checklist" className="space-y-2 text-sm">
+              <li>{hasSources ? '✓' : '○'} At least one source collected</li>
+              <li>{hasPrimaryFunctionalSource ? '✓' : '○'} Primary functional artifact present</li>
+              <li>{hasSavedOutputs ? '✓' : '○'} {canonicalSavedOutputs.length} saved output{canonicalSavedOutputs.length === 1 ? '' : 's'}</li>
+              <li>{!outputsDirty ? '✓' : '○'} No unsaved output changes</li>
+            </ul>
+            {outputsDirty ? (
+              <p className="text-sm text-state-warning">Save output selection before confirming.</p>
+            ) : null}
+            {confirmationError ? <p role="alert" className="text-sm text-state-danger">{confirmationError}</p> : null}
+            <Button
+              loading={confirmationSubmitting}
+              loadingLabel="Confirming inputs and outputs"
+              disabled={!confirmationEnabled}
+              onClick={() => { void onConfirmN1?.() }}
+            >
+              Confirm Inputs &amp; Outputs
+            </Button>
+          </>
+        )}
       </section>
     </NodeShellPanel>
   )

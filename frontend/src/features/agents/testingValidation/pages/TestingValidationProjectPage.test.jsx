@@ -1,9 +1,10 @@
 import { forwardRef, useImperativeHandle } from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  confirmTestGenerationSetup,
   getTestGenerationWorkflow,
   listTestingValidationSources,
   runTestingValidationAgent,
@@ -28,6 +29,10 @@ const workflow = {
   agent_stage: 'TEST_GENERATION',
   pipeline_status: 'WAITING_FOR_HUMAN',
   current_node_id: 'INPUT_OUTPUT_SETUP',
+  selected_outputs: [],
+  selection_revision: 0,
+  selection_updated_at: null,
+  n1_confirmation: null,
   nodes: canvasNodes.map(([nodeId], index) => ({
     node_id: nodeId,
     status: index === 0 ? 'WAITING_FOR_HUMAN' : 'LOCKED',
@@ -38,11 +43,13 @@ const workflow = {
 }
 
 vi.mock('../testingValidationAgentService.js', () => ({
+  confirmTestGenerationSetup: vi.fn(),
   createTestingValidationTextSource: vi.fn(),
   deleteTestingValidationSource: vi.fn(),
   getTestGenerationWorkflow: vi.fn(),
   listTestingValidationSources: vi.fn(),
   runTestingValidationAgent: vi.fn(),
+  updateTestGenerationOutputs: vi.fn(),
   uploadTestingValidationSource: vi.fn(),
 }))
 
@@ -107,7 +114,7 @@ describe('TestingValidationProjectPage', () => {
   })
 
   it.each([
-    ['Input & Output Setup', /Sources are collected only/],
+    ['Input & Output Setup', /Sources and desired outputs remain editable draft setup/],
     ['Input Preparation', /No extraction, normalization, or chunking/],
     ['Testing Intelligence', /performs no model inference/],
     ['Context & Testability', /performs no traceability, readiness, or feasibility/],
@@ -128,7 +135,7 @@ describe('TestingValidationProjectPage', () => {
     renderPage('created')
 
     expect(await screen.findByRole('dialog', { name: 'Input & Output Setup' })).toBeInTheDocument()
-    expect(canvasActions.focusNode).toHaveBeenCalledWith('INPUT_OUTPUT_SETUP')
+    await waitFor(() => expect(canvasActions.focusNode).toHaveBeenCalledWith('INPUT_OUTPUT_SETUP'))
     await user.click(screen.getByRole('button', { name: 'Auto Arrange' }))
     await user.click(screen.getByRole('button', { name: 'Reset Layout' }))
     expect(canvasActions.autoArrange).toHaveBeenCalledOnce()
@@ -160,5 +167,71 @@ describe('TestingValidationProjectPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(canvas).toHaveAttribute('data-selected-node', 'INPUT_OUTPUT_SETUP')
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
+  })
+
+  it('confirms N1, moves current emphasis to Not Started N2, and starts no processing', async () => {
+    const user = userEvent.setup()
+    const prepared = {
+      ...workflow,
+      selected_outputs: ['UNIT_TEST_CASES'],
+      selection_revision: 1,
+      selection_updated_at: '2026-10-21T01:00:00Z',
+    }
+    const confirmation = {
+      confirmation_id: `A4N1C-${'a'.repeat(32)}`,
+      source_set_digest: 'b'.repeat(64),
+      selection_digest: 'c'.repeat(64),
+      selection_revision: 1,
+      source_ids: [`A4SRC-${'d'.repeat(32)}`],
+      selected_outputs: ['UNIT_TEST_CASES'],
+      source_count: 1,
+      selected_output_count: 1,
+      confirmed_at: '2026-10-21T02:00:00Z',
+    }
+    const confirmed = {
+      ...prepared,
+      pipeline_status: 'RUNNING',
+      current_node_id: 'INPUT_PREPARATION',
+      n1_confirmation: confirmation,
+      nodes: canvasNodes.map(([nodeId], index) => ({
+        node_id: nodeId,
+        status: index === 0 ? 'COMPLETED' : index === 1 ? 'NOT_STARTED' : 'LOCKED',
+        updated_at: '2026-10-21T02:00:00Z',
+      })),
+    }
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: prepared })
+    listTestingValidationSources.mockResolvedValue({ data: [{
+      source_id: confirmation.source_ids[0],
+      artifact_type: 'FUNCTIONAL_REQUIREMENTS',
+      source_type: 'TEXT',
+      normally_supplied_by: 'AGENT_1',
+      supplied_via: 'STANDALONE_MANUAL_INPUT',
+      collection_status: 'READY',
+      text_content: 'Customers can transfer funds.',
+      created_at: '2026-10-21T00:00:00Z',
+    }] })
+    confirmTestGenerationSetup.mockResolvedValueOnce({ data: confirmed })
+    renderPage()
+    await screen.findByLabelText('Agent 4 test generation workflow canvas')
+    await user.click(screen.getByRole('button', { name: /Open Input & Output Setup/ }))
+    await screen.findByText('✓ Primary functional artifact present')
+
+    await user.click(screen.getByRole('button', { name: 'Confirm Inputs & Outputs' }))
+
+    expect(confirmTestGenerationSetup).toHaveBeenCalledWith('AGP-404')
+    expect(await screen.findByRole('dialog', { name: 'Input Preparation' })).toHaveTextContent(
+      'Input Preparation is the next workflow node',
+    )
+    expect(screen.getByLabelText('Agent 4 test generation workflow canvas')).toHaveAttribute(
+      'data-selected-node', 'INPUT_PREPARATION',
+    )
+    expect(screen.getAllByText('COMPLETE')).toHaveLength(1)
+    expect(screen.getAllByText('NOT_STARTED')).toHaveLength(1)
+    expect(screen.getAllByText('LOCKED')).toHaveLength(4)
+    expect(screen.queryByRole('button', { name: /Start|Run|Extract/ })).not.toBeInTheDocument()
+    expect(runTestingValidationAgent).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: /Open Input & Output Setup/ }))
+    expect(await screen.findByText('Setup Confirmed')).toBeInTheDocument()
   })
 })

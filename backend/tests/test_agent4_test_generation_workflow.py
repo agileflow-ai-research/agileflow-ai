@@ -79,6 +79,10 @@ def test_initializes_and_projects_the_exact_six_node_workflow(agent4_workflow_co
     assert workflow["agent_stage"] == "TEST_GENERATION"
     assert workflow["pipeline_status"] == "WAITING_FOR_HUMAN"
     assert workflow["current_node_id"] == "INPUT_OUTPUT_SETUP"
+    assert workflow["selected_outputs"] == []
+    assert workflow["selection_revision"] == 0
+    assert workflow["selection_updated_at"] is None
+    assert workflow["n1_confirmation"] is None
     assert [node["node_id"] for node in workflow["nodes"]] == [
         node_id.value for node_id in AGENT4_TEST_GENERATION_NODE_ORDER
     ]
@@ -97,7 +101,8 @@ def test_initializes_and_projects_the_exact_six_node_workflow(agent4_workflow_co
     assert set(persisted) == {
         "schema_version", "workflow_version", "agent_project_id", "owner_user_id",
         "agent_stage", "pipeline_status", "current_node_id", "nodes", "created_at",
-        "updated_at",
+        "updated_at", "selected_outputs", "selection_revision",
+        "selection_updated_at", "n1_confirmation",
     }
     assert all(set(node) == {"node_id", "status", "updated_at"} for node in persisted["nodes"])
     assert not workflow_path.with_suffix(".json.part").exists()

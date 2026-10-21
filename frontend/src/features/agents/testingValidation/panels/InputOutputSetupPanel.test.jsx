@@ -65,12 +65,13 @@ const imageSource = {
   size_bytes: 512,
 }
 
-function renderPanel() {
+function renderPanel(props = {}) {
   return render(
     <InputOutputSetupPanel
       agentProjectId="AGP-404"
       definition={definition}
       statusLabel="Available - Waiting for Setup"
+      {...props}
     />,
   )
 }
@@ -106,10 +107,235 @@ describe('InputOutputSetupPanel', () => {
   it('shows the empty source state and keeps N1 incomplete with N2 locked', async () => {
     renderPanel()
     expect(await screen.findByText('No Test Generation sources collected yet.')).toBeInTheDocument()
-    expect(screen.getByText(/N1 remains Waiting for Human and N2 remains locked/)).toBeInTheDocument()
-    expect(screen.getByText('Output selection · Coming next')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Confirm|Continue/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/editable draft setup until the human confirmation gate/)).toBeInTheDocument()
+    expect(screen.getByText('0 outputs selected')).toBeInTheDocument()
+    expect(screen.getByText(/Confirm this input and output setup/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirm Inputs & Outputs' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Extract|Normalize|Chunk|Analyze|Run/ })).not.toBeInTheDocument()
+  })
+
+  it('renders all nine desired output choices with readable descriptions', async () => {
+    renderPanel()
+    await waitForSources()
+
+    const choices = [
+      ['Unit Test Cases', /Unit-level test specifications/],
+      ['API Test Cases', /API request, response, and contract/],
+      ['Integration Test Cases', /component and service boundaries/],
+      ['Functional Test Cases', /Behavior-oriented functional scenarios/],
+      ['End-to-End Test Cases', /End-to-end user-flow scenarios/],
+      ['Regression Test Cases', /protect established behavior/],
+      ['Security Test Cases', /Security-oriented test specifications/],
+      ['Acceptance Test Cases', /Business acceptance scenarios/],
+      ['Test Traceability', /Requirement-to-plan-to-test traceability/],
+    ]
+    choices.forEach(([label, description]) => {
+      expect(screen.getByRole('checkbox', { name: label })).toBeInTheDocument()
+      expect(screen.getByText(description)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(/supported|feasible/i)).not.toBeInTheDocument()
+  })
+
+  it('tracks local output edits and explicitly saves a canonical selection', async () => {
+    const user = userEvent.setup()
+    const onSaveOutputs = vi.fn().mockResolvedValue({
+      selected_outputs: ['UNIT_TEST_CASES', 'API_TEST_CASES'],
+    })
+    const { rerender } = renderPanel({
+      selectedOutputs: ['API_TEST_CASES'], selectionRevision: 1, onSaveOutputs,
+    })
+    await waitForSources()
+
+    expect(screen.getByRole('checkbox', { name: 'API Test Cases' })).toBeChecked()
+    expect(screen.getByText('1 output selected')).toBeInTheDocument()
+    expect(screen.getByText('Saved revision 1')).toBeInTheDocument()
+    const save = screen.getByRole('button', { name: 'Save Output Selection' })
+    expect(save).toBeDisabled()
+
+    await user.click(screen.getByRole('checkbox', { name: 'Unit Test Cases' }))
+    expect(screen.getByText('2 outputs selected')).toBeInTheDocument()
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+    await user.click(save)
+
+    expect(onSaveOutputs).toHaveBeenCalledWith(['UNIT_TEST_CASES', 'API_TEST_CASES'])
+    rerender(
+      <InputOutputSetupPanel
+        agentProjectId="AGP-404"
+        definition={definition}
+        statusLabel="Available - Waiting for Setup"
+        selectedOutputs={['UNIT_TEST_CASES', 'API_TEST_CASES']}
+        selectionRevision={2}
+        onSaveOutputs={onSaveOutputs}
+      />,
+    )
+    await waitFor(() => expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument())
+  })
+
+  it('supports deselecting and clearing the output draft without autosaving', async () => {
+    const user = userEvent.setup()
+    const onSaveOutputs = vi.fn()
+    renderPanel({ selectedOutputs: ['SECURITY_TEST_CASES'], selectionRevision: 2, onSaveOutputs })
+    await waitForSources()
+
+    await user.click(screen.getByRole('checkbox', { name: 'Security Test Cases' }))
+    expect(screen.getByText('0 outputs selected')).toBeInTheDocument()
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument()
+    expect(onSaveOutputs).not.toHaveBeenCalled()
+  })
+
+  it('shows output save loading and safe errors without affecting sources', async () => {
+    listTestingValidationSources.mockResolvedValue({ data: [textSource] })
+    const { rerender } = renderPanel({
+      selectedOutputs: ['UNIT_TEST_CASES'],
+      outputSaving: true,
+      onSaveOutputs: vi.fn(),
+    })
+    expect(await screen.findByText('Transfer rules')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Saving output selection' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Unit Test Cases' })).toBeDisabled()
+
+    rerender(
+      <InputOutputSetupPanel
+        agentProjectId="AGP-404"
+        definition={definition}
+        statusLabel="Available - Waiting for Setup"
+        selectedOutputs={['UNIT_TEST_CASES']}
+        outputSaveError="The desired outputs could not be saved"
+        onSaveOutputs={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('The desired outputs could not be saved')
+    expect(screen.getByText('Transfer rules')).toBeInTheDocument()
+  })
+
+  it('renders deterministic confirmation checklist failures and a valid state', async () => {
+    const { rerender } = renderPanel({ selectedOutputs: [] })
+    await waitForSources()
+    const confirm = screen.getByRole('button', { name: 'Confirm Inputs & Outputs' })
+    expect(screen.getByText('○ At least one source collected')).toBeInTheDocument()
+    expect(screen.getByText('○ Primary functional artifact present')).toBeInTheDocument()
+    expect(screen.getByText('○ 0 saved outputs')).toBeInTheDocument()
+    expect(confirm).toBeDisabled()
+
+    listTestingValidationSources.mockResolvedValue({ data: [documentSource] })
+    rerender(
+      <InputOutputSetupPanel
+        agentProjectId="AGP-405"
+        definition={definition}
+        statusLabel="Available - Waiting for Setup"
+        selectedOutputs={['API_TEST_CASES']}
+      />,
+    )
+    await waitFor(() => expect(listTestingValidationSources).toHaveBeenCalledWith('AGP-405'))
+    expect(screen.getByText('✓ At least one source collected')).toBeInTheDocument()
+    expect(screen.getByText('○ Primary functional artifact present')).toBeInTheDocument()
+    expect(screen.getByText('✓ 1 saved output')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirm Inputs & Outputs' })).toBeDisabled()
+  })
+
+  it('confirms only a valid saved setup and shows a safe loading state', async () => {
+    const user = userEvent.setup()
+    const onConfirmN1 = vi.fn().mockResolvedValue({})
+    listTestingValidationSources.mockResolvedValue({ data: [textSource] })
+    const { rerender } = renderPanel({
+      selectedOutputs: ['UNIT_TEST_CASES'],
+      selectionRevision: 1,
+      onConfirmN1,
+    })
+    expect(await screen.findByText('✓ Primary functional artifact present')).toBeInTheDocument()
+    const confirm = screen.getByRole('button', { name: 'Confirm Inputs & Outputs' })
+    expect(confirm).toBeEnabled()
+    await user.click(confirm)
+    expect(onConfirmN1).toHaveBeenCalledOnce()
+
+    rerender(
+      <InputOutputSetupPanel
+        agentProjectId="AGP-404"
+        definition={definition}
+        statusLabel="Available - Waiting for Setup"
+        selectedOutputs={['UNIT_TEST_CASES']}
+        selectionRevision={1}
+        confirmationSubmitting
+        onConfirmN1={onConfirmN1}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Confirming inputs and outputs' })).toBeDisabled()
+  })
+
+  it('blocks confirmation for unsaved outputs and active source/output mutations', async () => {
+    const user = userEvent.setup()
+    listTestingValidationSources.mockResolvedValue({ data: [textSource] })
+    deleteTestingValidationSource.mockReturnValue(new Promise(() => {}))
+    const { rerender } = renderPanel({
+      selectedOutputs: ['UNIT_TEST_CASES'], selectionRevision: 1,
+    })
+    await screen.findByText('Transfer rules')
+
+    await user.click(screen.getByRole('checkbox', { name: 'API Test Cases' }))
+    expect(screen.getByText('Save output selection before confirming.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirm Inputs & Outputs' })).toBeDisabled()
+
+    rerender(
+      <InputOutputSetupPanel
+        agentProjectId="AGP-404"
+        definition={definition}
+        statusLabel="Available - Waiting for Setup"
+        selectedOutputs={['UNIT_TEST_CASES']}
+        selectionRevision={1}
+        outputSaving
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Confirm Inputs & Outputs' })).toBeDisabled()
+
+    rerender(
+      <InputOutputSetupPanel
+        agentProjectId="AGP-404"
+        definition={definition}
+        statusLabel="Available - Waiting for Setup"
+        selectedOutputs={['UNIT_TEST_CASES']}
+        selectionRevision={1}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    expect(screen.getByRole('button', { name: 'Confirm Inputs & Outputs' })).toBeDisabled()
+  })
+
+  it('shows safe confirmation errors without readiness claims', async () => {
+    listTestingValidationSources.mockResolvedValue({ data: [textSource] })
+    renderPanel({
+      selectedOutputs: ['UNIT_TEST_CASES'],
+      selectionRevision: 1,
+      confirmationError: 'The setup could not be confirmed',
+    })
+    expect(await screen.findByRole('alert')).toHaveTextContent('The setup could not be confirmed')
+    expect(screen.queryByText(/Supported|Feasible/)).not.toBeInTheDocument()
+  })
+
+  it('renders confirmed evidence and freezes all N1 controls', async () => {
+    listTestingValidationSources.mockResolvedValue({ data: [textSource] })
+    renderPanel({
+      selectedOutputs: ['UNIT_TEST_CASES', 'API_TEST_CASES'],
+      selectionRevision: 2,
+      pipelineStatus: 'RUNNING',
+      workflowNodeStatus: 'COMPLETED',
+      n1Confirmation: {
+        confirmation_id: `A4N1C-${'a'.repeat(32)}`,
+        source_count: 1,
+        selected_output_count: 2,
+        confirmed_at: '2026-10-21T02:00:00Z',
+      },
+    })
+
+    expect(await screen.findByText('Setup Confirmed')).toBeInTheDocument()
+    expect(screen.getByText('Sources: 1')).toBeInTheDocument()
+    expect(screen.getByText('Outputs: 2')).toBeInTheDocument()
+    expect(screen.getByText(/Confirmed at:/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add Source' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Remove' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'Unit Test Cases' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Save Output Selection' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Change Setup/)).not.toBeInTheDocument()
   })
 
   it('filters artifact types by group and exposes IMAGE only for visual artifacts', async () => {

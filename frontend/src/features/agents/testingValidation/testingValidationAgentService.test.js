@@ -2,16 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '../../../services/apiClient.js'
 import {
+  confirmTestGenerationSetup,
   createTestingValidationTextSource,
   deleteTestingValidationSource,
   getTestGenerationWorkflow,
   listTestingValidationSources,
   runTestingValidationAgent,
+  updateTestGenerationOutputs,
   uploadTestingValidationSource,
 } from './testingValidationAgentService.js'
 
 vi.mock('../../../services/apiClient.js', () => ({
-  apiClient: { delete: vi.fn(), get: vi.fn(), post: vi.fn() },
+  apiClient: { delete: vi.fn(), get: vi.fn(), post: vi.fn(), put: vi.fn() },
 }))
 
 describe('testingValidationAgentService', () => {
@@ -29,6 +31,24 @@ describe('testingValidationAgentService', () => {
     getTestGenerationWorkflow('AGP-004')
     expect(apiClient.get).toHaveBeenCalledWith(
       '/agents/testing-validation/AGP-004/test-generation/workflow',
+      { authenticated: true },
+    )
+  })
+
+  it('updates desired outputs through the authenticated workflow resource', () => {
+    updateTestGenerationOutputs('AGP-004', ['API_TEST_CASES', 'TEST_TRACEABILITY'])
+    expect(apiClient.put).toHaveBeenCalledWith(
+      '/agents/testing-validation/AGP-004/test-generation/workflow/outputs',
+      { selected_outputs: ['API_TEST_CASES', 'TEST_TRACEABILITY'] },
+      { authenticated: true },
+    )
+  })
+
+  it('confirms N1 without sending a client-owned setup snapshot', () => {
+    confirmTestGenerationSetup('AGP-004')
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/testing-validation/AGP-004/test-generation/workflow/n1/confirm',
+      undefined,
       { authenticated: true },
     )
   })

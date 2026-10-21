@@ -40,9 +40,12 @@ from app.modules.agents.testing_validation.sources.storage import (
 )
 from app.modules.agents.testing_validation.workflow.schemas import (
     Agent4TestGenerationWorkflowResponse,
+    TestGenerationOutputSelectionUpdate,
 )
 from app.modules.agents.testing_validation.workflow.service import (
+    Agent4SetupConfirmedError,
     Agent4WorkflowService,
+    Agent4WorkflowGateError,
     Agent4WorkflowStageError,
     WrongAgent4WorkflowProjectError,
 )
@@ -70,17 +73,22 @@ def get_agent4_workflow_storage() -> Agent4WorkflowStorage:
     return Agent4WorkflowStorage(settings.agent4_storage_root)
 
 
+def get_agent4_source_storage() -> Agent4SourceStorage:
+    return Agent4SourceStorage(settings.agent4_storage_root)
+
+
 def get_agent4_workflow_service(
     standalone_service: Annotated[StandaloneService, Depends(get_standalone_service)],
     workflow_storage: Annotated[
         Agent4WorkflowStorage, Depends(get_agent4_workflow_storage)
     ],
+    source_storage: Annotated[
+        Agent4SourceStorage, Depends(get_agent4_source_storage)
+    ],
 ) -> Agent4WorkflowService:
-    return Agent4WorkflowService(standalone_service, workflow_storage)
-
-
-def get_agent4_source_storage() -> Agent4SourceStorage:
-    return Agent4SourceStorage(settings.agent4_storage_root)
+    return Agent4WorkflowService(
+        standalone_service, workflow_storage, source_storage
+    )
 
 
 def get_agent4_source_service(
@@ -88,8 +96,13 @@ def get_agent4_source_service(
     source_storage: Annotated[
         Agent4SourceStorage, Depends(get_agent4_source_storage)
     ],
+    workflow_storage: Annotated[
+        Agent4WorkflowStorage, Depends(get_agent4_workflow_storage)
+    ],
 ) -> Agent4SourceService:
-    return Agent4SourceService(standalone_service, source_storage)
+    return Agent4SourceService(
+        standalone_service, source_storage, workflow_storage
+    )
 
 
 def _error(status_code: int, message: str, field: str, detail: str) -> JSONResponse:
@@ -164,7 +177,165 @@ def get_test_generation_workflow(
     )
 
 
+@router.put(
+    "/{agent_project_id}/test-generation/workflow/outputs",
+    response_model=SuccessResponse[Agent4TestGenerationWorkflowResponse],
+)
+def update_test_generation_outputs(
+    agent_project_id: str,
+    request: TestGenerationOutputSelectionUpdate,
+    service: Annotated[
+        Agent4WorkflowService, Depends(get_agent4_workflow_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
+    try:
+        workflow = service.update_outputs(
+            agent_project_id, current_user, request.selected_outputs
+        )
+    except Agent4SetupConfirmedError as exc:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Input and output setup is frozen",
+            "workflow",
+            str(exc),
+        )
+    except AgentProjectNotFoundError:
+        return _error(
+            status.HTTP_404_NOT_FOUND,
+            "Agent project not found",
+            "agent_project_id",
+            "Agent project not found",
+        )
+    except ArchivedAgentProjectError:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Agent project is archived",
+            "agent_project_id",
+            "Reactivate the agent project before updating desired outputs",
+        )
+    except WrongAgent4WorkflowProjectError as exc:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Wrong agent project type",
+            "agent_project_id",
+            str(exc),
+        )
+    except Agent4WorkflowStageError as exc:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Agent project stage is unavailable",
+            "agent_stage",
+            str(exc),
+        )
+    except Agent4WorkflowStorageError:
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Workflow storage failed",
+            "workflow",
+            "The desired output selection could not be persisted",
+        )
+    except ValueError:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Invalid agent project ID",
+            "agent_project_id",
+            "Agent project ID is invalid",
+        )
+    except StandaloneServiceError:
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Project storage failed",
+            "database",
+            "The Agent 4 project could not be loaded",
+        )
+    return SuccessResponse(
+        message="Agent 4 desired outputs updated", data=workflow
+    )
+
+
+@router.post(
+    "/{agent_project_id}/test-generation/workflow/n1/confirm",
+    response_model=SuccessResponse[Agent4TestGenerationWorkflowResponse],
+)
+def confirm_test_generation_n1(
+    agent_project_id: str,
+    service: Annotated[
+        Agent4WorkflowService, Depends(get_agent4_workflow_service)
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
+    try:
+        workflow = service.confirm_n1(agent_project_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(
+            status.HTTP_404_NOT_FOUND,
+            "Agent project not found",
+            "agent_project_id",
+            "Agent project not found",
+        )
+    except ArchivedAgentProjectError:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Agent project is archived",
+            "agent_project_id",
+            "Reactivate the agent project before confirming setup",
+        )
+    except WrongAgent4WorkflowProjectError as exc:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Wrong agent project type",
+            "agent_project_id",
+            str(exc),
+        )
+    except Agent4WorkflowStageError as exc:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Agent project stage is unavailable",
+            "agent_stage",
+            str(exc),
+        )
+    except (Agent4WorkflowGateError, Agent4SetupConfirmedError) as exc:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Input and output setup cannot be confirmed",
+            "workflow",
+            str(exc),
+        )
+    except ValueError:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Invalid agent project ID",
+            "agent_project_id",
+            "Agent project ID is invalid",
+        )
+    except (Agent4WorkflowStorageError, Agent4SourceStorageError):
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Setup storage failed",
+            "workflow",
+            "The input and output setup could not be confirmed",
+        )
+    except StandaloneServiceError:
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Project storage failed",
+            "database",
+            "The Agent 4 project could not be loaded",
+        )
+    return SuccessResponse(
+        message="Agent 4 input and output setup confirmed", data=workflow
+    )
+
+
 def _source_project_error(exc: Exception, action: str) -> JSONResponse:
+    if isinstance(exc, Agent4SetupConfirmedError):
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Input and output setup is frozen",
+            "workflow",
+            str(exc),
+        )
     if isinstance(exc, AgentProjectNotFoundError):
         return _error(
             status.HTTP_404_NOT_FOUND,
@@ -219,7 +390,11 @@ def list_test_generation_sources(
             "agent_project_id",
             "Agent project ID is invalid",
         )
-    except (StandaloneServiceError, Agent4SourceStorageError):
+    except (
+        StandaloneServiceError,
+        Agent4SourceStorageError,
+        Agent4WorkflowStorageError,
+    ):
         return _error(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Source storage failed",
@@ -247,6 +422,7 @@ def create_test_generation_text_source(
         ArchivedAgentProjectError,
         WrongAgent4WorkflowProjectError,
         Agent4WorkflowStageError,
+        Agent4SetupConfirmedError,
     ) as exc:
         return _source_project_error(exc, "adding sources")
     except Agent4SourceCapacityError as exc:
@@ -263,7 +439,11 @@ def create_test_generation_text_source(
             "agent_project_id",
             "Agent project ID is invalid",
         )
-    except (StandaloneServiceError, Agent4SourceStorageError):
+    except (
+        StandaloneServiceError,
+        Agent4SourceStorageError,
+        Agent4WorkflowStorageError,
+    ):
         return _error(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Source storage failed",
@@ -303,6 +483,7 @@ async def upload_test_generation_file_source(
         ArchivedAgentProjectError,
         WrongAgent4WorkflowProjectError,
         Agent4WorkflowStageError,
+        Agent4SetupConfirmedError,
     ) as exc:
         return _source_project_error(exc, "uploading sources")
     except Agent4SourceCapacityError as exc:
@@ -326,7 +507,11 @@ async def upload_test_generation_file_source(
             "file",
             str(exc),
         )
-    except (StandaloneServiceError, Agent4SourceStorageError):
+    except (
+        StandaloneServiceError,
+        Agent4SourceStorageError,
+        Agent4WorkflowStorageError,
+    ):
         return _error(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Source storage failed",
@@ -355,6 +540,7 @@ def delete_test_generation_source(
         ArchivedAgentProjectError,
         WrongAgent4WorkflowProjectError,
         Agent4WorkflowStageError,
+        Agent4SetupConfirmedError,
     ) as exc:
         return _source_project_error(exc, "removing sources")
     except Agent4SourceNotFoundError:
@@ -371,7 +557,11 @@ def delete_test_generation_source(
             "agent_project_id",
             "Agent project ID is invalid",
         )
-    except (StandaloneServiceError, Agent4SourceStorageError):
+    except (
+        StandaloneServiceError,
+        Agent4SourceStorageError,
+        Agent4WorkflowStorageError,
+    ):
         return _error(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Source storage failed",

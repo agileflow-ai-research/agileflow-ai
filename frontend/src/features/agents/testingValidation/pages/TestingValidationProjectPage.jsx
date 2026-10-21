@@ -35,9 +35,18 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
   const [selectedNodeId, setSelectedNodeId] = useState(
     enteringExistingProject ? null : TESTING_VALIDATION_NODE_IDS.INPUT_OUTPUT_SETUP,
   )
-  const { loadError, loadStatus, retry, workflowState } = useTestingValidationWorkflow(
-    project.agent_project_id,
-  )
+  const {
+    confirmationError,
+    confirmationSubmitting,
+    confirmN1,
+    loadError,
+    loadStatus,
+    outputSaveError,
+    outputSaving,
+    retry,
+    saveOutputs,
+    workflowState,
+  } = useTestingValidationWorkflow(project.agent_project_id)
   const presentation = useMemo(
     () => workflowState
       ? createTestingValidationWorkflowPresentation(workflowState)
@@ -59,6 +68,12 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
   const handleCloseModal = useCallback(() => {
     setSelectedNodeId(null)
   }, [])
+
+  const handleConfirmN1 = useCallback(async () => {
+    const workflow = await confirmN1()
+    if (workflow) setSelectedNodeId(TESTING_VALIDATION_NODE_IDS.INPUT_PREPARATION)
+    return workflow
+  }, [confirmN1])
 
   useEffect(() => {
     if (!enteringExistingProject && loadStatus === 'success') {
@@ -115,7 +130,20 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
           {SelectedPanel ? (
             <SelectedPanel
               agentProjectId={project.agent_project_id}
+              confirmationError={confirmationError}
+              confirmationSubmitting={confirmationSubmitting}
               definition={selectedDefinition}
+              n1Confirmation={workflowState.n1_confirmation}
+              onConfirmN1={handleConfirmN1}
+              onSaveOutputs={saveOutputs}
+              outputSaveError={outputSaveError}
+              outputSaving={outputSaving}
+              selectedOutputs={workflowState.selected_outputs}
+              selectionRevision={workflowState.selection_revision}
+              pipelineStatus={workflowState.pipeline_status}
+              workflowNodeStatus={workflowState.nodes.find(
+                (node) => node.node_id === selectedDefinition.id,
+              )?.status}
               statusLabel={selectedPresentation.statusLabel ?? getWorkflowStatePresentation(
                 selectedPresentation.status,
               ).label}

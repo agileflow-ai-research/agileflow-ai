@@ -7,6 +7,22 @@ export function getTestGenerationWorkflow(agentProjectId) {
   )
 }
 
+export function updateTestGenerationOutputs(agentProjectId, selectedOutputs) {
+  return apiClient.put(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/outputs`,
+    { selected_outputs: selectedOutputs },
+    { authenticated: true },
+  )
+}
+
+export function confirmTestGenerationSetup(agentProjectId) {
+  return apiClient.post(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n1/confirm`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
 function sourcesPath(agentProjectId) {
   return `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/sources`
 }
