@@ -219,3 +219,10 @@ class StructuredRequirementSet(StrictDiscoveryContract):
     non_functional_requirements: tuple[NonFunctionalRequirement, ...] = ()
     excluded_candidates: tuple[ExcludedCandidateReference, ...] = ()
     structured_set_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class DiscoveryExecutionArtifacts(StrictDiscoveryContract):
+    execution_id: str = Field(pattern=r"^N3-[0-9A-F]{16}-\d{3}$")
+    candidates: RequirementCandidateSet
+    classifications: RequirementClassificationSet
+    structured: StructuredRequirementSet

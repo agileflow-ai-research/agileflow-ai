@@ -9,21 +9,33 @@ import {
 
 const ACTIVE_N2_STATUSES = new Set(['QUEUED', 'RUNNING'])
 const TERMINAL_N2_STATUSES = new Set(['COMPLETE', 'FAILED', 'BLOCKED'])
-const N2_POLL_INTERVAL_MS = 2000
+const WORKFLOW_POLL_INTERVAL_MS = 2000
 
 function errorMessage(error, fallback) {
   return error?.errors?.[0]?.message || fallback
 }
 
 function isStaleActiveResponse(current, next) {
-  const currentExecution = current?.n2_execution
-  const nextExecution = next?.n2_execution
-  return Boolean(
-    currentExecution?.execution_id
-    && currentExecution.execution_id === nextExecution?.execution_id
-    && TERMINAL_N2_STATUSES.has(currentExecution.status)
-    && ACTIVE_N2_STATUSES.has(nextExecution.status),
-  )
+  return ['n2_execution', 'n3_execution'].some((field) => {
+    const currentExecution = current?.[field]
+    const nextExecution = next?.[field]
+    return Boolean(
+      currentExecution?.execution_id
+      && currentExecution.execution_id === nextExecution?.execution_id
+      && TERMINAL_N2_STATUSES.has(currentExecution.status)
+      && ACTIVE_N2_STATUSES.has(nextExecution.status),
+    )
+  })
+}
+
+export function getN3TerminalExecutionIdentity(workflowState) {
+  const execution = workflowState?.n3_execution
+  if (!execution || !TERMINAL_N2_STATUSES.has(execution.status)) return null
+  return [
+    execution.execution_id,
+    execution.attempt_number ?? execution.attempt_id ?? '',
+    execution.status,
+  ].join(':')
 }
 
 export function getTerminalExecutionIdentity(workflowState) {
@@ -96,15 +108,18 @@ export default function useRequirementsWorkflow(agentProjectId, reloadSequence =
 
   const n2ExecutionId = workflowState?.n2_execution?.execution_id
   const n2Status = workflowState?.n2_execution?.status
+  const n3ExecutionId = workflowState?.n3_execution?.execution_id
+  const n3Status = workflowState?.n3_execution?.status
+  const workflowIsActive = ACTIVE_N2_STATUSES.has(n2Status) || ACTIVE_N2_STATUSES.has(n3Status)
 
   useEffect(() => {
-    if (!ACTIVE_N2_STATUSES.has(n2Status)) return undefined
+    if (!workflowIsActive) return undefined
     const generation = projectGeneration.current
     let active = true
     let timer = null
 
     const scheduleNextPoll = () => {
-      if (active) timer = window.setTimeout(pollWorkflow, N2_POLL_INTERVAL_MS)
+      if (active) timer = window.setTimeout(pollWorkflow, WORKFLOW_POLL_INTERVAL_MS)
     }
 
     const pollWorkflow = async () => {
@@ -116,11 +131,14 @@ export default function useRequirementsWorkflow(agentProjectId, reloadSequence =
           return
         }
         setWorkflowError('')
-        const nextStatus = response.data.n2_execution?.status
-        if (ACTIVE_N2_STATUSES.has(nextStatus)) scheduleNextPoll()
+        const nextN2Status = response.data.n2_execution?.status
+        const nextN3Status = response.data.n3_execution?.status
+        if (ACTIVE_N2_STATUSES.has(nextN2Status) || ACTIVE_N2_STATUSES.has(nextN3Status)) {
+          scheduleNextPoll()
+        }
       } catch (requestError) {
         if (!active || projectGeneration.current !== generation || requestError?.status === 401) return
-        setWorkflowError(errorMessage(requestError, 'N2 status could not be refreshed.'))
+        setWorkflowError(errorMessage(requestError, 'Workflow status could not be refreshed.'))
         scheduleNextPoll()
       }
     }
@@ -130,7 +148,7 @@ export default function useRequirementsWorkflow(agentProjectId, reloadSequence =
       active = false
       if (timer !== null) window.clearTimeout(timer)
     }
-  }, [acceptWorkflowState, agentProjectId, n2ExecutionId, n2Status])
+  }, [acceptWorkflowState, agentProjectId, n2ExecutionId, n2Status, n3ExecutionId, n3Status, workflowIsActive])
 
   const changeSelectedOutputs = useCallback(async (selectedOutputs) => {
     if (outputSaving || selectedOutputs.length === 0) return
@@ -193,6 +211,10 @@ export default function useRequirementsWorkflow(agentProjectId, reloadSequence =
     () => getTerminalExecutionIdentity(workflowState),
     [workflowState],
   )
+  const n3TerminalExecutionIdentity = useMemo(
+    () => getN3TerminalExecutionIdentity(workflowState),
+    [workflowState],
+  )
   const currentProjectKey = `${agentProjectId}:${reloadSequence}`
   const projectIsLoaded = loadedProjectKey === currentProjectKey
 
@@ -201,6 +223,7 @@ export default function useRequirementsWorkflow(agentProjectId, reloadSequence =
     continueN1,
     continueSubmitting,
     n2Retrying,
+    n3TerminalExecutionIdentity: projectIsLoaded ? n3TerminalExecutionIdentity : null,
     outputSaving,
     refreshWorkflow,
     retryN2,

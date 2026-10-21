@@ -34,11 +34,11 @@ export function createRequirementsWorkflowNodes(presentation) {
     data: {
       title: definition.title,
       summary: presentation[definition.id]?.summary ?? definition.summary,
-      status: definition.active
-        ? presentation[definition.id]?.status ?? WORKFLOW_NODE_STATES.NOT_STARTED
-        : WORKFLOW_NODE_STATES.LOCKED,
+      status: presentation[definition.id]?.status
+        ?? (definition.active ? WORKFLOW_NODE_STATES.NOT_STARTED : WORKFLOW_NODE_STATES.LOCKED),
       statusLabel: presentation[definition.id]?.statusLabel,
-      locked: !definition.active,
+      locked: (presentation[definition.id]?.status
+        ?? (definition.active ? WORKFLOW_NODE_STATES.NOT_STARTED : WORKFLOW_NODE_STATES.LOCKED)) === WORKFLOW_NODE_STATES.LOCKED,
     },
   }))
 }

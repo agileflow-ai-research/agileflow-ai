@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react'
 import useEvidenceDetails from './useEvidenceDetails.js'
 import useRequirementSources from './useRequirementSources.js'
 import useRequirementsWorkflow from './useRequirementsWorkflow.js'
+import useDiscoveryWorkflow from './useDiscoveryWorkflow.js'
 
 export default function useRequirementsWorkspace(agentProjectId) {
   const [reloadSequence, setReloadSequence] = useState(0)
@@ -18,6 +19,12 @@ export default function useRequirementsWorkspace(agentProjectId) {
     sourcesReady: sources.sourceLoadStatus === 'success',
     terminalExecutionIdentity: workflow.terminalExecutionIdentity,
     workflowReady: workflow.workflowLoadStatus === 'success',
+    workflowState: workflow.workflowState,
+  })
+  const discovery = useDiscoveryWorkflow({
+    agentProjectId,
+    n3TerminalExecutionIdentity: workflow.n3TerminalExecutionIdentity,
+    refreshWorkflow: workflow.refreshWorkflow,
     workflowState: workflow.workflowState,
   })
 
@@ -37,11 +44,15 @@ export default function useRequirementsWorkspace(agentProjectId) {
     continueN1: workflow.continueN1,
     continueSubmitting: workflow.continueSubmitting,
     detailsLoading: evidence.detailsLoading,
+    discoveryArtifacts: discovery.discoveryArtifacts,
+    discoveryError: discovery.discoveryError,
+    discoveryLoadStatus: discovery.discoveryLoadStatus,
     error,
     loadPreparedEvidence: evidence.loadPreparedEvidence,
     loadProcessingResult: evidence.loadProcessingResult,
     loadStatus,
     n2Retrying: workflow.n2Retrying,
+    n3Retrying: discovery.n3Retrying,
     outputSaving: workflow.outputSaving,
     preparationStates: evidence.preparationStates,
     prepareSource: evidence.prepareSource,
@@ -51,6 +62,8 @@ export default function useRequirementsWorkspace(agentProjectId) {
     removeSource: sources.removeSource,
     removingId: sources.removingId,
     retryN2: workflow.retryN2,
+    retryN3: discovery.retryN3,
+    refreshDiscovery: discovery.refreshDiscovery,
     sources: sources.sources,
     uploadingType: sources.uploadingType,
     workflowError: workflow.workflowError,

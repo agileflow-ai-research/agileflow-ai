@@ -71,6 +71,34 @@ def get_workflow_progression() -> N2CompletionProgression:
     return build_workflow_progression(settings.agent1_source_root)
 
 
+def get_requirement_n3_orchestration_service():
+    from app.modules.agents.requirements.discovery.dependencies import (
+        build_n3_orchestration_service,
+    )
+
+    return build_n3_orchestration_service(settings.agent1_source_root)
+
+
+def get_discovery_result_service(
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+    workflow_storage: Annotated[
+        RequirementWorkflowStorage, Depends(get_requirement_workflow_storage)
+    ],
+):
+    from app.modules.agents.requirements.discovery.dependencies import (
+        build_discovery_storage,
+    )
+    from app.modules.agents.requirements.discovery.service import DiscoveryResultService
+
+    return DiscoveryResultService(
+        standalone_service,
+        workflow_storage,
+        build_discovery_storage(settings.agent1_source_root),
+    )
+
+
 def get_requirement_workflow_service(
     standalone_service: Annotated[
         StandaloneService, Depends(get_standalone_service)
