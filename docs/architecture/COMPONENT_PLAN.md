@@ -138,12 +138,13 @@ These phases preserve four research agents. Project ownership remains the O2 aut
 | Primary inputs | Structured, versioned artifacts and workflow records from all components |
 | Responsibilities | Act as an internal architectural/service layer over the existing MongoDB collections; coordinate typed, project-scoped, version-aware and approval-aware retrieval across collection-specific repositories |
 | Outputs | Stored users, projects, inputs, artifacts, logs, results, findings, approvals, links, and events |
-| Approval gate | Stores decisions/artifact versions; does not decide approvals |
+| Approval gate | Stores decisions/artifact versions; doesn't decide approvals |
 | Collections used | All 17 canonical database collection constants are defined in code: 15 integrated Shared Knowledge Base collections plus isolated standalone `agent_projects` and `agent_runs` |
 | IDs consumed/produced | Stores all canonical IDs; ID generation responsibility is shared utility/component-specific and not database-client logic |
 | Dependencies | Environment settings, PyMongo, approved schemas/repositories, security/secret handling |
 | Must not do | Become a second database, generic dynamic MongoDB repository, vector store, RAG/LLM memory, workflow authority, approval authority, final traceability-report generator, or public `/knowledge-base` API |
-| Current status | Foundation implemented, including the SKB-5 internal read-only facade for Agent 1: typed/project-scoped structured reads, exact effective-Approval-authorized H1 snapshots, one-hop traceability delegation, and approved-package link intersection. Requirements and Reports/Traceability retain repository ownership. H2-H5 artifact adapters and public SKB APIs are not implemented |
+| Current status | Foundation implemented, including the SKB-5 internal read-only facade for Agent 1: typed/project-scoped structured reads, exact effective-Approval-authorized H1 snapshots, one-hop traceability delegation, and approved-package link intersection. Requirements and Reports/Traceability retain repository ownership. 
+H2-H5 artifact adapters and public SKB APIs are not implemented |
 
 Collection-specific repositories remain owned by `requirements`, `design`, `testing`, and `implementation`. The implemented `backend/app/modules/shared_knowledge/` facade coordinates the current Requirements, Approval, and Reports/Traceability read abstractions rather than selecting arbitrary collections dynamically. Human-facing workspaces use specialist APIs; generic public `/knowledge-base` or `/artifacts` routes are not part of the SKB foundation. Downstream agents should request an approved upstream snapshot, not the latest draft.
 
@@ -167,7 +168,7 @@ One user may own multiple independent projects. All project-scoped components co
 | Primary inputs | Approved artifacts, workflow events, approvals, logs, test results, bugs, security findings, traceability links |
 | Responsibilities | Own authoritative immutable pairwise traceability persistence/query behavior, build the final traceability matrix, final evidence/report summaries, artifact inventory, and later approved exports |
 | Outputs | Requirement-to-report matrix, final report package, export artifacts where later defined |
-| Approval gate | Final package follows H5 approval; reports do not replace H5 |
+| Approval gate | Final package follows H5 approval; reports don't replace H5 |
 | Collections used | Reads all relevant collections; appends and queries immutable `traceability_links` as approved. No canonical `reports` MongoDB collection exists |
 | IDs consumed | All canonical artifact IDs and `EVT-###` |
 | IDs produced | `TRACE-###`; no report ID family is formally defined |
