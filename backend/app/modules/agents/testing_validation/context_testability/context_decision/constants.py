@@ -1,0 +1,22 @@
+from enum import StrEnum
+
+
+CONTEXT_DECISION_SCHEMA_VERSION = "1"
+CONTEXT_DECISION_ENGINE_VERSION = "CD1"
+CONTEXT_DECISION_POLICY_VERSION = "CP1"
+
+
+class ContextDecisionStatus(StrEnum):
+    PROCEED = "PROCEED"
+    PROCEED_WITH_WARNINGS = "PROCEED_WITH_WARNINGS"
+    BLOCKED = "BLOCKED"
+
+
+class ConsolidatedFindingSeverity(StrEnum):
+    BLOCKING = "BLOCKING"
+    WARNING = "WARNING"
+
+
+class ConsolidatedFindingOrigin(StrEnum):
+    TESTABILITY = "TESTABILITY"
+    FEASIBILITY = "FEASIBILITY"
