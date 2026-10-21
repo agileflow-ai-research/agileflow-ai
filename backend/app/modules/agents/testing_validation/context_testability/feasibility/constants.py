@@ -1,3 +1,10 @@
+"""
+Constants for the N4.3 Feasibility (FB1) stage.
+
+Technology catalog (TC1) and policy (FP1) versions are part of the input
+fingerprint, so a catalog change invalidates cached feasibility results.
+"""
+
 from enum import StrEnum
 
 
