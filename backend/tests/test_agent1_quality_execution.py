@@ -13,6 +13,9 @@ from app.modules.agents.requirements.quality.n4_identity import n4_configuration
 from app.modules.agents.requirements.quality.n4_service import RequirementN4OrchestrationService
 from app.modules.agents.requirements.quality.semantic_duplicates.service import SemanticDuplicateService
 from app.modules.agents.requirements.quality.storage import QualityStorage
+from app.modules.agents.requirements.quality.api import QualityResultService
+from app.modules.standalone.schemas import AgentType
+from types import SimpleNamespace
 from app.modules.agents.requirements.workflow.contracts.n4 import RequirementN4Status
 from test_agent1_conflicts import FakeNliProvider
 from test_agent1_n3_orchestration import ImmediateExecutor, InputLoader, context, current
@@ -87,3 +90,16 @@ def test_failed_execution_requires_explicit_retry_and_preserves_history(tmp_path
     assert len(record.n4_executions) == 2
     assert record.n4_executions[0].status is RequirementN4Status.FAILED
     assert record.n3_executions[-1].status.value == "COMPLETE"
+
+
+def test_persisted_complete_quality_execution_hydrates_without_rerun(tmp_path):
+    service, states, artifacts, value = build(tmp_path)
+    execution = service.start("AGP-020", "USR-001")
+    standalone = SimpleNamespace(require_active_project=lambda owner, project: SimpleNamespace(
+        agent_project_id=project, agent_type=AgentType.REQUIREMENTS,
+    ))
+    reader = QualityResultService(standalone, states, artifacts)
+    result = reader.get("AGP-020", execution.execution_id, SimpleNamespace(user_id="USR-001"))
+    assert result.execution.execution_id == execution.execution_id
+    assert result.quality_input.input_identity == value.input_identity
+    assert result.consolidation.quality_input_identity == value.input_identity
