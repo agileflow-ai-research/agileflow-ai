@@ -78,6 +78,16 @@ class Agent4ExtractionGateError(ValueError):
     pass
 
 
+class Agent4ExtractionNotFoundError(LookupError):
+    pass
+
+
+class Agent4ExtractionIntegrityError(ValueError):
+    def __init__(self, code: Agent4ExtractionErrorCode, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class Agent4UnsupportedExtractionSourceError(ValueError):
     pass
 
@@ -111,6 +121,57 @@ class Agent4DocumentExtractionService:
         force: bool = False,
     ) -> Agent4DocumentExtractionResult:
         with AGENT4_WORKFLOW_STATE_LOCK, EXTRACTION_LOCK:
+            stored = self.require_confirmed_source(
+                agent_project_id, source_id, current_user
+            )
+            self._require_document(stored)
+            integrity_error = self._verify_integrity(stored)
+            if integrity_error is not None:
+                result = self._failure(stored, integrity_error[0], integrity_error[1])
+                self._extractions.save(result, owner_user_id=current_user.user_id)
+                return result
+            if not force:
+                cached = self._extractions.load(
+                    agent_project_id=stored.metadata.agent_project_id,
+                    owner_user_id=current_user.user_id,
+                    source_id=source_id,
+                )
+                if self._cache_is_current(cached, stored):
+                    return cached
+            result = self._run(stored)
+            self._extractions.save(result, owner_user_id=current_user.user_id)
+            return result
+
+    def get_existing(
+        self,
+        agent_project_id: str,
+        source_id: str,
+        current_user: UserPublicResponse,
+    ) -> Agent4DocumentExtractionResult:
+        with AGENT4_WORKFLOW_STATE_LOCK, EXTRACTION_LOCK:
+            stored = self.require_confirmed_source(
+                agent_project_id, source_id, current_user
+            )
+            self._require_document(stored)
+            integrity_error = self._verify_integrity(stored)
+            if integrity_error is not None:
+                raise Agent4ExtractionIntegrityError(*integrity_error)
+            cached = self._extractions.load(
+                agent_project_id=stored.metadata.agent_project_id,
+                owner_user_id=current_user.user_id,
+                source_id=source_id,
+            )
+            if not self._cache_is_current(cached, stored):
+                raise Agent4ExtractionNotFoundError(source_id)
+            return cached
+
+    def require_confirmed_source(
+        self,
+        agent_project_id: str,
+        source_id: str,
+        current_user: UserPublicResponse,
+    ) -> StoredAgent4Source:
+        with AGENT4_WORKFLOW_STATE_LOCK:
             project = self._require_project(agent_project_id, current_user)
             workflow = self._workflow.load(
                 agent_project_id=project.agent_project_id,
@@ -118,7 +179,7 @@ class Agent4DocumentExtractionService:
             )
             if workflow is None or workflow.n1_confirmation is None:
                 raise Agent4ExtractionGateError(
-                    "Input and output setup must be confirmed before extraction"
+                    "Input and output setup must be confirmed before preparation"
                 )
             n1 = next(
                 node
@@ -127,7 +188,7 @@ class Agent4DocumentExtractionService:
             )
             if n1.status is not Agent4WorkflowNodeStatus.COMPLETED:
                 raise Agent4ExtractionGateError(
-                    "Input and output setup must be completed before extraction"
+                    "Input and output setup must be completed before preparation"
                 )
             if source_id not in workflow.n1_confirmation.source_ids:
                 raise Agent4SourceNotFoundError(source_id)
@@ -146,28 +207,18 @@ class Agent4DocumentExtractionService:
                 raise Agent4ExtractionGateError(
                     "The collected source metadata no longer matches the confirmed setup"
                 )
-            stored = self._sources.locate(
+            return self._sources.locate(
                 agent_project_id=project.agent_project_id,
                 owner_user_id=current_user.user_id,
                 source_id=source_id,
             )
-            self._require_document(stored)
-            integrity_error = self._verify_integrity(stored)
-            if integrity_error is not None:
-                result = self._failure(stored, integrity_error[0], integrity_error[1])
-                self._extractions.save(result, owner_user_id=current_user.user_id)
-                return result
-            if not force:
-                cached = self._extractions.load(
-                    agent_project_id=project.agent_project_id,
-                    owner_user_id=current_user.user_id,
-                    source_id=source_id,
-                )
-                if self._cache_is_current(cached, stored):
-                    return cached
-            result = self._run(stored)
-            self._extractions.save(result, owner_user_id=current_user.user_id)
-            return result
+
+    def require_source_integrity(self, stored: StoredAgent4Source) -> None:
+        if stored.metadata.source_type is TestGenerationInputSourceType.TEXT:
+            return
+        integrity_error = self._verify_integrity(stored)
+        if integrity_error is not None:
+            raise Agent4ExtractionIntegrityError(*integrity_error)
 
     def _require_project(self, agent_project_id: str, current_user: UserPublicResponse):
         try:
