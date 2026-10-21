@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
@@ -53,6 +54,13 @@ class Agent4SourceNotFoundError(LookupError):
 
 class Agent4SourceStorageError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class StoredAgent4Source:
+    metadata: TestGenerationSourceRecord
+    metadata_path: Path
+    file_path: Path | None
 
 
 def utc_now() -> datetime:
@@ -232,6 +240,23 @@ class Agent4SourceStorage:
             raise Agent4SourceStorageError(
                 "Agent 4 sources could not be listed"
             ) from exc
+
+    def locate(
+        self, *, agent_project_id: str, owner_user_id: str, source_id: str
+    ) -> StoredAgent4Source:
+        if not SOURCE_ID_PATTERN.fullmatch(source_id):
+            raise Agent4SourceNotFoundError(source_id)
+        metadata_path = self._sidecar_path(agent_project_id, source_id)
+        record = self._load_sidecar(
+            metadata_path, agent_project_id, owner_user_id, source_id
+        )
+        file_path = None
+        if record.extension is not None:
+            file_path = self._contained(
+                self._inputs_directory(agent_project_id),
+                f"{source_id}{record.extension}",
+            )
+        return StoredAgent4Source(record, metadata_path, file_path)
 
     def delete(
         self, *, agent_project_id: str, owner_user_id: str, source_id: str
