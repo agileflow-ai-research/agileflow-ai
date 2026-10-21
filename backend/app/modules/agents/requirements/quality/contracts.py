@@ -1,6 +1,6 @@
 """Immutable contracts at the validated N3-to-N4 boundary."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.agents.requirements.contracts.schemas import RequirementSourceType
 from app.modules.agents.requirements.discovery.contracts import StructuredRequirementType
@@ -44,3 +44,45 @@ class ValidatedQualityInput(StrictQualityContract):
     classifier_configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     requirements: tuple[QualityRequirement, ...] = ()
     input_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ExactDuplicateMember(StrictQualityContract):
+    """A complete reference to one unchanged requirement in a duplicate group."""
+
+    requirement: QualityRequirement
+
+
+class ExactDuplicateGroup(StrictQualityContract):
+    duplicate_group_id: str = Field(pattern=r"^QDUP-[0-9A-F]{16}$")
+    comparison_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    members: tuple[ExactDuplicateMember, ...] = Field(min_length=2)
+    count: int = Field(ge=2)
+
+    @model_validator(mode="after")
+    def validate_count(self) -> "ExactDuplicateGroup":
+        if self.count != len(self.members):
+            raise ValueError("Duplicate group count must match its members")
+        ids = [item.requirement.requirement_id for item in self.members]
+        if len(ids) != len(set(ids)):
+            raise ValueError("A requirement cannot occur twice in one duplicate group")
+        return self
+
+
+class ExactDuplicateResult(StrictQualityContract):
+    contract_version: str
+    agent_project_id: str = Field(pattern=r"^AGP-\d{3,}$")
+    quality_input_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    detector_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    duplicate_groups: tuple[ExactDuplicateGroup, ...] = ()
+    duplicate_group_count: int = Field(ge=0)
+    affected_requirement_count: int = Field(ge=0)
+    result_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> "ExactDuplicateResult":
+        if self.duplicate_group_count != len(self.duplicate_groups):
+            raise ValueError("Duplicate group count is inconsistent")
+        affected = sum(group.count for group in self.duplicate_groups)
+        if self.affected_requirement_count != affected:
+            raise ValueError("Affected requirement count is inconsistent")
+        return self
