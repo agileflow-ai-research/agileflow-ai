@@ -28,13 +28,14 @@ class RequirementN3OrchestrationService:
 
     def __init__(self, workflow_storage, input_loader, detector, classifier,
                  structuring, discovery_storage, *, executor: Executor = AGENT1_N3_EXECUTOR,
-                 clock: Callable[[], datetime] = utc_now):
+                 clock: Callable[[], datetime] = utc_now, progression=None):
         self._states = workflow_storage; self._inputs = input_loader
         self._detector = detector; self._classifier = classifier
         self._executor = executor; self._clock = clock
         self._runner = RequirementN3Runner(
             workflow_storage, input_loader, detector, classifier, structuring,
             discovery_storage, clock=clock,
+            progression=progression,
         )
 
     def start(self, agent_project_id: str, owner_user_id: str):

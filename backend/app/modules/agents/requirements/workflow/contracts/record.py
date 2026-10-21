@@ -11,6 +11,7 @@ from app.modules.agents.requirements.workflow.contracts.n1 import (
 )
 from app.modules.agents.requirements.workflow.contracts.n2 import RequirementN2Execution
 from app.modules.agents.requirements.workflow.contracts.n3 import RequirementN3Execution
+from app.modules.agents.requirements.workflow.contracts.n4 import RequirementN4Execution
 
 
 class RequirementWorkflowRecord(StrictWorkflowContract):
@@ -27,5 +28,11 @@ class RequirementWorkflowRecord(StrictWorkflowContract):
     current_n2_execution_id: str | None = None
     n3_executions: list[RequirementN3Execution] = Field(default_factory=list)
     current_n3_execution_id: str | None = None
+    n4_executions: list[RequirementN4Execution] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
+    current_n4_execution_id: str | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     created_at: datetime
     updated_at: datetime

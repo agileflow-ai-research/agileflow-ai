@@ -7,6 +7,11 @@ from app.modules.agents.requirements.discovery.dependencies import (
     build_discovery_storage,
 )
 from app.modules.agents.requirements.quality.input import QualityInputLoader
+from app.modules.agents.requirements.quality.exact_duplicates import ExactDuplicateDetector
+from app.modules.agents.requirements.quality.n4_identity import n4_configuration_fingerprint
+from app.modules.agents.requirements.quality.n4_service import RequirementN4OrchestrationService
+from app.modules.agents.requirements.quality.storage import QualityStorage
+from app.modules.agents.requirements.infrastructure.artifact_store import JsonArtifactStore
 from app.modules.agents.requirements.quality.findings.service import QualityFindingConsolidationService
 from app.modules.agents.requirements.quality.clarity.service import RequirementClarityService
 from app.modules.agents.requirements.quality.conflicts.service import (
@@ -76,3 +81,20 @@ def build_requirement_clarity_service() -> RequirementClarityService:
 
 def build_quality_finding_consolidation_service() -> QualityFindingConsolidationService:
     return QualityFindingConsolidationService()
+
+
+def build_n4_orchestration_service(root: Path) -> RequirementN4OrchestrationService:
+    states = RequirementWorkflowStorage(root)
+    exact = ExactDuplicateDetector()
+    semantic = build_semantic_duplicate_service()
+    conflicts = build_requirement_conflict_service()
+    clarity = build_requirement_clarity_service()
+    findings = build_quality_finding_consolidation_service()
+    return RequirementN4OrchestrationService(
+        states, build_quality_input_loader(root), exact, semantic, conflicts,
+        clarity, findings, QualityStorage(JsonArtifactStore(root)),
+        configuration_fingerprint=n4_configuration_fingerprint(
+            exact=exact, semantic=semantic, conflicts=conflicts,
+            clarity=clarity, findings=findings,
+        ),
+    )
