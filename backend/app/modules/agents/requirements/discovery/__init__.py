@@ -3,10 +3,18 @@
 from app.modules.agents.requirements.discovery.contracts import (
     CandidateDiscoverySignal,
     DiscoveryInputReference,
+    ExcludedCandidateReference,
+    FunctionalRequirement,
+    NonFunctionalRequirement,
     RequirementCandidate,
     RequirementCandidateSet,
+    StructuredRequirementSet,
     ValidatedDiscoveryChunk,
     ValidatedDiscoveryInput,
+)
+from app.modules.agents.requirements.discovery.structuring import (
+    RequirementStructuringError,
+    RequirementStructuringService,
 )
 from app.modules.agents.requirements.discovery.candidate_detection import (
     RequirementCandidateDetector,
@@ -22,10 +30,16 @@ __all__ = [
     "DiscoveryInputErrorCode",
     "DiscoveryInputLoader",
     "DiscoveryInputReference",
+    "ExcludedCandidateReference",
+    "FunctionalRequirement",
+    "NonFunctionalRequirement",
     "CandidateDiscoverySignal",
     "RequirementCandidate",
     "RequirementCandidateDetector",
     "RequirementCandidateSet",
+    "RequirementStructuringError",
+    "RequirementStructuringService",
+    "StructuredRequirementSet",
     "ValidatedDiscoveryChunk",
     "ValidatedDiscoveryInput",
 ]

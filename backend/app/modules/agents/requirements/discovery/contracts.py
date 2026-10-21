@@ -1,6 +1,7 @@
 """Strict contracts exposed by the validated N3 discovery boundary."""
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -151,3 +152,70 @@ class RequirementClassificationSet(StrictDiscoveryContract):
     candidate_set: RequirementCandidateSet
     model: ClassifierModelIdentity
     classifications: tuple[RequirementClassification, ...] = ()
+
+
+class StructuredRequirementType(StrEnum):
+    FUNCTIONAL = "FUNCTIONAL"
+    NON_FUNCTIONAL = "NON_FUNCTIONAL"
+
+
+class _StructuredRequirement(StrictDiscoveryContract):
+    requirement_id: str
+    requirement_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    agent_project_id: str = Field(pattern=r"^AGP-\d{3,}$")
+    candidate_id: str = Field(pattern=r"^RC-[0-9A-F]{16}$")
+    candidate_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    statement: str = Field(min_length=1)
+    chunk_id: str = Field(pattern=r"^CHK-[0-9A-F]{16}$")
+    source_id: str = Field(pattern=r"^(?:DOC|AUD|VID)-\d{3,}$")
+    source_type: RequirementSourceType
+    start_offset: int = Field(ge=0)
+    end_offset: int = Field(gt=0)
+    classification_confidence: float = Field(ge=0.0, le=1.0)
+    classifier_configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    provenance: tuple[NormalizedProvenanceSpan, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_statement_span(self) -> "_StructuredRequirement":
+        if self.end_offset <= self.start_offset:
+            raise ValueError("Requirement end must follow its start")
+        if self.end_offset - self.start_offset != len(self.statement):
+            raise ValueError("Requirement span length must match its statement")
+        return self
+
+
+class FunctionalRequirement(_StructuredRequirement):
+    requirement_id: str = Field(pattern=r"^FR-[0-9A-F]{16}$")
+    requirement_type: Literal[StructuredRequirementType.FUNCTIONAL] = (
+        StructuredRequirementType.FUNCTIONAL
+    )
+
+
+class NonFunctionalRequirement(_StructuredRequirement):
+    requirement_id: str = Field(pattern=r"^NFR-[0-9A-F]{16}$")
+    requirement_type: Literal[StructuredRequirementType.NON_FUNCTIONAL] = (
+        StructuredRequirementType.NON_FUNCTIONAL
+    )
+
+
+class ExcludedCandidateReference(StrictDiscoveryContract):
+    candidate_id: str = Field(pattern=r"^RC-[0-9A-F]{16}$")
+    candidate_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    final_label: Literal[RequirementClassificationLabel.OTHER] = (
+        RequirementClassificationLabel.OTHER
+    )
+    confidence: float = Field(ge=0.0, le=1.0)
+    raw_winner: RequirementClassificationLabel
+    policy_reason: ClassificationPolicyReason | None = None
+
+
+class StructuredRequirementSet(StrictDiscoveryContract):
+    contract_version: str
+    agent_project_id: str = Field(pattern=r"^AGP-\d{3,}$")
+    discovery_input_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    chunk_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    classifier_configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    functional_requirements: tuple[FunctionalRequirement, ...] = ()
+    non_functional_requirements: tuple[NonFunctionalRequirement, ...] = ()
+    excluded_candidates: tuple[ExcludedCandidateReference, ...] = ()
+    structured_set_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
