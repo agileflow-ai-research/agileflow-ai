@@ -34,6 +34,17 @@ class Settings(BaseSettings):
     agent1_chunk_target_chars: int = 900
     agent1_chunk_max_chars: int = 1200
     agent1_chunk_overlap_sentences: int = 1
+    agent1_classifier_model_id: str = (
+        "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
+    )
+    agent1_classifier_model_revision: str = (
+        "6f5cf0a2b59cabb106aca4c287eed12e357e90eb"
+    )
+    agent1_classifier_device: str = "cpu"
+    agent1_classifier_batch_size: int = 4
+    agent1_classifier_local_files_only: bool = False
+    agent1_classifier_minimum_confidence: float = 0.5
+    agent1_classifier_minimum_margin: float = 0.1
     agent3_upload_root: Path = (
         BACKEND_DIR / "storage" / "standalone" / "implementation"
     )

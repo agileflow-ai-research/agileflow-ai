@@ -37,7 +37,7 @@ describe('Agent 1 workflow graph', () => {
     expect(REQUIREMENTS_NODE_REGISTRY.some((node) => /Document Processing|Audio Transcription|Video Processing|Evidence Preparation/.test(node.title))).toBe(false)
   })
 
-  it('uses the Agent 1-owned snake layout and locks N3 through N7', () => {
+  it('uses the Agent 1-owned snake layout and locks N4 through N7', () => {
     const presentation = {
       [REQUIREMENTS_NODE_IDS.INPUT_COLLECTION]: { status: WORKFLOW_NODE_STATES.COMPLETE },
       [REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING]: { status: WORKFLOW_NODE_STATES.RUNNING },
@@ -52,7 +52,8 @@ describe('Agent 1 workflow graph', () => {
       { x: 540, y: 250 },
       { x: 270, y: 250 },
     ])
-    expect(nodes.slice(2).every(
+    expect(nodes[2].data.status).toBe(WORKFLOW_NODE_STATES.NOT_STARTED)
+    expect(nodes.slice(3).every(
       (node) => node.data.status === WORKFLOW_NODE_STATES.LOCKED && node.data.locked,
     )).toBe(true)
   })

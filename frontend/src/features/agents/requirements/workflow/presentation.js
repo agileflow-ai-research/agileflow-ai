@@ -21,6 +21,11 @@ export function deriveRequirementsWorkflowPresentation({
       ? workflowState.n1_state
       : WORKFLOW_NODE_STATES.NOT_STARTED,
     [REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING]: n2State,
+    [REQUIREMENTS_NODE_IDS.DISCOVERY_AND_STRUCTURING]: workflowState?.n3_execution?.status
+      ? WORKFLOW_NODE_STATES[workflowState.n3_execution.status]
+      : authoritativeN2?.status === 'COMPLETE'
+        ? WORKFLOW_NODE_STATES.NOT_STARTED
+        : WORKFLOW_NODE_STATES.LOCKED,
   }
 
   return Object.fromEntries(REQUIREMENTS_NODE_REGISTRY.map((definition) => [definition.id, {
@@ -29,11 +34,17 @@ export function deriveRequirementsWorkflowPresentation({
       && states[definition.id] === WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
       ? { statusLabel: 'Ready to Continue' }
       : {}),
-    summary: definition.summary,
+    summary: definition.id === REQUIREMENTS_NODE_IDS.DISCOVERY_AND_STRUCTURING
+      && workflowState?.n3_execution?.status === 'COMPLETE'
+      ? `${workflowState.n3_execution.result_summary?.candidate_count ?? 0} candidates · ${workflowState.n3_execution.result_summary?.functional_requirement_count ?? 0} FR · ${workflowState.n3_execution.result_summary?.non_functional_requirement_count ?? 0} NFR · ${workflowState.n3_execution.result_summary?.excluded_candidate_count ?? 0} OTHER`
+      : definition.summary,
   }]))
 }
 
 export function deriveRequirementsCurrentNodeId({ loadStatus, workflowState }) {
+  if (loadStatus === 'success' && workflowState?.n3_execution) {
+    return REQUIREMENTS_NODE_IDS.DISCOVERY_AND_STRUCTURING
+  }
   return loadStatus === 'success' && workflowState?.n1_state === WORKFLOW_NODE_STATES.COMPLETE
     ? REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING
     : REQUIREMENTS_NODE_IDS.INPUT_COLLECTION

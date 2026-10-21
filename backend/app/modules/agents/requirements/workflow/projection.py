@@ -37,6 +37,13 @@ def build_workflow_response(
         ),
         None,
     )
+    n3_execution = next(
+        (
+            item for item in reversed(record.n3_executions)
+            if item.execution_id == record.current_n3_execution_id
+        ),
+        None,
+    )
     n2_is_current = bool(
         current
         and execution
@@ -65,6 +72,8 @@ def build_workflow_response(
         n2_execution=execution,
         n2_is_current=n2_is_current,
         n2_execution_count=len(record.n2_executions),
+        n3_execution=n3_execution,
+        n3_execution_count=len(record.n3_executions),
         created_at=record.created_at,
         updated_at=record.updated_at,
     )

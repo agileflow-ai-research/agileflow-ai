@@ -120,7 +120,7 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
     ))
   })
 
-  it('renders locked informational content for an unimplemented active section', async () => {
+  it('renders the N3 observation panel before discovery starts', async () => {
     render(
       <RequirementsWorkspace
         project={project}
@@ -128,8 +128,8 @@ describe('RequirementsWorkspace seven-node pipeline', () => {
       />,
     )
     expect(await screen.findByRole('heading', { name: 'Requirement Discovery & Structuring' })).toBeInTheDocument()
-    expect(screen.getByText(/backend stage is implemented/i)).toBeInTheDocument()
-    expect(screen.queryByText(/functional requirement/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/has not started/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Start N3/i })).not.toBeInTheDocument()
   })
 
   it('keeps completed N1 reviewable and contains only collection controls', async () => {

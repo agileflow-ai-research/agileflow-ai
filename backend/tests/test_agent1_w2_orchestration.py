@@ -23,9 +23,11 @@ from app.modules.agents.requirements.processing.video.providers.base import (
     VideoAudioExtractionError,
 )
 from app.modules.agents.requirements.workflow.orchestration import (
-    RequirementN2OrchestrationService,
     n2_chunk_set_digest,
     n2_execution_key,
+)
+from app.modules.agents.requirements.workflow.orchestration.n2_service import (
+    RequirementN2OrchestrationService,
 )
 from app.modules.agents.requirements.workflow.storage import RequirementWorkflowStorage
 from app.modules.standalone.router import (
@@ -219,7 +221,8 @@ def test_mixed_sources_queue_once_run_sequentially_and_complete(w2_context):
     assert completed_replay["n2_execution"]["execution_id"] == execution["execution_id"]
     assert completed_replay["n2_execution"]["chunk_set_digest"] == execution["chunk_set_digest"]
     assert completed_replay["n2_execution_count"] == 1
-    assert "n3" not in str(completed_replay).lower()
+    assert completed_replay["n3_execution"] is None
+    assert completed_replay["n3_execution_count"] == 0
 
 
 def test_processing_failure_stops_and_retry_reuses_same_logical_key(w2_context):

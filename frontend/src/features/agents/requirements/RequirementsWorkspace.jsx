@@ -6,6 +6,7 @@ import EvidenceProcessingNode from './nodes/EvidenceProcessingNode.jsx'
 import LockedNodeState from './nodes/LockedNodeState.jsx'
 import RequirementSourcesNode from './nodes/RequirementSourcesNode.jsx'
 import N2OrchestrationStatus from './nodes/N2OrchestrationStatus.jsx'
+import DiscoveryStructuringPanel from './discovery/DiscoveryStructuringPanel.jsx'
 import useRequirementsWorkspace from './hooks/useRequirementsWorkspace.js'
 import { getRequirementNodeDefinition, REQUIREMENTS_NODE_IDS } from './workflow/nodeDefinitions.js'
 
@@ -93,6 +94,18 @@ function RequirementsWorkspace({
             onOpenCollection={() => onNavigateNode?.(REQUIREMENTS_NODE_IDS.INPUT_COLLECTION)}
           />
         </div>
+      ) : null}
+
+      {workflow.loadStatus === 'success' && activeSection === REQUIREMENTS_NODE_IDS.DISCOVERY_AND_STRUCTURING ? (
+        <DiscoveryStructuringPanel
+          workflowState={workflow.workflowState}
+          artifacts={workflow.discoveryArtifacts}
+          loadStatus={workflow.discoveryLoadStatus}
+          error={workflow.discoveryError}
+          retrying={workflow.n3Retrying}
+          onRetry={workflow.retryN3}
+          onRefresh={workflow.refreshDiscovery}
+        />
       ) : null}
 
       {workflow.loadStatus === 'success' && activeNode && !activeNode.active ? (

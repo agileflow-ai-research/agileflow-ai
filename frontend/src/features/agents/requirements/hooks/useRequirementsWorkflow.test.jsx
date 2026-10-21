@@ -89,6 +89,24 @@ describe('useRequirementsWorkflow', () => {
     }
   })
 
+  it.each(['QUEUED', 'RUNNING'])('keeps the same poller active for N3 %s and stops at its terminal state', async (n3Status) => {
+    vi.useFakeTimers()
+    const active = { ...execution('COMPLETE'), n3_execution: { execution_id: 'N3-AAAAAAAAAAAAAAAA-001', attempt_number: 1, status: n3Status } }
+    const complete = { ...active, n3_execution: { ...active.n3_execution, status: 'COMPLETE' } }
+    getRequirementWorkflow.mockResolvedValueOnce({ data: active }).mockResolvedValueOnce({ data: complete })
+    try {
+      const { result } = renderHook(() => useRequirementsWorkflow('AGP-001'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n3_execution.status).toBe('COMPLETE')
+      expect(result.current.n3TerminalExecutionIdentity).toBe('N3-AAAAAAAAAAAAAAAA-001:1:COMPLETE')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it.each(['FAILED', 'BLOCKED'])('stops polling at %s and exposes one stable terminal identity', async (status) => {
     vi.useFakeTimers()
     getRequirementWorkflow

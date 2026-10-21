@@ -111,7 +111,10 @@ def test_pre_r2_persisted_record_parses_and_dumps_with_identical_shape():
 
     record = RequirementWorkflowRecord.model_validate(payload)
 
-    assert record.model_dump(mode="json") == payload
+    dumped = record.model_dump(mode="json")
+    assert dumped | {"n3_executions": [], "current_n3_execution_id": None} == (
+        payload | {"n3_executions": [], "current_n3_execution_id": None}
+    )
 
 
 def test_existing_w1_and_w2_history_load_without_migration(tmp_path):
@@ -130,7 +133,9 @@ def test_existing_w1_and_w2_history_load_without_migration(tmp_path):
     )
 
     assert loaded is not None
-    assert loaded.model_dump(mode="json") == payload
+    assert loaded.n3_executions == []
+    assert loaded.current_n3_execution_id is None
+    assert loaded.model_dump(mode="json", exclude={"n3_executions", "current_n3_execution_id"}) == payload
     assert loaded.current_n2_execution_id == blocked["execution_id"]
     assert [item.attempt_number for item in loaded.n2_executions] == [1, 2]
 
@@ -154,8 +159,31 @@ def test_existing_w1_and_w2_history_load_without_migration(tmp_path):
         agent_project_id="AGP-021", owner_user_id="USR-001"
     )
     assert w1 is not None
-    assert w1.model_dump(mode="json") == w1_payload
+    assert w1.model_dump(mode="json", exclude={"n3_executions", "current_n3_execution_id"}) == w1_payload
+    assert w1.n3_executions == []
+    assert w1.current_n3_execution_id is None
     assert confirmation_is_current(w1) is False
+
+
+def test_v2_to_v3_additive_migration_save_reload_is_deterministic(tmp_path):
+    execution = execution_payload("COMPLETE", 1)
+    payload = record_payload(
+        executions=[execution], current_execution_id=str(execution["execution_id"])
+    )
+    path = tmp_path / "AGP-020" / "workflow.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    storage = RequirementWorkflowStorage(tmp_path)
+    loaded = storage.load(agent_project_id="AGP-020", owner_user_id="USR-001")
+    migrated = loaded.model_copy(update={"schema_version": "3", "workflow_version": "W3"})
+    storage.save(migrated)
+    reloaded = storage.load(agent_project_id="AGP-020", owner_user_id="USR-001")
+    assert reloaded.n1_confirmation == loaded.n1_confirmation
+    assert reloaded.n2_executions == loaded.n2_executions
+    assert reloaded.current_n2_execution_id == loaded.current_n2_execution_id
+    assert reloaded.n3_executions == []
+    assert reloaded.current_n3_execution_id is None
+    assert reloaded == migrated
 
 
 def test_enum_values_remain_exactly_compatible():
@@ -210,6 +238,8 @@ def test_projection_without_n2_preserves_fixed_public_response_shape():
         "n2_execution": None,
         "n2_is_current": False,
         "n2_execution_count": 0,
+        "n3_execution": None,
+        "n3_execution_count": 0,
         "created_at": NOW,
         "updated_at": NOW,
     }

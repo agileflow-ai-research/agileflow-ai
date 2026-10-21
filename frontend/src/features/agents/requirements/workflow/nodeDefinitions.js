@@ -31,7 +31,7 @@ export const REQUIREMENTS_NODE_DEFINITIONS = Object.freeze([
     title: 'Requirement Discovery & Structuring',
     purpose: 'Discover and structure requirements from prepared evidence.',
     summary: 'Discover structured requirements',
-    active: false,
+    active: true,
   }),
   Object.freeze({
     id: REQUIREMENTS_NODE_IDS.QUALITY_ENGINEERING,

@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import useEvidenceDetails from './useEvidenceDetails.js'
 import useRequirementSources from './useRequirementSources.js'
 import useRequirementsWorkflow from './useRequirementsWorkflow.js'
+import useDiscoveryWorkflow from './useDiscoveryWorkflow.js'
 import useRequirementsWorkspace from './useRequirementsWorkspace.js'
 
 vi.mock('./useEvidenceDetails.js', () => ({ default: vi.fn() }))
 vi.mock('./useRequirementSources.js', () => ({ default: vi.fn() }))
 vi.mock('./useRequirementsWorkflow.js', () => ({ default: vi.fn() }))
+vi.mock('./useDiscoveryWorkflow.js', () => ({ default: vi.fn() }))
 
 const noop = () => {}
 
@@ -48,16 +50,25 @@ describe('useRequirementsWorkspace', () => {
       processingStates: { 'DOC-001': { status: 'READY' } },
       processSource: noop,
     })
+    useDiscoveryWorkflow.mockReturnValue({
+      discoveryArtifacts: null,
+      discoveryError: '',
+      discoveryLoadStatus: 'idle',
+      n3Retrying: false,
+      refreshDiscovery: noop,
+      retryN3: noop,
+    })
   })
 
   it('is a thin composition layer that preserves the legacy public interface', () => {
     const { result } = renderHook(() => useRequirementsWorkspace('AGP-001'))
     expect(Object.keys(result.current).sort()).toEqual([
       'addFiles', 'changeSelectedOutputs', 'continueN1', 'continueSubmitting',
-      'detailsLoading', 'error', 'loadPreparedEvidence', 'loadProcessingResult',
-      'loadStatus', 'n2Retrying', 'outputSaving', 'preparationStates', 'prepareSource',
-      'processSource', 'processingStates', 'reload', 'removeSource', 'removingId',
-      'retryN2', 'sources', 'uploadingType', 'workflowError', 'workflowState',
+      'detailsLoading', 'discoveryArtifacts', 'discoveryError', 'discoveryLoadStatus',
+      'error', 'loadPreparedEvidence', 'loadProcessingResult', 'loadStatus', 'n2Retrying',
+      'n3Retrying', 'outputSaving', 'preparationStates', 'prepareSource', 'processSource',
+      'processingStates', 'refreshDiscovery', 'reload', 'removeSource', 'removingId',
+      'retryN2', 'retryN3', 'sources', 'uploadingType', 'workflowError', 'workflowState',
     ].sort())
     expect(result.current.loadStatus).toBe('success')
     expect(useRequirementSources).toHaveBeenCalledWith('AGP-001', expect.objectContaining({
