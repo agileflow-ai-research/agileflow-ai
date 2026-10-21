@@ -1,3 +1,4 @@
+from datetime import timezone
 from typing import Any
 
 from pymongo import MongoClient
@@ -6,7 +7,11 @@ from pymongo.database import Database
 from app.core.config import settings
 
 
-_client: MongoClient[dict[str, Any]] = MongoClient(settings.mongodb_uri)
+_client: MongoClient[dict[str, Any]] = MongoClient(
+    settings.mongodb_uri,
+    tz_aware=True,
+    tzinfo=timezone.utc,
+)
 
 
 def get_database() -> Database[dict[str, Any]]:

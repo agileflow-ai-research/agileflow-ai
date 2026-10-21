@@ -16,6 +16,7 @@ from app.common.status import (
     AgentProjectStatus,
     AgentRunMode,
     AgentRunStatus,
+    AgentStage,
     AgentType,
 )
 
@@ -90,6 +91,7 @@ class AgentProject(BaseModel):
     agent_project_id: str
     owner_user_id: str
     agent_type: AgentType
+    agent_stage: AgentStage | None = None
     name: str
     description: str = ""
     domain: str

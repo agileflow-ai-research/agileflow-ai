@@ -26,6 +26,7 @@ from app.modules.standalone.schemas import (
     AgentRunMessage,
     AgentRunMode,
     AgentRunStatus,
+    AgentStage,
     AgentType,
 )
 from app.modules.standalone.service import (
@@ -295,6 +296,10 @@ def test_standalone_enum_values_are_exact() -> None:
         "ACTIVE",
         "ARCHIVED",
     ]
+    assert [item.value for item in AgentStage] == [
+        "TEST_GENERATION",
+        "VALIDATION",
+    ]
     assert [item.value for item in AgentRunStatus] == [
         "QUEUED",
         "RUNNING",
@@ -349,6 +354,48 @@ def test_project_request_rejects_blank_required_fields(field: str) -> None:
     payload[field] = "   "
     with pytest.raises(ValidationError, match="must not be blank"):
         AgentProjectCreateRequest.model_validate(payload)
+
+
+def test_persisted_agent4_stage_is_accepted_without_weakening_extras() -> None:
+    document = {
+        "agent_project_id": "AGP-027",
+        "owner_user_id": "USR-001",
+        "agent_type": "TESTING_VALIDATION",
+        "agent_stage": "TEST_GENERATION",
+        "name": "Testing project",
+        "description": "",
+        "domain": "Testing",
+        "status": "ACTIVE",
+        "created_at": NOW,
+        "updated_at": NOW,
+    }
+
+    project = AgentProject.model_validate(document)
+    validation_project = AgentProject.model_validate(
+        {**document, "agent_stage": "VALIDATION"}
+    )
+    unstaged_project = AgentProject.model_validate(
+        {
+            **document,
+            "agent_project_id": "AGP-029",
+            "agent_type": "REQUIREMENTS",
+            "agent_stage": None,
+        }
+    )
+
+    assert project.agent_stage is AgentStage.TEST_GENERATION
+    assert validation_project.agent_stage is AgentStage.VALIDATION
+    assert unstaged_project.agent_stage is None
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        AgentProject.model_validate({**document, "unknown_field": True})
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        AgentProjectCreateRequest.model_validate(
+            {**CREATE_PAYLOAD, "agent_stage": "TEST_GENERATION"}
+        )
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        AgentProjectUpdateRequest.model_validate(
+            {"agent_stage": "TEST_GENERATION"}
+        )
 
 
 @pytest.mark.parametrize(
