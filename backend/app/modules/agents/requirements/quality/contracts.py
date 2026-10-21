@@ -236,3 +236,69 @@ class RequirementConflictResult(StrictQualityContract):
         if self.conflict_count > self.nli_evaluated_pair_count:
             raise ValueError("Conflict count exceeds evaluated pair count")
         return self
+
+
+class RequirementClarityIssueType(StrEnum):
+    AMBIGUITY = "AMBIGUITY"
+    MISSING_INFORMATION = "MISSING_INFORMATION"
+
+
+class RequirementClaritySignal(StrEnum):
+    VAGUE_QUALIFIER = "VAGUE_QUALIFIER"
+    VAGUE_QUANTIFIER = "VAGUE_QUANTIFIER"
+    VAGUE_FREQUENCY = "VAGUE_FREQUENCY"
+    SUBJECTIVE_TERM = "SUBJECTIVE_TERM"
+    OPEN_ENDED_PHRASE = "OPEN_ENDED_PHRASE"
+    UNCLEAR_CONDITION = "UNCLEAR_CONDITION"
+    PERFORMANCE_TARGET_MISSING = "PERFORMANCE_TARGET_MISSING"
+    CAPACITY_TARGET_MISSING = "CAPACITY_TARGET_MISSING"
+    AVAILABILITY_TARGET_MISSING = "AVAILABILITY_TARGET_MISSING"
+    FREQUENCY_VALUE_MISSING = "FREQUENCY_VALUE_MISSING"
+    CONDITION_DETAIL_MISSING = "CONDITION_DETAIL_MISSING"
+
+
+class RequirementClarityIssue(StrictQualityContract):
+    issue_id: str = Field(pattern=r"^Q(?:AMB|MISS)-[0-9A-F]{16}$")
+    issue_type: RequirementClarityIssueType
+    signal_code: RequirementClaritySignal
+    requirement: QualityRequirement
+    evidence_text: str = Field(min_length=1)
+    evidence_start: int = Field(ge=0)
+    evidence_end: int = Field(gt=0)
+    detector_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    rule_version: str = Field(min_length=1)
+    explanation: str = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_evidence_span(self) -> "RequirementClarityIssue":
+        if self.evidence_end <= self.evidence_start:
+            raise ValueError("Clarity evidence span is invalid")
+        if self.requirement.statement[self.evidence_start:self.evidence_end] != self.evidence_text:
+            raise ValueError("Clarity evidence must exactly match the requirement statement")
+        prefix = "QAMB-" if self.issue_type is RequirementClarityIssueType.AMBIGUITY else "QMISS-"
+        if not self.issue_id.startswith(prefix):
+            raise ValueError("Clarity issue prefix does not match its issue type")
+        return self
+
+
+class RequirementClarityResult(StrictQualityContract):
+    contract_version: str
+    agent_project_id: str = Field(pattern=r"^AGP-\d{3,}$")
+    quality_input_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    detector_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    issues: tuple[RequirementClarityIssue, ...] = ()
+    ambiguity_count: int = Field(ge=0)
+    missing_information_count: int = Field(ge=0)
+    affected_requirement_count: int = Field(ge=0)
+    result_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> "RequirementClarityResult":
+        ambiguity = sum(item.issue_type is RequirementClarityIssueType.AMBIGUITY for item in self.issues)
+        missing = len(self.issues) - ambiguity
+        affected = len({item.requirement.requirement_id for item in self.issues})
+        if (self.ambiguity_count != ambiguity
+                or self.missing_information_count != missing
+                or self.affected_requirement_count != affected):
+            raise ValueError("Clarity result counts are inconsistent")
+        return self

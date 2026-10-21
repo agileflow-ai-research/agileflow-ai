@@ -12,7 +12,12 @@ from app.modules.agents.requirements.quality.contracts import (
     SemanticSimilarityEvidence,
     RequirementConflictPair,
     RequirementConflictResult,
+    RequirementClarityIssue,
+    RequirementClarityIssueType,
+    RequirementClarityResult,
+    RequirementClaritySignal,
 )
+from app.modules.agents.requirements.quality.clarity.service import RequirementClarityService
 from app.modules.agents.requirements.quality.exact_duplicates import ExactDuplicateDetector
 from app.modules.agents.requirements.quality.input import (
     QualityInputError,
@@ -36,4 +41,9 @@ __all__ = [
     "SemanticSimilarityEvidence",
     "RequirementConflictPair",
     "RequirementConflictResult",
+    "RequirementClarityIssue",
+    "RequirementClarityIssueType",
+    "RequirementClarityResult",
+    "RequirementClarityService",
+    "RequirementClaritySignal",
 ]

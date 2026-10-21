@@ -7,6 +7,7 @@ from app.modules.agents.requirements.discovery.dependencies import (
     build_discovery_storage,
 )
 from app.modules.agents.requirements.quality.input import QualityInputLoader
+from app.modules.agents.requirements.quality.clarity.service import RequirementClarityService
 from app.modules.agents.requirements.quality.conflicts.service import (
     RequirementConflictService,
 )
@@ -66,3 +67,7 @@ def build_requirement_conflict_service(
         embeddings, nli, relatedness_threshold=relatedness_threshold,
         contradiction_threshold=contradiction_threshold,
     )
+
+
+def build_requirement_clarity_service() -> RequirementClarityService:
+    return RequirementClarityService()
