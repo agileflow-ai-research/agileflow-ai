@@ -38,6 +38,27 @@ from app.modules.agents.testing_validation.sources.storage import (
     Agent4SourceStorageError,
     Agent4SourceValidationError,
 )
+from app.modules.agents.testing_validation.preparation.extraction.service import (
+    Agent4DocumentExtractionService,
+)
+from app.modules.agents.testing_validation.preparation.extraction.storage import (
+    Agent4ExtractionStorage,
+)
+from app.modules.agents.testing_validation.preparation.normalization.service import (
+    Agent4NormalizationService,
+)
+from app.modules.agents.testing_validation.preparation.normalization.storage import (
+    Agent4NormalizationStorage,
+)
+from app.modules.agents.testing_validation.preparation.chunking.service import (
+    Agent4ChunkingService,
+)
+from app.modules.agents.testing_validation.preparation.chunking.storage import (
+    Agent4ChunkStorage,
+)
+from app.modules.agents.testing_validation.workflow.orchestration.service import (
+    Agent4N2OrchestrationService,
+)
 from app.modules.agents.testing_validation.workflow.schemas import (
     Agent4TestGenerationWorkflowResponse,
     TestGenerationOutputSelectionUpdate,
@@ -105,6 +126,39 @@ def get_agent4_source_service(
     )
 
 
+def get_agent4_n2_orchestration_service(
+    standalone_service: Annotated[StandaloneService, Depends(get_standalone_service)],
+    workflow_service: Annotated[
+        Agent4WorkflowService, Depends(get_agent4_workflow_service)
+    ],
+    workflow_storage: Annotated[
+        Agent4WorkflowStorage, Depends(get_agent4_workflow_storage)
+    ],
+    source_storage: Annotated[
+        Agent4SourceStorage, Depends(get_agent4_source_storage)
+    ],
+) -> Agent4N2OrchestrationService:
+    root = settings.agent4_storage_root
+    extraction = Agent4DocumentExtractionService(
+        standalone_service,
+        source_storage,
+        workflow_storage,
+        Agent4ExtractionStorage(root),
+    )
+    normalization = Agent4NormalizationService(
+        extraction, Agent4NormalizationStorage(root)
+    )
+    chunking = Agent4ChunkingService(normalization, Agent4ChunkStorage(root))
+    return Agent4N2OrchestrationService(
+        workflow_service,
+        workflow_storage,
+        source_storage,
+        extraction,
+        normalization,
+        chunking,
+    )
+
+
 def _error(status_code: int, message: str, field: str, detail: str) -> JSONResponse:
     payload = ErrorResponse(message=message, errors=[ErrorDetail(field=field, message=detail)])
     return JSONResponse(status_code=status_code, content=payload.model_dump(mode="json"))
@@ -117,7 +171,8 @@ def _error(status_code: int, message: str, field: str, detail: str) -> JSONRespo
 def get_test_generation_workflow(
     agent_project_id: str,
     service: Annotated[
-        Agent4WorkflowService, Depends(get_agent4_workflow_service)
+        Agent4N2OrchestrationService,
+        Depends(get_agent4_n2_orchestration_service),
     ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
@@ -261,12 +316,13 @@ def update_test_generation_outputs(
 def confirm_test_generation_n1(
     agent_project_id: str,
     service: Annotated[
-        Agent4WorkflowService, Depends(get_agent4_workflow_service)
+        Agent4N2OrchestrationService,
+        Depends(get_agent4_n2_orchestration_service),
     ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
     try:
-        workflow = service.confirm_n1(agent_project_id, current_user)
+        workflow = service.confirm_n1_and_start(agent_project_id, current_user)
     except AgentProjectNotFoundError:
         return _error(
             status.HTTP_404_NOT_FOUND,
@@ -326,6 +382,125 @@ def confirm_test_generation_n1(
     return SuccessResponse(
         message="Agent 4 input and output setup confirmed", data=workflow
     )
+
+
+@router.post(
+    "/{agent_project_id}/test-generation/workflow/n2/start",
+    response_model=SuccessResponse[Agent4TestGenerationWorkflowResponse],
+)
+def start_test_generation_n2(
+    agent_project_id: str,
+    service: Annotated[
+        Agent4N2OrchestrationService,
+        Depends(get_agent4_n2_orchestration_service),
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
+    try:
+        workflow = service.start(agent_project_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(
+            status.HTTP_404_NOT_FOUND,
+            "Agent project not found",
+            "agent_project_id",
+            "Agent project not found",
+        )
+    except ArchivedAgentProjectError:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Agent project is archived",
+            "agent_project_id",
+            "Reactivate the agent project before starting preparation",
+        )
+    except (WrongAgent4WorkflowProjectError, Agent4WorkflowStageError) as exc:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Input Preparation is unavailable",
+            "workflow",
+            str(exc),
+        )
+    except Agent4WorkflowGateError as exc:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Input Preparation cannot be started",
+            "workflow",
+            str(exc),
+        )
+    except ValueError:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Invalid agent project ID",
+            "agent_project_id",
+            "Agent project ID is invalid",
+        )
+    except (Agent4WorkflowStorageError, Agent4SourceStorageError):
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Preparation storage failed",
+            "workflow",
+            "Input Preparation could not be started",
+        )
+    return SuccessResponse(message="Agent 4 Input Preparation accepted", data=workflow)
+
+
+@router.post(
+    "/{agent_project_id}/test-generation/workflow/n2/sources/{source_id}/retry",
+    response_model=SuccessResponse[Agent4TestGenerationWorkflowResponse],
+)
+def retry_test_generation_n2_source(
+    agent_project_id: str,
+    source_id: str,
+    service: Annotated[
+        Agent4N2OrchestrationService,
+        Depends(get_agent4_n2_orchestration_service),
+    ],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
+    try:
+        workflow = service.retry_source(agent_project_id, source_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(
+            status.HTTP_404_NOT_FOUND,
+            "Agent project not found",
+            "agent_project_id",
+            "Agent project not found",
+        )
+    except ArchivedAgentProjectError:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Agent project is archived",
+            "agent_project_id",
+            "Reactivate the agent project before retrying preparation",
+        )
+    except (WrongAgent4WorkflowProjectError, Agent4WorkflowStageError) as exc:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Input Preparation retry is unavailable",
+            "workflow",
+            str(exc),
+        )
+    except Agent4WorkflowGateError as exc:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Source cannot be retried",
+            "source_id",
+            str(exc),
+        )
+    except ValueError:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Invalid request",
+            "source_id",
+            "The project or source ID is invalid",
+        )
+    except (Agent4WorkflowStorageError, Agent4SourceStorageError):
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Preparation storage failed",
+            "workflow",
+            "The source retry could not be started",
+        )
+    return SuccessResponse(message="Agent 4 source retry accepted", data=workflow)
 
 
 def _source_project_error(exc: Exception, action: str) -> JSONResponse:

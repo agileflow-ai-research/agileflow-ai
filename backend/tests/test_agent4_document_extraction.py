@@ -24,6 +24,7 @@ from app.modules.agents.testing_validation.preparation.extraction.storage import
     Agent4ExtractionStorageError,
 )
 from app.modules.agents.testing_validation.router import (
+    get_agent4_n2_orchestration_service,
     get_agent4_source_storage,
     get_agent4_workflow_storage,
 )
@@ -37,6 +38,7 @@ from app.modules.standalone.router import (
     get_agent_run_repository,
 )
 from app.modules.agents.testing_validation.workflow.service import (
+    Agent4WorkflowService,
     Agent4WorkflowStageError,
     WrongAgent4WorkflowProjectError,
 )
@@ -91,6 +93,20 @@ def extraction_context(authentication_context, tmp_path):
     service = Agent4DocumentExtractionService(
         StandaloneService(projects, runs), sources, workflows, extractions
     )
+    workflow_service = Agent4WorkflowService(
+        StandaloneService(projects, runs), workflows, sources
+    )
+
+    class PreparationDeferredWorkflow:
+        def get(self, project_id, current_user):
+            return workflow_service.get(project_id, current_user)
+
+        def confirm_n1_and_start(self, project_id, current_user):
+            return workflow_service.confirm_n1(project_id, current_user)
+
+    app.dependency_overrides[get_agent4_n2_orchestration_service] = (
+        PreparationDeferredWorkflow
+    )
     try:
         yield authentication_context.client(), service, tmp_path, projects, runs
     finally:
@@ -98,6 +114,7 @@ def extraction_context(authentication_context, tmp_path):
         app.dependency_overrides.pop(get_agent_run_repository, None)
         app.dependency_overrides.pop(get_agent4_source_storage, None)
         app.dependency_overrides.pop(get_agent4_workflow_storage, None)
+        app.dependency_overrides.pop(get_agent4_n2_orchestration_service, None)
 
 
 def create_project(client) -> str:

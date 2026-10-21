@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   confirmTestGenerationSetup,
   getTestGenerationWorkflow,
+  retryTestGenerationPreparationSource,
+  startTestGenerationPreparation,
   updateTestGenerationOutputs,
 } from '../testingValidationAgentService.js'
 import useTestingValidationWorkflow from './useTestingValidationWorkflow.js'
@@ -11,6 +13,8 @@ import useTestingValidationWorkflow from './useTestingValidationWorkflow.js'
 vi.mock('../testingValidationAgentService.js', () => ({
   confirmTestGenerationSetup: vi.fn(),
   getTestGenerationWorkflow: vi.fn(),
+  retryTestGenerationPreparationSource: vi.fn(),
+  startTestGenerationPreparation: vi.fn(),
   updateTestGenerationOutputs: vi.fn(),
 }))
 
@@ -42,12 +46,39 @@ function deferred() {
   return { promise, reject, resolve }
 }
 
+function n2Workflow(status = 'RUNNING') {
+  const terminal = ['COMPLETED', 'FAILED', 'INTERRUPTED'].includes(status)
+  return {
+    ...workflow(),
+    pipeline_status: status === 'FAILED' ? 'FAILED' : 'RUNNING',
+    current_node_id: status === 'COMPLETED' ? 'TESTING_INTELLIGENCE' : 'INPUT_PREPARATION',
+    n1_confirmation: { confirmation_id: 'A4N1C-confirmed' },
+    n2_execution: {
+      execution_id: 'A4N2E-current',
+      attempt_number: 1,
+      status,
+      total_chunks: terminal ? 2 : 0,
+      sources: [],
+    },
+    nodes: nodeIds.map((nodeId, index) => ({
+      node_id: nodeId,
+      status: index === 0
+        ? 'COMPLETED'
+        : index === 1
+          ? status
+          : index === 2 && status === 'COMPLETED' ? 'NOT_STARTED' : 'LOCKED',
+    })),
+  }
+}
+
 describe('useTestingValidationWorkflow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getTestGenerationWorkflow.mockResolvedValue({ data: workflow() })
     updateTestGenerationOutputs.mockResolvedValue({ data: workflow() })
     confirmTestGenerationSetup.mockResolvedValue({ data: workflow() })
+    retryTestGenerationPreparationSource.mockResolvedValue({ data: workflow() })
+    startTestGenerationPreparation.mockResolvedValue({ data: workflow() })
   })
 
   it('loads and explicitly refreshes authoritative workflow state without polling', async () => {
@@ -228,5 +259,59 @@ describe('useTestingValidationWorkflow', () => {
     expect(result.current.confirmationError).toBe(
       'Add at least one primary functional source.',
     )
+  })
+
+  it('polls while N2 is active and stops after completion', async () => {
+    vi.useFakeTimers()
+    getTestGenerationWorkflow
+      .mockResolvedValueOnce({ data: n2Workflow('QUEUED') })
+      .mockResolvedValueOnce({ data: n2Workflow('RUNNING') })
+      .mockResolvedValueOnce({ data: n2Workflow('COMPLETED') })
+    try {
+      const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(result.current.workflowState.n2_execution.status).toBe('QUEUED')
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n2_execution.status).toBe('RUNNING')
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n2_execution.status).toBe('COMPLETED')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('starts an exact legacy confirmed NOT_STARTED workflow once', async () => {
+    const legacy = {
+      ...workflow(),
+      pipeline_status: 'RUNNING',
+      current_node_id: 'INPUT_PREPARATION',
+      n1_confirmation: { confirmation_id: 'A4N1C-confirmed' },
+      n2_execution: null,
+      nodes: nodeIds.map((nodeId, index) => ({
+        node_id: nodeId,
+        status: index === 0 ? 'COMPLETED' : index === 1 ? 'NOT_STARTED' : 'LOCKED',
+      })),
+    }
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: legacy })
+    startTestGenerationPreparation.mockResolvedValueOnce({ data: n2Workflow('QUEUED') })
+    const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+    await waitFor(() => expect(result.current.workflowState?.n2_execution?.status).toBe('QUEUED'))
+    expect(startTestGenerationPreparation).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries one failed source and adopts the queued attempt', async () => {
+    const failed = n2Workflow('FAILED')
+    failed.n2_execution.sources = [{ source_id: 'A4SRC-one', status: 'FAILED' }]
+    const queued = n2Workflow('QUEUED')
+    queued.n2_execution.attempt_number = 2
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: failed })
+    retryTestGenerationPreparationSource.mockResolvedValueOnce({ data: queued })
+    const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+    await waitFor(() => expect(result.current.loadStatus).toBe('success'))
+    await act(() => result.current.retryPreparationSource('A4SRC-one'))
+    expect(retryTestGenerationPreparationSource).toHaveBeenCalledWith('AGP-004', 'A4SRC-one')
+    expect(result.current.workflowState.n2_execution.attempt_number).toBe(2)
   })
 })

@@ -23,6 +23,22 @@ export function confirmTestGenerationSetup(agentProjectId) {
   )
 }
 
+export function startTestGenerationPreparation(agentProjectId) {
+  return apiClient.post(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n2/start`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function retryTestGenerationPreparationSource(agentProjectId, sourceId) {
+  return apiClient.post(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n2/sources/${encodeURIComponent(sourceId)}/retry`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
 function sourcesPath(agentProjectId) {
   return `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/sources`
 }

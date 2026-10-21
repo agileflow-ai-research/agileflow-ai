@@ -5,6 +5,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.common.status import AgentStage
+from app.modules.agents.testing_validation.contracts.sources import (
+    TestGenerationInputArtifactType,
+    TestGenerationInputSourceType,
+)
 from app.modules.agents.testing_validation.schemas import TestGenerationOutputCode
 
 
@@ -119,6 +123,90 @@ class Agent4N1ConfirmationProjection(StrictAgent4WorkflowContract):
     confirmed_at: datetime
 
 
+class Agent4N2ExecutionStatus(StrEnum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    INTERRUPTED = "INTERRUPTED"
+
+
+class Agent4N2SourceStatus(StrEnum):
+    QUEUED = "QUEUED"
+    EXTRACTING = "EXTRACTING"
+    NORMALIZING = "NORMALIZING"
+    CHUNKING = "CHUNKING"
+    COMPLETE = "COMPLETE"
+    PENDING_ANALYSIS = "PENDING_ANALYSIS"
+    FAILED = "FAILED"
+
+
+class Agent4N2Message(StrictAgent4WorkflowContract):
+    code: str = Field(min_length=1, max_length=100)
+    message: str = Field(min_length=1, max_length=500)
+
+
+class Agent4N2SourceExecution(StrictAgent4WorkflowContract):
+    source_id: str = Field(pattern=r"^A4SRC-[0-9a-f]{32}$")
+    artifact_type: TestGenerationInputArtifactType
+    source_type: TestGenerationInputSourceType
+    label: str | None = None
+    original_filename: str | None = None
+    status: Agent4N2SourceStatus
+    extraction_status: str | None = None
+    normalization_status: str | None = None
+    chunk_count: int = Field(default=0, ge=0)
+    warnings: list[Agent4N2Message] = Field(default_factory=list)
+    error: Agent4N2Message | None = None
+    started_at: datetime | None = None
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+
+class Agent4N2Execution(StrictAgent4WorkflowContract):
+    execution_id: str = Field(pattern=r"^A4N2E-[0-9a-f]{32}$")
+    attempt_number: int = Field(ge=1)
+    trigger: Literal["N1_CONFIRMATION", "LEGACY_START", "SOURCE_RETRY"]
+    retry_source_id: str | None = Field(
+        default=None, pattern=r"^A4SRC-[0-9a-f]{32}$"
+    )
+    status: Agent4N2ExecutionStatus
+    confirmation_id: str = Field(pattern=r"^A4N1C-[0-9a-f]{32}$")
+    source_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    selection_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    confirmed_source_ids: list[str] = Field(min_length=1)
+    sources: list[Agent4N2SourceExecution] = Field(min_length=1)
+    created_at: datetime
+    queued_at: datetime
+    started_at: datetime | None = None
+    updated_at: datetime
+    completed_at: datetime | None = None
+    failed_at: datetime | None = None
+    total_chunks: int = Field(default=0, ge=0)
+    warnings: list[Agent4N2Message] = Field(default_factory=list)
+    error: Agent4N2Message | None = None
+    retryable: bool = False
+
+    @model_validator(mode="after")
+    def validate_sources(self) -> "Agent4N2Execution":
+        ids = [source.source_id for source in self.sources]
+        if ids != self.confirmed_source_ids:
+            raise ValueError("N2 execution sources must match the confirmed snapshot")
+        if len(ids) != len(set(ids)):
+            raise ValueError("N2 execution sources must be unique")
+        return self
+
+
+class Agent4N2ExecutionSummary(StrictAgent4WorkflowContract):
+    execution_id: str
+    attempt_number: int
+    trigger: str
+    status: Agent4N2ExecutionStatus
+    created_at: datetime
+    completed_at: datetime | None
+    failed_at: datetime | None
+
+
 class Agent4TestGenerationWorkflowRecord(StrictAgent4WorkflowContract):
     schema_version: str
     workflow_version: str
@@ -132,6 +220,8 @@ class Agent4TestGenerationWorkflowRecord(StrictAgent4WorkflowContract):
     selection_revision: int = Field(default=0, ge=0)
     selection_updated_at: datetime | None = None
     n1_confirmation: Agent4N1ConfirmationRecord | None = None
+    n2_executions: list[Agent4N2Execution] = Field(default_factory=list)
+    current_n2_execution_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -170,5 +260,8 @@ class Agent4TestGenerationWorkflowResponse(StrictAgent4WorkflowContract):
     selection_revision: int
     selection_updated_at: datetime | None
     n1_confirmation: Agent4N1ConfirmationProjection | None
+    n2_execution: Agent4N2Execution | None = None
+    n2_execution_count: int = Field(default=0, ge=0)
+    n2_history: list[Agent4N2ExecutionSummary] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

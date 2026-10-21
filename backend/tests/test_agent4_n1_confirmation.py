@@ -1,13 +1,23 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future
 
 import pytest
 
 from app.main import app
 from app.modules.agents.testing_validation.router import (
+    get_agent4_n2_orchestration_service,
     get_agent4_source_storage,
     get_agent4_workflow_storage,
 )
+from app.modules.agents.testing_validation.preparation.chunking.service import Agent4ChunkingService
+from app.modules.agents.testing_validation.preparation.chunking.storage import Agent4ChunkStorage
+from app.modules.agents.testing_validation.preparation.extraction.service import Agent4DocumentExtractionService
+from app.modules.agents.testing_validation.preparation.extraction.storage import Agent4ExtractionStorage
+from app.modules.agents.testing_validation.preparation.normalization.service import Agent4NormalizationService
+from app.modules.agents.testing_validation.preparation.normalization.storage import Agent4NormalizationStorage
+from app.modules.agents.testing_validation.workflow.orchestration.service import Agent4N2OrchestrationService
+from app.modules.agents.testing_validation.workflow.service import Agent4WorkflowService
 from app.modules.agents.testing_validation.contracts.sources import (
     TestGenerationInputArtifactType as ArtifactType,
     TestGenerationInputOriginAgent as OriginAgent,
@@ -40,6 +50,16 @@ from test_standalone_foundation import (
     FakeAgentProjectRepository,
     FakeAgentRunRepository,
 )
+from app.modules.standalone.service import StandaloneService
+
+
+class DeferredN2Executor:
+    def __init__(self):
+        self.tasks = []
+
+    def submit(self, function, *args):
+        self.tasks.append((function, args))
+        return Future()
 
 
 @pytest.fixture
@@ -48,10 +68,35 @@ def confirmation_context(authentication_context, tmp_path):
     runs = FakeAgentRunRepository()
     source_storage = Agent4SourceStorage(tmp_path)
     workflow_storage = Agent4WorkflowStorage(tmp_path)
+    standalone = StandaloneService(projects, runs)
+    workflow_service = Agent4WorkflowService(
+        standalone, workflow_storage, source_storage
+    )
+    extraction = Agent4DocumentExtractionService(
+        standalone,
+        source_storage,
+        workflow_storage,
+        Agent4ExtractionStorage(tmp_path),
+    )
+    normalization = Agent4NormalizationService(
+        extraction, Agent4NormalizationStorage(tmp_path)
+    )
+    orchestration = Agent4N2OrchestrationService(
+        workflow_service,
+        workflow_storage,
+        source_storage,
+        extraction,
+        normalization,
+        Agent4ChunkingService(normalization, Agent4ChunkStorage(tmp_path)),
+        executor=DeferredN2Executor(),
+    )
     app.dependency_overrides[get_agent_project_repository] = lambda: projects
     app.dependency_overrides[get_agent_run_repository] = lambda: runs
     app.dependency_overrides[get_agent4_source_storage] = lambda: source_storage
     app.dependency_overrides[get_agent4_workflow_storage] = lambda: workflow_storage
+    app.dependency_overrides[get_agent4_n2_orchestration_service] = (
+        lambda: orchestration
+    )
     try:
         yield (
             authentication_context,
@@ -65,6 +110,8 @@ def confirmation_context(authentication_context, tmp_path):
         app.dependency_overrides.pop(get_agent_run_repository, None)
         app.dependency_overrides.pop(get_agent4_source_storage, None)
         app.dependency_overrides.pop(get_agent4_workflow_storage, None)
+        app.dependency_overrides.pop(get_agent4_n2_orchestration_service, None)
+        Agent4N2OrchestrationService._active_execution_ids.clear()
 
 
 def create_project(client, agent_type="TESTING_VALIDATION"):
@@ -185,7 +232,7 @@ def test_valid_confirmation_snapshots_exact_setup_and_transitions_workflow(
     assert workflow["current_node_id"] == "INPUT_PREPARATION"
     assert [node["status"] for node in workflow["nodes"]] == [
         "COMPLETED",
-        "NOT_STARTED",
+        "QUEUED",
         "LOCKED",
         "LOCKED",
         "LOCKED",

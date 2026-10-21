@@ -7,7 +7,9 @@ import {
   confirmTestGenerationSetup,
   getTestGenerationWorkflow,
   listTestingValidationSources,
+  retryTestGenerationPreparationSource,
   runTestingValidationAgent,
+  startTestGenerationPreparation,
 } from '../testingValidationAgentService.js'
 import TestingValidationProjectPage from './TestingValidationProjectPage.jsx'
 
@@ -48,7 +50,9 @@ vi.mock('../testingValidationAgentService.js', () => ({
   deleteTestingValidationSource: vi.fn(),
   getTestGenerationWorkflow: vi.fn(),
   listTestingValidationSources: vi.fn(),
+  retryTestGenerationPreparationSource: vi.fn(),
   runTestingValidationAgent: vi.fn(),
+  startTestGenerationPreparation: vi.fn(),
   updateTestGenerationOutputs: vi.fn(),
   uploadTestingValidationSource: vi.fn(),
 }))
@@ -94,6 +98,8 @@ describe('TestingValidationProjectPage', () => {
     vi.clearAllMocks()
     getTestGenerationWorkflow.mockResolvedValue({ data: workflow })
     listTestingValidationSources.mockResolvedValue({ data: [] })
+    retryTestGenerationPreparationSource.mockResolvedValue({ data: workflow })
+    startTestGenerationPreparation.mockResolvedValue({ data: workflow })
   })
 
   it('loads the authoritative workflow and renders its six node states', async () => {

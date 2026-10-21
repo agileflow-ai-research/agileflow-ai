@@ -43,7 +43,10 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
     loadStatus,
     outputSaveError,
     outputSaving,
+    preparationError,
     retry,
+    retryPreparationSource,
+    retryingSourceId,
     saveOutputs,
     workflowState,
   } = useTestingValidationWorkflow(project.agent_project_id)
@@ -141,6 +144,10 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
               selectedOutputs={workflowState.selected_outputs}
               selectionRevision={workflowState.selection_revision}
               pipelineStatus={workflowState.pipeline_status}
+              n2Execution={workflowState.n2_execution}
+              onRetryPreparationSource={retryPreparationSource}
+              preparationError={preparationError}
+              retryingSourceId={retryingSourceId}
               workflowNodeStatus={workflowState.nodes.find(
                 (node) => node.node_id === selectedDefinition.id,
               )?.status}
@@ -152,7 +159,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
         </WorkflowNodeModal>
       </div>
 
-      <p className="text-xs text-content-muted">Workflow status is loaded from the persisted Stage 1 record. Node positions remain visual only, and no node processing is implemented yet.</p>
+      <p className="text-xs text-content-muted">Workflow status and Input Preparation progress are loaded from the persisted Stage 1 record. Node positions remain visual only.</p>
     </section>
   )
 }
