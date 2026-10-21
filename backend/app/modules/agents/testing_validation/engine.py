@@ -1,3 +1,13 @@
+"""
+LEGACY standalone Agent 4 run engine (Agent4Engine). Not part of the N1-N4 pipeline.
+
+Builds a strict JSON schema for the selected test outputs, asks the configured
+structured model provider for output matching that schema, and validates the reply
+against the same schema before returning it. Model output is untrusted until it
+passes that validation. This module does not run N2-N4 stages and does not use
+DeBERTa or Qwen.
+"""
+
 import ast
 import json
 import re
@@ -62,6 +72,12 @@ def selected_test_schema(selected: list[TestGenerationOutputCode]) -> dict[str, 
 
 
 class Agent4Engine:
+    """
+    Legacy run engine. Its trust boundary is the structured-output validation:
+    a provider reply that does not match the selected-output schema is rejected
+    with StructuredOutputInvalidError.
+    """
+
     def __init__(
         self,
         provider: StructuredModelProvider,
