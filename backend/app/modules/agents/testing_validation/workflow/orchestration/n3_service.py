@@ -52,6 +52,7 @@ class Agent4N3OrchestrationService:
         rule_service, zero_shot_service, hybrid_service, semantic_service,
         effective_service: Agent4EffectiveClassificationService,
         hybrid_storage, rule_storage, zero_shot_storage,
+        n4_handoff=None,
         *, executor: Executor = AGENT4_N3_EXECUTOR,
         clock: Callable[[], datetime] = utc_now,
     ):
@@ -66,6 +67,7 @@ class Agent4N3OrchestrationService:
         self._hybrid_storage = hybrid_storage
         self._rule_storage = rule_storage
         self._zero_storage = zero_shot_storage
+        self._n4_handoff = n4_handoff
         self._executor = executor
         self._clock = clock
 
@@ -278,7 +280,7 @@ class Agent4N3OrchestrationService:
                 if source.status in {Agent4N3SourceStatus.COMPLETE, Agent4N3SourceStatus.PENDING_ANALYSIS}:
                     continue
                 self._process_source(project_id, user.user_id, execution_id, source.source_id, user)
-            self._finish(project_id, user.user_id, execution_id)
+            self._finish(project_id, user.user_id, execution_id, user)
         except Exception:
             self._fail_execution(project_id, user.user_id, execution_id)
         finally:
@@ -352,7 +354,8 @@ class Agent4N3OrchestrationService:
                 error=Agent4N2Message(code="N3_SOURCE_FAILED", message="Testing Intelligence failed for this source at its current stage."),
                 completed_at=self._clock())
 
-    def _finish(self, project_id, owner_id, execution_id):
+    def _finish(self, project_id, owner_id, execution_id, user):
+        handoff = False
         with AGENT4_WORKFLOW_STATE_LOCK:
             record = self._require_record(project_id, owner_id)
             execution = self._execution(record, execution_id)
@@ -387,13 +390,20 @@ class Agent4N3OrchestrationService:
                 n4.updated_at = now
                 record.current_node_id = Agent4TestGenerationNodeId.CONTEXT_TESTABILITY
                 record.pipeline_status = Agent4PipelineStatus.RUNNING
+                handoff = True
             execution.updated_at = now
             record.updated_at = now
             self._workflow.save(record)
+        if handoff and self._n4_handoff is not None:
+            self._n4_handoff(project_id, owner_id, execution_id, user)
 
     def _build_review_projection(self, record, execution, owner_id):
         items = []
         identity = []
+        auto_accepted_count = 0
+        auto_rejected_count = 0
+        review_relationship_counts = {}
+        auto_accepted_label_counts = {}
         source_progress = {item.source_id: item for item in execution.sources}
         for source_id in sorted(source_progress):
             hybrid = self._hybrid_storage.load(agent_project_id=record.agent_project_id, owner_user_id=owner_id, source_id=source_id)
@@ -416,8 +426,18 @@ class Agent4N3OrchestrationService:
             progress = source_progress[source_id]
             for result in hybrid.results:
                 for decision in result.decisions:
+                    if decision.status.value == "ACCEPTED":
+                        auto_accepted_count += 1
+                        auto_accepted_label_counts[decision.label.value] = (
+                            auto_accepted_label_counts.get(decision.label.value, 0) + 1
+                        )
+                    elif decision.status.value == "REJECTED":
+                        auto_rejected_count += 1
                     if decision.status.value != "REVIEW_REQUIRED":
                         continue
+                    review_relationship_counts[decision.evidence_state.value] = (
+                        review_relationship_counts.get(decision.evidence_state.value, 0) + 1
+                    )
                     evidence = {item.evidence_id: item for item in rule_by_id[result.chunk.chunk_id].rule_evidence}
                     quotes = [evidence[eid].quote for eid in decision.rule_evidence_ids if eid in evidence and evidence[eid].quote]
                     item = Agent4N3ReviewItem(
@@ -452,6 +472,11 @@ class Agent4N3OrchestrationService:
         return Agent4N3ReviewProjection(
             review_snapshot_fingerprint=fingerprint,
             execution_id=execution.execution_id,
+            auto_accepted_count=auto_accepted_count,
+            auto_rejected_count=auto_rejected_count,
+            pending_review_count=len(items),
+            review_relationship_counts=dict(sorted(review_relationship_counts.items())),
+            auto_accepted_label_counts=dict(sorted(auto_accepted_label_counts.items())),
             items=items,
         )
 

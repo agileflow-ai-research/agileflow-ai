@@ -63,6 +63,18 @@ from app.modules.agents.testing_validation.workflow.orchestration.n3_service imp
     Agent4N3OrchestrationService,
     Agent4N3ReviewError,
 )
+from app.modules.agents.testing_validation.workflow.orchestration.n4_service import (
+    Agent4N4OrchestrationService,
+    Agent4N4ReviewError,
+)
+from app.modules.agents.testing_validation.context_testability.traceability.service import Agent4TraceabilityService
+from app.modules.agents.testing_validation.context_testability.traceability.storage import Agent4TraceabilityStorage
+from app.modules.agents.testing_validation.context_testability.testability.service import Agent4TestabilityService
+from app.modules.agents.testing_validation.context_testability.testability.storage import Agent4TestabilityStorage
+from app.modules.agents.testing_validation.context_testability.feasibility.service import Agent4FeasibilityService
+from app.modules.agents.testing_validation.context_testability.feasibility.storage import Agent4FeasibilityStorage
+from app.modules.agents.testing_validation.context_testability.context_decision.service import Agent4ContextDecisionService
+from app.modules.agents.testing_validation.context_testability.context_decision.storage import Agent4ContextDecisionStorage
 from app.modules.agents.testing_validation.intelligence.rules.service import Agent4RuleClassificationService
 from app.modules.agents.testing_validation.intelligence.rules.storage import Agent4RuleStorage
 from app.modules.agents.testing_validation.intelligence.zero_shot.service import Agent4ZeroShotService
@@ -78,6 +90,8 @@ from app.modules.agents.testing_validation.intelligence.effective.storage import
 from app.modules.agents.testing_validation.workflow.schemas import (
     Agent4N3ReviewProjection,
     Agent4N3ReviewSubmission,
+    Agent4N4ResultProjection,
+    Agent4N4WarningAcknowledgementRequest,
     Agent4TestGenerationWorkflowResponse,
     TestGenerationOutputSelectionUpdate,
 )
@@ -144,10 +158,44 @@ def get_agent4_source_service(
     )
 
 
+def get_agent4_n4_orchestration_service(
+    workflow_service: Annotated[Agent4WorkflowService, Depends(get_agent4_workflow_service)],
+    workflow_storage: Annotated[Agent4WorkflowStorage, Depends(get_agent4_workflow_storage)],
+    source_storage: Annotated[Agent4SourceStorage, Depends(get_agent4_source_storage)],
+) -> Agent4N4OrchestrationService:
+    root = settings.agent4_storage_root
+    traceability_storage = Agent4TraceabilityStorage(root)
+    testability_storage = Agent4TestabilityStorage(root)
+    feasibility_storage = Agent4FeasibilityStorage(root)
+    decision_storage = Agent4ContextDecisionStorage(root)
+    traceability = Agent4TraceabilityService(
+        workflow_service, workflow_storage, source_storage,
+        Agent4ChunkStorage(root), Agent4EffectiveStorage(root),
+        Agent4SemanticStorage(root), traceability_storage,
+    )
+    testability = Agent4TestabilityService(
+        workflow_service, workflow_storage, traceability, testability_storage,
+    )
+    feasibility = Agent4FeasibilityService(
+        workflow_service, workflow_storage, traceability, testability,
+        feasibility_storage,
+    )
+    decision = Agent4ContextDecisionService(
+        workflow_service, workflow_storage, traceability_storage,
+        testability_storage, feasibility_storage, decision_storage,
+    )
+    return Agent4N4OrchestrationService(
+        workflow_service, workflow_storage, traceability, testability,
+        feasibility, decision, traceability_storage, testability_storage,
+        feasibility_storage, decision_storage,
+    )
+
+
 def get_agent4_n3_orchestration_service(
     standalone_service: Annotated[StandaloneService, Depends(get_standalone_service)],
     workflow_service: Annotated[Agent4WorkflowService, Depends(get_agent4_workflow_service)],
     workflow_storage: Annotated[Agent4WorkflowStorage, Depends(get_agent4_workflow_storage)],
+    n4_service: Annotated[Agent4N4OrchestrationService, Depends(get_agent4_n4_orchestration_service)],
 ) -> Agent4N3OrchestrationService:
     root = settings.agent4_storage_root
     chunks = Agent4ChunkStorage(root)
@@ -173,6 +221,7 @@ def get_agent4_n3_orchestration_service(
     return Agent4N3OrchestrationService(
         workflow_service, workflow_storage, chunks, rules, zero, hybrid,
         semantic, effective, hybrid_storage, rules_storage, zero_storage,
+        n4_handoff=n4_service.start_after_n3,
     )
 
 
@@ -232,11 +281,16 @@ def get_test_generation_workflow(
         Agent4N3OrchestrationService,
         Depends(get_agent4_n3_orchestration_service),
     ],
+    n4_service: Annotated[
+        Agent4N4OrchestrationService,
+        Depends(get_agent4_n4_orchestration_service),
+    ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
     try:
         service.get(agent_project_id, current_user)
-        workflow = n3_service.get(agent_project_id, current_user)
+        n3_service.get(agent_project_id, current_user)
+        workflow = n4_service.get(agent_project_id, current_user)
     except AgentProjectNotFoundError:
         return _error(
             status.HTTP_404_NOT_FOUND,
@@ -541,6 +595,103 @@ def retry_test_generation_n3_source(
     except (Agent4WorkflowStorageError, StandaloneServiceError):
         return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Testing Intelligence unavailable", "workflow", "The source retry could not be started")
     return SuccessResponse(message="Agent 4 Testing Intelligence source retry accepted", data=workflow)
+
+
+@router.post(
+    "/{agent_project_id}/test-generation/workflow/n4/start",
+    response_model=SuccessResponse[Agent4TestGenerationWorkflowResponse],
+)
+def start_test_generation_n4(
+    agent_project_id: str,
+    service: Annotated[Agent4N4OrchestrationService, Depends(get_agent4_n4_orchestration_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+):
+    try:
+        workflow = service.start(agent_project_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(status.HTTP_404_NOT_FOUND, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(status.HTTP_409_CONFLICT, "Agent project is archived", "agent_project_id", "Reactivate the project before starting context analysis")
+    except (WrongAgent4WorkflowProjectError, Agent4WorkflowStageError, Agent4WorkflowGateError) as exc:
+        return _error(status.HTTP_409_CONFLICT, "Context analysis cannot be started", "workflow", str(exc))
+    except ValueError:
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid request", "agent_project_id", "Agent project ID is invalid")
+    except (Agent4WorkflowStorageError, StandaloneServiceError, RuntimeError):
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Context analysis unavailable", "workflow", "Context analysis could not be started")
+    return SuccessResponse(message="Agent 4 Context & Testability accepted", data=workflow)
+
+
+@router.post(
+    "/{agent_project_id}/test-generation/workflow/n4/retry",
+    response_model=SuccessResponse[Agent4TestGenerationWorkflowResponse],
+)
+def retry_test_generation_n4(
+    agent_project_id: str,
+    service: Annotated[Agent4N4OrchestrationService, Depends(get_agent4_n4_orchestration_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+):
+    try:
+        workflow = service.retry(agent_project_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(status.HTTP_404_NOT_FOUND, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(status.HTTP_409_CONFLICT, "Agent project is archived", "agent_project_id", "Reactivate the project before retrying context analysis")
+    except (Agent4WorkflowGateError, WrongAgent4WorkflowProjectError, Agent4WorkflowStageError) as exc:
+        return _error(status.HTTP_409_CONFLICT, "Context analysis cannot be retried", "workflow", str(exc))
+    except ValueError:
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid request", "agent_project_id", "Agent project ID is invalid")
+    except (Agent4WorkflowStorageError, StandaloneServiceError, RuntimeError):
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Context analysis unavailable", "workflow", "Context analysis retry could not be started")
+    return SuccessResponse(message="Agent 4 Context & Testability retry accepted", data=workflow)
+
+
+@router.post(
+    "/{agent_project_id}/test-generation/workflow/n4/acknowledge-warnings",
+    response_model=SuccessResponse[Agent4TestGenerationWorkflowResponse],
+)
+def acknowledge_test_generation_n4_warnings(
+    agent_project_id: str,
+    request: Agent4N4WarningAcknowledgementRequest,
+    service: Annotated[Agent4N4OrchestrationService, Depends(get_agent4_n4_orchestration_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+):
+    try:
+        workflow = service.acknowledge(agent_project_id, request, current_user)
+    except AgentProjectNotFoundError:
+        return _error(status.HTTP_404_NOT_FOUND, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(status.HTTP_409_CONFLICT, "Agent project is archived", "agent_project_id", "Reactivate the project before acknowledging warnings")
+    except (Agent4N4ReviewError, Agent4WorkflowGateError) as exc:
+        return _error(status.HTTP_409_CONFLICT, "Warning acknowledgement rejected", "warning_snapshot_fingerprint", str(exc))
+    except ValueError as exc:
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid acknowledgement", "acknowledgement", str(exc))
+    except (Agent4WorkflowStorageError, StandaloneServiceError, RuntimeError):
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Warning acknowledgement unavailable", "workflow", "Warning acknowledgement could not be saved")
+    return SuccessResponse(message="Agent 4 context warnings acknowledged", data=workflow)
+
+
+@router.get(
+    "/{agent_project_id}/test-generation/workflow/n4/result",
+    response_model=SuccessResponse[Agent4N4ResultProjection],
+)
+def get_test_generation_n4_result(
+    agent_project_id: str,
+    service: Annotated[Agent4N4OrchestrationService, Depends(get_agent4_n4_orchestration_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+):
+    try:
+        result = service.result(agent_project_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(status.HTTP_404_NOT_FOUND, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(status.HTTP_409_CONFLICT, "Agent project is archived", "agent_project_id", "Reactivate the project before viewing context results")
+    except (Agent4WorkflowGateError, WrongAgent4WorkflowProjectError, Agent4WorkflowStageError) as exc:
+        return _error(status.HTTP_409_CONFLICT, "Context decision unavailable", "workflow", str(exc))
+    except ValueError:
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid request", "agent_project_id", "Agent project ID is invalid")
+    except (Agent4WorkflowStorageError, StandaloneServiceError, RuntimeError):
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Context decision unavailable", "workflow", "Context decision could not be loaded")
+    return SuccessResponse(message="Agent 4 context decision retrieved", data=result)
 
 
 @router.post(

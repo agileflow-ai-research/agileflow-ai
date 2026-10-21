@@ -70,6 +70,37 @@ export function retryTestGenerationIntelligenceSource(agentProjectId, sourceId) 
   )
 }
 
+export function startTestGenerationContextAnalysis(agentProjectId) {
+  return apiClient.post(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n4/start`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function retryTestGenerationContextAnalysis(agentProjectId) {
+  return apiClient.post(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n4/retry`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getTestGenerationContextResult(agentProjectId) {
+  return apiClient.get(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n4/result`,
+    { authenticated: true },
+  )
+}
+
+export function acknowledgeTestGenerationContextWarnings(agentProjectId, input) {
+  return apiClient.post(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n4/acknowledge-warnings`,
+    input,
+    { authenticated: true },
+  )
+}
+
 function sourcesPath(agentProjectId) {
   return `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/sources`
 }

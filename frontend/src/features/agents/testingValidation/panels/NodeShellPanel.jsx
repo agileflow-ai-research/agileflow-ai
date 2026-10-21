@@ -1,14 +1,14 @@
-function NodeShellPanel({ definition, availability, children, note }) {
+function NodeShellPanel({ definition, availability, children, hideAvailability = false, note }) {
   return (
     <section className="space-y-5" aria-label={`${definition.title} details`}>
       <div>
         <h3 className="text-card-heading font-semibold text-content-primary">{definition.title}</h3>
         <p className="mt-2 text-sm text-content-secondary">{definition.purpose}</p>
       </div>
-      <div className="rounded-control border border-default bg-elevated p-4">
+      {!hideAvailability ? <div className="rounded-control border border-default bg-elevated p-4">
         <p className="text-xs font-semibold uppercase tracking-wider text-content-muted">Current availability</p>
         <p className="mt-1 font-semibold text-content-primary">{availability}</p>
-      </div>
+      </div> : null}
       {children}
       <div>
         <h4 className="font-semibold text-content-primary">Future internal stages</h4>

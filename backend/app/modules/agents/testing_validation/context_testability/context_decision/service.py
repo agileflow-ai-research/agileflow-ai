@@ -188,20 +188,18 @@ class Agent4ContextDecisionService:
             or confirmation.selected_outputs != record.selected_outputs
         ):
             raise Agent4ContextDecisionGateError("Confirmed selected outputs are stale")
-        expected = (
-            Agent4WorkflowNodeStatus.COMPLETED,
-            Agent4WorkflowNodeStatus.COMPLETED,
-            Agent4WorkflowNodeStatus.COMPLETED,
-            Agent4WorkflowNodeStatus.NOT_STARTED,
-            Agent4WorkflowNodeStatus.LOCKED,
-            Agent4WorkflowNodeStatus.LOCKED,
-        )
+        statuses = tuple(item.status for item in record.nodes)
         if (
-            tuple(item.status for item in record.nodes) != expected
+            statuses[:3] != (Agent4WorkflowNodeStatus.COMPLETED,) * 3
+            or statuses[3] not in {
+                Agent4WorkflowNodeStatus.NOT_STARTED,
+                Agent4WorkflowNodeStatus.RUNNING,
+            }
+            or statuses[4:] != (Agent4WorkflowNodeStatus.LOCKED,) * 2
             or record.current_node_id is not Agent4TestGenerationNodeId.CONTEXT_TESTABILITY
             or record.pipeline_status is not Agent4PipelineStatus.RUNNING
         ):
-            raise Agent4ContextDecisionGateError("N4.4 requires the current unstarted N4 workflow boundary")
+            raise Agent4ContextDecisionGateError("N4.4 requires the current N4 workflow boundary")
 
     @staticmethod
     def _validate_upstream(project_id, record, confirmation, graph, graph_fp,

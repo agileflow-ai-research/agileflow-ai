@@ -46,14 +46,19 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
     preparationError,
     intelligenceError,
     intelligenceReview,
+    contextActionSubmitting,
+    contextError,
+    contextResult,
     retry,
     retryPreparationSource,
     retryIntelligenceSource,
+    retryContextAnalysis,
     retryingIntelligenceSourceId,
     retryingSourceId,
     reviewSubmitting,
     saveOutputs,
     submitIntelligenceReview,
+    acknowledgeContextWarnings,
     workflowState,
   } = useTestingValidationWorkflow(project.agent_project_id)
   const presentation = useMemo(
@@ -152,6 +157,12 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
               pipelineStatus={workflowState.pipeline_status}
               n2Execution={workflowState.n2_execution}
               n3Execution={workflowState.n3_execution}
+              n4Execution={workflowState.n4_execution}
+              contextActionSubmitting={contextActionSubmitting}
+              contextError={contextError}
+              contextResult={contextResult}
+              onAcknowledgeContextWarnings={acknowledgeContextWarnings}
+              onRetryContextAnalysis={retryContextAnalysis}
               onRetryPreparationSource={retryPreparationSource}
               preparationError={preparationError}
               intelligenceError={intelligenceError}

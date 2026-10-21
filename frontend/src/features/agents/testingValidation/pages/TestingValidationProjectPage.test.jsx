@@ -123,7 +123,7 @@ describe('TestingValidationProjectPage', () => {
     ['Input & Output Setup', /Sources and desired outputs remain editable draft setup/],
     ['Input Preparation', /No extraction, normalization, or chunking/],
     ['Testing Intelligence', /execution details will appear when N3 is queued/],
-    ['Context & Testability', /performs no traceability, readiness, or feasibility/],
+    ['Context & Testability', /Deterministic traceability, testability, feasibility, and context-decision evidence/],
     ['Test Planning & Human Review', /Mandatory Human Approval Gate/],
     ['Test Generation & Results', /NOT_EXECUTED/],
   ])('opens the %s shell panel without processing', async (title, expectedContent) => {
@@ -262,7 +262,7 @@ describe('TestingValidationProjectPage', () => {
     expect(canvas).toHaveAttribute('data-selected-node', 'CONTEXT_TESTABILITY')
     await user.click(screen.getByRole('button', { name: /Open Context & Testability/ }))
     const panel = screen.getByRole('dialog', { name: 'Context & Testability' })
-    expect(panel).toHaveTextContent('No N4 analysis has started')
+    expect(panel).toHaveTextContent('Analysis has not started')
     expect(panel).toHaveTextContent('Not Started')
     expect(screen.queryByRole('button', { name: /Start N4|Run N4/ })).not.toBeInTheDocument()
     expect(panel).not.toHaveTextContent(/ready|traceability result|testability score/i)

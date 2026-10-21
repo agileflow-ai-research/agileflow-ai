@@ -2,10 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   confirmTestGenerationSetup,
+  acknowledgeTestGenerationContextWarnings,
+  getTestGenerationContextResult,
   getTestGenerationIntelligenceReview,
   getTestGenerationWorkflow,
   retryTestGenerationPreparationSource,
   retryTestGenerationIntelligenceSource,
+  retryTestGenerationContextAnalysis,
+  startTestGenerationContextAnalysis,
   startTestGenerationIntelligence,
   startTestGenerationPreparation,
   submitTestGenerationIntelligenceReview,
@@ -28,6 +32,7 @@ function isValidWorkflow(workflow, agentProjectId) {
     && (workflow.n1_confirmation === null || typeof workflow.n1_confirmation === 'object')
     && (workflow.n2_execution == null || typeof workflow.n2_execution === 'object')
     && (workflow.n3_execution == null || typeof workflow.n3_execution === 'object')
+    && (workflow.n4_execution == null || typeof workflow.n4_execution === 'object')
     && expectedNodeIds.includes(workflow.current_node_id)
     && Array.isArray(workflow.nodes)
     && workflow.nodes.length === expectedNodeIds.length
@@ -46,6 +51,7 @@ export default function useTestingValidationWorkflow(agentProjectId) {
   const outputSaveGeneration = useRef(0)
   const compatibilityStartProject = useRef(null)
   const compatibilityN3StartProject = useRef(null)
+  const compatibilityN4StartProject = useRef(null)
   const [reloadSequence, setReloadSequence] = useState(0)
   const [workflowState, setWorkflowState] = useState(null)
   const [loadStatus, setLoadStatus] = useState('loading')
@@ -60,11 +66,14 @@ export default function useTestingValidationWorkflow(agentProjectId) {
   const [intelligenceError, setIntelligenceError] = useState('')
   const [reviewSubmitting, setReviewSubmitting] = useState(false)
   const [retryingIntelligenceSourceId, setRetryingIntelligenceSourceId] = useState(null)
+  const [contextResult, setContextResult] = useState(null)
+  const [contextResultProjectId, setContextResultProjectId] = useState(null)
+  const [contextError, setContextError] = useState('')
+  const [contextActionSubmitting, setContextActionSubmitting] = useState(false)
 
   useEffect(() => {
     const requestGeneration = generation.current + 1
     generation.current = requestGeneration
-
     void getTestGenerationWorkflow(agentProjectId)
       .then((response) => {
         if (generation.current !== requestGeneration) return
@@ -78,6 +87,10 @@ export default function useTestingValidationWorkflow(agentProjectId) {
         setConfirmationSubmitting(false)
         if (response.data.n3_execution?.status !== 'WAITING_FOR_HUMAN') {
           setIntelligenceReview(null)
+        }
+        if (!response.data.n4_execution?.overall_decision) {
+          setContextResultProjectId(null)
+          setContextResult(null)
         }
       })
       .catch((error) => {
@@ -98,6 +111,7 @@ export default function useTestingValidationWorkflow(agentProjectId) {
     const n1 = workflowState.nodes.find((node) => node.node_id === 'INPUT_OUTPUT_SETUP')
     const n2 = workflowState.nodes.find((node) => node.node_id === 'INPUT_PREPARATION')
     const n3 = workflowState.nodes.find((node) => node.node_id === 'TESTING_INTELLIGENCE')
+    const n4 = workflowState.nodes.find((node) => node.node_id === 'CONTEXT_TESTABILITY')
     const legacyNotStarted = Boolean(
       workflowState.n1_confirmation
       && workflowState.current_node_id === 'INPUT_PREPARATION'
@@ -149,6 +163,47 @@ export default function useTestingValidationWorkflow(agentProjectId) {
       return undefined
     }
 
+    const legacyN4NotStarted = Boolean(
+      workflowState.current_node_id === 'CONTEXT_TESTABILITY'
+      && n3?.status === 'COMPLETED'
+      && n4?.status === 'NOT_STARTED'
+      && workflowState.n4_execution === null,
+    )
+    if (legacyN4NotStarted && compatibilityN4StartProject.current !== agentProjectId) {
+      compatibilityN4StartProject.current = agentProjectId
+      void startTestGenerationContextAnalysis(agentProjectId)
+        .then((response) => {
+          if (generation.current === requestGeneration && isValidWorkflow(response?.data, agentProjectId)) {
+            setWorkflowState(response.data)
+          }
+        })
+        .catch((error) => {
+          if (generation.current === requestGeneration && error?.status !== 401) {
+            compatibilityN4StartProject.current = null
+            setContextError(requestMessage(error))
+          }
+        })
+      return undefined
+    }
+
+    if (
+      workflowState.n4_execution?.overall_decision
+      && (!contextResult || contextResultProjectId !== agentProjectId)
+    ) {
+      void getTestGenerationContextResult(agentProjectId)
+        .then((response) => {
+          if (generation.current === requestGeneration) {
+            setContextResultProjectId(agentProjectId)
+            setContextResult(response?.data ?? null)
+          }
+        })
+        .catch((error) => {
+          if (generation.current === requestGeneration && error?.status !== 401) {
+            setContextError(requestMessage(error))
+          }
+        })
+    }
+
     if (workflowState.n3_execution?.status === 'WAITING_FOR_HUMAN' && !intelligenceReview) {
       void getTestGenerationIntelligenceReview(agentProjectId)
         .then((response) => {
@@ -164,6 +219,7 @@ export default function useTestingValidationWorkflow(agentProjectId) {
 
     const active = ['QUEUED', 'RUNNING'].includes(workflowState.n2_execution?.status)
       || ['QUEUED', 'RUNNING'].includes(workflowState.n3_execution?.status)
+      || ['QUEUED', 'RUNNING'].includes(workflowState.n4_execution?.status)
     if (!active) {
       return undefined
     }
@@ -182,7 +238,7 @@ export default function useTestingValidationWorkflow(agentProjectId) {
         })
     }, WORKFLOW_POLL_INTERVAL_MS)
     return () => window.clearTimeout(timer)
-  }, [agentProjectId, intelligenceReview, loadStatus, workflowState])
+  }, [agentProjectId, contextResult, contextResultProjectId, intelligenceReview, loadStatus, workflowState])
 
   const retry = useCallback(() => {
     setLoadStatus('loading')
@@ -343,6 +399,60 @@ export default function useTestingValidationWorkflow(agentProjectId) {
     }
   }, [agentProjectId])
 
+  const retryContextAnalysis = useCallback(async () => {
+    const requestGeneration = generation.current
+    setContextActionSubmitting(true)
+    setContextError('')
+    try {
+      const response = await retryTestGenerationContextAnalysis(agentProjectId)
+      if (!isValidWorkflow(response?.data, agentProjectId)) throw new Error('Invalid Agent 4 workflow response')
+      if (generation.current === requestGeneration) {
+        setContextResultProjectId(null)
+        setContextResult(null)
+        setWorkflowState(response.data)
+        return response.data
+      }
+      return null
+    } catch (error) {
+      if (generation.current === requestGeneration && error?.status !== 401) setContextError(requestMessage(error))
+      return null
+    } finally {
+      if (generation.current === requestGeneration) setContextActionSubmitting(false)
+    }
+  }, [agentProjectId])
+
+  const acknowledgeContextWarnings = useCallback(async (optionalNote = '') => {
+    if (
+      contextResultProjectId !== agentProjectId
+      || !contextResult?.warning_snapshot_fingerprint
+    ) return null
+    const requestGeneration = generation.current
+    setContextActionSubmitting(true)
+    setContextError('')
+    try {
+      const response = await acknowledgeTestGenerationContextWarnings(agentProjectId, {
+        warning_snapshot_fingerprint: contextResult.warning_snapshot_fingerprint,
+        ...(optionalNote.trim() ? { optional_note: optionalNote.trim() } : {}),
+      })
+      if (!isValidWorkflow(response?.data, agentProjectId)) throw new Error('Invalid Agent 4 workflow response')
+      if (generation.current === requestGeneration) {
+        setWorkflowState(response.data)
+        const refreshed = await getTestGenerationContextResult(agentProjectId)
+        if (generation.current === requestGeneration) {
+          setContextResultProjectId(agentProjectId)
+          setContextResult(refreshed?.data ?? contextResult)
+        }
+        return response.data
+      }
+      return null
+    } catch (error) {
+      if (generation.current === requestGeneration && error?.status !== 401) setContextError(requestMessage(error))
+      return null
+    } finally {
+      if (generation.current === requestGeneration) setContextActionSubmitting(false)
+    }
+  }, [agentProjectId, contextResult, contextResultProjectId])
+
   return {
     confirmationError,
     confirmationSubmitting,
@@ -354,15 +464,20 @@ export default function useTestingValidationWorkflow(agentProjectId) {
     preparationError,
     intelligenceError,
     intelligenceReview,
+    contextActionSubmitting,
+    contextError,
+    contextResult: contextResultProjectId === agentProjectId ? contextResult : null,
     refresh,
     retryPreparationSource,
     retryIntelligenceSource,
+    retryContextAnalysis,
     retryingIntelligenceSourceId,
     retryingSourceId,
     reviewSubmitting,
     retry,
     saveOutputs,
     submitIntelligenceReview,
+    acknowledgeContextWarnings,
     workflowState,
   }
 }

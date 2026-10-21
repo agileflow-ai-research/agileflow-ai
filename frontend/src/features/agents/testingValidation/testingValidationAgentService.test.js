@@ -2,12 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '../../../services/apiClient.js'
 import {
+  acknowledgeTestGenerationContextWarnings,
   confirmTestGenerationSetup,
   createTestingValidationTextSource,
   deleteTestingValidationSource,
   getTestGenerationWorkflow,
+  getTestGenerationContextResult,
   listTestingValidationSources,
   runTestingValidationAgent,
+  retryTestGenerationContextAnalysis,
+  startTestGenerationContextAnalysis,
   updateTestGenerationOutputs,
   uploadTestingValidationSource,
 } from './testingValidationAgentService.js'
@@ -49,6 +53,32 @@ describe('testingValidationAgentService', () => {
     expect(apiClient.post).toHaveBeenCalledWith(
       '/agents/testing-validation/AGP-004/test-generation/workflow/n1/confirm',
       undefined,
+      { authenticated: true },
+    )
+  })
+
+  it('uses authoritative N4 command and result routes', () => {
+    startTestGenerationContextAnalysis('AGP-004')
+    retryTestGenerationContextAnalysis('AGP-004')
+    getTestGenerationContextResult('AGP-004')
+    acknowledgeTestGenerationContextWarnings('AGP-004', {
+      warning_snapshot_fingerprint: 'a'.repeat(64), optional_note: 'Reviewed',
+    })
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/testing-validation/AGP-004/test-generation/workflow/n4/start',
+      undefined, { authenticated: true },
+    )
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/testing-validation/AGP-004/test-generation/workflow/n4/retry',
+      undefined, { authenticated: true },
+    )
+    expect(apiClient.get).toHaveBeenCalledWith(
+      '/agents/testing-validation/AGP-004/test-generation/workflow/n4/result',
+      { authenticated: true },
+    )
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/agents/testing-validation/AGP-004/test-generation/workflow/n4/acknowledge-warnings',
+      { warning_snapshot_fingerprint: 'a'.repeat(64), optional_note: 'Reviewed' },
       { authenticated: true },
     )
   })

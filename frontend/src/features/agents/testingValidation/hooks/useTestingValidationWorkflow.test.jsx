@@ -2,11 +2,15 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  acknowledgeTestGenerationContextWarnings,
   confirmTestGenerationSetup,
   getTestGenerationIntelligenceReview,
   getTestGenerationWorkflow,
+  getTestGenerationContextResult,
   retryTestGenerationPreparationSource,
   retryTestGenerationIntelligenceSource,
+  retryTestGenerationContextAnalysis,
+  startTestGenerationContextAnalysis,
   startTestGenerationIntelligence,
   startTestGenerationPreparation,
   submitTestGenerationIntelligenceReview,
@@ -15,11 +19,15 @@ import {
 import useTestingValidationWorkflow from './useTestingValidationWorkflow.js'
 
 vi.mock('../testingValidationAgentService.js', () => ({
+  acknowledgeTestGenerationContextWarnings: vi.fn(),
   confirmTestGenerationSetup: vi.fn(),
   getTestGenerationIntelligenceReview: vi.fn(),
   getTestGenerationWorkflow: vi.fn(),
+  getTestGenerationContextResult: vi.fn(),
   retryTestGenerationPreparationSource: vi.fn(),
   retryTestGenerationIntelligenceSource: vi.fn(),
+  retryTestGenerationContextAnalysis: vi.fn(),
+  startTestGenerationContextAnalysis: vi.fn(),
   startTestGenerationIntelligence: vi.fn(),
   startTestGenerationPreparation: vi.fn(),
   submitTestGenerationIntelligenceReview: vi.fn(),
@@ -92,6 +100,32 @@ function n3Workflow(status = 'RUNNING') {
   }
 }
 
+function n4Workflow(status = 'RUNNING') {
+  const terminal = ['WAITING_FOR_HUMAN', 'BLOCKED', 'COMPLETED', 'FAILED', 'INTERRUPTED'].includes(status)
+  return {
+    ...n3Workflow('COMPLETED'),
+    pipeline_status: status === 'WAITING_FOR_HUMAN' ? 'WAITING_FOR_HUMAN' : status === 'FAILED' ? 'FAILED' : 'RUNNING',
+    current_node_id: status === 'COMPLETED' ? 'TEST_PLANNING_REVIEW' : 'CONTEXT_TESTABILITY',
+    n4_execution: {
+      execution_id: 'A4N4E-current', attempt_number: 1, status,
+      overall_decision: terminal && status !== 'FAILED' && status !== 'INTERRUPTED'
+        ? status === 'BLOCKED' ? 'BLOCKED' : status === 'WAITING_FOR_HUMAN' ? 'PROCEED_WITH_WARNINGS' : 'PROCEED'
+        : null,
+      stages: ['TRACEABILITY', 'TESTABILITY', 'FEASIBILITY', 'CONTEXT_DECISION'].map((stage) => ({
+        stage, status: terminal || status === 'RUNNING' ? 'COMPLETE' : 'NOT_RUN',
+      })),
+    },
+    nodes: nodeIds.map((nodeId, index) => ({
+      node_id: nodeId,
+      status: index < 3
+        ? 'COMPLETED'
+        : index === 3
+          ? status
+          : index === 4 && status === 'COMPLETED' ? 'NOT_STARTED' : 'LOCKED',
+    })),
+  }
+}
+
 describe('useTestingValidationWorkflow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -106,6 +140,10 @@ describe('useTestingValidationWorkflow', () => {
       data: { review_snapshot_fingerprint: 'a'.repeat(64), items: [] },
     })
     startTestGenerationPreparation.mockResolvedValue({ data: workflow() })
+    startTestGenerationContextAnalysis.mockResolvedValue({ data: workflow() })
+    retryTestGenerationContextAnalysis.mockResolvedValue({ data: workflow() })
+    acknowledgeTestGenerationContextWarnings.mockResolvedValue({ data: workflow() })
+    getTestGenerationContextResult.mockResolvedValue({ data: null })
   })
 
   it('loads and explicitly refreshes authoritative workflow state without polling', async () => {
@@ -444,5 +482,133 @@ describe('useTestingValidationWorkflow', () => {
     expect(retryTestGenerationIntelligenceSource).toHaveBeenCalledWith('AGP-004', 'A4SRC-one')
     expect(result.current.intelligenceError).toBe('The source retry is no longer current.')
     expect(result.current.retryingIntelligenceSourceId).toBeNull()
+  })
+
+  it('starts an exact legacy N4 NOT_STARTED workflow once', async () => {
+    const legacy = {
+      ...n3Workflow('COMPLETED'), current_node_id: 'CONTEXT_TESTABILITY', n4_execution: null,
+      nodes: nodeIds.map((nodeId, index) => ({
+        node_id: nodeId, status: index < 3 ? 'COMPLETED' : index === 3 ? 'NOT_STARTED' : 'LOCKED',
+      })),
+    }
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: legacy })
+    startTestGenerationContextAnalysis.mockResolvedValueOnce({ data: n4Workflow('QUEUED') })
+    const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+    await waitFor(() => expect(result.current.workflowState?.n4_execution?.status).toBe('QUEUED'))
+    expect(startTestGenerationContextAnalysis).toHaveBeenCalledTimes(1)
+  })
+
+  it('polls N4 while active and stops after warning review is reached', async () => {
+    vi.useFakeTimers()
+    getTestGenerationWorkflow
+      .mockResolvedValueOnce({ data: n4Workflow('QUEUED') })
+      .mockResolvedValueOnce({ data: n4Workflow('RUNNING') })
+      .mockResolvedValueOnce({ data: n4Workflow('WAITING_FOR_HUMAN') })
+    getTestGenerationContextResult.mockResolvedValueOnce({ data: {
+      overall_decision: 'PROCEED_WITH_WARNINGS', warning_snapshot_fingerprint: 'b'.repeat(64), outputs: [],
+    } })
+    try {
+      const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(result.current.workflowState.n4_execution.status).toBe('QUEUED')
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n4_execution.status).toBe('RUNNING')
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n4_execution.status).toBe('WAITING_FOR_HUMAN')
+      expect(vi.getTimerCount()).toBe(0)
+      expect(getTestGenerationContextResult).toHaveBeenCalledWith('AGP-004')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cleans N4 polling on unmount and project change', async () => {
+    vi.useFakeTimers()
+    getTestGenerationWorkflow.mockImplementation((projectId) => Promise.resolve({
+      data: projectId === 'AGP-004' ? n4Workflow('RUNNING') : workflow('AGP-005'),
+    }))
+    try {
+      const { rerender, unmount } = renderHook(
+        ({ projectId }) => useTestingValidationWorkflow(projectId),
+        { initialProps: { projectId: 'AGP-004' } },
+      )
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(vi.getTimerCount()).toBe(1)
+      rerender({ projectId: 'AGP-005' })
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(vi.getTimerCount()).toBe(0)
+      unmount()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not retain an N4 result when the active project changes', async () => {
+    const secondWorkflow = { ...n4Workflow('COMPLETED'), agent_project_id: 'AGP-005' }
+    getTestGenerationWorkflow.mockImplementation((projectId) => Promise.resolve({
+      data: projectId === 'AGP-004' ? n4Workflow('COMPLETED') : secondWorkflow,
+    }))
+    getTestGenerationContextResult
+      .mockResolvedValueOnce({ data: { overall_decision: 'PROCEED', outputs: [{ output_code: 'FIRST' }] } })
+      .mockResolvedValueOnce({ data: { overall_decision: 'PROCEED', outputs: [{ output_code: 'SECOND' }] } })
+    const { result, rerender } = renderHook(
+      ({ projectId }) => useTestingValidationWorkflow(projectId),
+      { initialProps: { projectId: 'AGP-004' } },
+    )
+    await waitFor(() => expect(result.current.contextResult?.outputs[0].output_code).toBe('FIRST'))
+    rerender({ projectId: 'AGP-005' })
+    await waitFor(() => expect(result.current.contextResult?.outputs[0].output_code).toBe('SECOND'))
+    expect(getTestGenerationContextResult).toHaveBeenLastCalledWith('AGP-005')
+  })
+
+  it.each(['WAITING_FOR_HUMAN', 'BLOCKED', 'COMPLETED', 'FAILED'])('does not compatibility-start or poll terminal N4 status %s', async (status) => {
+    vi.useFakeTimers()
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: n4Workflow(status) })
+    if (['WAITING_FOR_HUMAN', 'BLOCKED', 'COMPLETED'].includes(status)) {
+      getTestGenerationContextResult.mockResolvedValueOnce({ data: { overall_decision: 'PROCEED', outputs: [] } })
+    }
+    try {
+      renderHook(() => useTestingValidationWorkflow('AGP-004'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve() })
+      expect(startTestGenerationContextAnalysis).not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(0)
+      expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('acknowledges the server warning snapshot and adopts the N5 handoff', async () => {
+    const waiting = n4Workflow('WAITING_FOR_HUMAN')
+    const completed = n4Workflow('COMPLETED')
+    const decision = {
+      overall_decision: 'PROCEED_WITH_WARNINGS', warning_snapshot_fingerprint: 'b'.repeat(64), outputs: [],
+    }
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: waiting })
+    getTestGenerationContextResult.mockResolvedValue({ data: decision })
+    acknowledgeTestGenerationContextWarnings.mockResolvedValueOnce({ data: completed })
+    const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+    await waitFor(() => expect(result.current.contextResult).toEqual(decision))
+    await act(() => result.current.acknowledgeContextWarnings(' Reviewed '))
+    expect(acknowledgeTestGenerationContextWarnings).toHaveBeenCalledWith('AGP-004', {
+      warning_snapshot_fingerprint: 'b'.repeat(64), optional_note: 'Reviewed',
+    })
+    expect(result.current.workflowState.current_node_id).toBe('TEST_PLANNING_REVIEW')
+    expect(result.current.contextActionSubmitting).toBe(false)
+  })
+
+  it('retries an operational N4 failure and adopts the append-only queued attempt', async () => {
+    const failed = n4Workflow('FAILED')
+    const queued = n4Workflow('QUEUED')
+    queued.n4_execution.attempt_number = 2
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: failed })
+    retryTestGenerationContextAnalysis.mockResolvedValueOnce({ data: queued })
+    const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+    await waitFor(() => expect(result.current.loadStatus).toBe('success'))
+    await act(() => result.current.retryContextAnalysis())
+    expect(retryTestGenerationContextAnalysis).toHaveBeenCalledWith('AGP-004')
+    expect(result.current.workflowState.n4_execution.attempt_number).toBe(2)
   })
 })

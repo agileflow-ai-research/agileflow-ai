@@ -120,7 +120,10 @@ class Agent4TraceabilityService:
             and node.get(Agent4TestGenerationNodeId.INPUT_OUTPUT_SETUP) is Agent4WorkflowNodeStatus.COMPLETED
             and node.get(Agent4TestGenerationNodeId.INPUT_PREPARATION) is Agent4WorkflowNodeStatus.COMPLETED
             and node.get(Agent4TestGenerationNodeId.TESTING_INTELLIGENCE) is Agent4WorkflowNodeStatus.COMPLETED
-            and node.get(Agent4TestGenerationNodeId.CONTEXT_TESTABILITY) is Agent4WorkflowNodeStatus.NOT_STARTED
+            and node.get(Agent4TestGenerationNodeId.CONTEXT_TESTABILITY) in {
+                Agent4WorkflowNodeStatus.NOT_STARTED,
+                Agent4WorkflowNodeStatus.RUNNING,
+            }
             and node.get(Agent4TestGenerationNodeId.TEST_PLANNING_REVIEW) is Agent4WorkflowNodeStatus.LOCKED
             and node.get(Agent4TestGenerationNodeId.TEST_GENERATION_RESULTS) is Agent4WorkflowNodeStatus.LOCKED
             and record.current_node_id is Agent4TestGenerationNodeId.CONTEXT_TESTABILITY

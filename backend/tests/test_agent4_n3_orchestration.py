@@ -43,7 +43,7 @@ from test_agent4_zero_shot_classification import FakeRuntime, service_for as zer
 from test_standalone_foundation import user
 
 
-def n3_service(context, scores=None):
+def n3_service(context, scores=None, *, n4_handoff=None):
     root = context[3]
     executor = ControlledExecutor()
     service = Agent4N3OrchestrationService(
@@ -59,6 +59,7 @@ def n3_service(context, scores=None):
         Agent4RuleStorage(root),
         Agent4ZeroShotStorage(root),
         executor=executor,
+        n4_handoff=n4_handoff,
     )
     return service, executor
 
@@ -202,6 +203,13 @@ def test_review_snapshot_is_deterministic_trusted_and_stale_evidence_is_rejected
     assert all(item.relationship and item.model_score is not None for item in first.items)
     assert all(item.hybrid_result_id and item.hybrid_manifest_fingerprint for item in first.items)
     assert all(item.label not in item.auto_accepted_labels for item in first.items)
+    assert first.pending_review_count == len(first.items)
+    assert first.auto_accepted_count + first.auto_rejected_count + first.pending_review_count == 15
+    assert sum(first.review_relationship_counts.values()) == first.pending_review_count
+    assert sum(first.auto_accepted_label_counts.values()) == first.auto_accepted_count
+    serialized = first.model_dump_json().casefold()
+    assert "reviewer_user_id" not in serialized and "storage" not in serialized
+    assert "logits" not in serialized and "vector" not in serialized
 
     root = n2_context[3]
     if changed_evidence == "chunks":
@@ -371,6 +379,32 @@ def test_n3_runs_stages_in_order_once_and_hands_off_to_unstarted_n4(n2_context, 
         for name in names
         for marker in ("traceability", "readiness", "testability-result", "feasibility")
     )
+
+
+def test_new_successful_n3_completion_invokes_n4_handoff_once_after_durable_completion(n2_context):
+    calls = []
+
+    def handoff(project_id, owner_id, execution_id, current_user):
+        persisted = Agent4WorkflowStorage(n2_context[3]).load(
+            agent_project_id=project_id, owner_user_id=owner_id,
+        )
+        assert persisted.n3_executions[-1].status is Agent4N3ExecutionStatus.COMPLETED
+        calls.append((project_id, owner_id, execution_id, current_user.user_id))
+
+    client, _, n2_executor, *_ = n2_context
+    project_id = create_project(client)
+    add_text(client, project_id, "A neutral source statement.")
+    confirm(client, project_id)
+    n2_executor.drain()
+    service, executor = n3_service(n2_context, n4_handoff=handoff)
+    service.start(project_id, user())
+    executor.drain()
+
+    assert len(calls) == 1
+    assert calls[0][0] == project_id
+    assert calls[0][1] == user().user_id
+    assert service.start(project_id, user()).n3_execution_count == 1
+    assert len(calls) == 1
 
 
 def test_n3_executor_submission_failure_preserves_completed_n2_and_is_retryable(n2_context):

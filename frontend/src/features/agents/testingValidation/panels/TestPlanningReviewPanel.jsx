@@ -5,7 +5,7 @@ function TestPlanningReviewPanel({ definition, statusLabel }) {
     <NodeShellPanel
       definition={definition}
       availability={statusLabel}
-      note="Planning and review are not implemented yet. No Test Case Plan or review decision is created by this shell."
+      note={statusLabel === 'Not started' ? 'Test Planning & Review is the next workflow node. No Test Case Plan has been generated.' : 'Planning and review are not implemented yet. No Test Case Plan or review decision is created by this shell.'}
     >
       <div className="rounded-control border border-state-warning/40 bg-state-warning/10 p-4">
         <h4 className="font-semibold text-content-primary">Mandatory Human Approval Gate</h4>
