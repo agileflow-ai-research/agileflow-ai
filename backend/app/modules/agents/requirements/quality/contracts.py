@@ -1,5 +1,6 @@
 """Immutable contracts at the validated N3-to-N4 boundary."""
 
+import math
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -162,7 +163,11 @@ class NliScoreVector(StrictQualityContract):
         relations = [item.relation for item in self.scores]
         if len(set(relations)) != 3 or set(relations) != set(NliRelation):
             raise ValueError("NLI scores require the complete relation taxonomy")
-        if abs(sum(item.score for item in self.scores) - 1.0) > 1e-5:
+        # Real transformer inference may preserve a model's half-precision
+        # dtype through softmax. IEEE-754 binary16 unit roundoff is about
+        # 4.88e-4, so accept only that narrow representation drift.
+        total = math.fsum(item.score for item in self.scores)
+        if not math.isclose(total, 1.0, rel_tol=5e-4, abs_tol=5e-4):
             raise ValueError("NLI scores must form a normalized probability distribution")
         return self
 

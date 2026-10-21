@@ -1,7 +1,9 @@
 import math
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from app.modules.agents.requirements.contracts.schemas import RequirementSourceType
 from app.modules.agents.requirements.discovery.contracts import StructuredRequirementType
@@ -27,6 +29,35 @@ def scores(*, contradiction=0.9, neutral=0.05, entailment=0.05):
         NliRelationScore(relation=NliRelation.NEUTRAL, score=neutral),
         NliRelationScore(relation=NliRelation.CONTRADICTION, score=contradiction),
     ))
+
+
+@pytest.mark.parametrize("values", [
+    (0.2, 0.3, 0.5),
+    (0.00042366981506347656, 0.0003554821014404297, 0.9990234375),
+    (0.2, 0.3, 0.5004),
+    (float(np.float32(0.2)), float(np.float32(0.3)), float(np.float32(0.5))),
+])
+def test_nli_score_vector_accepts_exact_and_small_numeric_normalization_drift(values):
+    vector = scores(entailment=values[0], neutral=values[1], contradiction=values[2])
+    assert tuple(item.score for item in vector.scores) == values
+
+
+@pytest.mark.parametrize("values", [
+    (0.2, 0.3, 0.499),
+    (0.2, 0.3, 0.501),
+    (-0.01, 0.5, 0.51),
+    (1.01, 0.0, 0.0),
+    (float("nan"), 0.5, 0.5),
+    (float("inf"), 0.0, 0.0),
+])
+def test_nli_score_vector_rejects_invalid_or_materially_non_normalized_values(values):
+    with pytest.raises(ValidationError):
+        scores(entailment=values[0], neutral=values[1], contradiction=values[2])
+
+
+def test_nli_score_vector_preserves_complete_relation_taxonomy():
+    vector = scores()
+    assert tuple(item.relation for item in vector.scores) == tuple(NliRelation)
 
 
 class FakeNliProvider:
