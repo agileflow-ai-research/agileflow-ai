@@ -41,7 +41,7 @@ class StrictIntelligenceContract(BaseModel):
 
 
 BoundedScore = Annotated[float, Field(ge=0, le=1)]
-ReasonCode = Annotated[str, Field(pattern=r"^[A-Z][A-Z0-9_]{1,79}$")]
+ReasonCode = Annotated[str, Field(pattern=r"^[A-Z][A-Z0-9_-]{1,79}$")]
 EvidenceId = Annotated[str, Field(pattern=r"^A4EVD-[0-9a-f]{32}$")]
 SegmentId = Annotated[str, Field(pattern=r"^A4SEG-[0-9a-f]{32}$")]
 
