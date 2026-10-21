@@ -207,6 +207,167 @@ class Agent4N2ExecutionSummary(StrictAgent4WorkflowContract):
     failed_at: datetime | None
 
 
+class Agent4N3ExecutionStatus(StrEnum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    WAITING_FOR_HUMAN = "WAITING_FOR_HUMAN"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    INTERRUPTED = "INTERRUPTED"
+
+
+class Agent4N3SourceStatus(StrEnum):
+    QUEUED = "QUEUED"
+    RULE_CLASSIFICATION = "RULE_CLASSIFICATION"
+    ZERO_SHOT_CLASSIFICATION = "ZERO_SHOT_CLASSIFICATION"
+    HYBRID_DECISION = "HYBRID_DECISION"
+    SEMANTIC_EXTRACTION = "SEMANTIC_EXTRACTION"
+    WAITING_FOR_HUMAN = "WAITING_FOR_HUMAN"
+    COMPLETE = "COMPLETE"
+    PENDING_ANALYSIS = "PENDING_ANALYSIS"
+    FAILED = "FAILED"
+
+
+class Agent4N3SourceExecution(StrictAgent4WorkflowContract):
+    source_id: str = Field(pattern=r"^A4SRC-[0-9a-f]{32}$")
+    artifact_type: TestGenerationInputArtifactType
+    source_type: TestGenerationInputSourceType
+    label: str | None = None
+    original_filename: str | None = None
+    status: Agent4N3SourceStatus
+    chunk_count: int = Field(default=0, ge=0)
+    rules_complete: bool = False
+    zero_shot_complete: bool = False
+    hybrid_complete: bool = False
+    effective_complete: bool = False
+    semantic_complete: bool = False
+    pending_review_items: int = Field(default=0, ge=0)
+    accepted_label_count: int = Field(default=0, ge=0)
+    semantic_fact_count: int = Field(default=0, ge=0)
+    failed_stage: str | None = Field(default=None, max_length=80)
+    warnings: list[Agent4N2Message] = Field(default_factory=list)
+    error: Agent4N2Message | None = None
+    started_at: datetime | None = None
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+
+class Agent4N3Execution(StrictAgent4WorkflowContract):
+    execution_id: str = Field(pattern=r"^A4N3E-[0-9a-f]{32}$")
+    attempt_number: int = Field(ge=1)
+    trigger: Literal[
+        "N2_COMPLETION", "LEGACY_START", "SOURCE_RETRY", "HUMAN_REVIEW_RESUME"
+    ]
+    retry_source_id: str | None = Field(
+        default=None, pattern=r"^A4SRC-[0-9a-f]{32}$"
+    )
+    status: Agent4N3ExecutionStatus
+    confirmation_id: str = Field(pattern=r"^A4N1C-[0-9a-f]{32}$")
+    n2_execution_id: str = Field(pattern=r"^A4N2E-[0-9a-f]{32}$")
+    chunk_snapshot_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sources: list[Agent4N3SourceExecution] = Field(min_length=1)
+    review_snapshot_fingerprint: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    review_id: str | None = Field(default=None, pattern=r"^A4N3R-[0-9a-f]{32}$")
+    created_at: datetime
+    queued_at: datetime
+    started_at: datetime | None = None
+    waiting_at: datetime | None = None
+    updated_at: datetime
+    completed_at: datetime | None = None
+    failed_at: datetime | None = None
+    interrupted_at: datetime | None = None
+    warnings: list[Agent4N2Message] = Field(default_factory=list)
+    error: Agent4N2Message | None = None
+    retryable: bool = False
+
+
+class Agent4N3ExecutionSummary(StrictAgent4WorkflowContract):
+    execution_id: str
+    attempt_number: int
+    trigger: str
+    status: Agent4N3ExecutionStatus
+    created_at: datetime
+    waiting_at: datetime | None
+    completed_at: datetime | None
+    failed_at: datetime | None
+    interrupted_at: datetime | None
+
+
+class Agent4N3ReviewDecision(StrEnum):
+    ACCEPT = "ACCEPT"
+    REJECT = "REJECT"
+
+
+class Agent4N3ReviewResolutionRequest(StrictAgent4WorkflowContract):
+    chunk_id: str = Field(pattern=r"^A4CHK-[0-9a-f]{32}$")
+    label: str = Field(pattern=r"^[A-Z][A-Z0-9_]{1,79}$")
+    decision: Agent4N3ReviewDecision
+    note: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("note", mode="before")
+    @classmethod
+    def normalize_note(cls, value):
+        if value is None or not isinstance(value, str):
+            return value
+        normalized = value.replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not normalized:
+            return None
+        if any(not char.isprintable() and char not in "\n\t" for char in normalized):
+            raise ValueError("review notes must contain plain printable text")
+        return normalized
+
+
+class Agent4N3ReviewSubmission(StrictAgent4WorkflowContract):
+    review_snapshot_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    resolutions: list[Agent4N3ReviewResolutionRequest] = Field(min_length=1)
+
+
+class Agent4N3ReviewResolution(StrictAgent4WorkflowContract):
+    source_id: str = Field(pattern=r"^A4SRC-[0-9a-f]{32}$")
+    chunk_id: str = Field(pattern=r"^A4CHK-[0-9a-f]{32}$")
+    label: str
+    decision: Agent4N3ReviewDecision
+    note: str | None = None
+    hybrid_result_id: str = Field(pattern=r"^A4HYB-[0-9a-f]{32}$")
+    hybrid_manifest_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class Agent4N3ReviewEvent(StrictAgent4WorkflowContract):
+    review_id: str = Field(pattern=r"^A4N3R-[0-9a-f]{32}$")
+    execution_id: str = Field(pattern=r"^A4N3E-[0-9a-f]{32}$")
+    review_snapshot_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    resolutions: list[Agent4N3ReviewResolution] = Field(min_length=1)
+    reviewed_at: datetime
+    reviewer_user_id: str
+
+
+class Agent4N3ReviewItem(StrictAgent4WorkflowContract):
+    source_id: str
+    source_label: str | None = None
+    artifact_type: TestGenerationInputArtifactType
+    chunk_id: str
+    chunk_context: str = Field(min_length=1, max_length=4000)
+    label: str
+    label_description: str
+    relationship: str
+    reason_codes: list[str]
+    explanation: str | None = None
+    model_score: float | None = Field(default=None, ge=0, le=1)
+    rule_detected: bool
+    rule_evidence_quotes: list[str]
+    hybrid_result_id: str
+    hybrid_manifest_fingerprint: str
+    auto_accepted_labels: list[str]
+
+
+class Agent4N3ReviewProjection(StrictAgent4WorkflowContract):
+    review_snapshot_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_id: str
+    items: list[Agent4N3ReviewItem]
+
+
 class Agent4TestGenerationWorkflowRecord(StrictAgent4WorkflowContract):
     schema_version: str
     workflow_version: str
@@ -222,6 +383,9 @@ class Agent4TestGenerationWorkflowRecord(StrictAgent4WorkflowContract):
     n1_confirmation: Agent4N1ConfirmationRecord | None = None
     n2_executions: list[Agent4N2Execution] = Field(default_factory=list)
     current_n2_execution_id: str | None = None
+    n3_executions: list[Agent4N3Execution] = Field(default_factory=list)
+    current_n3_execution_id: str | None = None
+    n3_review_history: list[Agent4N3ReviewEvent] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -263,5 +427,9 @@ class Agent4TestGenerationWorkflowResponse(StrictAgent4WorkflowContract):
     n2_execution: Agent4N2Execution | None = None
     n2_execution_count: int = Field(default=0, ge=0)
     n2_history: list[Agent4N2ExecutionSummary] = Field(default_factory=list)
+    n3_execution: Agent4N3Execution | None = None
+    n3_execution_count: int = Field(default=0, ge=0)
+    n3_history: list[Agent4N3ExecutionSummary] = Field(default_factory=list)
+    reviewed_item_count: int = Field(default=0, ge=0)
     created_at: datetime
     updated_at: datetime

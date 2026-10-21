@@ -122,7 +122,7 @@ describe('TestingValidationProjectPage', () => {
   it.each([
     ['Input & Output Setup', /Sources and desired outputs remain editable draft setup/],
     ['Input Preparation', /No extraction, normalization, or chunking/],
-    ['Testing Intelligence', /performs no model inference/],
+    ['Testing Intelligence', /execution details will appear when N3 is queued/],
     ['Context & Testability', /performs no traceability, readiness, or feasibility/],
     ['Test Planning & Human Review', /Mandatory Human Approval Gate/],
     ['Test Generation & Results', /NOT_EXECUTED/],

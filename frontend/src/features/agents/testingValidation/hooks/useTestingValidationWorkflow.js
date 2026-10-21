@@ -2,15 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   confirmTestGenerationSetup,
+  getTestGenerationIntelligenceReview,
   getTestGenerationWorkflow,
   retryTestGenerationPreparationSource,
+  retryTestGenerationIntelligenceSource,
+  startTestGenerationIntelligence,
   startTestGenerationPreparation,
+  submitTestGenerationIntelligenceReview,
   updateTestGenerationOutputs,
 } from '../testingValidationAgentService.js'
 import { TESTING_VALIDATION_NODE_REGISTRY } from '../workflow/nodeDefinitions.js'
 
 const expectedNodeIds = TESTING_VALIDATION_NODE_REGISTRY.map((node) => node.id)
-const N2_POLL_INTERVAL_MS = 2000
+const WORKFLOW_POLL_INTERVAL_MS = 2000
 
 function isValidWorkflow(workflow, agentProjectId) {
   return Boolean(
@@ -23,6 +27,7 @@ function isValidWorkflow(workflow, agentProjectId) {
     && (workflow.selection_updated_at === null || typeof workflow.selection_updated_at === 'string')
     && (workflow.n1_confirmation === null || typeof workflow.n1_confirmation === 'object')
     && (workflow.n2_execution == null || typeof workflow.n2_execution === 'object')
+    && (workflow.n3_execution == null || typeof workflow.n3_execution === 'object')
     && expectedNodeIds.includes(workflow.current_node_id)
     && Array.isArray(workflow.nodes)
     && workflow.nodes.length === expectedNodeIds.length
@@ -40,6 +45,7 @@ export default function useTestingValidationWorkflow(agentProjectId) {
   const generation = useRef(0)
   const outputSaveGeneration = useRef(0)
   const compatibilityStartProject = useRef(null)
+  const compatibilityN3StartProject = useRef(null)
   const [reloadSequence, setReloadSequence] = useState(0)
   const [workflowState, setWorkflowState] = useState(null)
   const [loadStatus, setLoadStatus] = useState('loading')
@@ -50,6 +56,10 @@ export default function useTestingValidationWorkflow(agentProjectId) {
   const [confirmationSubmitting, setConfirmationSubmitting] = useState(false)
   const [preparationError, setPreparationError] = useState('')
   const [retryingSourceId, setRetryingSourceId] = useState(null)
+  const [intelligenceReview, setIntelligenceReview] = useState(null)
+  const [intelligenceError, setIntelligenceError] = useState('')
+  const [reviewSubmitting, setReviewSubmitting] = useState(false)
+  const [retryingIntelligenceSourceId, setRetryingIntelligenceSourceId] = useState(null)
 
   useEffect(() => {
     const requestGeneration = generation.current + 1
@@ -66,6 +76,9 @@ export default function useTestingValidationWorkflow(agentProjectId) {
         setOutputSaving(false)
         setConfirmationError('')
         setConfirmationSubmitting(false)
+        if (response.data.n3_execution?.status !== 'WAITING_FOR_HUMAN') {
+          setIntelligenceReview(null)
+        }
       })
       .catch((error) => {
         if (generation.current !== requestGeneration || error?.status === 401) return
@@ -84,6 +97,7 @@ export default function useTestingValidationWorkflow(agentProjectId) {
     const requestGeneration = generation.current
     const n1 = workflowState.nodes.find((node) => node.node_id === 'INPUT_OUTPUT_SETUP')
     const n2 = workflowState.nodes.find((node) => node.node_id === 'INPUT_PREPARATION')
+    const n3 = workflowState.nodes.find((node) => node.node_id === 'TESTING_INTELLIGENCE')
     const legacyNotStarted = Boolean(
       workflowState.n1_confirmation
       && workflowState.current_node_id === 'INPUT_PREPARATION'
@@ -112,7 +126,45 @@ export default function useTestingValidationWorkflow(agentProjectId) {
       return undefined
     }
 
-    if (!['QUEUED', 'RUNNING'].includes(workflowState.n2_execution?.status)) {
+    const legacyN3NotStarted = Boolean(
+      workflowState.current_node_id === 'TESTING_INTELLIGENCE'
+      && n2?.status === 'COMPLETED'
+      && n3?.status === 'NOT_STARTED'
+      && workflowState.n3_execution === null,
+    )
+    if (legacyN3NotStarted && compatibilityN3StartProject.current !== agentProjectId) {
+      compatibilityN3StartProject.current = agentProjectId
+      void startTestGenerationIntelligence(agentProjectId)
+        .then((response) => {
+          if (generation.current === requestGeneration && isValidWorkflow(response?.data, agentProjectId)) {
+            setWorkflowState(response.data)
+          }
+        })
+        .catch((error) => {
+          if (generation.current === requestGeneration && error?.status !== 401) {
+            compatibilityN3StartProject.current = null
+            setIntelligenceError(requestMessage(error))
+          }
+        })
+      return undefined
+    }
+
+    if (workflowState.n3_execution?.status === 'WAITING_FOR_HUMAN' && !intelligenceReview) {
+      void getTestGenerationIntelligenceReview(agentProjectId)
+        .then((response) => {
+          if (generation.current === requestGeneration) setIntelligenceReview(response?.data ?? null)
+        })
+        .catch((error) => {
+          if (generation.current === requestGeneration && error?.status !== 401) {
+            setIntelligenceError(requestMessage(error))
+          }
+        })
+      return undefined
+    }
+
+    const active = ['QUEUED', 'RUNNING'].includes(workflowState.n2_execution?.status)
+      || ['QUEUED', 'RUNNING'].includes(workflowState.n3_execution?.status)
+    if (!active) {
       return undefined
     }
     const timer = window.setTimeout(() => {
@@ -128,9 +180,9 @@ export default function useTestingValidationWorkflow(agentProjectId) {
             setPreparationError(requestMessage(error))
           }
         })
-    }, N2_POLL_INTERVAL_MS)
+    }, WORKFLOW_POLL_INTERVAL_MS)
     return () => window.clearTimeout(timer)
-  }, [agentProjectId, loadStatus, workflowState])
+  }, [agentProjectId, intelligenceReview, loadStatus, workflowState])
 
   const retry = useCallback(() => {
     setLoadStatus('loading')
@@ -244,6 +296,53 @@ export default function useTestingValidationWorkflow(agentProjectId) {
     }
   }, [agentProjectId])
 
+  const submitIntelligenceReview = useCallback(async (resolutions) => {
+    if (!intelligenceReview) return null
+    const requestGeneration = generation.current
+    setReviewSubmitting(true)
+    setIntelligenceError('')
+    try {
+      const response = await submitTestGenerationIntelligenceReview(agentProjectId, {
+        review_snapshot_fingerprint: intelligenceReview.review_snapshot_fingerprint,
+        resolutions,
+      })
+      if (!isValidWorkflow(response?.data, agentProjectId)) throw new Error('Invalid Agent 4 workflow response')
+      if (generation.current === requestGeneration) {
+        setIntelligenceReview(null)
+        setWorkflowState(response.data)
+        return response.data
+      }
+      return null
+    } catch (error) {
+      if (generation.current === requestGeneration && error?.status !== 401) {
+        setIntelligenceError(requestMessage(error))
+      }
+      return null
+    } finally {
+      if (generation.current === requestGeneration) setReviewSubmitting(false)
+    }
+  }, [agentProjectId, intelligenceReview])
+
+  const retryIntelligenceSource = useCallback(async (sourceId) => {
+    const requestGeneration = generation.current
+    setRetryingIntelligenceSourceId(sourceId)
+    setIntelligenceError('')
+    try {
+      const response = await retryTestGenerationIntelligenceSource(agentProjectId, sourceId)
+      if (!isValidWorkflow(response?.data, agentProjectId)) throw new Error('Invalid Agent 4 workflow response')
+      if (generation.current === requestGeneration) {
+        setWorkflowState(response.data)
+        return response.data
+      }
+      return null
+    } catch (error) {
+      if (generation.current === requestGeneration && error?.status !== 401) setIntelligenceError(requestMessage(error))
+      return null
+    } finally {
+      if (generation.current === requestGeneration) setRetryingIntelligenceSourceId(null)
+    }
+  }, [agentProjectId])
+
   return {
     confirmationError,
     confirmationSubmitting,
@@ -253,11 +352,17 @@ export default function useTestingValidationWorkflow(agentProjectId) {
     outputSaveError,
     outputSaving,
     preparationError,
+    intelligenceError,
+    intelligenceReview,
     refresh,
     retryPreparationSource,
+    retryIntelligenceSource,
+    retryingIntelligenceSourceId,
     retryingSourceId,
+    reviewSubmitting,
     retry,
     saveOutputs,
+    submitIntelligenceReview,
     workflowState,
   }
 }

@@ -44,10 +44,16 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
     outputSaveError,
     outputSaving,
     preparationError,
+    intelligenceError,
+    intelligenceReview,
     retry,
     retryPreparationSource,
+    retryIntelligenceSource,
+    retryingIntelligenceSourceId,
     retryingSourceId,
+    reviewSubmitting,
     saveOutputs,
+    submitIntelligenceReview,
     workflowState,
   } = useTestingValidationWorkflow(project.agent_project_id)
   const presentation = useMemo(
@@ -145,8 +151,15 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
               selectionRevision={workflowState.selection_revision}
               pipelineStatus={workflowState.pipeline_status}
               n2Execution={workflowState.n2_execution}
+              n3Execution={workflowState.n3_execution}
               onRetryPreparationSource={retryPreparationSource}
               preparationError={preparationError}
+              intelligenceError={intelligenceError}
+              intelligenceReview={intelligenceReview}
+              onRetryIntelligenceSource={retryIntelligenceSource}
+              onSubmitIntelligenceReview={submitIntelligenceReview}
+              retryingIntelligenceSourceId={retryingIntelligenceSourceId}
+              reviewSubmitting={reviewSubmitting}
               retryingSourceId={retryingSourceId}
               workflowNodeStatus={workflowState.nodes.find(
                 (node) => node.node_id === selectedDefinition.id,

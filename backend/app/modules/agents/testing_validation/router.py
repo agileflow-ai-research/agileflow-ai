@@ -59,7 +59,25 @@ from app.modules.agents.testing_validation.preparation.chunking.storage import (
 from app.modules.agents.testing_validation.workflow.orchestration.service import (
     Agent4N2OrchestrationService,
 )
+from app.modules.agents.testing_validation.workflow.orchestration.n3_service import (
+    Agent4N3OrchestrationService,
+    Agent4N3ReviewError,
+)
+from app.modules.agents.testing_validation.intelligence.rules.service import Agent4RuleClassificationService
+from app.modules.agents.testing_validation.intelligence.rules.storage import Agent4RuleStorage
+from app.modules.agents.testing_validation.intelligence.zero_shot.service import Agent4ZeroShotService
+from app.modules.agents.testing_validation.intelligence.zero_shot.storage import Agent4ZeroShotStorage
+from app.modules.agents.testing_validation.intelligence.zero_shot.classifier import Agent4ZeroShotClassifier
+from app.modules.agents.testing_validation.intelligence.zero_shot.runtime import Agent4ZeroShotRuntime
+from app.modules.agents.testing_validation.intelligence.hybrid.service import Agent4HybridClassificationService
+from app.modules.agents.testing_validation.intelligence.hybrid.storage import Agent4HybridStorage
+from app.modules.agents.testing_validation.intelligence.semantic.service import Agent4SemanticFactService
+from app.modules.agents.testing_validation.intelligence.semantic.storage import Agent4SemanticStorage
+from app.modules.agents.testing_validation.intelligence.effective.service import Agent4EffectiveClassificationService
+from app.modules.agents.testing_validation.intelligence.effective.storage import Agent4EffectiveStorage
 from app.modules.agents.testing_validation.workflow.schemas import (
+    Agent4N3ReviewProjection,
+    Agent4N3ReviewSubmission,
     Agent4TestGenerationWorkflowResponse,
     TestGenerationOutputSelectionUpdate,
 )
@@ -126,6 +144,38 @@ def get_agent4_source_service(
     )
 
 
+def get_agent4_n3_orchestration_service(
+    standalone_service: Annotated[StandaloneService, Depends(get_standalone_service)],
+    workflow_service: Annotated[Agent4WorkflowService, Depends(get_agent4_workflow_service)],
+    workflow_storage: Annotated[Agent4WorkflowStorage, Depends(get_agent4_workflow_storage)],
+) -> Agent4N3OrchestrationService:
+    root = settings.agent4_storage_root
+    chunks = Agent4ChunkStorage(root)
+    rules_storage = Agent4RuleStorage(root)
+    zero_storage = Agent4ZeroShotStorage(root)
+    hybrid_storage = Agent4HybridStorage(root)
+    rules = Agent4RuleClassificationService(
+        standalone_service, workflow_storage, chunks, rules_storage
+    )
+    zero = Agent4ZeroShotService(
+        standalone_service, workflow_storage, chunks, zero_storage,
+        Agent4ZeroShotClassifier(Agent4ZeroShotRuntime(local_files_only=True)),
+    )
+    hybrid = Agent4HybridClassificationService(
+        standalone_service, workflow_storage, chunks, rules_storage,
+        zero_storage, hybrid_storage,
+    )
+    semantic = Agent4SemanticFactService(
+        standalone_service, workflow_storage, chunks, rules_storage,
+        zero_storage, hybrid_storage, Agent4SemanticStorage(root),
+    )
+    effective = Agent4EffectiveClassificationService(Agent4EffectiveStorage(root))
+    return Agent4N3OrchestrationService(
+        workflow_service, workflow_storage, chunks, rules, zero, hybrid,
+        semantic, effective, hybrid_storage, rules_storage, zero_storage,
+    )
+
+
 def get_agent4_n2_orchestration_service(
     standalone_service: Annotated[StandaloneService, Depends(get_standalone_service)],
     workflow_service: Annotated[
@@ -136,6 +186,9 @@ def get_agent4_n2_orchestration_service(
     ],
     source_storage: Annotated[
         Agent4SourceStorage, Depends(get_agent4_source_storage)
+    ],
+    n3_service: Annotated[
+        Agent4N3OrchestrationService, Depends(get_agent4_n3_orchestration_service)
     ],
 ) -> Agent4N2OrchestrationService:
     root = settings.agent4_storage_root
@@ -156,6 +209,7 @@ def get_agent4_n2_orchestration_service(
         extraction,
         normalization,
         chunking,
+        n3_handoff=n3_service.start_after_n2,
     )
 
 
@@ -174,10 +228,15 @@ def get_test_generation_workflow(
         Agent4N2OrchestrationService,
         Depends(get_agent4_n2_orchestration_service),
     ],
+    n3_service: Annotated[
+        Agent4N3OrchestrationService,
+        Depends(get_agent4_n3_orchestration_service),
+    ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
     try:
-        workflow = service.get(agent_project_id, current_user)
+        service.get(agent_project_id, current_user)
+        workflow = n3_service.get(agent_project_id, current_user)
     except AgentProjectNotFoundError:
         return _error(
             status.HTTP_404_NOT_FOUND,
@@ -382,6 +441,106 @@ def confirm_test_generation_n1(
     return SuccessResponse(
         message="Agent 4 input and output setup confirmed", data=workflow
     )
+
+
+@router.post(
+    "/{agent_project_id}/test-generation/workflow/n3/start",
+    response_model=SuccessResponse[Agent4TestGenerationWorkflowResponse],
+)
+def start_test_generation_n3(
+    agent_project_id: str,
+    service: Annotated[Agent4N3OrchestrationService, Depends(get_agent4_n3_orchestration_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+):
+    try:
+        workflow = service.start(agent_project_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(status.HTTP_404_NOT_FOUND, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(status.HTTP_409_CONFLICT, "Agent project is archived", "agent_project_id", "Reactivate the agent project before starting Testing Intelligence")
+    except (WrongAgent4WorkflowProjectError, Agent4WorkflowStageError, Agent4WorkflowGateError) as exc:
+        return _error(status.HTTP_409_CONFLICT, "Testing Intelligence cannot be started", "workflow", str(exc))
+    except ValueError:
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid request", "agent_project_id", "Agent project ID is invalid")
+    except (Agent4WorkflowStorageError, StandaloneServiceError):
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Testing Intelligence unavailable", "workflow", "Testing Intelligence could not be started")
+    return SuccessResponse(message="Agent 4 Testing Intelligence accepted", data=workflow)
+
+
+@router.get(
+    "/{agent_project_id}/test-generation/workflow/n3/review",
+    response_model=SuccessResponse[Agent4N3ReviewProjection],
+)
+def get_test_generation_n3_review(
+    agent_project_id: str,
+    service: Annotated[Agent4N3OrchestrationService, Depends(get_agent4_n3_orchestration_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+):
+    try:
+        review = service.review_projection(agent_project_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(status.HTTP_404_NOT_FOUND, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(status.HTTP_409_CONFLICT, "Agent project is archived", "agent_project_id", "Reactivate the agent project before reviewing classifications")
+    except (Agent4N3ReviewError, Agent4WorkflowGateError) as exc:
+        return _error(status.HTTP_409_CONFLICT, "Classification review unavailable", "review", str(exc))
+    except ValueError:
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid request", "agent_project_id", "Agent project ID is invalid")
+    except (Agent4WorkflowStorageError, StandaloneServiceError, RuntimeError):
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Classification review unavailable", "review", "Classification review could not be loaded")
+    return SuccessResponse(message="Agent 4 classification review retrieved", data=review)
+
+
+@router.post(
+    "/{agent_project_id}/test-generation/workflow/n3/review",
+    response_model=SuccessResponse[Agent4TestGenerationWorkflowResponse],
+)
+def submit_test_generation_n3_review(
+    agent_project_id: str,
+    request: Agent4N3ReviewSubmission,
+    service: Annotated[Agent4N3OrchestrationService, Depends(get_agent4_n3_orchestration_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+):
+    try:
+        workflow = service.submit_review(agent_project_id, request, current_user)
+    except AgentProjectNotFoundError:
+        return _error(status.HTTP_404_NOT_FOUND, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(status.HTTP_409_CONFLICT, "Agent project is archived", "agent_project_id", "Reactivate the agent project before reviewing classifications")
+    except Agent4N3ReviewError as exc:
+        return _error(status.HTTP_409_CONFLICT, "Classification review rejected", "review", str(exc))
+    except Agent4WorkflowGateError as exc:
+        return _error(status.HTTP_409_CONFLICT, "Classification review unavailable", "workflow", str(exc))
+    except ValueError as exc:
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid classification review", "review", str(exc))
+    except (Agent4WorkflowStorageError, StandaloneServiceError, RuntimeError):
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Classification review unavailable", "review", "Classification review could not be saved")
+    return SuccessResponse(message="Agent 4 classification review accepted", data=workflow)
+
+
+@router.post(
+    "/{agent_project_id}/test-generation/workflow/n3/sources/{source_id}/retry",
+    response_model=SuccessResponse[Agent4TestGenerationWorkflowResponse],
+)
+def retry_test_generation_n3_source(
+    agent_project_id: str,
+    source_id: str,
+    service: Annotated[Agent4N3OrchestrationService, Depends(get_agent4_n3_orchestration_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+):
+    try:
+        workflow = service.retry_source(agent_project_id, source_id, current_user)
+    except AgentProjectNotFoundError:
+        return _error(status.HTTP_404_NOT_FOUND, "Agent project not found", "agent_project_id", "Agent project not found")
+    except ArchivedAgentProjectError:
+        return _error(status.HTTP_409_CONFLICT, "Agent project is archived", "agent_project_id", "Reactivate the agent project before retrying Testing Intelligence")
+    except (Agent4WorkflowGateError, Agent4N3ReviewError) as exc:
+        return _error(status.HTTP_409_CONFLICT, "Testing Intelligence source cannot be retried", "source_id", str(exc))
+    except ValueError:
+        return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid request", "source_id", "The project or source ID is invalid")
+    except (Agent4WorkflowStorageError, StandaloneServiceError):
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Testing Intelligence unavailable", "workflow", "The source retry could not be started")
+    return SuccessResponse(message="Agent 4 Testing Intelligence source retry accepted", data=workflow)
 
 
 @router.post(

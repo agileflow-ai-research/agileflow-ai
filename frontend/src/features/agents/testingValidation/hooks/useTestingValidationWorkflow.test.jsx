@@ -3,18 +3,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   confirmTestGenerationSetup,
+  getTestGenerationIntelligenceReview,
   getTestGenerationWorkflow,
   retryTestGenerationPreparationSource,
+  retryTestGenerationIntelligenceSource,
+  startTestGenerationIntelligence,
   startTestGenerationPreparation,
+  submitTestGenerationIntelligenceReview,
   updateTestGenerationOutputs,
 } from '../testingValidationAgentService.js'
 import useTestingValidationWorkflow from './useTestingValidationWorkflow.js'
 
 vi.mock('../testingValidationAgentService.js', () => ({
   confirmTestGenerationSetup: vi.fn(),
+  getTestGenerationIntelligenceReview: vi.fn(),
   getTestGenerationWorkflow: vi.fn(),
   retryTestGenerationPreparationSource: vi.fn(),
+  retryTestGenerationIntelligenceSource: vi.fn(),
+  startTestGenerationIntelligence: vi.fn(),
   startTestGenerationPreparation: vi.fn(),
+  submitTestGenerationIntelligenceReview: vi.fn(),
   updateTestGenerationOutputs: vi.fn(),
 }))
 
@@ -71,6 +79,19 @@ function n2Workflow(status = 'RUNNING') {
   }
 }
 
+function n3Workflow(status = 'RUNNING') {
+  return {
+    ...n2Workflow('COMPLETED'),
+    pipeline_status: status === 'WAITING_FOR_HUMAN' ? 'WAITING_FOR_HUMAN' : status === 'FAILED' ? 'FAILED' : 'RUNNING',
+    current_node_id: 'TESTING_INTELLIGENCE',
+    n3_execution: { execution_id: 'A4N3E-current', attempt_number: 1, status, sources: [] },
+    nodes: nodeIds.map((nodeId, index) => ({
+      node_id: nodeId,
+      status: index < 2 ? 'COMPLETED' : index === 2 ? status : 'LOCKED',
+    })),
+  }
+}
+
 describe('useTestingValidationWorkflow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -78,6 +99,12 @@ describe('useTestingValidationWorkflow', () => {
     updateTestGenerationOutputs.mockResolvedValue({ data: workflow() })
     confirmTestGenerationSetup.mockResolvedValue({ data: workflow() })
     retryTestGenerationPreparationSource.mockResolvedValue({ data: workflow() })
+    retryTestGenerationIntelligenceSource.mockResolvedValue({ data: workflow() })
+    startTestGenerationIntelligence.mockResolvedValue({ data: workflow() })
+    submitTestGenerationIntelligenceReview.mockResolvedValue({ data: workflow() })
+    getTestGenerationIntelligenceReview.mockResolvedValue({
+      data: { review_snapshot_fingerprint: 'a'.repeat(64), items: [] },
+    })
     startTestGenerationPreparation.mockResolvedValue({ data: workflow() })
   })
 
@@ -313,5 +340,23 @@ describe('useTestingValidationWorkflow', () => {
     await act(() => result.current.retryPreparationSource('A4SRC-one'))
     expect(retryTestGenerationPreparationSource).toHaveBeenCalledWith('AGP-004', 'A4SRC-one')
     expect(result.current.workflowState.n2_execution.attempt_number).toBe(2)
+  })
+
+  it('starts a legacy N3 NOT_STARTED workflow exactly once', async () => {
+    const legacy = { ...n2Workflow('COMPLETED'), n3_execution: null }
+    const queued = n3Workflow('QUEUED')
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: legacy })
+    startTestGenerationIntelligence.mockResolvedValueOnce({ data: queued })
+    const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+    await waitFor(() => expect(result.current.workflowState?.n3_execution?.status).toBe('QUEUED'))
+    expect(startTestGenerationIntelligence).toHaveBeenCalledTimes(1)
+  })
+
+  it('loads review evidence and does not poll while waiting for a human', async () => {
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: n3Workflow('WAITING_FOR_HUMAN') })
+    const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+    await waitFor(() => expect(result.current.intelligenceReview).not.toBeNull())
+    expect(getTestGenerationIntelligenceReview).toHaveBeenCalledWith('AGP-004')
+    expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(1)
   })
 })

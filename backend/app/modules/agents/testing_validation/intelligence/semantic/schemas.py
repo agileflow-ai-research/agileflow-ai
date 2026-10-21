@@ -117,6 +117,8 @@ class SemanticFact(SemanticFactCandidate):
 class SemanticClassificationContext(StrictIntelligenceContract):
     chunk_id: str = Field(pattern=r"^A4CHK-[0-9a-f]{32}$")
     hybrid_result_id: str = Field(pattern=r"^A4HYB-[0-9a-f]{32}$")
+    effective_result_id: str | None = Field(default=None, pattern=r"^A4EFF-[0-9a-f]{32}$")
+    context_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     accepted_labels: list[TestingIntelligenceLabel]
     review_required_labels: list[TestingIntelligenceLabel]
     eligibility: SemanticEligibility
@@ -136,6 +138,10 @@ class TestingSemanticResult(StrictIntelligenceContract):
     taxonomy_version: Literal[AGENT4_TESTING_TAXONOMY_VERSION]
     hybrid_policy_version: Literal["H1"]
     hybrid_result_id: str = Field(pattern=r"^A4HYB-[0-9a-f]{32}$")
+    effective_result_id: str | None = Field(default=None, pattern=r"^A4EFF-[0-9a-f]{32}$")
+    classification_context_fingerprint: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     accepted_labels: list[TestingIntelligenceLabel]
     semantic_schema_version: Literal[constants.SEMANTIC_SCHEMA_VERSION]
     semantic_stage_version: Literal[constants.SEMANTIC_STAGE_VERSION]
@@ -214,6 +220,9 @@ class TestingSemanticManifest(StrictIntelligenceContract):
     source_id: str = Field(pattern=r"^A4SRC-[0-9a-f]{32}$")
     chunk_set_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     hybrid_manifest_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    effective_manifest_fingerprint: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     chunk_ids: list[str] = Field(min_length=1)
     eligible_chunk_ids: list[str]
     waiting_review_chunk_ids: list[str]

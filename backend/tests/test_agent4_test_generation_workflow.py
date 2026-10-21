@@ -104,6 +104,7 @@ def test_initializes_and_projects_the_exact_six_node_workflow(agent4_workflow_co
         "updated_at", "selected_outputs", "selection_revision",
         "selection_updated_at", "n1_confirmation",
             "n2_executions", "current_n2_execution_id",
+            "n3_executions", "current_n3_execution_id", "n3_review_history",
     }
     assert all(set(node) == {"node_id", "status", "updated_at"} for node in persisted["nodes"])
     assert not workflow_path.with_suffix(".json.part").exists()

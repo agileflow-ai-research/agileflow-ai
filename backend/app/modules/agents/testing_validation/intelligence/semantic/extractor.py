@@ -101,11 +101,12 @@ def _fact_id(chunk_id, payload):
     return "A4FACT-" + hashlib.sha256(canonical.encode()).hexdigest()[:32]
 
 
-def _result_id(chunk, hybrid_result_id, accepted_labels):
+def _result_id(chunk, hybrid_result_id, accepted_labels, effective_result_id=None):
     payload = {
         "chunk": chunk.chunk_id,
         "text": chunk.text_sha256,
         "hybrid": hybrid_result_id,
+        "effective": effective_result_id,
         "labels": [label.value for label in accepted_labels],
         "config": generation_configuration_fingerprint(),
     }
@@ -115,7 +116,8 @@ def _result_id(chunk, hybrid_result_id, accepted_labels):
 
 
 def extract_semantic_result(*, chunk, chunk_reference, hybrid_result,
-                            accepted_labels, runtime, processed_at: datetime):
+                            accepted_labels, runtime, processed_at: datetime,
+                            effective_result_id=None, context_fingerprint=None):
     feedback = None
     total_ms = total_output = 0
     last_input = 0
@@ -139,6 +141,7 @@ def extract_semantic_result(*, chunk, chunk_reference, hybrid_result,
                 chunk_reference, hybrid_result, accepted_labels,
                 SemanticResultStatus.EMPTY, [], 0, [], attempt,
                 last_input, total_output, total_ms, device, processed_at,
+                effective_result_id, context_fingerprint,
             )
         facts = []
         warnings = []
@@ -169,6 +172,7 @@ def extract_semantic_result(*, chunk, chunk_reference, hybrid_result,
                 chunk_reference, hybrid_result, accepted_labels, status, facts,
                 len(warnings), warnings, attempt,
                 last_input, total_output, total_ms, device, processed_at,
+                effective_result_id, context_fingerprint,
             )
         feedback = "ALL_CANDIDATES_INVALID:" + ";".join(
             warning.message for warning in warnings[:3]
@@ -177,20 +181,26 @@ def extract_semantic_result(*, chunk, chunk_reference, hybrid_result,
 
 
 def disposition_result(*, chunk_reference, hybrid_result, accepted_labels,
-                       status, processed_at):
+                       status, processed_at, effective_result_id=None,
+                       context_fingerprint=None):
     return _result(
         chunk_reference, hybrid_result, accepted_labels, status, [], 0, [], 0,
-        0, 0, 0, None, processed_at,
+        0, 0, 0, None, processed_at, effective_result_id, context_fingerprint,
     )
 
 
 def _result(chunk_reference, hybrid, labels, status, facts, rejected, warnings,
-            attempts, input_tokens, output_tokens, duration, device, at):
+            attempts, input_tokens, output_tokens, duration, device, at,
+            effective_result_id=None, context_fingerprint=None):
     return TestingSemanticResult(
-        semantic_result_id=_result_id(chunk_reference, hybrid.result_id, labels),
+        semantic_result_id=_result_id(
+            chunk_reference, hybrid.result_id, labels, effective_result_id
+        ),
         chunk=chunk_reference,
         taxonomy_version="T1", hybrid_policy_version="H1",
         hybrid_result_id=hybrid.result_id, accepted_labels=labels,
+        effective_result_id=effective_result_id,
+        classification_context_fingerprint=context_fingerprint,
         semantic_schema_version=constants.SEMANTIC_SCHEMA_VERSION,
         semantic_stage_version=constants.SEMANTIC_STAGE_VERSION,
         prompt_version=constants.SEMANTIC_PROMPT_VERSION,

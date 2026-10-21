@@ -1,12 +1,15 @@
 from datetime import datetime, timezone
 from threading import RLock
 
+from pydantic import ValidationError
+
 from app.common.status import AgentStage, AgentType
 from app.modules.agents.testing_validation.intelligence.hybrid.service import (
     Agent4HybridClassificationService,
     manifest_fingerprint,
 )
 from app.modules.agents.testing_validation.intelligence.hybrid.storage import Agent4HybridStorage
+from app.modules.agents.testing_validation.intelligence.effective.service import effective_manifest_fingerprint
 from app.modules.agents.testing_validation.intelligence.rules.service import Agent4RuleClassificationService
 from app.modules.agents.testing_validation.intelligence.rules.storage import Agent4RuleStorage
 from app.modules.agents.testing_validation.intelligence.zero_shot.service import Agent4ZeroShotService
@@ -22,7 +25,10 @@ from app.modules.auth.schemas import UserPublicResponse
 from app.modules.standalone.service import StandaloneService
 
 from . import constants
-from .eligibility import semantic_classification_context
+from .eligibility import (
+    effective_semantic_classification_context,
+    semantic_classification_context,
+)
 from .extractor import (
     _fact_id, _ground, _result_id, disposition_result, extract_semantic_result,
     generation_configuration_fingerprint,
@@ -68,16 +74,32 @@ class Agent4SemanticFactService:
         self._clock = clock
 
     def build(self, project_id: str, source_id: str,
-              user: UserPublicResponse, *, force=False):
+              user: UserPublicResponse, *, force=False, effective=None):
         with AGENT4_WORKFLOW_STATE_LOCK, SEMANTIC_FACT_LOCK:
             chunks, rules, zero, hybrid = self._resolve(project_id, source_id, user)
             hybrid_fingerprint = manifest_fingerprint(hybrid)
+            effective_fingerprint = None
+            effective_by_id = None
+            if effective is not None:
+                if (
+                    effective.agent_project_id != project_id
+                    or effective.source_id != source_id
+                    or effective.chunk_ids != chunks.chunk_ids
+                    or effective.hybrid_manifest_fingerprint != hybrid_fingerprint
+                ):
+                    raise Agent4SemanticGateError("Effective classification is stale")
+                effective_fingerprint = effective_manifest_fingerprint(effective)
+                effective_by_id = {
+                    result.chunk.chunk_id: result for result in effective.results
+                }
+            cached = self._storage.load(
+                agent_project_id=project_id, owner_user_id=user.user_id,
+                source_id=source_id,
+            )
             if not force:
-                cached = self._storage.load(
-                    agent_project_id=project_id, owner_user_id=user.user_id,
-                    source_id=source_id,
-                )
-                if self._cache_is_current(cached, chunks, hybrid, hybrid_fingerprint):
+                if self._cache_is_current(
+                    cached, chunks, hybrid, hybrid_fingerprint, effective
+                ):
                     return cached
             now = self._clock()
             hybrid_by_id = {result.chunk.chunk_id: result for result in hybrid.results}
@@ -87,14 +109,26 @@ class Agent4SemanticFactService:
             not_applicable = []
             for chunk in chunks.chunks:
                 hybrid_result = hybrid_by_id[chunk.chunk_id]
-                context = semantic_classification_context(hybrid_result)
+                effective_result = (
+                    effective_by_id[chunk.chunk_id] if effective_by_id else None
+                )
+                context = (
+                    effective_semantic_classification_context(
+                        effective_result, effective_fingerprint
+                    )
+                    if effective_result else semantic_classification_context(hybrid_result)
+                )
+                reusable = self._reusable_result(
+                    None if force else cached, context, hybrid_result
+                )
                 if context.eligibility is SemanticEligibility.ELIGIBLE:
                     eligible.append(chunk.chunk_id)
-                    result = extract_semantic_result(
+                    result = reusable or extract_semantic_result(
                         chunk=chunk, chunk_reference=hybrid_result.chunk,
-                        hybrid_result=hybrid_result,
-                        accepted_labels=context.accepted_labels,
+                        hybrid_result=hybrid_result, accepted_labels=context.accepted_labels,
                         runtime=self._runtime, processed_at=now,
+                        effective_result_id=context.effective_result_id,
+                        context_fingerprint=context.context_fingerprint,
                     )
                 elif context.eligibility is SemanticEligibility.WAITING_FOR_CLASSIFICATION_REVIEW:
                     waiting.append(chunk.chunk_id)
@@ -104,6 +138,8 @@ class Agent4SemanticFactService:
                         accepted_labels=context.accepted_labels,
                         status=SemanticResultStatus.WAITING_FOR_CLASSIFICATION_REVIEW,
                         processed_at=now,
+                        effective_result_id=context.effective_result_id,
+                        context_fingerprint=context.context_fingerprint,
                     )
                 else:
                     not_applicable.append(chunk.chunk_id)
@@ -112,6 +148,8 @@ class Agent4SemanticFactService:
                         hybrid_result=hybrid_result,
                         accepted_labels=[], status=SemanticResultStatus.NOT_APPLICABLE,
                         processed_at=now,
+                        effective_result_id=context.effective_result_id,
+                        context_fingerprint=context.context_fingerprint,
                     )
                 results.append(result)
             metrics = SemanticManifestMetrics(
@@ -139,6 +177,7 @@ class Agent4SemanticFactService:
                 agent_project_id=project_id, source_id=source_id,
                 chunk_set_fingerprint=chunks.chunk_set_fingerprint,
                 hybrid_manifest_fingerprint=hybrid_fingerprint,
+                effective_manifest_fingerprint=effective_fingerprint,
                 chunk_ids=chunks.chunk_ids, eligible_chunk_ids=eligible,
                 waiting_review_chunk_ids=waiting,
                 not_applicable_chunk_ids=not_applicable,
@@ -182,7 +221,10 @@ class Agent4SemanticFactService:
         return chunks, rules, zero, hybrid
 
     @staticmethod
-    def _cache_is_current(cached, chunks, hybrid, hybrid_fingerprint):
+    def _cache_is_current(cached, chunks, hybrid, hybrid_fingerprint, effective=None):
+        effective_fingerprint = (
+            effective_manifest_fingerprint(effective) if effective is not None else None
+        )
         if cached is None or (
             cached.semantic_stage_version != constants.SEMANTIC_STAGE_VERSION
             or cached.prompt_version != constants.SEMANTIC_PROMPT_VERSION
@@ -192,6 +234,7 @@ class Agent4SemanticFactService:
             or cached.generation_configuration_fingerprint != generation_configuration_fingerprint()
             or cached.chunk_set_fingerprint != chunks.chunk_set_fingerprint
             or cached.hybrid_manifest_fingerprint != hybrid_fingerprint
+            or cached.effective_manifest_fingerprint != effective_fingerprint
             or cached.chunk_ids != chunks.chunk_ids
             or len(cached.results) != len(chunks.chunks)
         ):
@@ -199,8 +242,18 @@ class Agent4SemanticFactService:
         chunk_by_id = {chunk.chunk_id: chunk for chunk in chunks.chunks}
         hybrid_by_id = {result.chunk.chunk_id: result for result in hybrid.results}
         try:
+            effective_by_id = (
+                {result.chunk.chunk_id: result for result in effective.results}
+                if effective is not None else {}
+            )
             contexts = {
-                chunk_id: semantic_classification_context(result)
+                chunk_id: (
+                    effective_semantic_classification_context(
+                        effective_by_id[chunk_id], effective_fingerprint
+                    )
+                    if chunk_id in effective_by_id
+                    else semantic_classification_context(result)
+                )
                 for chunk_id, result in hybrid_by_id.items()
             }
             if cached.eligible_chunk_ids != [
@@ -225,10 +278,15 @@ class Agent4SemanticFactService:
                 context = contexts[result.chunk.chunk_id]
                 if result.hybrid_result_id != current.result_id:
                     return False
+                if result.effective_result_id != context.effective_result_id:
+                    return False
+                if result.classification_context_fingerprint != context.context_fingerprint:
+                    return False
                 if result.accepted_labels != context.accepted_labels:
                     return False
                 if result.semantic_result_id != _result_id(
-                    result.chunk, current.result_id, context.accepted_labels
+                    result.chunk, current.result_id, context.accepted_labels,
+                    context.effective_result_id,
                 ):
                     return False
                 if context.eligibility is SemanticEligibility.ELIGIBLE:
@@ -253,3 +311,32 @@ class Agent4SemanticFactService:
         except (KeyError, ValidationError, ValueError):
             return False
         return True
+
+    @staticmethod
+    def _reusable_result(cached, context, hybrid_result):
+        if cached is None:
+            return None
+        candidate = next(
+            (item for item in cached.results if item.chunk.chunk_id == context.chunk_id),
+            None,
+        )
+        if candidate is None:
+            return None
+        if (
+            candidate.hybrid_result_id != hybrid_result.result_id
+            or candidate.accepted_labels != context.accepted_labels
+            or candidate.status not in {
+                SemanticResultStatus.SUCCESS,
+                SemanticResultStatus.SUCCESS_WITH_WARNINGS,
+                SemanticResultStatus.EMPTY,
+            }
+        ):
+            return None
+        return candidate.model_copy(update={
+            "semantic_result_id": _result_id(
+                candidate.chunk, hybrid_result.result_id,
+                context.accepted_labels, context.effective_result_id,
+            ),
+            "effective_result_id": context.effective_result_id,
+            "classification_context_fingerprint": context.context_fingerprint,
+        })

@@ -245,6 +245,15 @@ class Agent4WorkflowService:
         if record is None:
             record = self._initial_record(agent_project_id, owner_user_id)
             self._workflow.save(record)
+        elif (record.schema_version, record.workflow_version) == ("1", "W1"):
+            record = record.model_copy(
+                update={
+                    "schema_version": AGENT4_TEST_GENERATION_WORKFLOW_SCHEMA_VERSION,
+                    "workflow_version": AGENT4_TEST_GENERATION_WORKFLOW_VERSION,
+                    "updated_at": self._clock(),
+                }
+            )
+            self._workflow.save(record)
         elif (
             record.schema_version
             != AGENT4_TEST_GENERATION_WORKFLOW_SCHEMA_VERSION

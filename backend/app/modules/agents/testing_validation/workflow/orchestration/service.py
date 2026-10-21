@@ -78,6 +78,7 @@ class Agent4N2OrchestrationService:
         *,
         executor: Executor = AGENT4_N2_EXECUTOR,
         clock: Callable[[], datetime] = utc_now,
+        n3_handoff=None,
     ) -> None:
         self._workflow_service = workflow_service
         self._workflow = workflow_storage
@@ -87,6 +88,7 @@ class Agent4N2OrchestrationService:
         self._chunking = chunking_service
         self._executor = executor
         self._clock = clock
+        self._n3_handoff = n3_handoff
 
     def get(
         self, agent_project_id: str, current_user: UserPublicResponse
@@ -292,7 +294,9 @@ class Agent4N2OrchestrationService:
                     source.source_id,
                     current_user,
                 )
-            self._finish(agent_project_id, owner_user_id, execution_id)
+            self._finish(
+                agent_project_id, owner_user_id, execution_id, current_user
+            )
         except Exception:
             self._fail_execution(
                 agent_project_id,
@@ -500,7 +504,8 @@ class Agent4N2OrchestrationService:
             record.updated_at = now
             self._workflow.save(record)
 
-    def _finish(self, project_id, owner_id, execution_id):
+    def _finish(self, project_id, owner_id, execution_id, current_user=None):
+        completed = False
         with AGENT4_WORKFLOW_STATE_LOCK:
             record = self._require_record(project_id, owner_id)
             execution = self._execution(record, execution_id)
@@ -524,6 +529,7 @@ class Agent4N2OrchestrationService:
                 )
                 self._mark_n2_failed(record, now)
             else:
+                completed = True
                 execution.status = Agent4N2ExecutionStatus.COMPLETED
                 execution.completed_at = now
                 execution.retryable = False
@@ -538,6 +544,28 @@ class Agent4N2OrchestrationService:
             execution.updated_at = now
             record.updated_at = now
             self._workflow.save(record)
+        if completed and self._n3_handoff is not None and current_user is not None:
+            try:
+                self._n3_handoff(
+                    project_id, owner_id, execution_id, current_user
+                )
+            except Exception:
+                # N2 evidence is already durably complete. N3 start failures must
+                # never roll it back.
+                with AGENT4_WORKFLOW_STATE_LOCK:
+                    record = self._require_record(project_id, owner_id)
+                    now = self._clock()
+                    n3 = self._node(
+                        record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
+                    )
+                    n3.status = Agent4WorkflowNodeStatus.FAILED
+                    n3.updated_at = now
+                    record.current_node_id = (
+                        Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
+                    )
+                    record.pipeline_status = Agent4PipelineStatus.FAILED
+                    record.updated_at = now
+                    self._workflow.save(record)
 
     def _fail_execution(self, project_id, owner_id, execution_id, code, message):
         with AGENT4_WORKFLOW_STATE_LOCK:

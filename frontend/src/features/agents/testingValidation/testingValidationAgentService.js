@@ -39,6 +39,37 @@ export function retryTestGenerationPreparationSource(agentProjectId, sourceId) {
   )
 }
 
+export function startTestGenerationIntelligence(agentProjectId) {
+  return apiClient.post(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n3/start`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
+export function getTestGenerationIntelligenceReview(agentProjectId) {
+  return apiClient.get(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n3/review`,
+    { authenticated: true },
+  )
+}
+
+export function submitTestGenerationIntelligenceReview(agentProjectId, input) {
+  return apiClient.post(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n3/review`,
+    input,
+    { authenticated: true },
+  )
+}
+
+export function retryTestGenerationIntelligenceSource(agentProjectId, sourceId) {
+  return apiClient.post(
+    `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n3/sources/${encodeURIComponent(sourceId)}/retry`,
+    undefined,
+    { authenticated: true },
+  )
+}
+
 function sourcesPath(agentProjectId) {
   return `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/sources`
 }

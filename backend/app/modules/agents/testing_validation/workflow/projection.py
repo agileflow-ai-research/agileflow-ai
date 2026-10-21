@@ -1,5 +1,6 @@
 from app.modules.agents.testing_validation.workflow.schemas import (
     Agent4N2ExecutionSummary,
+    Agent4N3ExecutionSummary,
     Agent4TestGenerationWorkflowRecord,
     Agent4TestGenerationWorkflowResponse,
 )
@@ -10,7 +11,10 @@ def build_agent4_workflow_response(
 ) -> Agent4TestGenerationWorkflowResponse:
     """Project the persisted record without ownership or storage details."""
     payload = record.model_dump(
-        exclude={"owner_user_id", "n2_executions", "current_n2_execution_id"}
+        exclude={
+            "owner_user_id", "n2_executions", "current_n2_execution_id",
+            "n3_executions", "current_n3_execution_id", "n3_review_history",
+        }
     )
     if payload["n1_confirmation"] is not None:
         payload["n1_confirmation"].pop("confirmed_by_user_id", None)
@@ -37,5 +41,31 @@ def build_agent4_workflow_response(
             )
             for item in record.n2_executions
         ],
+        n3_execution=next(
+            (
+                execution.model_copy(deep=True)
+                for execution in reversed(record.n3_executions)
+                if execution.execution_id == record.current_n3_execution_id
+            ),
+            None,
+        ),
+        n3_execution_count=len(record.n3_executions),
+        n3_history=[
+            Agent4N3ExecutionSummary(
+                execution_id=item.execution_id,
+                attempt_number=item.attempt_number,
+                trigger=item.trigger,
+                status=item.status,
+                created_at=item.created_at,
+                waiting_at=item.waiting_at,
+                completed_at=item.completed_at,
+                failed_at=item.failed_at,
+                interrupted_at=item.interrupted_at,
+            )
+            for item in record.n3_executions
+        ],
+        reviewed_item_count=sum(
+            len(event.resolutions) for event in record.n3_review_history
+        ),
     )
     return Agent4TestGenerationWorkflowResponse.model_validate(payload)
