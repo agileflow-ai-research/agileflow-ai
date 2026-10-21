@@ -1,3 +1,12 @@
+"""
+Versioned N4.3 technology catalog (TC1). Explicit-text patterns only.
+
+Every pattern must appear in the target system's own text. The catalog does not
+hold host-stack defaults and does not assume a framework from a file name alone.
+Patterns that are common English words (for example "express", "vue", "yarn")
+set requires_technical_context so they match only inside technical context.
+"""
+
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -6,6 +15,8 @@ from .constants import TechnicalEvidenceCategory as C
 
 @dataclass(frozen=True, slots=True)
 class TechnologyPattern:
+    """One catalog entry: the canonical value, the regex, and whether technical context is required."""
+
     value: str
     pattern: str
     requires_technical_context: bool = False
@@ -82,6 +93,9 @@ _PATTERNS = {
 
 TECHNOLOGY_PATTERNS = MappingProxyType(_PATTERNS)
 
+# A framework is compatible only with the languages listed here. Engine
+# _select_toolchain() rejects any explicit pair that is not in this map, so an
+# unsupported toolchain cannot be marked EXECUTABLE_POSSIBLE.
 FRAMEWORK_LANGUAGES = MappingProxyType({
     "PYTEST": frozenset({"PYTHON"}),
     "JUNIT": frozenset({"JAVA"}),

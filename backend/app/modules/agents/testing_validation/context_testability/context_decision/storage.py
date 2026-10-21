@@ -1,3 +1,12 @@
+"""
+Disk persistence for the N4.4 context decision.
+
+Path: <root>/<agent_project_id>/context-testability/context-decision.json
+This is one file per project, not per source. It is written only after TR1, TB1,
+and FB1 are all current, and it holds the consolidated CD1 decision. Writes are
+atomic (.part then replace), so a failed write never leaves a partial trusted decision.
+"""
+
 import json
 from pathlib import Path
 
@@ -9,10 +18,13 @@ from .schemas import Agent4ContextDecisionResult
 
 
 class Agent4ContextDecisionStorageError(RuntimeError):
+    """Raised for owner mismatch, unsafe paths, or failed persistence."""
     pass
 
 
 class Agent4ContextDecisionStorage:
+    """Reads and writes the single CD1 decision file for a project."""
+
     def __init__(self, root: Path):
         self._root = Path(root).resolve()
 
