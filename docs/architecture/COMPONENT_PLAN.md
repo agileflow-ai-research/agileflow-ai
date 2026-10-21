@@ -12,7 +12,7 @@ This map translates the approved architecture into implementation ownership and 
 - MongoDB is the Shared Knowledge Base; reports/traceability are shared functionality.
 - JWT authentication and Project ownership are shared platform concerns, not a fifth agent. Every project-scoped component must authorize through the owning Project.
 - Every accepted artifact preserves the Requirement → Design → Backlog → Test → Code → Bug/Security Finding → Validation → Report/Correction chain.
-- Planned routes use `/api/v1`; listed responsibilities do not imply implementation.
+- Planned routes use `/api/v1`; listed responsibilities don't imply implementation.
 
 ## 1. Requirement Gathering and Analysis Agent
 
