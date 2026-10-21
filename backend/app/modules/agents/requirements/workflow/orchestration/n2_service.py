@@ -29,6 +29,10 @@ from app.modules.agents.requirements.workflow.orchestration.identity import (
 from app.modules.agents.requirements.workflow.orchestration.n2_runner import (
     RequirementN2Runner,
 )
+from app.modules.agents.requirements.workflow.orchestration.progression import (
+    N2CompletionProgression,
+    NoOpN2CompletionProgression,
+)
 from app.modules.agents.requirements.workflow.orchestration.transitions import (
     current_execution,
     mark_interrupted,
@@ -72,6 +76,7 @@ class RequirementN2OrchestrationService:
         *,
         executor: Executor = AGENT1_N2_EXECUTOR,
         clock: Callable[[], datetime] = utc_now,
+        progression: N2CompletionProgression | None = None,
     ) -> None:
         self._standalone = standalone_service
         self._sources = source_storage
@@ -79,12 +84,14 @@ class RequirementN2OrchestrationService:
         self._workflow = workflow_service
         self._executor = executor
         self._clock = clock
+        self._progression = progression or NoOpN2CompletionProgression()
         self._runner = RequirementN2Runner(
             source_storage,
             workflow_storage,
             processing_service,
             preparation_service,
             clock=clock,
+            progression=self._progression,
         )
 
     def get_workflow(
@@ -108,6 +115,20 @@ class RequirementN2OrchestrationService:
                         updated_at=self._clock(),
                     )
                     self._states.save(record)
+            completed_execution_id = (
+                execution.execution_id
+                if execution and execution.status is RequirementN2Status.COMPLETE
+                else None
+            )
+        if completed_execution_id:
+            try:
+                self._progression.advance_after_n2_complete(
+                    agent_project_id, current_user.user_id, completed_execution_id
+                )
+            except Exception:
+                pass
+        with WORKFLOW_STATE_LOCK:
+            record, source_count = self._load_record(agent_project_id, current_user)
             return build_workflow_response(record, source_count)
 
     def continue_n1_and_start(

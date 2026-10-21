@@ -14,8 +14,13 @@ from app.modules.agents.requirements.discovery.candidate_detection import Requir
 from app.modules.agents.requirements.discovery.structuring import RequirementStructuringService
 from app.modules.agents.requirements.discovery.storage import DiscoveryStorage
 from app.modules.agents.requirements.infrastructure.artifact_store import JsonArtifactStore
+from app.modules.agents.requirements.workflow.orchestration.n3_service import (
+    RequirementN3OrchestrationService,
+)
+from app.modules.agents.requirements.workflow.orchestration.progression import (
+    WorkflowProgressionCoordinator,
+)
 from app.modules.agents.requirements.workflow.storage import RequirementWorkflowStorage
-from app.modules.agents.requirements.workflow.orchestration.n3_service import RequirementN3OrchestrationService
 
 
 def build_discovery_storage(root: Path) -> DiscoveryStorage:
@@ -53,4 +58,10 @@ def build_n3_orchestration_service(root: Path) -> RequirementN3OrchestrationServ
         build_requirement_classification_service(),
         RequirementStructuringService(),
         storage,
+    )
+
+
+def build_workflow_progression(root: Path) -> WorkflowProgressionCoordinator:
+    return WorkflowProgressionCoordinator(
+        RequirementWorkflowStorage(root), build_n3_orchestration_service(root)
     )

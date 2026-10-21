@@ -22,6 +22,10 @@ from app.modules.agents.requirements.workflow.orchestration.identity import (
     n2_chunk_set_digest,
     snapshot_sources,
 )
+from app.modules.agents.requirements.workflow.orchestration.progression import (
+    N2CompletionProgression,
+    NoOpN2CompletionProgression,
+)
 from app.modules.agents.requirements.workflow.orchestration.transitions import (
     execution_by_id,
     fail_source,
@@ -51,12 +55,14 @@ class RequirementN2Runner:
         preparation_service: EvidencePreparationService,
         *,
         clock: Callable[[], datetime],
+        progression: N2CompletionProgression | None = None,
     ) -> None:
         self._sources = source_storage
         self._states = workflow_storage
         self._processing = processing_service
         self._preparation = preparation_service
         self._clock = clock
+        self._progression = progression or NoOpN2CompletionProgression()
 
     def run(
         self,
@@ -166,6 +172,13 @@ class RequirementN2Runner:
                     updated_at=self._clock(),
                 )
                 self._states.save(record)
+            try:
+                self._progression.advance_after_n2_complete(
+                    agent_project_id, owner_user_id, execution_id
+                )
+            except Exception:
+                # N2 is already durable and must not be rolled back by N3 startup.
+                pass
         except Exception:
             self.fail_execution(
                 agent_project_id,

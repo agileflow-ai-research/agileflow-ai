@@ -42,6 +42,9 @@ from app.modules.agents.requirements.workflow.service import RequirementWorkflow
 from app.modules.agents.requirements.workflow.orchestration.n2_service import (
     RequirementN2OrchestrationService,
 )
+from app.modules.agents.requirements.workflow.orchestration.progression import (
+    N2CompletionProgression,
+)
 from app.modules.agents.requirements.workflow.executor import AGENT1_N2_EXECUTOR
 from app.modules.agents.requirements.workflow.storage import RequirementWorkflowStorage
 from app.modules.standalone.router import get_standalone_service
@@ -58,6 +61,14 @@ def get_requirement_workflow_storage() -> RequirementWorkflowStorage:
 
 def get_agent1_n2_executor() -> Executor:
     return AGENT1_N2_EXECUTOR
+
+
+def get_workflow_progression() -> N2CompletionProgression:
+    from app.modules.agents.requirements.discovery.dependencies import (
+        build_workflow_progression,
+    )
+
+    return build_workflow_progression(settings.agent1_source_root)
 
 
 def get_requirement_workflow_service(
@@ -214,6 +225,9 @@ def get_requirement_n2_orchestration_service(
         EvidencePreparationService, Depends(get_evidence_preparation_service)
     ],
     executor: Annotated[Executor, Depends(get_agent1_n2_executor)],
+    progression: Annotated[
+        N2CompletionProgression, Depends(get_workflow_progression)
+    ],
 ) -> RequirementN2OrchestrationService:
     return RequirementN2OrchestrationService(
         standalone_service,
@@ -223,5 +237,6 @@ def get_requirement_n2_orchestration_service(
         processing_service,
         preparation_service,
         executor=executor,
+        progression=progression,
     )
 
