@@ -10,6 +10,8 @@ from app.modules.agents.requirements.quality.contracts import (
     SemanticDuplicatePair,
     SemanticDuplicateResult,
     SemanticSimilarityEvidence,
+    RequirementConflictPair,
+    RequirementConflictResult,
 )
 from app.modules.agents.requirements.quality.exact_duplicates import ExactDuplicateDetector
 from app.modules.agents.requirements.quality.input import (
@@ -32,4 +34,6 @@ __all__ = [
     "SemanticDuplicatePair",
     "SemanticDuplicateResult",
     "SemanticSimilarityEvidence",
+    "RequirementConflictPair",
+    "RequirementConflictResult",
 ]

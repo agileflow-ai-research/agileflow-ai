@@ -1,5 +1,7 @@
 """Immutable contracts at the validated N3-to-N4 boundary."""
 
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.agents.requirements.contracts.schemas import RequirementSourceType
@@ -138,4 +140,99 @@ class SemanticDuplicateResult(StrictQualityContract):
     def validate_pair_count(self) -> "SemanticDuplicateResult":
         if self.pair_count != len(self.pairs):
             raise ValueError("Semantic duplicate pair count is inconsistent")
+        return self
+
+
+class NliRelation(StrEnum):
+    ENTAILMENT = "ENTAILMENT"
+    NEUTRAL = "NEUTRAL"
+    CONTRADICTION = "CONTRADICTION"
+
+
+class NliRelationScore(StrictQualityContract):
+    relation: NliRelation
+    score: float = Field(ge=0.0, le=1.0)
+
+
+class NliScoreVector(StrictQualityContract):
+    scores: tuple[NliRelationScore, ...] = Field(min_length=3, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_taxonomy(self) -> "NliScoreVector":
+        relations = [item.relation for item in self.scores]
+        if len(set(relations)) != 3 or set(relations) != set(NliRelation):
+            raise ValueError("NLI scores require the complete relation taxonomy")
+        if abs(sum(item.score for item in self.scores) - 1.0) > 1e-5:
+            raise ValueError("NLI scores must form a normalized probability distribution")
+        return self
+
+    def score_for(self, relation: NliRelation) -> float:
+        return next(item.score for item in self.scores if item.relation is relation)
+
+
+class ConflictModelIdentity(StrictQualityContract):
+    provider_type: str = Field(min_length=1)
+    provider_version: str = Field(min_length=1)
+    model_id: str = Field(min_length=1)
+    requested_revision: str | None = None
+    resolved_revision: str | None = None
+    device: str = Field(min_length=1)
+    task: str = Field(min_length=1)
+    label_mapping_policy: dict[NliRelation, str]
+    directional_policy: str = Field(min_length=1)
+    aggregation_policy: str = Field(min_length=1)
+    contradiction_threshold: float = Field(ge=0.0, le=1.0)
+    batch_size: int = Field(gt=0)
+    preprocessing_policy: str = Field(min_length=1)
+    configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class DirectionalConflictEvidence(StrictQualityContract):
+    premise_requirement_id: str = Field(pattern=r"^(?:FR|NFR)-[0-9A-F]{16}$")
+    hypothesis_requirement_id: str = Field(pattern=r"^(?:FR|NFR)-[0-9A-F]{16}$")
+    relation_scores: NliScoreVector
+
+
+class RequirementConflictPair(StrictQualityContract):
+    conflict_id: str = Field(pattern=r"^QCON-[0-9A-F]{16}$")
+    quality_input_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    left: QualityRequirement
+    right: QualityRequirement
+    relatedness_score: float = Field(ge=-1.0, le=1.0)
+    relatedness_threshold: float = Field(ge=-1.0, le=1.0)
+    left_to_right: DirectionalConflictEvidence
+    right_to_left: DirectionalConflictEvidence
+    final_contradiction_score: float = Field(ge=0.0, le=1.0)
+    contradiction_threshold: float = Field(ge=0.0, le=1.0)
+    final_relation: NliRelation
+    embedding_configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    nli_configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class RequirementConflictResult(StrictQualityContract):
+    contract_version: str
+    agent_project_id: str = Field(pattern=r"^AGP-\d{3,}$")
+    quality_input_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    exact_duplicate_result_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    semantic_duplicate_result_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    embedding_configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    nli_model: ConflictModelIdentity
+    detector_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    relatedness_threshold: float = Field(ge=-1.0, le=1.0)
+    contradiction_threshold: float = Field(ge=0.0, le=1.0)
+    total_potential_pair_count: int = Field(ge=0)
+    relatedness_candidate_pair_count: int = Field(ge=0)
+    nli_evaluated_pair_count: int = Field(ge=0)
+    conflicts: tuple[RequirementConflictPair, ...] = ()
+    conflict_count: int = Field(ge=0)
+    result_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> "RequirementConflictResult":
+        if self.conflict_count != len(self.conflicts):
+            raise ValueError("Conflict count is inconsistent")
+        if self.nli_evaluated_pair_count != self.relatedness_candidate_pair_count:
+            raise ValueError("Every relatedness candidate must have NLI evidence")
+        if self.conflict_count > self.nli_evaluated_pair_count:
+            raise ValueError("Conflict count exceeds evaluated pair count")
         return self
