@@ -23,9 +23,11 @@ from app.modules.agents.requirements.processing.video.providers.base import (
     VideoAudioExtractionError,
 )
 from app.modules.agents.requirements.workflow.orchestration import (
-    RequirementN2OrchestrationService,
     n2_chunk_set_digest,
     n2_execution_key,
+)
+from app.modules.agents.requirements.workflow.orchestration.n2_service import (
+    RequirementN2OrchestrationService,
 )
 from app.modules.agents.requirements.workflow.storage import RequirementWorkflowStorage
 from app.modules.standalone.router import (
