@@ -68,7 +68,7 @@ class TransformerRequirementClassifier:
             provider_version=provider_version,
             model_id=self._model_id,
             requested_revision=self._revision,
-            resolved_revision=self._resolved_revision,
+            resolved_revision=self._resolved_revision or self._revision,
             task=ZERO_SHOT_TASK,
             label_descriptions=dict(LABEL_DESCRIPTIONS),
             hypothesis_template=HYPOTHESIS_TEMPLATE,

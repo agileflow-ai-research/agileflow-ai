@@ -10,9 +10,12 @@ from app.modules.agents.requirements.discovery.classification.transformer import
     TransformerRequirementClassifier,
 )
 from app.modules.agents.requirements.discovery.input import DiscoveryInputLoader
+from app.modules.agents.requirements.discovery.candidate_detection import RequirementCandidateDetector
+from app.modules.agents.requirements.discovery.structuring import RequirementStructuringService
 from app.modules.agents.requirements.discovery.storage import DiscoveryStorage
 from app.modules.agents.requirements.infrastructure.artifact_store import JsonArtifactStore
 from app.modules.agents.requirements.workflow.storage import RequirementWorkflowStorage
+from app.modules.agents.requirements.workflow.orchestration.n3_service import RequirementN3OrchestrationService
 
 
 def build_discovery_storage(root: Path) -> DiscoveryStorage:
@@ -37,4 +40,17 @@ def build_requirement_classification_service() -> RequirementClassificationServi
         classifier,
         minimum_confidence=settings.agent1_classifier_minimum_confidence,
         minimum_margin=settings.agent1_classifier_minimum_margin,
+    )
+
+
+def build_n3_orchestration_service(root: Path) -> RequirementN3OrchestrationService:
+    workflows = RequirementWorkflowStorage(root)
+    storage = build_discovery_storage(root)
+    return RequirementN3OrchestrationService(
+        workflows,
+        DiscoveryInputLoader(workflows, storage),
+        RequirementCandidateDetector(),
+        build_requirement_classification_service(),
+        RequirementStructuringService(),
+        storage,
     )

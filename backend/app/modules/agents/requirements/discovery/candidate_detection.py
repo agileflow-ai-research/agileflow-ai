@@ -13,6 +13,7 @@ from app.modules.agents.requirements.processing.preparation.chunker import Sente
 
 
 CANDIDATE_CONTRACT_VERSION = "1"
+CANDIDATE_RULES_VERSION = "1"
 
 _SIGNAL_PATTERNS: tuple[tuple[CandidateDiscoverySignal, re.Pattern[str]], ...] = (
     (CandidateDiscoverySignal.MODAL_SHALL, re.compile(r"\bshall\b", re.I)),
@@ -84,6 +85,17 @@ class RequirementCandidateDetector:
 
     def __init__(self, segmenter: SentenceSegmenter | None = None) -> None:
         self._segmenter = segmenter or SentenceSegmenter()
+
+    @property
+    def configuration_fingerprint(self) -> str:
+        segmenter_name, segmenter_version = self._segmenter.identity
+        return stable_json_sha256({
+            "candidate_contract_version": CANDIDATE_CONTRACT_VERSION,
+            "rules_version": CANDIDATE_RULES_VERSION,
+            "sentence_segmenter": segmenter_name,
+            "sentence_segmenter_version": segmenter_version,
+            "signals": [signal.value for signal, _ in _SIGNAL_PATTERNS],
+        })
 
     def discover(self, value: ValidatedDiscoveryInput) -> RequirementCandidateSet:
         candidates: list[RequirementCandidate] = []

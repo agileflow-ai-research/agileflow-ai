@@ -100,6 +100,10 @@ class RequirementClassificationService:
             classifications=tuple(results),
         )
 
+    @property
+    def model_identity(self) -> ClassifierModelIdentity:
+        return self._model_identity()
+
     def _model_identity(self) -> ClassifierModelIdentity:
         configuration = self._classifier.configuration
         values = {

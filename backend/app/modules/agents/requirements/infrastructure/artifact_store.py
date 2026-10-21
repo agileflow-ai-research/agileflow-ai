@@ -39,8 +39,9 @@ class JsonArtifactStore:
         kind: RequirementArtifactKind,
         model: type[ModelT],
         source_id: str | None = None,
+        execution_id: str | None = None,
     ) -> ModelT | None:
-        path = self._resolve(agent_project_id, kind, source_id)
+        path = self._resolve(agent_project_id, kind, source_id, execution_id)
         return load_model_sidecar(
             path,
             model,
@@ -55,8 +56,9 @@ class JsonArtifactStore:
         kind: RequirementArtifactKind,
         value: BaseModel,
         source_id: str | None = None,
+        execution_id: str | None = None,
     ) -> None:
-        path = self._resolve(agent_project_id, kind, source_id)
+        path = self._resolve(agent_project_id, kind, source_id, execution_id)
         save_model_sidecar(
             path,
             value,
@@ -71,8 +73,9 @@ class JsonArtifactStore:
         agent_project_id: str,
         kind: RequirementArtifactKind,
         source_id: str | None = None,
+        execution_id: str | None = None,
     ) -> None:
-        path = self._resolve(agent_project_id, kind, source_id)
+        path = self._resolve(agent_project_id, kind, source_id, execution_id)
         remove_sidecar(
             path,
             lock=self._lock,
@@ -85,8 +88,13 @@ class JsonArtifactStore:
         agent_project_id: str,
         kind: RequirementArtifactKind,
         source_id: str | None,
+        execution_id: str | None,
     ) -> Path:
         try:
+            if source_id is not None and execution_id is not None:
+                raise ArtifactPathError("Artifact scope is ambiguous")
+            if execution_id is not None:
+                return self._paths.for_execution(agent_project_id, execution_id, kind)
             if source_id is None:
                 return self._paths.for_project(agent_project_id, kind)
             return self._paths.for_source(agent_project_id, source_id, kind)

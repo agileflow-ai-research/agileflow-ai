@@ -10,6 +10,7 @@ from app.modules.agents.requirements.workflow.contracts.n1 import (
     RequirementOutputCode,
 )
 from app.modules.agents.requirements.workflow.contracts.n2 import RequirementN2Execution
+from app.modules.agents.requirements.workflow.contracts.n3 import RequirementN3Execution
 
 
 class RequirementWorkflowRecord(StrictWorkflowContract):
@@ -24,5 +25,7 @@ class RequirementWorkflowRecord(StrictWorkflowContract):
     n1_confirmation: RequirementN1Confirmation | None = None
     n2_executions: list[RequirementN2Execution] = Field(default_factory=list)
     current_n2_execution_id: str | None = None
+    n3_executions: list[RequirementN3Execution] = Field(default_factory=list)
+    current_n3_execution_id: str | None = None
     created_at: datetime
     updated_at: datetime

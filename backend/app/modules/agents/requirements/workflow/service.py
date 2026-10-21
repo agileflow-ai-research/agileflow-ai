@@ -182,7 +182,7 @@ class RequirementWorkflowService:
                 updated_at=now,
             )
             self._workflow.save(record)
-        elif record.schema_version == "1" and record.workflow_version == "W1":
+        elif (record.schema_version, record.workflow_version) in {("1", "W1"), ("2", "W2")}:
             record = record.model_copy(
                 update={
                     "schema_version": REQUIREMENTS_WORKFLOW_SCHEMA_VERSION,

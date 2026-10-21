@@ -9,6 +9,7 @@ from app.common.id_generator import validate_id
 
 SOURCE_ID_PATTERN = re.compile(r"^(DOC|AUD|VID)-(\d{3,})$")
 SOURCE_EXTENSION_PATTERN = re.compile(r"^\.[a-z0-9]+$")
+N3_EXECUTION_ID_PATTERN = re.compile(r"^N3-[0-9A-F]{16}-\d{3}$")
 
 
 class ArtifactPathError(ValueError):
@@ -28,6 +29,9 @@ class RequirementArtifactKind(StrEnum):
     NORMALIZED_RESULT = "NORMALIZED_RESULT"
     CHUNK_RESULT = "CHUNK_RESULT"
     WORKFLOW = "WORKFLOW"
+    DISCOVERY_CANDIDATES = "DISCOVERY_CANDIDATES"
+    DISCOVERY_CLASSIFICATIONS = "DISCOVERY_CLASSIFICATIONS"
+    DISCOVERY_STRUCTURED = "DISCOVERY_STRUCTURED"
 
 
 SOURCE_ARTIFACT_SUFFIXES = {
@@ -44,6 +48,11 @@ SOURCE_ARTIFACT_SUFFIXES = {
 }
 PROJECT_ARTIFACT_FILENAMES = {
     RequirementArtifactKind.WORKFLOW: "workflow.json",
+}
+EXECUTION_ARTIFACT_FILENAMES = {
+    RequirementArtifactKind.DISCOVERY_CANDIDATES: "candidates.json",
+    RequirementArtifactKind.DISCOVERY_CLASSIFICATIONS: "classifications.json",
+    RequirementArtifactKind.DISCOVERY_STRUCTURED: "structured-requirements.json",
 }
 SOURCE_CLEANUP_SIDECARS = tuple(
     kind
@@ -100,6 +109,22 @@ class RequirementArtifactPaths:
                 raise ArtifactPathError("Artifact kind is not source-scoped")
             filename = f"{source_id}{suffix}"
         path = self._contained(self.inputs_directory(agent_project_id), filename)
+        return self.partial_path(path) if partial else path
+
+    def for_execution(
+        self, agent_project_id: str, execution_id: str,
+        kind: RequirementArtifactKind, *, partial: bool = False,
+    ) -> Path:
+        self._validate_project_id(agent_project_id)
+        self._require_kind(kind)
+        if not isinstance(execution_id, str) or not N3_EXECUTION_ID_PATTERN.fullmatch(execution_id):
+            raise ArtifactPathError("Invalid N3 execution identity")
+        filename = EXECUTION_ARTIFACT_FILENAMES.get(kind)
+        if filename is None:
+            raise ArtifactPathError("Artifact kind is not execution-scoped")
+        directory = self._contained(self.project_directory(agent_project_id), "discovery")
+        directory = self._contained(directory, execution_id)
+        path = self._contained(directory, filename)
         return self.partial_path(path) if partial else path
 
     def source_cleanup_paths(
