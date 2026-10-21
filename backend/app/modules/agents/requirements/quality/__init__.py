@@ -4,8 +4,12 @@ from app.modules.agents.requirements.quality.contracts import (
     ExactDuplicateGroup,
     ExactDuplicateMember,
     ExactDuplicateResult,
+    EmbeddingModelIdentity,
     QualityRequirement,
     ValidatedQualityInput,
+    SemanticDuplicatePair,
+    SemanticDuplicateResult,
+    SemanticSimilarityEvidence,
 )
 from app.modules.agents.requirements.quality.exact_duplicates import ExactDuplicateDetector
 from app.modules.agents.requirements.quality.input import (
@@ -24,4 +28,8 @@ __all__ = [
     "ExactDuplicateGroup",
     "ExactDuplicateMember",
     "ExactDuplicateResult",
+    "EmbeddingModelIdentity",
+    "SemanticDuplicatePair",
+    "SemanticDuplicateResult",
+    "SemanticSimilarityEvidence",
 ]

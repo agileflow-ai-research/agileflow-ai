@@ -86,3 +86,56 @@ class ExactDuplicateResult(StrictQualityContract):
         if self.affected_requirement_count != affected:
             raise ValueError("Affected requirement count is inconsistent")
         return self
+
+
+class EmbeddingModelIdentity(StrictQualityContract):
+    provider_type: str = Field(min_length=1)
+    provider_version: str = Field(min_length=1)
+    model_id: str = Field(min_length=1)
+    requested_revision: str | None = None
+    resolved_revision: str | None = None
+    device: str = Field(min_length=1)
+    normalize_embeddings: bool
+    embedding_dimension: int = Field(gt=0)
+    batch_size: int = Field(gt=0)
+    preprocessing_policy: str = Field(min_length=1)
+    configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class SemanticSimilarityEvidence(StrictQualityContract):
+    cosine_similarity: float = Field(ge=-1.0, le=1.0)
+    threshold: float = Field(ge=-1.0, le=1.0)
+    model_configuration_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class SemanticDuplicatePair(StrictQualityContract):
+    semantic_duplicate_id: str = Field(pattern=r"^QSEM-[0-9A-F]{16}$")
+    quality_input_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    left: QualityRequirement
+    right: QualityRequirement
+    evidence: SemanticSimilarityEvidence
+
+    @model_validator(mode="after")
+    def validate_distinct_pair(self) -> "SemanticDuplicatePair":
+        if self.left.requirement_id == self.right.requirement_id:
+            raise ValueError("Semantic duplicate pair members must be distinct")
+        return self
+
+
+class SemanticDuplicateResult(StrictQualityContract):
+    contract_version: str
+    agent_project_id: str = Field(pattern=r"^AGP-\d{3,}$")
+    quality_input_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    exact_duplicate_result_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+    model: EmbeddingModelIdentity
+    detector_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    threshold: float = Field(ge=-1.0, le=1.0)
+    pairs: tuple[SemanticDuplicatePair, ...] = ()
+    pair_count: int = Field(ge=0)
+    result_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_pair_count(self) -> "SemanticDuplicateResult":
+        if self.pair_count != len(self.pairs):
+            raise ValueError("Semantic duplicate pair count is inconsistent")
+        return self
