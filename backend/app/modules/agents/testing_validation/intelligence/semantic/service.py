@@ -1,3 +1,13 @@
+"""
+N3 semantic-fact service (Qwen stage S1) for one source.
+
+Orchestration layer. It checks the gates, reuses cached results where it can,
+calls Qwen only for ELIGIBLE chunks, and saves the manifest. Gates require
+N1 confirmation, a completed N2, and current rule, zero-shot, and hybrid
+evidence. Chunks that are WAITING_FOR_CLASSIFICATION_REVIEW or
+NOT_APPLICABLE get a disposition result without any model call.
+"""
+
 from datetime import datetime, timezone
 from threading import RLock
 
@@ -53,6 +63,13 @@ def utc_now():
 
 
 class Agent4SemanticFactService:
+    """
+    Produces the per-source semantic-fact manifest used after N3 H1 and human review.
+
+    Model boundary: the Qwen runtime object is created here but loads nothing
+    until a chunk is ELIGIBLE and extract_semantic_result() calls generate().
+    """
+
     def __init__(self, standalone_service: StandaloneService,
                  workflow_storage: Agent4WorkflowStorage,
                  chunk_storage: Agent4ChunkStorage,
@@ -75,6 +92,18 @@ class Agent4SemanticFactService:
 
     def build(self, project_id: str, source_id: str,
               user: UserPublicResponse, *, force=False, effective=None):
+        """
+        Build or reuse the S1 semantic manifest for one source.
+
+        effective: the N3 effective classification. When given, it supersedes
+        raw H1 for eligibility, so human decisions decide which chunks reach
+        Qwen. It must match the current chunk set and H1 fingerprint, or the
+        call fails as stale.
+
+        Reuse: a whole manifest is returned when _cache_is_current() passes.
+        Otherwise each chunk's previous result is reused when its H1 result ID
+        and accepted labels still match, so unchanged chunks do not call Qwen again.
+        """
         with AGENT4_WORKFLOW_STATE_LOCK, SEMANTIC_FACT_LOCK:
             chunks, rules, zero, hybrid = self._resolve(project_id, source_id, user)
             hybrid_fingerprint = manifest_fingerprint(hybrid)
@@ -121,6 +150,9 @@ class Agent4SemanticFactService:
                 reusable = self._reusable_result(
                     None if force else cached, context, hybrid_result
                 )
+                # MODEL CALL SITE: Qwen runs only in this ELIGIBLE branch, and only
+                # when no reusable result exists for the chunk. A chunk waiting on
+                # human review never reaches this branch.
                 if context.eligibility is SemanticEligibility.ELIGIBLE:
                     eligible.append(chunk.chunk_id)
                     result = reusable or extract_semantic_result(
@@ -187,6 +219,11 @@ class Agent4SemanticFactService:
             return manifest
 
     def _resolve(self, project_id, source_id, user):
+        """
+        Gate check. Loads chunks, rule, zero-shot, and hybrid manifests, and
+        verifies each one against the current upstream fingerprints. Failure
+        here stops before any model call, so Qwen never runs on stale evidence.
+        """
         project = self._standalone.require_active_project(user.user_id, project_id)
         if project.agent_type is not AgentType.TESTING_VALIDATION:
             raise Agent4SemanticGateError("Agent project must have agent_type TESTING_VALIDATION")
@@ -222,6 +259,12 @@ class Agent4SemanticFactService:
 
     @staticmethod
     def _cache_is_current(cached, chunks, hybrid, hybrid_fingerprint, effective=None):
+        """
+        Whole-manifest cache check. It compares the generation configuration,
+        chunk set, H1 and effective fingerprints, and eligibility lists. It also
+        re-grounds every stored fact against the current chunk text, so a
+        cached fact that no longer matches its source is treated as stale.
+        """
         effective_fingerprint = (
             effective_manifest_fingerprint(effective) if effective is not None else None
         )
@@ -314,6 +357,12 @@ class Agent4SemanticFactService:
 
     @staticmethod
     def _reusable_result(cached, context, hybrid_result):
+        """
+        Per-chunk reuse, which avoids Qwen calls for unchanged chunks. A cached
+        result is reusable only if its H1 result ID and accepted labels still
+        match and it finished with SUCCESS, SUCCESS_WITH_WARNINGS, or EMPTY.
+        Failed or review-waiting results are regenerated.
+        """
         if cached is None:
             return None
         candidate = next(
