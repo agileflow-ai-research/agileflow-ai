@@ -359,4 +359,90 @@ describe('useTestingValidationWorkflow', () => {
     expect(getTestGenerationIntelligenceReview).toHaveBeenCalledWith('AGP-004')
     expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(1)
   })
+
+  it('polls N3 through queued and running then stops on completion', async () => {
+    vi.useFakeTimers()
+    getTestGenerationWorkflow
+      .mockResolvedValueOnce({ data: n3Workflow('QUEUED') })
+      .mockResolvedValueOnce({ data: n3Workflow('RUNNING') })
+      .mockResolvedValueOnce({ data: n3Workflow('COMPLETED') })
+    try {
+      const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(result.current.workflowState.n3_execution.status).toBe('QUEUED')
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n3_execution.status).toBe('RUNNING')
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n3_execution.status).toBe('COMPLETED')
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['FAILED', 'COMPLETED'])('does not poll terminal N3 status %s', async (status) => {
+    vi.useFakeTimers()
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: n3Workflow(status) })
+    try {
+      renderHook(() => useTestingValidationWorkflow('AGP-004'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(vi.getTimerCount()).toBe(0)
+      expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cleans an active N3 polling timer on unmount', async () => {
+    vi.useFakeTimers()
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: n3Workflow('RUNNING') })
+    try {
+      const { unmount } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(vi.getTimerCount()).toBe(1)
+      unmount()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('submits the trusted snapshot, adopts continuation, and resumes polling', async () => {
+    vi.useFakeTimers()
+    const waiting = n3Workflow('WAITING_FOR_HUMAN')
+    const queued = n3Workflow('QUEUED')
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: waiting })
+    submitTestGenerationIntelligenceReview.mockResolvedValueOnce({ data: queued })
+    try {
+      const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      const resolutions = [{ chunk_id: 'A4CHK-one', label: 'AUTHORIZATION', decision: 'ACCEPT' }]
+      await act(() => result.current.submitIntelligenceReview(resolutions))
+      expect(submitTestGenerationIntelligenceReview).toHaveBeenCalledWith('AGP-004', {
+        review_snapshot_fingerprint: 'a'.repeat(64), resolutions,
+      })
+      expect(result.current.workflowState.n3_execution.status).toBe('QUEUED')
+      expect(result.current.intelligenceReview).toBeNull()
+      expect(vi.getTimerCount()).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries one failed N3 source and exposes only a safe request error', async () => {
+    const failed = n3Workflow('FAILED')
+    failed.n3_execution.sources = [{ source_id: 'A4SRC-one', status: 'FAILED' }]
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: failed })
+    retryTestGenerationIntelligenceSource.mockRejectedValueOnce({
+      status: 409, errors: [{ message: 'The source retry is no longer current.' }],
+    })
+    const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+    await waitFor(() => expect(result.current.loadStatus).toBe('success'))
+    await act(() => result.current.retryIntelligenceSource('A4SRC-one'))
+    expect(retryTestGenerationIntelligenceSource).toHaveBeenCalledWith('AGP-004', 'A4SRC-one')
+    expect(result.current.intelligenceError).toBe('The source retry is no longer current.')
+    expect(result.current.retryingIntelligenceSourceId).toBeNull()
+  })
 })

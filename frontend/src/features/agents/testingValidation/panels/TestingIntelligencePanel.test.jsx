@@ -93,4 +93,43 @@ describe('TestingIntelligencePanel', () => {
     await user.click(screen.getByRole('button', { name: 'Retry Source' }))
     expect(retry).toHaveBeenCalledWith('A4SRC-one')
   })
+
+  it('supports Reject, shows absent rule evidence truthfully, and protects submitting review', async () => {
+    const user = userEvent.setup()
+    const props = renderPanel({
+      intelligenceReview: {
+        ...review,
+        items: [{ ...review.items[0], rule_detected: false, rule_evidence_quotes: [] }],
+      },
+    })
+    expect(screen.getByText('None')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Reject' }))
+    await user.click(screen.getByRole('button', { name: 'Submit Review' }))
+    expect(props.onSubmitIntelligenceReview).toHaveBeenCalledWith([{
+      chunk_id: 'A4CHK-one', label: 'AUTHORIZATION', decision: 'REJECT',
+    }])
+
+    renderPanel({ reviewSubmitting: true })
+    expect(screen.getByRole('button', { name: 'Submitting review' })).toBeDisabled()
+  })
+
+  it('retains successful siblings while showing failed and pending-image source truthfully', () => {
+    renderPanel({
+      intelligenceReview: null,
+      n3Execution: {
+        ...execution,
+        status: 'FAILED',
+        sources: [
+          { ...execution.sources[0], source_id: 'A4SRC-complete', label: 'Completed SRS', status: 'COMPLETE', semantic_complete: true, semantic_fact_count: 2, pending_review_items: 0 },
+          { ...execution.sources[0], source_id: 'A4SRC-failed', label: 'Failed SRS', status: 'FAILED', error: { code: 'N3_SOURCE_FAILED', message: 'Safe failure.' } },
+          { ...execution.sources[0], source_id: 'A4SRC-image', label: 'Wireframe', source_type: 'IMAGE', status: 'PENDING_ANALYSIS', rules_complete: false, zero_shot_complete: false, hybrid_complete: false, pending_review_items: 0 },
+        ],
+      },
+    })
+    expect(screen.getByText('Completed SRS')).toBeInTheDocument()
+    expect(screen.getByText('Safe failure.')).toBeInTheDocument()
+    expect(screen.getByText('Visual semantic analysis is not implemented.')).toBeInTheDocument()
+    expect(screen.getAllByText('Complete')).not.toHaveLength(0)
+    expect(screen.getByText('Pending Analysis')).toBeInTheDocument()
+  })
 })

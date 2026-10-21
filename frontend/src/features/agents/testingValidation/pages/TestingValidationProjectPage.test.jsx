@@ -240,4 +240,31 @@ describe('TestingValidationProjectPage', () => {
     await user.click(screen.getByRole('button', { name: /Open Input & Output Setup/ }))
     expect(await screen.findByText('Setup Confirmed')).toBeInTheDocument()
   })
+
+  it('shows N4 as current Not Started after N3 completion without a start action or fake results', async () => {
+    const user = userEvent.setup()
+    const completedN3 = {
+      ...workflow,
+      pipeline_status: 'RUNNING',
+      current_node_id: 'CONTEXT_TESTABILITY',
+      n1_confirmation: { confirmation_id: 'A4N1C-confirmed' },
+      n2_execution: { execution_id: 'A4N2E-complete', status: 'COMPLETED', sources: [] },
+      n3_execution: { execution_id: 'A4N3E-complete', attempt_number: 1, status: 'COMPLETED', sources: [] },
+      nodes: canvasNodes.map(([nodeId], index) => ({
+        node_id: nodeId,
+        status: index < 3 ? 'COMPLETED' : index === 3 ? 'NOT_STARTED' : 'LOCKED',
+        updated_at: '2026-10-21T03:00:00Z',
+      })),
+    }
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: completedN3 })
+    renderPage()
+    const canvas = await screen.findByLabelText('Agent 4 test generation workflow canvas')
+    expect(canvas).toHaveAttribute('data-selected-node', 'CONTEXT_TESTABILITY')
+    await user.click(screen.getByRole('button', { name: /Open Context & Testability/ }))
+    const panel = screen.getByRole('dialog', { name: 'Context & Testability' })
+    expect(panel).toHaveTextContent('No N4 analysis has started')
+    expect(panel).toHaveTextContent('Not Started')
+    expect(screen.queryByRole('button', { name: /Start N4|Run N4/ })).not.toBeInTheDocument()
+    expect(panel).not.toHaveTextContent(/ready|traceability result|testability score/i)
+  })
 })
