@@ -6,7 +6,11 @@ from app.modules.agents.testing_validation.contracts.sources import (
     TestGenerationInputSourceType,
 )
 from app.modules.agents.testing_validation.intelligence.semantic.schemas import (
+    SemanticFactType,
     SemanticResultStatus,
+)
+from app.modules.agents.testing_validation.intelligence.taxonomy import (
+    TestingIntelligenceLabel,
 )
 
 from .canonicalization import (
@@ -70,7 +74,8 @@ class TraceabilityComponents:
 def _node(*, project_id, source_id, artifact_type, kind, display, identity,
           chunk_id=None, external_id=None, fact_id=None, start=None, end=None,
           api_method=None, api_path=None, entity=None, field=None, feature=None,
-          hybrid_id=None, effective_id=None, review_id=None):
+          hybrid_id=None, effective_id=None, review_id=None, fact_type=None,
+          semantic_labels=()):
     display = " ".join(display.split())[:500]
     canonical = (
         f"{api_method} {api_path}" if api_method else
@@ -88,6 +93,8 @@ def _node(*, project_id, source_id, artifact_type, kind, display, identity,
         agent_project_id=project_id, source_id=source_id,
         artifact_type=artifact_type, external_reference_id=external_id,
         chunk_id=chunk_id, semantic_fact_id=fact_id,
+        semantic_fact_type=fact_type,
+        semantic_labels=sorted(set(semantic_labels), key=lambda item: item.value),
         display_value=display or canonical, canonical_value=canonical,
         provenance_fingerprint=fingerprint(payload),
         evidence_start=start, evidence_end=end, api_method=api_method,
@@ -199,6 +206,21 @@ def build_traceability_components(*, project_id, sources, chunk_sets,
                 continue
             effective = effective_by_chunk.get(result.chunk.chunk_id)
             for fact in result.facts:
+                fact_type = getattr(fact, "fact_type", None)
+                if fact_type is None:
+                    fact_type = (
+                        SemanticFactType.API_CONTRACT
+                        if fact.api_method and fact.api_endpoint
+                        else SemanticFactType.DATA_INTEGRITY_CONSTRAINT
+                        if fact.field_name
+                        else SemanticFactType.BEHAVIOR
+                    )
+                semantic_labels = getattr(fact, "related_labels", None) or [
+                    {
+                        SemanticFactType.API_CONTRACT: TestingIntelligenceLabel.API_CONTRACT,
+                        SemanticFactType.DATA_INTEGRITY_CONSTRAINT: TestingIntelligenceLabel.DATA_INTEGRITY,
+                    }.get(fact_type, TestingIntelligenceLabel.FUNCTIONAL_BEHAVIOR)
+                ]
                 fact_api = (
                     api_operations(f"{fact.api_method} {fact.api_endpoint}")
                     if fact.api_method and fact.api_endpoint else []
@@ -210,6 +232,8 @@ def build_traceability_components(*, project_id, sources, chunk_sets,
                     display=fact.evidence_quote,
                     identity={"fact": fact.fact_id, "semantic": result.semantic_result_id},
                     chunk_id=result.chunk.chunk_id, fact_id=fact.fact_id,
+                    fact_type=fact_type,
+                    semantic_labels=semantic_labels,
                     start=fact.evidence_start, end=fact.evidence_end,
                     api_method=fact_api[0][0] if fact_api else None,
                     api_path=fact_api[0][1] if fact_api else None,

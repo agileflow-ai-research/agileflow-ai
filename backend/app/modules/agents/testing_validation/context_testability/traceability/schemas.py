@@ -7,6 +7,12 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.modules.agents.testing_validation.contracts.sources import (
     TestGenerationInputArtifactType,
 )
+from app.modules.agents.testing_validation.intelligence.semantic.schemas import (
+    SemanticFactType,
+)
+from app.modules.agents.testing_validation.intelligence.taxonomy import (
+    TestingIntelligenceLabel,
+)
 
 from .constants import (
     LEXICAL_POLICY_VERSION,
@@ -81,6 +87,8 @@ class TraceabilityNode(StrictTraceabilityContract):
     external_reference_id: str | None = Field(default=None, max_length=80)
     chunk_id: str | None = Field(default=None, pattern=r"^A4CHK-[0-9a-f]{32}$")
     semantic_fact_id: str | None = Field(default=None, pattern=r"^A4FACT-[0-9a-f]{32}$")
+    semantic_fact_type: SemanticFactType | None = None
+    semantic_labels: list[TestingIntelligenceLabel] = Field(default_factory=list)
     display_value: str = Field(min_length=1, max_length=500)
     canonical_value: str = Field(min_length=1, max_length=500)
     provenance_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -102,9 +110,23 @@ class TraceabilityNode(StrictTraceabilityContract):
         if self.evidence_start is not None and self.evidence_end <= self.evidence_start:
             raise ValueError("evidence end must follow evidence start")
         if self.node_kind is TraceabilityNodeKind.SEMANTIC_TESTING_FACT:
-            if not self.semantic_fact_id or not self.chunk_id or not self.hybrid_result_id:
-                raise ValueError("semantic fact nodes require fact, chunk, and H1 references")
-        elif self.semantic_fact_id is not None:
+            if (
+                not self.semantic_fact_id
+                or not self.semantic_fact_type
+                or not self.semantic_labels
+                or not self.chunk_id
+                or not self.hybrid_result_id
+            ):
+                raise ValueError(
+                    "semantic fact nodes require typed fact, label, chunk, and H1 references"
+                )
+            if self.semantic_labels != sorted(set(self.semantic_labels), key=lambda item: item.value):
+                raise ValueError("semantic fact labels must be unique and canonical")
+        elif (
+            self.semantic_fact_id is not None
+            or self.semantic_fact_type is not None
+            or self.semantic_labels
+        ):
             raise ValueError("only semantic fact nodes may reference semantic facts")
         if (self.api_method is None) != (self.api_path is None):
             raise ValueError("API method and path must be supplied together")
