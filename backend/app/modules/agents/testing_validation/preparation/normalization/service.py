@@ -38,6 +38,10 @@ from app.modules.auth.schemas import UserPublicResponse
 NORMALIZATION_LOCK = RLock()
 
 
+class Agent4NormalizationNotFoundError(LookupError):
+    pass
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -63,17 +67,9 @@ class Agent4NormalizationService:
         force: bool = False,
     ) -> NormalizedTestingArtifact:
         with AGENT4_WORKFLOW_STATE_LOCK, NORMALIZATION_LOCK:
-            stored = self._extraction.require_confirmed_source(
+            artifact = self._current_artifact(
                 agent_project_id, source_id, current_user
             )
-            extraction = None
-            if stored.metadata.source_type is TestGenerationInputSourceType.DOCUMENT:
-                extraction = self._extraction.get_existing(
-                    agent_project_id, source_id, current_user
-                )
-            else:
-                self._extraction.require_source_integrity(stored)
-            artifact = self._build(stored, extraction)
             if not force:
                 cached = self._storage.load(
                     agent_project_id=agent_project_id,
@@ -84,6 +80,43 @@ class Agent4NormalizationService:
                     return cached
             self._storage.save(artifact, owner_user_id=current_user.user_id)
             return artifact
+
+    def get_existing(
+        self,
+        agent_project_id: str,
+        source_id: str,
+        current_user: UserPublicResponse,
+    ) -> NormalizedTestingArtifact:
+        with AGENT4_WORKFLOW_STATE_LOCK, NORMALIZATION_LOCK:
+            expected = self._current_artifact(
+                agent_project_id, source_id, current_user
+            )
+            cached = self._storage.load(
+                agent_project_id=agent_project_id,
+                owner_user_id=current_user.user_id,
+                source_id=source_id,
+            )
+            if not self._cache_is_current(cached, expected):
+                raise Agent4NormalizationNotFoundError(source_id)
+            return cached
+
+    def _current_artifact(
+        self,
+        agent_project_id: str,
+        source_id: str,
+        current_user: UserPublicResponse,
+    ) -> NormalizedTestingArtifact:
+        stored = self._extraction.require_confirmed_source(
+            agent_project_id, source_id, current_user
+        )
+        extraction = None
+        if stored.metadata.source_type is TestGenerationInputSourceType.DOCUMENT:
+            extraction = self._extraction.get_existing(
+                agent_project_id, source_id, current_user
+            )
+        else:
+            self._extraction.require_source_integrity(stored)
+        return self._build(stored, extraction)
 
     def _build(
         self,
