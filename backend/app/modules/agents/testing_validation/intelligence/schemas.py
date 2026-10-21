@@ -205,6 +205,21 @@ class HybridLabelDecision(StrictIntelligenceContract):
     explanation: str | None = Field(default=None, min_length=1, max_length=500)
     rule_evidence_ids: list[EvidenceId] = Field(default_factory=list)
     model_score: BoundedScore | None = None
+    rule_detected: bool = Field(default=None, validate_default=True)
+    threshold_applied: BoundedScore | None = None
+
+    @field_validator("rule_detected", mode="before")
+    @classmethod
+    def infer_rule_detection(cls, value, info):
+        if value is None:
+            return bool(info.data.get("rule_evidence_ids"))
+        return value
+
+    @model_validator(mode="after")
+    def validate_rule_detection(self):
+        if self.rule_detected != bool(self.rule_evidence_ids):
+            raise ValueError("rule detection must match referenced rule evidence")
+        return self
 
 
 class TestingHybridClassificationResult(StrictIntelligenceContract):
