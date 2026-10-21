@@ -1,3 +1,24 @@
+"""
+Pure CD1 consolidation engine (N4.4). No I/O, no model, no re-evaluation.
+
+It takes the persisted TB1 testability result and FB1 feasibility result for the
+selected outputs, and produces three things:
+  - an OutputContextDecisionProfile per output (PROCEED / PROCEED_WITH_WARNINGS / BLOCKED),
+  - a DownstreamPlanningProfile per output (planning_allowed for N5),
+  - deduplicated ConsolidatedContextFindings with their origin references.
+
+Decision mapping:
+  BLOCKED                 TB1 NOT_READY. Planning is not allowed.
+  PROCEED_WITH_WARNINGS   TB1 READY_WITH_WARNINGS, or FB1 SPECIFICATION_ONLY that
+                          is not the intentional TEST_TRACEABILITY structured artifact.
+  PROCEED                 everything else.
+planning_allowed is True for PROCEED and PROCEED_WITH_WARNINGS, and False for BLOCKED.
+The overall decision is the worst output decision: BLOCKED > PROCEED_WITH_WARNINGS > PROCEED.
+
+TEST_TRACEABILITY is intentionally a STRUCTURED_ARTIFACT. It is not an executable
+test, so its SPECIFICATION_ONLY feasibility does not add a false executable-framework warning.
+"""
+
 from collections import defaultdict
 
 from app.modules.agents.testing_validation.context_testability.feasibility.schemas import (
@@ -30,14 +51,20 @@ from .schemas import (
 
 
 class ContextDecisionInputError(ValueError):
+    """Persisted TB1 and FB1 contradict each other. The input is not trusted."""
     pass
 
 
 def _assessment_ref(prefix, assessment):
+    """Deterministic reference to one TB1 or FB1 output assessment."""
     return deterministic_id(prefix, assessment.model_dump(mode="json"))
 
 
 def _decision(output, testability, feasibility):
+    """
+    Map one output's TB1 and FB1 assessments to a ContextDecisionStatus.
+    TB1 is authoritative for blocking. FB1 can add warnings but cannot unblock.
+    """
     if feasibility.n4_2_status is not testability.status:
         raise ContextDecisionInputError("FB1 testability status does not match TB1")
     if testability.status is TestabilityStatus.NOT_READY:
@@ -60,6 +87,10 @@ def _decision(output, testability, feasibility):
 
 
 def _finding_parts(testability_findings, feasibility_findings):
+    """
+    Flatten TB1 and FB1 findings into one common shape.
+    TB1 BLOCKING findings stay blocking. FB1 findings are always WARNING.
+    """
     parts = []
     for item in testability_findings:
         parts.append({
@@ -101,6 +132,10 @@ def _finding_parts(testability_findings, feasibility_findings):
 
 
 def consolidate_findings(testability_findings, feasibility_findings):
+    """
+    Merge identical findings (same output, severity, category, reason, and message)
+    into one consolidated finding. Its origin_references keep every TB1/FB1 finding it came from.
+    """
     groups = defaultdict(list)
     for part in _finding_parts(testability_findings, feasibility_findings):
         # Only identical output/severity/category/reason/message issues group.
@@ -148,6 +183,11 @@ def consolidate_findings(testability_findings, feasibility_findings):
 
 
 def consolidate_context_decision(selected_outputs, testability_result, feasibility_result):
+    """
+    Produce the per-output profiles, planning profiles, consolidated findings,
+    and overall decision. Returns (profiles, planning_profiles, findings, overall).
+    Every selected output must have exactly one TB1 and one FB1 assessment.
+    """
     tb_by_output = {item.output_code: item for item in testability_result.output_assessments}
     fb_by_output = {item.output_code: item for item in feasibility_result.output_assessments}
     if set(tb_by_output) != set(selected_outputs) or set(fb_by_output) != set(selected_outputs):
