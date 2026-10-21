@@ -18,6 +18,7 @@ from app.modules.agents.requirements.quality.contracts import (
     RequirementClaritySignal,
 )
 from app.modules.agents.requirements.quality.clarity.service import RequirementClarityService
+from app.modules.agents.requirements.quality.findings.service import QualityFindingConsolidationService
 from app.modules.agents.requirements.quality.exact_duplicates import ExactDuplicateDetector
 from app.modules.agents.requirements.quality.input import (
     QualityInputError,
@@ -46,4 +47,5 @@ __all__ = [
     "RequirementClarityResult",
     "RequirementClarityService",
     "RequirementClaritySignal",
+    "QualityFindingConsolidationService",
 ]

@@ -7,6 +7,7 @@ from app.modules.agents.requirements.discovery.dependencies import (
     build_discovery_storage,
 )
 from app.modules.agents.requirements.quality.input import QualityInputLoader
+from app.modules.agents.requirements.quality.findings.service import QualityFindingConsolidationService
 from app.modules.agents.requirements.quality.clarity.service import RequirementClarityService
 from app.modules.agents.requirements.quality.conflicts.service import (
     RequirementConflictService,
@@ -71,3 +72,7 @@ def build_requirement_conflict_service(
 
 def build_requirement_clarity_service() -> RequirementClarityService:
     return RequirementClarityService()
+
+
+def build_quality_finding_consolidation_service() -> QualityFindingConsolidationService:
+    return QualityFindingConsolidationService()
