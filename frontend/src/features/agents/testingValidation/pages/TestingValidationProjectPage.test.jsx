@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   getTestGenerationWorkflow,
+  listTestingValidationSources,
   runTestingValidationAgent,
 } from '../testingValidationAgentService.js'
 import TestingValidationProjectPage from './TestingValidationProjectPage.jsx'
@@ -37,8 +38,12 @@ const workflow = {
 }
 
 vi.mock('../testingValidationAgentService.js', () => ({
+  createTestingValidationTextSource: vi.fn(),
+  deleteTestingValidationSource: vi.fn(),
   getTestGenerationWorkflow: vi.fn(),
+  listTestingValidationSources: vi.fn(),
   runTestingValidationAgent: vi.fn(),
+  uploadTestingValidationSource: vi.fn(),
 }))
 
 vi.mock('../canvas/TestingValidationCanvas.jsx', () => ({
@@ -81,6 +86,7 @@ describe('TestingValidationProjectPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getTestGenerationWorkflow.mockResolvedValue({ data: workflow })
+    listTestingValidationSources.mockResolvedValue({ data: [] })
   })
 
   it('loads the authoritative workflow and renders its six node states', async () => {
@@ -95,13 +101,13 @@ describe('TestingValidationProjectPage', () => {
     expect(screen.getAllByText('Available - Waiting for Setup')).toHaveLength(1)
     expect(screen.getAllByText('LOCKED')).toHaveLength(5)
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText(/upload/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
     expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(1)
   })
 
   it.each([
-    ['Input & Output Setup', /Waiting for input\/output setup/],
+    ['Input & Output Setup', /Sources are collected only/],
     ['Input Preparation', /No extraction, normalization, or chunking/],
     ['Testing Intelligence', /performs no model inference/],
     ['Context & Testability', /performs no traceability, readiness, or feasibility/],

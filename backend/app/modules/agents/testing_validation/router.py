@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from app.common.model_provider import build_model_provider
@@ -18,6 +18,26 @@ from app.modules.standalone.service import (
 from app.modules.agents.testing_validation.engine import Agent4Engine
 from app.modules.agents.testing_validation.schemas import Agent4RunRequest, Agent4RunResult
 from app.modules.agents.testing_validation.service import Agent4Service, WrongAgentProjectTypeError
+from app.modules.agents.testing_validation.contracts.sources import (
+    TestGenerationInputArtifactType,
+    TestGenerationInputOriginAgent,
+    TestGenerationInputSourceType,
+)
+from app.modules.agents.testing_validation.sources.schemas import (
+    TestGenerationSourceRecord,
+    TestGenerationTextSourceCreate,
+)
+from app.modules.agents.testing_validation.sources.service import (
+    Agent4SourceProjectIdError,
+    Agent4SourceService,
+)
+from app.modules.agents.testing_validation.sources.storage import (
+    Agent4SourceCapacityError,
+    Agent4SourceNotFoundError,
+    Agent4SourceStorage,
+    Agent4SourceStorageError,
+    Agent4SourceValidationError,
+)
 from app.modules.agents.testing_validation.workflow.schemas import (
     Agent4TestGenerationWorkflowResponse,
 )
@@ -57,6 +77,19 @@ def get_agent4_workflow_service(
     ],
 ) -> Agent4WorkflowService:
     return Agent4WorkflowService(standalone_service, workflow_storage)
+
+
+def get_agent4_source_storage() -> Agent4SourceStorage:
+    return Agent4SourceStorage(settings.agent4_storage_root)
+
+
+def get_agent4_source_service(
+    standalone_service: Annotated[StandaloneService, Depends(get_standalone_service)],
+    source_storage: Annotated[
+        Agent4SourceStorage, Depends(get_agent4_source_storage)
+    ],
+) -> Agent4SourceService:
+    return Agent4SourceService(standalone_service, source_storage)
 
 
 def _error(status_code: int, message: str, field: str, detail: str) -> JSONResponse:
@@ -128,6 +161,225 @@ def get_test_generation_workflow(
         )
     return SuccessResponse(
         message="Agent 4 Test Generation workflow retrieved", data=workflow
+    )
+
+
+def _source_project_error(exc: Exception, action: str) -> JSONResponse:
+    if isinstance(exc, AgentProjectNotFoundError):
+        return _error(
+            status.HTTP_404_NOT_FOUND,
+            "Agent project not found",
+            "agent_project_id",
+            "Agent project not found",
+        )
+    if isinstance(exc, ArchivedAgentProjectError):
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Agent project is archived",
+            "agent_project_id",
+            f"Reactivate the agent project before {action}",
+        )
+    if isinstance(exc, WrongAgent4WorkflowProjectError):
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Wrong agent project type",
+            "agent_project_id",
+            str(exc),
+        )
+    return _error(
+        status.HTTP_409_CONFLICT,
+        "Agent project stage is unavailable",
+        "agent_stage",
+        str(exc),
+    )
+
+
+@router.get(
+    "/{agent_project_id}/test-generation/sources",
+    response_model=SuccessResponse[list[TestGenerationSourceRecord]],
+)
+def list_test_generation_sources(
+    agent_project_id: str,
+    service: Annotated[Agent4SourceService, Depends(get_agent4_source_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[list[TestGenerationSourceRecord]] | JSONResponse:
+    try:
+        sources = service.list(agent_project_id, current_user)
+    except (
+        AgentProjectNotFoundError,
+        ArchivedAgentProjectError,
+        WrongAgent4WorkflowProjectError,
+        Agent4WorkflowStageError,
+    ) as exc:
+        return _source_project_error(exc, "listing sources")
+    except ValueError:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Invalid agent project ID",
+            "agent_project_id",
+            "Agent project ID is invalid",
+        )
+    except (StandaloneServiceError, Agent4SourceStorageError):
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Source storage failed",
+            "storage",
+            "Agent 4 sources could not be listed",
+        )
+    return SuccessResponse(message="Agent 4 sources retrieved", data=sources)
+
+
+@router.post(
+    "/{agent_project_id}/test-generation/sources/text",
+    response_model=SuccessResponse[TestGenerationSourceRecord],
+    status_code=status.HTTP_201_CREATED,
+)
+def create_test_generation_text_source(
+    agent_project_id: str,
+    request: TestGenerationTextSourceCreate,
+    service: Annotated[Agent4SourceService, Depends(get_agent4_source_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[TestGenerationSourceRecord] | JSONResponse:
+    try:
+        source = service.create_text(agent_project_id, request, current_user)
+    except (
+        AgentProjectNotFoundError,
+        ArchivedAgentProjectError,
+        WrongAgent4WorkflowProjectError,
+        Agent4WorkflowStageError,
+    ) as exc:
+        return _source_project_error(exc, "adding sources")
+    except Agent4SourceCapacityError as exc:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Source capacity reached",
+            "sources",
+            str(exc),
+        )
+    except Agent4SourceProjectIdError:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Invalid agent project ID",
+            "agent_project_id",
+            "Agent project ID is invalid",
+        )
+    except (StandaloneServiceError, Agent4SourceStorageError):
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Source storage failed",
+            "storage",
+            "The Agent 4 source could not be stored",
+        )
+    return SuccessResponse(message="Agent 4 TEXT source created", data=source)
+
+
+@router.post(
+    "/{agent_project_id}/test-generation/sources/files",
+    response_model=SuccessResponse[TestGenerationSourceRecord],
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_test_generation_file_source(
+    agent_project_id: str,
+    artifact_type: Annotated[TestGenerationInputArtifactType, Form()],
+    source_type: Annotated[TestGenerationInputSourceType, Form()],
+    normally_supplied_by: Annotated[TestGenerationInputOriginAgent, Form()],
+    file: Annotated[UploadFile, File()],
+    service: Annotated[Agent4SourceService, Depends(get_agent4_source_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    label: Annotated[str | None, Form(max_length=200)] = None,
+) -> SuccessResponse[TestGenerationSourceRecord] | JSONResponse:
+    try:
+        source = await service.create_file(
+            agent_project_id,
+            artifact_type=artifact_type,
+            source_type=source_type,
+            normally_supplied_by=normally_supplied_by,
+            label=label,
+            upload=file,
+            current_user=current_user,
+        )
+    except (
+        AgentProjectNotFoundError,
+        ArchivedAgentProjectError,
+        WrongAgent4WorkflowProjectError,
+        Agent4WorkflowStageError,
+    ) as exc:
+        return _source_project_error(exc, "uploading sources")
+    except Agent4SourceCapacityError as exc:
+        return _error(
+            status.HTTP_409_CONFLICT,
+            "Source capacity reached",
+            "sources",
+            str(exc),
+        )
+    except Agent4SourceProjectIdError:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Invalid agent project ID",
+            "agent_project_id",
+            "Agent project ID is invalid",
+        )
+    except (ValueError, Agent4SourceValidationError) as exc:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Source validation failed",
+            "file",
+            str(exc),
+        )
+    except (StandaloneServiceError, Agent4SourceStorageError):
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Source storage failed",
+            "storage",
+            "The Agent 4 source could not be stored",
+        )
+    finally:
+        await file.close()
+    return SuccessResponse(message="Agent 4 file source uploaded", data=source)
+
+
+@router.delete(
+    "/{agent_project_id}/test-generation/sources/{source_id}",
+    response_model=SuccessResponse[dict[str, str]],
+)
+def delete_test_generation_source(
+    agent_project_id: str,
+    source_id: str,
+    service: Annotated[Agent4SourceService, Depends(get_agent4_source_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+) -> SuccessResponse[dict[str, str]] | JSONResponse:
+    try:
+        service.delete(agent_project_id, source_id, current_user)
+    except (
+        AgentProjectNotFoundError,
+        ArchivedAgentProjectError,
+        WrongAgent4WorkflowProjectError,
+        Agent4WorkflowStageError,
+    ) as exc:
+        return _source_project_error(exc, "removing sources")
+    except Agent4SourceNotFoundError:
+        return _error(
+            status.HTTP_404_NOT_FOUND,
+            "Agent 4 source not found",
+            "source_id",
+            "Agent 4 source not found",
+        )
+    except Agent4SourceProjectIdError:
+        return _error(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Invalid agent project ID",
+            "agent_project_id",
+            "Agent project ID is invalid",
+        )
+    except (StandaloneServiceError, Agent4SourceStorageError):
+        return _error(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Source storage failed",
+            "storage",
+            "The Agent 4 source could not be removed",
+        )
+    return SuccessResponse(
+        message="Agent 4 source removed", data={"source_id": source_id}
     )
 
 

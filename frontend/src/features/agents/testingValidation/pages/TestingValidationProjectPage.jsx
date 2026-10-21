@@ -114,6 +114,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
         >
           {SelectedPanel ? (
             <SelectedPanel
+              agentProjectId={project.agent_project_id}
               definition={selectedDefinition}
               statusLabel={selectedPresentation.statusLabel ?? getWorkflowStatePresentation(
                 selectedPresentation.status,
