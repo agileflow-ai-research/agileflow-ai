@@ -37,6 +37,7 @@ export function createRequirementsWorkflowNodes(presentation) {
       status: presentation[definition.id]?.status
         ?? (definition.active ? WORKFLOW_NODE_STATES.NOT_STARTED : WORKFLOW_NODE_STATES.LOCKED),
       statusLabel: presentation[definition.id]?.statusLabel,
+      lockedNote: definition.reservedNote,
       locked: (presentation[definition.id]?.status
         ?? (definition.active ? WORKFLOW_NODE_STATES.NOT_STARTED : WORKFLOW_NODE_STATES.LOCKED)) === WORKFLOW_NODE_STATES.LOCKED,
     },

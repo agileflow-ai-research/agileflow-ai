@@ -139,6 +139,29 @@ describe('requirements workflow presentation', () => {
       },
     })
     expect(nodeState(result, REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING)).toBe(WORKFLOW_NODE_STATES.BLOCKED)
+    expect(result[REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING].statusLabel).toBe('Inputs changed — cannot continue')
+  })
+
+  it('projects friendly active and reserved-stage status labels without changing workflow states', () => {
+    const result = deriveRequirementsWorkflowPresentation({
+      workflowState: {
+        n1_state: 'COMPLETE',
+        n2_is_current: true,
+        n2_execution: { status: 'COMPLETE' },
+        n3_execution: { status: 'COMPLETE' },
+        n4_execution: { status: 'COMPLETE', result_summary: { total_finding_count: 2 } },
+      },
+    })
+    expect(result[REQUIREMENTS_NODE_IDS.QUALITY_ENGINEERING]).toMatchObject({
+      status: WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN,
+      statusLabel: 'Needs human review',
+    })
+    expect(result[REQUIREMENTS_NODE_IDS.CLARIFICATION_AND_REFINEMENT]).toMatchObject({
+      status: WORKFLOW_NODE_STATES.LOCKED,
+      statusLabel: 'Reserved — next phase',
+    })
+    expect(result[REQUIREMENTS_NODE_IDS.QUALITY_RECHECK_AND_ARTIFACTS].statusLabel).toBe('Reserved — future development')
+    expect(result[REQUIREMENTS_NODE_IDS.REVIEW_AND_BASELINE].statusLabel).toBe('Reserved — future development')
   })
 
   it('aggregates current orchestration progress by modality and preparation', () => {
