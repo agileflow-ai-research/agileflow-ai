@@ -18,22 +18,50 @@ from app.modules.auth.schemas import UserPublicResponse
 from app.modules.integrations.jira.client import JiraApiClient
 from app.modules.integrations.jira.repository import JiraConnectionRepository
 from app.modules.integrations.jira.schemas import (
+    JiraBoardResponse,
     JiraConnectResponse,
+    JiraContextResponse,
     JiraDisconnectResponse,
+    JiraProjectResponse,
+    JiraSelectBoardRequest,
+    JiraSelectProjectRequest,
+    JiraSelectSiteRequest,
+    JiraSelectedBoard,
+    JiraSelectedProject,
+    JiraSelectedSite,
+    JiraSiteResponse,
     JiraStatusResponse,
 )
 from app.modules.integrations.jira.service import (
+    JiraApiClientError,
+    JiraAuthenticationError,
+    JiraBoardNotAccessibleError,
+    JiraBoardNotScrumError,
     JiraConfiguration,
     JiraConfigurationError,
     JiraCrossUserStateError,
+    JiraMalformedResponseError,
     JiraMissingCodeError,
+    JiraNetworkError,
+    JiraNetworkTimeoutError,
+    JiraNotConnectedError,
     JiraOAuthApiError,
     JiraOAuthClient,
     JiraOAuthService,
+    JiraPermissionError,
+    JiraProjectNotAccessibleError,
+    JiraProjectNotSelectedError,
+    JiraRateLimitError,
+    JiraReauthorizationRequiredError,
+    JiraRemoteApiError,
+    JiraResourceNotFoundError,
+    JiraSiteNotAccessibleError,
+    JiraSiteNotSelectedError,
     JiraStateExpiredError,
     JiraStateInvalidError,
     JiraStateReusedError,
     JiraStateStore,
+    JiraUpstreamError,
 )
 
 router = APIRouter(prefix="/integrations/jira", tags=["integrations-jira"])
@@ -117,6 +145,116 @@ def _error_response(
     return JSONResponse(
         status_code=status_code,
         content=payload.model_dump(mode="json"),
+    )
+
+
+def _handle_jira_exception(exc: Exception) -> JSONResponse:
+    if isinstance(exc, JiraNotConnectedError):
+        return _error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="JIRA_NOT_CONNECTED",
+            field="jira",
+            detail=f"JIRA_NOT_CONNECTED: {exc}",
+        )
+    if isinstance(exc, JiraReauthorizationRequiredError):
+        return _error_response(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            message="JIRA_REAUTHORIZATION_REQUIRED",
+            field="jira",
+            detail=f"JIRA_REAUTHORIZATION_REQUIRED: {exc}",
+        )
+    if isinstance(exc, JiraSiteNotSelectedError):
+        return _error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="JIRA_SITE_NOT_SELECTED",
+            field="site",
+            detail=f"JIRA_SITE_NOT_SELECTED: {exc}",
+        )
+    if isinstance(exc, JiraSiteNotAccessibleError):
+        return _error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            message="JIRA_SITE_NOT_ACCESSIBLE",
+            field="cloud_id",
+            detail=f"JIRA_SITE_NOT_ACCESSIBLE: {exc}",
+        )
+    if isinstance(exc, JiraProjectNotSelectedError):
+        return _error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="JIRA_PROJECT_NOT_SELECTED",
+            field="project",
+            detail=f"JIRA_PROJECT_NOT_SELECTED: {exc}",
+        )
+    if isinstance(exc, JiraProjectNotAccessibleError):
+        return _error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            message="JIRA_PROJECT_NOT_ACCESSIBLE",
+            field="project_id",
+            detail=f"JIRA_PROJECT_NOT_ACCESSIBLE: {exc}",
+        )
+    if isinstance(exc, JiraBoardNotAccessibleError):
+        return _error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            message="JIRA_BOARD_NOT_ACCESSIBLE",
+            field="board_id",
+            detail=f"JIRA_BOARD_NOT_ACCESSIBLE: {exc}",
+        )
+    if isinstance(exc, JiraBoardNotScrumError):
+        return _error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="JIRA_BOARD_NOT_SCRUM",
+            field="board_id",
+            detail=f"JIRA_BOARD_NOT_SCRUM: {exc}",
+        )
+    if isinstance(exc, JiraRateLimitError):
+        return _error_response(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            message="JIRA_RATE_LIMITED",
+            field="jira",
+            detail=f"JIRA_RATE_LIMITED: {exc}",
+        )
+    if isinstance(
+        exc,
+        (
+            JiraUpstreamError,
+            JiraAuthenticationError,
+            JiraPermissionError,
+            JiraResourceNotFoundError,
+            JiraNetworkTimeoutError,
+            JiraNetworkError,
+            JiraMalformedResponseError,
+            JiraRemoteApiError,
+            JiraOAuthApiError,
+            JiraApiClientError,
+        ),
+    ):
+        code = status.HTTP_502_BAD_GATEWAY
+        if isinstance(exc, JiraNetworkTimeoutError):
+            code = status.HTTP_504_GATEWAY_TIMEOUT
+        elif isinstance(exc, JiraAuthenticationError):
+            code = status.HTTP_401_UNAUTHORIZED
+        elif isinstance(exc, JiraPermissionError):
+            code = status.HTTP_403_FORBIDDEN
+        elif isinstance(exc, JiraResourceNotFoundError):
+            code = status.HTTP_404_NOT_FOUND
+
+        return _error_response(
+            status_code=code,
+            message="JIRA_UPSTREAM_ERROR",
+            field="jira",
+            detail=f"JIRA_UPSTREAM_ERROR: {exc}",
+        )
+    if isinstance(exc, ValueError):
+        return _error_response(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            message="VALIDATION_ERROR",
+            field="request",
+            detail=str(exc),
+        )
+    return _error_response(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        message="JIRA_INTERNAL_ERROR",
+        field="jira",
+        detail="An unexpected Jira integration error occurred",
     )
 
 
@@ -285,3 +423,179 @@ def disconnect_jira(
         disconnected=True,
         message="Jira connection removed successfully",
     )
+
+
+# ---------------------------------------------------------------------------
+# Discovery and Selection Endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/sites",
+    response_model=list[JiraSiteResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_jira_sites(
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+    api_client: Annotated[JiraApiClient, Depends(get_jira_api_client)],
+) -> list[JiraSiteResponse] | JSONResponse:
+    """Retrieve authorized Jira Cloud sites for the authenticated user.
+
+    Does not auto-select a site. Never returns tokens or client credentials.
+    """
+    try:
+        return service.get_sites(user_id=current_user.user_id, client=api_client)
+    except Exception as exc:
+        return _handle_jira_exception(exc)
+
+
+@router.put(
+    "/site",
+    response_model=JiraSelectedSite,
+    status_code=status.HTTP_200_OK,
+)
+def select_jira_site(
+    payload: JiraSelectSiteRequest,
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+    api_client: Annotated[JiraApiClient, Depends(get_jira_api_client)],
+) -> JiraSelectedSite | JSONResponse:
+    """Select an authorized Jira Cloud site for the authenticated user.
+
+    Validates that the cloud_id is authorized and accessible.
+    Changing site invalidates any previously selected project or board.
+    """
+    try:
+        return service.select_site(
+            user_id=current_user.user_id,
+            cloud_id=payload.cloud_id,
+            client=api_client,
+        )
+    except Exception as exc:
+        return _handle_jira_exception(exc)
+
+
+@router.get(
+    "/projects",
+    response_model=list[JiraProjectResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_jira_projects(
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+    api_client: Annotated[JiraApiClient, Depends(get_jira_api_client)],
+    start_at: Annotated[int, Query(ge=0)] = 0,
+    max_results: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> list[JiraProjectResponse] | JSONResponse:
+    """Retrieve accessible Jira Software projects for the selected Jira Cloud site.
+
+    Requires an active Jira connection and selected site.
+    """
+    try:
+        return service.get_projects(
+            user_id=current_user.user_id,
+            start_at=start_at,
+            max_results=max_results,
+            client=api_client,
+        )
+    except Exception as exc:
+        return _handle_jira_exception(exc)
+
+
+@router.put(
+    "/project",
+    response_model=JiraSelectedProject,
+    status_code=status.HTTP_200_OK,
+)
+def select_jira_project(
+    payload: JiraSelectProjectRequest,
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+    api_client: Annotated[JiraApiClient, Depends(get_jira_api_client)],
+) -> JiraSelectedProject | JSONResponse:
+    """Select an accessible Jira project on the selected Jira Cloud site.
+
+    Validates project accessibility server-side.
+    Changing project invalidates any previously selected board.
+    """
+    try:
+        return service.select_project(
+            user_id=current_user.user_id,
+            project_id=payload.project_id,
+            project_key=payload.project_key,
+            client=api_client,
+        )
+    except Exception as exc:
+        return _handle_jira_exception(exc)
+
+
+@router.get(
+    "/boards",
+    response_model=list[JiraBoardResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_jira_boards(
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+    api_client: Annotated[JiraApiClient, Depends(get_jira_api_client)],
+    start_at: Annotated[int, Query(ge=0)] = 0,
+    max_results: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> list[JiraBoardResponse] | JSONResponse:
+    """Retrieve Scrum boards for the selected project.
+
+    Requires a selected site and selected project. Restricts to Scrum boards.
+    """
+    try:
+        return service.get_scrum_boards(
+            user_id=current_user.user_id,
+            start_at=start_at,
+            max_results=max_results,
+            client=api_client,
+        )
+    except Exception as exc:
+        return _handle_jira_exception(exc)
+
+
+@router.put(
+    "/board",
+    response_model=JiraSelectedBoard,
+    status_code=status.HTTP_200_OK,
+)
+def select_jira_board(
+    payload: JiraSelectBoardRequest,
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+    api_client: Annotated[JiraApiClient, Depends(get_jira_api_client)],
+) -> JiraSelectedBoard | JSONResponse:
+    """Select a Scrum board for the selected Jira project.
+
+    Validates server-side that board exists, is a Scrum board, and belongs to selected project.
+    """
+    try:
+        return service.select_board(
+            user_id=current_user.user_id,
+            board_id=payload.board_id,
+            client=api_client,
+        )
+    except Exception as exc:
+        return _handle_jira_exception(exc)
+
+
+@router.get(
+    "/context",
+    response_model=JiraContextResponse,
+    status_code=status.HTTP_200_OK,
+)
+def get_jira_context(
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+) -> JiraContextResponse | JSONResponse:
+    """Retrieve current Jira connection and selection context for the authenticated user.
+
+    Returns null for selections not completed yet. Never exposes OAuth tokens or secrets.
+    """
+    try:
+        return service.get_context(user_id=current_user.user_id)
+    except Exception as exc:
+        return _handle_jira_exception(exc)

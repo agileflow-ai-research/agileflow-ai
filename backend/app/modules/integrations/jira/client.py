@@ -13,6 +13,7 @@ from app.modules.integrations.jira.constants import (
     ATLASSIAN_ACCESSIBLE_RESOURCES_URL,
     ATLASSIAN_API_BASE_URL,
     DEFAULT_JIRA_HTTP_TIMEOUT_SECONDS,
+    build_jira_cloud_url,
 )
 from app.modules.integrations.jira.schemas import AtlassianAccessibleResource
 from app.modules.integrations.jira.service import (
@@ -138,6 +139,87 @@ class JiraApiClient:
                 )
 
         return resources
+
+    def search_projects(
+        self,
+        user_id: str,
+        cloud_id: str,
+        start_at: int = 0,
+        max_results: int = 50,
+    ) -> dict[str, Any]:
+        """Search projects accessible on the selected Jira Cloud site using Platform REST v3.
+
+        Filters/prefers Jira Software projects via typeKey=software.
+        """
+        url = build_jira_cloud_url(cloud_id, "rest/api/3/project/search")
+        data = self.request(
+            user_id=user_id,
+            method="GET",
+            url=url,
+            params={
+                "startAt": start_at,
+                "maxResults": max_results,
+                "typeKey": "software",
+            },
+        )
+        if not isinstance(data, dict):
+            raise JiraMalformedResponseError(
+                "Expected dict response for Jira project search"
+            )
+        return data
+
+    def get_project(
+        self, user_id: str, cloud_id: str, project_id_or_key: str
+    ) -> dict[str, Any]:
+        """Fetch details for a single project on the selected Jira Cloud site."""
+        url = build_jira_cloud_url(
+            cloud_id, f"rest/api/3/project/{project_id_or_key}"
+        )
+        data = self.request(user_id=user_id, method="GET", url=url)
+        if not isinstance(data, dict):
+            raise JiraMalformedResponseError(
+                "Expected dict response for Jira project details"
+            )
+        return data
+
+    def get_scrum_boards(
+        self,
+        user_id: str,
+        cloud_id: str,
+        project_key_or_id: str,
+        start_at: int = 0,
+        max_results: int = 50,
+    ) -> dict[str, Any]:
+        """Query Scrum boards for the selected project using Jira Software Agile REST API."""
+        url = build_jira_cloud_url(cloud_id, "rest/agile/1.0/board")
+        data = self.request(
+            user_id=user_id,
+            method="GET",
+            url=url,
+            params={
+                "type": "scrum",
+                "projectKeyOrId": project_key_or_id,
+                "startAt": start_at,
+                "maxResults": max_results,
+            },
+        )
+        if not isinstance(data, dict):
+            raise JiraMalformedResponseError(
+                "Expected dict response for Jira Scrum boards"
+            )
+        return data
+
+    def get_board(
+        self, user_id: str, cloud_id: str, board_id: int
+    ) -> dict[str, Any]:
+        """Fetch details for a single board using Jira Software Agile REST API."""
+        url = build_jira_cloud_url(cloud_id, f"rest/agile/1.0/board/{board_id}")
+        data = self.request(user_id=user_id, method="GET", url=url)
+        if not isinstance(data, dict):
+            raise JiraMalformedResponseError(
+                "Expected dict response for Jira board details"
+            )
+        return data
 
     def _execute_http(
         self,

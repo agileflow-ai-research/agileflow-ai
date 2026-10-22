@@ -19,7 +19,12 @@ from pymongo.errors import PyMongoError
 
 from app.database.collections import JIRA_CONNECTIONS
 from app.database.mongodb import get_database
-from app.modules.integrations.jira.schemas import JiraConnectionDocument
+from app.modules.integrations.jira.schemas import (
+    JiraConnectionDocument,
+    JiraSelectedBoard,
+    JiraSelectedProject,
+    JiraSelectedSite,
+)
 
 
 class JiraConnectionRepositoryError(RuntimeError):
@@ -148,6 +153,104 @@ class JiraConnectionRepository:
         except PyMongoError as exc:
             raise JiraConnectionRepositoryError(
                 "Could not update Jira connection status to reauthorization required"
+            ) from exc
+
+        return _clean_document(persisted) if persisted is not None else None
+
+    def update_selected_site(
+        self, owner_id: str, site: JiraSelectedSite
+    ) -> dict[str, Any] | None:
+        """Update selected Jira site.
+
+        If the selected cloud_id is changing, clear any previously selected project and board.
+        """
+        existing = self.find_by_owner(owner_id)
+        if not existing:
+            return None
+
+        current_site = existing.get("selected_site")
+        is_changing_site = not current_site or current_site.get("cloud_id") != site.cloud_id
+
+        update_fields: dict[str, Any] = {
+            "selected_site": site.model_dump(mode="python"),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        if is_changing_site:
+            update_fields["selected_project"] = None
+            update_fields["selected_board"] = None
+
+        try:
+            persisted = self._collection.find_one_and_update(
+                {"owner_id": owner_id, "provider": "JIRA"},
+                {"$set": update_fields},
+                projection={"_id": 0},
+                return_document=ReturnDocument.AFTER,
+            )
+        except PyMongoError as exc:
+            raise JiraConnectionRepositoryError(
+                "Could not persist selected Jira site"
+            ) from exc
+
+        return _clean_document(persisted) if persisted is not None else None
+
+    def update_selected_project(
+        self, owner_id: str, project: JiraSelectedProject
+    ) -> dict[str, Any] | None:
+        """Update selected Jira project.
+
+        If the selected project is changing, clear any previously selected board.
+        """
+        existing = self.find_by_owner(owner_id)
+        if not existing:
+            return None
+
+        current_project = existing.get("selected_project")
+        is_changing_project = (
+            not current_project
+            or current_project.get("project_id") != project.project_id
+            or current_project.get("project_key") != project.project_key
+        )
+
+        update_fields: dict[str, Any] = {
+            "selected_project": project.model_dump(mode="python"),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        if is_changing_project:
+            update_fields["selected_board"] = None
+
+        try:
+            persisted = self._collection.find_one_and_update(
+                {"owner_id": owner_id, "provider": "JIRA"},
+                {"$set": update_fields},
+                projection={"_id": 0},
+                return_document=ReturnDocument.AFTER,
+            )
+        except PyMongoError as exc:
+            raise JiraConnectionRepositoryError(
+                "Could not persist selected Jira project"
+            ) from exc
+
+        return _clean_document(persisted) if persisted is not None else None
+
+    def update_selected_board(
+        self, owner_id: str, board: JiraSelectedBoard
+    ) -> dict[str, Any] | None:
+        """Update selected Scrum board."""
+        try:
+            persisted = self._collection.find_one_and_update(
+                {"owner_id": owner_id, "provider": "JIRA"},
+                {
+                    "$set": {
+                        "selected_board": board.model_dump(mode="python"),
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+                projection={"_id": 0},
+                return_document=ReturnDocument.AFTER,
+            )
+        except PyMongoError as exc:
+            raise JiraConnectionRepositoryError(
+                "Could not persist selected Jira board"
             ) from exc
 
         return _clean_document(persisted) if persisted is not None else None

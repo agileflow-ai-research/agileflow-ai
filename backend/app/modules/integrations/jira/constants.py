@@ -12,6 +12,7 @@ ATLASSIAN_ACCESSIBLE_RESOURCES_URL = (
 JIRA_SCOPES = (
     "read:jira-work",
     "write:jira-work",
+    "read:project:jira",
     "read:board-scope:jira-software",
     "read:sprint:jira-software",
     "write:sprint:jira-software",

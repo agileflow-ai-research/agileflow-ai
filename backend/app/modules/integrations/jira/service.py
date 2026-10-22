@@ -25,8 +25,19 @@ from app.modules.integrations.jira.repository import (
     JiraConnectionRepository,
 )
 from app.modules.integrations.jira.schemas import (
+    AtlassianAccessibleResource,
+    JiraBoardResponse,
     JiraConnectResponse,
     JiraConnectionDocument,
+    JiraContextBoard,
+    JiraContextProject,
+    JiraContextResponse,
+    JiraContextSite,
+    JiraProjectResponse,
+    JiraSelectedBoard,
+    JiraSelectedProject,
+    JiraSelectedSite,
+    JiraSiteResponse,
     JiraStatusResponse,
 )
 
@@ -200,13 +211,55 @@ class JiraResourceNotFoundError(JiraApiClientError):
 class JiraRateLimitError(JiraApiClientError):
     """Raised when Atlassian API rate limit (429) is encountered."""
 
-    error_code: str = "JIRA_RATE_LIMIT"
+    error_code: str = "JIRA_RATE_LIMITED"
+
+
+class JiraUpstreamError(JiraIntegrationError):
+    """Raised when an upstream Atlassian API call fails or encounters an unhandled error."""
+
+    error_code: str = "JIRA_UPSTREAM_ERROR"
 
 
 class JiraRemoteApiError(JiraApiClientError):
     """Raised when Atlassian returns an unexpected error (e.g. 5xx)."""
 
     error_code: str = "JIRA_REMOTE_API_ERROR"
+
+
+class JiraSiteNotSelectedError(JiraIntegrationError):
+    """Raised when an operation requires a selected Jira Cloud site."""
+
+    error_code: str = "JIRA_SITE_NOT_SELECTED"
+
+
+class JiraSiteNotAccessibleError(JiraIntegrationError):
+    """Raised when a selected Jira Cloud site is not accessible or not authorized."""
+
+    error_code: str = "JIRA_SITE_NOT_ACCESSIBLE"
+
+
+class JiraProjectNotSelectedError(JiraIntegrationError):
+    """Raised when an operation requires a selected Jira project."""
+
+    error_code: str = "JIRA_PROJECT_NOT_SELECTED"
+
+
+class JiraProjectNotAccessibleError(JiraIntegrationError):
+    """Raised when a selected Jira project is not found or not accessible on the site."""
+
+    error_code: str = "JIRA_PROJECT_NOT_ACCESSIBLE"
+
+
+class JiraBoardNotAccessibleError(JiraIntegrationError):
+    """Raised when a Scrum board is not found or not accessible for the project."""
+
+    error_code: str = "JIRA_BOARD_NOT_ACCESSIBLE"
+
+
+class JiraBoardNotScrumError(JiraIntegrationError):
+    """Raised when a selected board is not a Scrum board."""
+
+    error_code: str = "JIRA_BOARD_NOT_SCRUM"
 
 
 # ---------------------------------------------------------------------------
@@ -680,6 +733,368 @@ class JiraOAuthService:
     def mark_reauthorization_required(self, user_id: str, reason: str) -> None:
         """Mark a user's Jira connection as requiring reauthorization."""
         self._repository.mark_reauthorization_required(user_id, reason)
+
+    def get_api_client(self, client: Any = None) -> Any:
+        """Resolve or construct a JiraApiClient."""
+        if client is not None:
+            return client
+        from app.modules.integrations.jira.client import JiraApiClient
+
+        timeout = (
+            self._configuration.timeout_seconds
+            if self._configuration is not None
+            else 10.0
+        )
+        return JiraApiClient(service=self, timeout_seconds=timeout)
+
+    # -----------------------------------------------------------------------
+    # Discovery & Selection Methods
+    # -----------------------------------------------------------------------
+
+    def get_sites(
+        self, user_id: str, client: Any = None
+    ) -> list[JiraSiteResponse]:
+        """Fetch authorized Jira sites for the authenticated user without credentials.
+
+        Requires an active Jira connection. Does not auto-select.
+        """
+        doc = self._repository.find_by_owner(user_id)
+        if doc is None:
+            raise JiraNotConnectedError(
+                "User does not have an active Jira connection"
+            )
+        if doc.get("status") == "REAUTHORIZATION_REQUIRED":
+            raise JiraReauthorizationRequiredError(
+                "Jira connection requires reauthorization"
+            )
+
+        api_client = self.get_api_client(client)
+        resources = api_client.get_accessible_resources(user_id)
+        return [
+            JiraSiteResponse(
+                cloud_id=r.id,
+                name=r.name,
+                url=r.url,
+                avatar_url=r.avatar_url,
+            )
+            for r in resources
+        ]
+
+    def select_site(
+        self, user_id: str, cloud_id: str, client: Any = None
+    ) -> JiraSelectedSite:
+        """Select an authorized Jira Cloud site.
+
+        Validates server-side that cloud_id is authorized and accessible.
+        Invalidates previously selected project and board if cloud_id changes.
+        """
+        doc = self._repository.find_by_owner(user_id)
+        if doc is None:
+            raise JiraNotConnectedError(
+                "User does not have an active Jira connection"
+            )
+        if doc.get("status") == "REAUTHORIZATION_REQUIRED":
+            raise JiraReauthorizationRequiredError(
+                "Jira connection requires reauthorization"
+            )
+
+        api_client = self.get_api_client(client)
+        resources = api_client.get_accessible_resources(user_id)
+        matched = next((r for r in resources if r.id == cloud_id), None)
+        if matched is None:
+            raise JiraSiteNotAccessibleError(
+                f"Jira site '{cloud_id}' is not accessible or authorized for this user"
+            )
+
+        selected_site = JiraSelectedSite(
+            cloud_id=matched.id,
+            site_name=matched.name,
+            site_url=matched.url,
+            avatar_url=matched.avatar_url,
+            selected_at=self._clock(),
+        )
+        self._repository.update_selected_site(user_id, selected_site)
+        return selected_site
+
+    def get_selected_site(self, user_id: str) -> JiraSelectedSite:
+        """Retrieve the currently selected Jira site or raise JiraSiteNotSelectedError."""
+        doc = self._repository.find_by_owner(user_id)
+        if doc is None:
+            raise JiraNotConnectedError(
+                "User does not have an active Jira connection"
+            )
+        if doc.get("status") == "REAUTHORIZATION_REQUIRED":
+            raise JiraReauthorizationRequiredError(
+                "Jira connection requires reauthorization"
+            )
+
+        site_data = doc.get("selected_site")
+        if not site_data:
+            raise JiraSiteNotSelectedError(
+                "A Jira site has not been selected yet"
+            )
+        return JiraSelectedSite.model_validate(site_data)
+
+    def get_projects(
+        self,
+        user_id: str,
+        start_at: int = 0,
+        max_results: int = 50,
+        client: Any = None,
+    ) -> list[JiraProjectResponse]:
+        """Fetch accessible Jira Software projects for the selected Jira site.
+
+        Requires an active Jira connection and selected site.
+        """
+        site = self.get_selected_site(user_id)
+        api_client = self.get_api_client(client)
+        data = api_client.search_projects(
+            user_id=user_id,
+            cloud_id=site.cloud_id,
+            start_at=start_at,
+            max_results=max_results,
+        )
+
+        raw_projects = (
+            data.get("values", [])
+            if isinstance(data, dict)
+            else []
+        )
+        projects: list[JiraProjectResponse] = []
+        for p in raw_projects:
+            if isinstance(p, dict) and "id" in p and "key" in p and "name" in p:
+                avatar_urls = p.get("avatarUrls") or {}
+                avatar_url = avatar_urls.get("48x48") or avatar_urls.get("32x32")
+                projects.append(
+                    JiraProjectResponse(
+                        id=str(p["id"]),
+                        key=str(p["key"]),
+                        name=str(p["name"]),
+                        project_type_key=str(p.get("projectTypeKey", "software")),
+                        simplified=bool(p.get("simplified", False)),
+                        avatar_url=avatar_url,
+                    )
+                )
+        return projects
+
+    def select_project(
+        self,
+        user_id: str,
+        project_id: str | None,
+        project_key: str | None,
+        client: Any = None,
+    ) -> JiraSelectedProject:
+        """Select an accessible Jira project on the selected Jira site.
+
+        Validates project accessibility server-side.
+        Invalidates previously selected board if the project changes.
+        """
+        site = self.get_selected_site(user_id)
+        identifier = project_key or project_id
+        if not identifier:
+            raise ValueError("Either project_id or project_key must be provided")
+
+        api_client = self.get_api_client(client)
+        try:
+            project_data = api_client.get_project(
+                user_id=user_id,
+                cloud_id=site.cloud_id,
+                project_id_or_key=identifier,
+            )
+        except (
+            JiraResourceNotFoundError,
+            JiraPermissionError,
+            JiraRemoteApiError,
+        ) as exc:
+            raise JiraProjectNotAccessibleError(
+                f"Project '{identifier}' is not found or not accessible on site '{site.site_name}'"
+            ) from exc
+
+        selected_project = JiraSelectedProject(
+            project_id=str(project_data["id"]),
+            project_key=str(project_data["key"]),
+            project_name=str(project_data["name"]),
+            project_type_key=str(project_data.get("projectTypeKey", "software")),
+            selected_at=self._clock(),
+        )
+        self._repository.update_selected_project(user_id, selected_project)
+        return selected_project
+
+    def get_selected_project(self, user_id: str) -> JiraSelectedProject:
+        """Retrieve the currently selected Jira project or raise JiraProjectNotSelectedError."""
+        self.get_selected_site(user_id)  # Enforces hierarchy: site must be selected
+        doc = self._repository.find_by_owner(user_id)
+        proj_data = doc.get("selected_project") if doc else None
+        if not proj_data:
+            raise JiraProjectNotSelectedError(
+                "A Jira project has not been selected yet"
+            )
+        return JiraSelectedProject.model_validate(proj_data)
+
+    def get_scrum_boards(
+        self,
+        user_id: str,
+        start_at: int = 0,
+        max_results: int = 50,
+        client: Any = None,
+    ) -> list[JiraBoardResponse]:
+        """Fetch Scrum boards associated with the selected Jira project.
+
+        Restricts discovery to boards of type 'scrum'.
+        """
+        site = self.get_selected_site(user_id)
+        project = self.get_selected_project(user_id)
+        api_client = self.get_api_client(client)
+
+        boards_data = api_client.get_scrum_boards(
+            user_id=user_id,
+            cloud_id=site.cloud_id,
+            project_key_or_id=project.project_key or project.project_id,
+            start_at=start_at,
+            max_results=max_results,
+        )
+
+        raw_boards = (
+            boards_data.get("values", [])
+            if isinstance(boards_data, dict)
+            else []
+        )
+        boards: list[JiraBoardResponse] = []
+        for b in raw_boards:
+            if isinstance(b, dict) and "id" in b and "name" in b:
+                b_type = str(b.get("type", "scrum")).lower()
+                if b_type == "scrum":
+                    boards.append(
+                        JiraBoardResponse(
+                            id=int(b["id"]),
+                            name=str(b["name"]),
+                            type="scrum",
+                        )
+                    )
+        return boards
+
+    def select_board(
+        self,
+        user_id: str,
+        board_id: int,
+        client: Any = None,
+    ) -> JiraSelectedBoard:
+        """Select a Scrum board for the selected Jira project.
+
+        Validates server-side that the board exists, is a Scrum board,
+        and belongs/applies to the selected project.
+        """
+        site = self.get_selected_site(user_id)
+        project = self.get_selected_project(user_id)
+        api_client = self.get_api_client(client)
+
+        try:
+            board_data = api_client.get_board(
+                user_id=user_id,
+                cloud_id=site.cloud_id,
+                board_id=board_id,
+            )
+        except (
+            JiraResourceNotFoundError,
+            JiraPermissionError,
+            JiraRemoteApiError,
+        ) as exc:
+            raise JiraBoardNotAccessibleError(
+                f"Board '{board_id}' was not found or is not accessible on site '{site.site_name}'"
+            ) from exc
+
+        board_type = str(board_data.get("type", "")).lower()
+        if board_type != "scrum":
+            raise JiraBoardNotScrumError(
+                f"Board '{board_id}' is a {board_data.get('type')} board, but Scrum board is required"
+            )
+
+        # Verify board belongs to the selected project
+        location = board_data.get("location") or {}
+        loc_proj_id = str(location.get("projectId") or "")
+        loc_proj_key = str(location.get("projectKey") or "")
+
+        if loc_proj_id or loc_proj_key:
+            if loc_proj_id != project.project_id and loc_proj_key != project.project_key:
+                raise JiraBoardNotAccessibleError(
+                    f"Board '{board_id}' belongs to project '{loc_proj_key or loc_proj_id}', not selected project '{project.project_key}'"
+                )
+        else:
+            # Check if board is in the project's scrum boards list
+            project_boards = api_client.get_scrum_boards(
+                user_id=user_id,
+                cloud_id=site.cloud_id,
+                project_key_or_id=project.project_key or project.project_id,
+            )
+            valid_ids = [
+                int(b["id"])
+                for b in project_boards.get("values", [])
+                if isinstance(b, dict) and "id" in b
+            ]
+            if board_id not in valid_ids:
+                raise JiraBoardNotAccessibleError(
+                    f"Board '{board_id}' is not associated with selected project '{project.project_key}'"
+                )
+
+        selected_board = JiraSelectedBoard(
+            board_id=int(board_data["id"]),
+            board_name=str(board_data["name"]),
+            board_type="scrum",
+            selected_at=self._clock(),
+        )
+        self._repository.update_selected_board(user_id, selected_board)
+        return selected_board
+
+    def get_context(self, user_id: str) -> JiraContextResponse:
+        """Retrieve current Jira connection and selection state without exposing credentials."""
+        doc = self._repository.find_by_owner(user_id)
+        if doc is None or doc.get("status") == "REAUTHORIZATION_REQUIRED":
+            return JiraContextResponse(
+                connected=False,
+                site=None,
+                project=None,
+                board=None,
+            )
+
+        site_data = doc.get("selected_site")
+        site = (
+            JiraContextSite(
+                cloud_id=site_data["cloud_id"],
+                name=site_data["site_name"],
+                url=site_data.get("site_url"),
+            )
+            if site_data
+            else None
+        )
+
+        proj_data = doc.get("selected_project")
+        project = (
+            JiraContextProject(
+                id=proj_data["project_id"],
+                key=proj_data["project_key"],
+                name=proj_data["project_name"],
+            )
+            if proj_data
+            else None
+        )
+
+        board_data = doc.get("selected_board")
+        board = (
+            JiraContextBoard(
+                id=board_data["board_id"],
+                name=board_data["board_name"],
+                type=board_data.get("board_type", "scrum"),
+            )
+            if board_data
+            else None
+        )
+
+        return JiraContextResponse(
+            connected=True,
+            site=site,
+            project=project,
+            board=board,
+        )
 
     def disconnect(self, user_id: str) -> bool:
         """Remove the local Jira connection for the authenticated user.
