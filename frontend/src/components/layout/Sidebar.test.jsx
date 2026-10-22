@@ -60,10 +60,10 @@ describe('global project sidebar', () => {
     await screen.findByRole('heading', { name: 'Standalone Agents' })
 
     const expected = [
-      ['Agent 1 — Requirements & Analysis', 'Requirements Alpha'],
-      ['Agent 2 — Design & Planning', 'Design Alpha'],
-      ['Agent 3 — Implementation', 'Implementation Alpha'],
-      ['Agent 4 — Testing & Validation', 'Testing Alpha'],
+      ['Requirements', 'Requirements Alpha'],
+      ['Design', 'Design Alpha'],
+      ['Implementation', 'Implementation Alpha'],
+      ['Testing', 'Testing Alpha'],
     ]
     for (const [agentName, projectName] of expected) {
       const toggle = screen.getByRole('button', { name: agentName })

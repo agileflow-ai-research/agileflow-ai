@@ -11,9 +11,25 @@ html {
   min-height: 100%;
   background: var(--color-bg-canvas);
   font-family: var(--font-family-sans);
+  scrollbar-width: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+body {
+  scrollbar-width: none;
 }
 
 body {

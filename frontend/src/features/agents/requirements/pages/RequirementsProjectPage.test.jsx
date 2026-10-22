@@ -97,7 +97,7 @@ describe('RequirementsProjectPage', () => {
       />,
     )
     expect(screen.getByRole('heading', { level: 1, name: 'BookEase' })).toBeInTheDocument()
-    expect(screen.getByText('Agent 1 — Requirements & Analysis')).toBeInTheDocument()
+    expect(screen.getByText('Requirements')).toBeInTheDocument()
     expect(screen.getByLabelText('Agent 1 requirements workflow canvas')).toBeInTheDocument()
     expect(screen.getByRole('dialog')).toHaveTextContent('Project & Client Input Collection')
     expect(screen.getByTestId('requirements-workspace')).toHaveAttribute('data-active-section', REQUIREMENTS_NODE_IDS.INPUT_COLLECTION)

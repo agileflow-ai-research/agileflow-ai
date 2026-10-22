@@ -67,7 +67,7 @@ function WorkflowNodeModal({
             <button ref={closeRef} type="button" className="rounded-control px-3 py-2 text-sm font-semibold text-content-secondary hover:bg-elevated hover:text-content-primary" aria-label="Close workflow modal" onClick={onClose}>Close</button>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6" data-testid="workflow-modal-body">
+        <div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6" data-testid="workflow-modal-body">
           {children}
         </div>
         <footer className="sticky bottom-0 z-10 shrink-0 border-t border-default bg-sidebar px-4 py-3 sm:px-6" data-testid="workflow-modal-footer">

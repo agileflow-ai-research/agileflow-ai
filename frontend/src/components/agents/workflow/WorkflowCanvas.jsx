@@ -71,7 +71,7 @@ const WorkflowCanvasInner = forwardRef(function WorkflowCanvasInner(
   }
 
   return (
-    <div className="h-[36rem] min-h-[28rem] w-full" aria-label={ariaLabel}>
+    <div className="h-[33rem] min-h-[26rem] w-full" aria-label={ariaLabel}>
       <ReactFlow
         nodes={nodes}
         edges={edges}

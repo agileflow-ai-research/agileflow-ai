@@ -65,7 +65,7 @@ export default function ProjectOverviewModal({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+        <div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
           <dl className="grid gap-3 sm:grid-cols-2">
             <OverviewItem label="Project ID">{project.agent_project_id}</OverviewItem>
             <OverviewItem label="Agent type">Agent 3 — Implementation</OverviewItem>
