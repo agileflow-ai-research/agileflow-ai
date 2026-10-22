@@ -85,8 +85,6 @@ function analysisProgressPresentation({ execution, onRetry, retryingSourceId, so
     ['TI_RULE_ANALYSIS', 'Rule analysis', 'rules_complete'],
     ['TI_AI_CLASSIFICATION', 'AI classification', 'zero_shot_complete'],
     ['TI_HYBRID_DECISION', 'Combined decision', 'hybrid_complete'],
-    ['TI_HUMAN_REVIEW', 'Human review', null],
-    ['TI_EFFECTIVE_CLASSIFICATION', 'Approved classifications', 'effective_complete'],
   ]
   const aggregate = new Map((execution?.sub_stages || []).map((stage) => [stage.stage, stage]))
   const stages = definitions.map(([stage, label, legacyField]) => {
@@ -113,7 +111,7 @@ function analysisProgressPresentation({ execution, onRetry, retryingSourceId, so
   return { completed, content }
 }
 
-function ReviewExperience({ execution, onRetry, onSubmit, retryingSourceId, review, submitting }) {
+export function ReviewExperience({ execution, onRetry, onSubmit, retryingSourceId, review, submitting }) {
   const [choices, setChoices] = useState({})
   const [notes, setNotes] = useState({})
   const [selected, setSelected] = useState({})
@@ -197,16 +195,15 @@ function ReviewExperience({ execution, onRetry, onSubmit, retryingSourceId, revi
     </AccordionSection>
 
     <AccordionSection id="automatic-information" title="Automatically Extracted Information" summary={`${automatic} classifications handled automatically`} open={automaticOpen} onToggle={() => setAutomaticOpen((value) => !value)}><p className="mb-3 text-sm text-content-secondary">Agent 4 automatically handled {automatic} clear classifications.</p><div className="space-y-2 text-sm">{Object.entries(review.auto_accepted_label_counts || {}).map(([code, count]) => <p key={code} className="flex justify-between gap-3"><span className="text-content-secondary">{reviewLabelPresentation(code).title}</span><strong className="text-content-primary">{count}</strong></p>)}<p className="flex justify-between gap-3"><span className="text-content-secondary">Rejected low-evidence classifications</span><strong className="text-content-primary">{review.auto_rejected_count}</strong></p></div></AccordionSection>
-    <AccordionSection id="analysis-progress" title="Analysis Progress" summary={`${progress.completed} of 5 analysis steps complete`} open={progressOpen} onToggle={() => setProgressOpen((value) => !value)}>{progress.content}</AccordionSection>
+    <AccordionSection id="analysis-progress" title="Analysis Progress" summary={`${progress.completed} of 3 intelligence steps complete`} open={progressOpen} onToggle={() => setProgressOpen((value) => !value)}>{progress.content}</AccordionSection>
     <AccordionSection id="technical-details" title="Technical Details" summary="Developer and research evidence" open={technicalOpen} onToggle={() => setTechnicalOpen((value) => !value)}><TechnicalReviewDetails items={review.items} /></AccordionSection>
 
     <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-default bg-sidebar px-2 py-2"><div><p className="text-sm font-medium text-content-primary">{reviewed} of {review.items.length} reviewed{reviewed ? ` · ${accepted} correct · ${rejected} incorrect` : ''}</p>{remaining ? <p className="text-xs text-content-muted">Review the remaining {remaining} {remaining === 1 ? 'item' : 'items'} first.</p> : null}</div><Button disabled={!complete || submitting} loading={submitting} loadingLabel="Continuing analysis…" onClick={submit}>Confirm &amp; Continue</Button></footer>
   </section>
 }
 
-function TestingIntelligencePanel({ definition, intelligenceError, intelligenceReview, n3Execution, onRetryIntelligenceSource, onSubmitIntelligenceReview, retryingIntelligenceSourceId, reviewSubmitting, workflowNodeStatus }) {
+function TestingIntelligencePanel({ definition, intelligenceError, n3Execution, onRetryIntelligenceSource, retryingIntelligenceSourceId, workflowNodeStatus }) {
   const status = n3Execution?.status
-  const waiting = status === 'WAITING_FOR_HUMAN'
   const complete = workflowNodeStatus === 'COMPLETED'
   const resuming = ['HUMAN_REVIEW_RESUME', 'RESTART_RECOVERY'].includes(n3Execution?.trigger)
   const activeTitle = status === 'QUEUED'
@@ -218,7 +215,7 @@ function TestingIntelligencePanel({ definition, intelligenceError, intelligenceR
   const progress = n3Execution ? analysisProgressPresentation({ execution: n3Execution, onRetry: onRetryIntelligenceSource, retryingSourceId: retryingIntelligenceSourceId, sources: n3Execution.sources }) : null
   return <section className="space-y-4" aria-label={`${definition.title} details`}>
     {intelligenceError ? <p role="alert" className="text-sm text-state-danger">{intelligenceError}</p> : null}
-    {waiting ? <div className="space-y-3"><p className="font-semibold text-content-primary">Waiting for your review</p><ReviewExperience key={intelligenceReview?.review_snapshot_fingerprint} execution={n3Execution} onRetry={onRetryIntelligenceSource} onSubmit={onSubmitIntelligenceReview} retryingSourceId={retryingIntelligenceSourceId} review={intelligenceReview} submitting={reviewSubmitting} /></div> : complete ? <div role="status" className="space-y-3 rounded-control border border-state-success/40 bg-state-success/10 p-4"><p className="font-semibold text-state-success">✓ Testing Intelligence complete</p>{progress?.content}<p className="text-sm text-content-secondary">Testing Fact Extraction is the next workflow node.</p></div> : status === 'QUEUED' || status === 'RUNNING' ? <div role="status" className="space-y-3 rounded-control border border-default bg-surface p-4"><div><p className="font-semibold text-content-primary">{activeTitle}</p><p className="mt-1 text-sm text-content-secondary">Agent 4 is analyzing and approving classifications.</p></div>{progress?.content}</div> : ['FAILED', 'INTERRUPTED'].includes(status) ? <div className="space-y-3"><p className="font-semibold text-state-danger">{failureTitle}</p><p className="text-sm text-content-secondary">Completed steps are preserved. Retry only the failed step or source.</p>{progress.content}</div> : n3Execution ? <div className="space-y-3"><p className="text-sm text-content-secondary">Agent 4 analyzed the available inputs.</p>{progress.content}</div> : <p className="text-sm text-content-secondary">Testing Intelligence will automatically analyze prepared inputs when this stage begins.</p>}
+    {complete ? <div role="status" className="space-y-3 rounded-control border border-state-success/40 bg-state-success/10 p-4"><p className="font-semibold text-state-success">✓ Testing Intelligence complete</p>{progress?.content}<p className="text-sm text-content-secondary">Human Approval is the next workflow checkpoint and is skipped automatically when no review is required.</p></div> : status === 'QUEUED' || status === 'RUNNING' ? <div role="status" className="space-y-3 rounded-control border border-default bg-surface p-4"><div><p className="font-semibold text-content-primary">{activeTitle}</p><p className="mt-1 text-sm text-content-secondary">Agent 4 is analyzing classifications and identifying uncertain decisions.</p></div>{progress?.content}</div> : ['FAILED', 'INTERRUPTED'].includes(status) ? <div className="space-y-3"><p className="font-semibold text-state-danger">{failureTitle}</p><p className="text-sm text-content-secondary">Completed steps are preserved. Retry only the failed step or source.</p>{progress.content}</div> : n3Execution ? <div className="space-y-3"><p className="text-sm text-content-secondary">Agent 4 analyzed the available inputs.</p>{progress.content}</div> : <p className="text-sm text-content-secondary">Testing Intelligence will automatically analyze prepared inputs when this stage begins.</p>}
   </section>
 }
 

@@ -36,6 +36,7 @@ vi.mock('../testingValidationAgentService.js', () => ({
 
 const nodeIds = [
   'INPUT_OUTPUT_SETUP', 'INPUT_PREPARATION', 'TESTING_INTELLIGENCE',
+  'HUMAN_APPROVAL',
   'TESTING_FACT_EXTRACTION',
   'CONTEXT_TESTABILITY', 'TEST_PLANNING_REVIEW', 'TEST_GENERATION_RESULTS',
 ]
@@ -89,14 +90,19 @@ function n2Workflow(status = 'RUNNING') {
 }
 
 function n3Workflow(status = 'RUNNING') {
+  const waiting = status === 'WAITING_FOR_HUMAN'
   return {
     ...n2Workflow('COMPLETED'),
     pipeline_status: status === 'WAITING_FOR_HUMAN' ? 'WAITING_FOR_HUMAN' : status === 'FAILED' ? 'FAILED' : 'RUNNING',
-    current_node_id: 'TESTING_INTELLIGENCE',
+    current_node_id: waiting ? 'HUMAN_APPROVAL' : 'TESTING_INTELLIGENCE',
     n3_execution: { execution_id: 'A4N3E-current', attempt_number: 1, status, sources: [] },
     nodes: nodeIds.map((nodeId, index) => ({
       node_id: nodeId,
-      status: index < 2 ? 'COMPLETED' : index === 2 ? status : 'LOCKED',
+      status: index < 2
+        ? 'COMPLETED'
+        : index === 2
+          ? waiting ? 'COMPLETED' : status
+          : index === 3 && waiting ? 'WAITING_FOR_HUMAN' : 'LOCKED',
     })),
   }
 }
@@ -118,11 +124,11 @@ function n4Workflow(status = 'RUNNING') {
     },
     nodes: nodeIds.map((nodeId, index) => ({
       node_id: nodeId,
-      status: index < 3
+      status: index < 5
         ? 'COMPLETED'
-        : index === 3
+        : index === 5
           ? status
-          : index === 4 && status === 'COMPLETED' ? 'NOT_STARTED' : 'LOCKED',
+          : index === 6 && status === 'COMPLETED' ? 'NOT_STARTED' : 'LOCKED',
     })),
   }
 }

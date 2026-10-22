@@ -369,7 +369,7 @@ def test_service_manifest_cache_force_and_all_upstream_evidence_are_immutable(n2
     assert all(existing.read_bytes() == content for existing, content in upstream.items())
     workflow = load(n2_context[0], project_id)
     assert [item["status"] for item in workflow["nodes"]] == [
-        "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "NOT_STARTED", "LOCKED", "LOCKED",
+            "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "NOT_STARTED", "LOCKED", "LOCKED",
     ]
     assert workflow["current_node_id"] == "CONTEXT_TESTABILITY"
     assert workflow["pipeline_status"] == "RUNNING"

@@ -129,18 +129,17 @@ function InputOutputSetupPanel({
   const busy = Boolean(sourceMutating || outputSaving || confirmationSubmitting || setupConfirmed)
   const canonicalDraftOutputs = canonicalTestGenerationOutputs(draftOutputs)
   const canonicalSavedOutputs = canonicalTestGenerationOutputs(selectedOutputs)
-  const outputsDirty = canonicalDraftOutputs.join('|') !== canonicalSavedOutputs.join('|')
+  const savedOutputsKey = canonicalSavedOutputs.join('|')
+  const outputsDirty = canonicalDraftOutputs.join('|') !== savedOutputsKey
   const hasSources = sources.length > 0
   const hasPrimaryFunctionalSource = sources.some(
     (source) => primaryFunctionalArtifactTypes.has(source.artifact_type),
   )
-  const hasSavedOutputs = canonicalSavedOutputs.length > 0
-  const confirmationEnabled = (
+  const nextEnabled = (
     loadStatus === 'success'
     && hasSources
     && hasPrimaryFunctionalSource
-    && hasSavedOutputs
-    && !outputsDirty
+    && canonicalDraftOutputs.length > 0
     && !sourceMutating
     && !outputSaving
     && !confirmationSubmitting
@@ -206,20 +205,31 @@ function InputOutputSetupPanel({
     if (workflow?.selected_outputs) {
       setDraftOutputs(canonicalTestGenerationOutputs(workflow.selected_outputs))
     }
+    return workflow
+  }
+
+  async function continueSetup() {
+    if (!nextEnabled) return
+    if (outputsDirty) {
+      const workflow = await saveOutputs()
+      if (!workflow) return
+    }
+    await onConfirmN1?.()
   }
 
   return (
     <NodeShellPanel
       definition={definition}
       availability={statusLabel}
+      hideAvailability
       note={setupConfirmed
         ? 'N1 is complete and frozen. Input Preparation is current and Not Started; no N2 processing has begun.'
         : 'Sources and desired outputs remain editable draft setup until the human confirmation gate is completed.'}
     >
       <section aria-labelledby="agent4-source-collection-title" className="space-y-4">
         <div>
-          <h4 id="agent4-source-collection-title" className="font-semibold text-content-primary">Input sources</h4>
-          <p className="mt-1 text-sm text-content-secondary">Add independently traceable TEXT, DOCUMENT, or approved visual IMAGE evidence.</p>
+          <h4 id="agent4-source-collection-title" className="text-card-heading font-semibold text-content-primary">Inputs</h4>
+          <p className="mt-1 text-sm text-content-secondary">Add the requirements, designs, plans, and other evidence Agent 4 will use to produce tests.</p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -284,7 +294,7 @@ function InputOutputSetupPanel({
 
       <section aria-labelledby="agent4-collected-sources-title" className="space-y-3 border-t border-default pt-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h4 id="agent4-collected-sources-title" className="font-semibold text-content-primary">Collected sources</h4>
+          <h4 id="agent4-collected-sources-title" className="font-semibold text-content-primary">Collected inputs</h4>
           <span className="text-sm text-content-muted">{sources.length} source{sources.length === 1 ? '' : 's'}</span>
         </div>
         {loadStatus === 'loading' ? <p className="text-sm text-content-secondary">Loading sources…</p> : null}
@@ -324,13 +334,13 @@ function InputOutputSetupPanel({
 
       <section aria-labelledby="agent4-desired-outputs-title" className="space-y-4 border-t border-default pt-5">
         <div>
-          <h4 id="agent4-desired-outputs-title" className="font-semibold text-content-primary">Desired Test Outputs</h4>
+          <h4 id="agent4-desired-outputs-title" className="text-card-heading font-semibold text-content-primary">Outputs</h4>
           <p className="mt-1 text-sm text-content-secondary">
             Choose the artifacts Agent 4 should eventually produce. Selection does not imply readiness, feasibility, or generation.
           </p>
         </div>
         <OutputSelector
-          label="Desired Test Outputs"
+          label="Test Outputs"
           options={TEST_GENERATION_OUTPUT_OPTIONS.map((option) => ({
             ...option,
             disabled: busy,
@@ -351,32 +361,16 @@ function InputOutputSetupPanel({
               <p className="text-content-muted">No desired outputs saved yet</p>
             )}
           </div>
-          {!setupConfirmed ? (
-            <Button
-              loading={outputSaving}
-              loadingLabel="Saving output selection"
-              disabled={!outputsDirty || busy}
-              onClick={() => { void saveOutputs() }}
-            >
-              Save Output Selection
-            </Button>
-          ) : null}
         </div>
         {outputSaveError ? <p role="alert" className="text-sm text-state-danger">{outputSaveError}</p> : null}
         <p className="rounded-control border border-default bg-surface p-3 text-sm text-content-secondary">
           {setupConfirmed
             ? 'The confirmed desired outputs are frozen until a future correction workflow is available.'
-            : 'Save desired-output changes before confirming the setup.'}
+            : 'Your selected outputs will be saved when you choose Next.'}
         </p>
       </section>
 
       <section aria-labelledby="agent4-setup-confirmation-title" className="space-y-4 border-t border-default pt-5">
-        <div>
-          <h4 id="agent4-setup-confirmation-title" className="font-semibold text-content-primary">Setup Confirmation</h4>
-          <p className="mt-1 text-sm text-content-secondary">
-            Confirm this input and output setup for Test Generation. Confirmation freezes N1 and makes Input Preparation the next node; no tests or preparation work start yet.
-          </p>
-        </div>
         {setupConfirmed ? (
           <Card variant="elevated">
             <div className="space-y-2 text-sm">
@@ -390,24 +384,27 @@ function InputOutputSetupPanel({
           </Card>
         ) : (
           <>
-            <ul aria-label="Setup confirmation checklist" className="space-y-2 text-sm">
+            <div>
+              <h4 id="agent4-setup-confirmation-title" className="font-semibold text-content-primary">Ready to continue?</h4>
+              <p className="mt-1 text-sm text-content-secondary">Next saves the output selection and confirms this setup. Input Preparation becomes the next node; no preparation or test generation starts from this button.</p>
+            </div>
+            <ul aria-label="Setup confirmation checklist" className="grid gap-2 text-sm sm:grid-cols-2">
               <li>{hasSources ? '✓' : '○'} At least one source collected</li>
               <li>{hasPrimaryFunctionalSource ? '✓' : '○'} Primary functional artifact present</li>
-              <li>{hasSavedOutputs ? '✓' : '○'} {canonicalSavedOutputs.length} saved output{canonicalSavedOutputs.length === 1 ? '' : 's'}</li>
-              <li>{!outputsDirty ? '✓' : '○'} No unsaved output changes</li>
+              <li>{canonicalDraftOutputs.length > 0 ? '✓' : '○'} {canonicalDraftOutputs.length} output{canonicalDraftOutputs.length === 1 ? '' : 's'} selected</li>
             </ul>
-            {outputsDirty ? (
-              <p className="text-sm text-state-warning">Save output selection before confirming.</p>
-            ) : null}
             {confirmationError ? <p role="alert" className="text-sm text-state-danger">{confirmationError}</p> : null}
-            <Button
-              loading={confirmationSubmitting}
-              loadingLabel="Confirming inputs and outputs"
-              disabled={!confirmationEnabled}
-              onClick={() => { void onConfirmN1?.() }}
-            >
-              Confirm Inputs &amp; Outputs
-            </Button>
+            <div className="flex justify-end">
+              <Button
+                size="large"
+                loading={outputSaving || confirmationSubmitting}
+                loadingLabel={outputSaving ? 'Saving setup' : 'Continuing to Input Preparation'}
+                disabled={!nextEnabled}
+                onClick={() => { void continueSetup() }}
+              >
+                Next
+              </Button>
+            </div>
           </>
         )}
       </section>

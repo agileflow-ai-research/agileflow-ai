@@ -408,6 +408,7 @@ def test_normalization_preserves_every_upstream_sidecar_and_workflow_state(
         "LOCKED",
         "LOCKED",
         "LOCKED",
+            "LOCKED",
     ]
     assert state["n1_confirmation"] is not None
     assert state["selected_outputs"] == ["UNIT_TEST_CASES"]
