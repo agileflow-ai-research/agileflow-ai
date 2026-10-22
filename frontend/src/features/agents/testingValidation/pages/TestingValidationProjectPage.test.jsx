@@ -20,6 +20,7 @@ const canvasNodes = vi.hoisted(() => ([
   ['INPUT_OUTPUT_SETUP', 'Input & Output Setup'],
   ['INPUT_PREPARATION', 'Input Preparation'],
   ['TESTING_INTELLIGENCE', 'Testing Intelligence'],
+  ['HUMAN_APPROVAL', 'Human Approval'],
   ['TESTING_FACT_EXTRACTION', 'Testing Fact Extraction'],
   ['CONTEXT_TESTABILITY', 'Context & Testability'],
   ['TEST_PLANNING_REVIEW', 'Test Planning & Human Review'],
@@ -49,6 +50,11 @@ vi.mock('../testingValidationAgentService.js', () => ({
   confirmTestGenerationSetup: vi.fn(),
   createTestingValidationTextSource: vi.fn(),
   deleteTestingValidationSource: vi.fn(),
+  getClassificationDetails: vi.fn(),
+  getContextDetails: vi.fn(),
+  getPreparedSections: vi.fn(),
+  getReviewDecisionDetails: vi.fn(),
+  getTestingFactDetails: vi.fn(),
   getTestGenerationWorkflow: vi.fn(),
   listTestingValidationSources: vi.fn(),
   retryTestGenerationPreparationSource: vi.fn(),
@@ -103,7 +109,7 @@ describe('TestingValidationProjectPage', () => {
     startTestGenerationPreparation.mockResolvedValue({ data: workflow })
   })
 
-  it('loads the authoritative workflow and renders its seven node states', async () => {
+  it('loads the authoritative workflow and renders its eight node states', async () => {
     renderPage()
 
     expect(screen.getByText('Loading Test Generation workflow')).toBeInTheDocument()
@@ -113,9 +119,10 @@ describe('TestingValidationProjectPage', () => {
     expect(getTestGenerationWorkflow).toHaveBeenCalledWith(
       'AGP-404', expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
-    expect(screen.getAllByRole('button', { name: /Open / })).toHaveLength(7)
-    expect(screen.getAllByText('Available - Waiting for Setup')).toHaveLength(1)
-    expect(screen.getAllByText('LOCKED')).toHaveLength(6)
+    expect(screen.getAllByRole('button', { name: /Open / })).toHaveLength(8)
+    expect(screen.getAllByText('Ready for setup')).toHaveLength(1)
+    expect(screen.getAllByText('Available after previous step')).toHaveLength(5)
+    expect(screen.getAllByText(/Reserved —/)).toHaveLength(2)
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
@@ -137,13 +144,14 @@ describe('TestingValidationProjectPage', () => {
   })
 
   it.each([
-    ['Input & Output Setup', /Sources and desired outputs remain editable draft setup/],
-    ['Input Preparation', /No extraction, normalization, or chunking/],
-    ['Testing Intelligence', /automatically analyze prepared inputs when this stage begins/],
-    ['Testing Fact Extraction', /starts after Testing Intelligence/],
-    ['Context & Testability', /Deterministic traceability, testability, feasibility, and context-decision evidence/],
-    ['Test Planning & Human Review', /Mandatory Human Approval Gate/],
-    ['Test Generation & Results', /NOT_EXECUTED/],
+    ['Input & Output Setup', /Confirm the sources and requested outputs/],
+    ['Input Preparation', /Waiting for preparation to start/],
+    ['Testing Intelligence', /Waiting for prepared inputs/],
+    ['Human Approval', /No action needed yet/],
+    ['Testing Fact Extraction', /Waiting for approved classifications/],
+    ['Context & Testability', /Waiting for testing facts/],
+    ['Test Planning & Human Review', /Reserved — not implemented in PP1/],
+    ['Test Generation & Results', /Reserved — future development/],
   ])('opens the %s shell panel without processing', async (title, expectedContent) => {
     const user = userEvent.setup()
     renderPage()
@@ -241,23 +249,24 @@ describe('TestingValidationProjectPage', () => {
     await screen.findByText('✓ Primary functional artifact present')
     getTestGenerationWorkflow.mockResolvedValue({ data: confirmed })
 
-    await user.click(screen.getByRole('button', { name: 'Confirm Inputs & Outputs' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm & Start Preparation' }))
 
     expect(confirmTestGenerationSetup).toHaveBeenCalledWith('AGP-404')
     expect(await screen.findByRole('dialog', { name: 'Input Preparation' })).toHaveTextContent(
-      'Input Preparation is the next workflow node',
+      'Waiting for preparation to start',
     )
     expect(screen.getByLabelText('Agent 4 test generation workflow canvas')).toHaveAttribute(
       'data-selected-node', 'INPUT_PREPARATION',
     )
-    expect(screen.getAllByText('COMPLETE')).toHaveLength(1)
-    expect(screen.getAllByText('NOT_STARTED')).toHaveLength(1)
-    expect(screen.getAllByText('LOCKED')).toHaveLength(5)
+    expect(screen.getAllByText('Complete')).toHaveLength(1)
+    expect(screen.getAllByText('Not started')).toHaveLength(2)
+    expect(screen.getAllByText('Available after previous step')).toHaveLength(4)
+    expect(screen.getAllByText(/Reserved —/)).toHaveLength(2)
     expect(screen.queryByRole('button', { name: /Start N|Run N|Extract now/ })).not.toBeInTheDocument()
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: /Open Input & Output Setup/ }))
-    expect(await screen.findByText('Setup Confirmed')).toBeInTheDocument()
+    expect(await screen.findByText('Setup confirmed')).toBeInTheDocument()
   })
 
   it('shows N4 as current Not Started after N3 completion without a start action or fake results', async () => {
@@ -271,7 +280,7 @@ describe('TestingValidationProjectPage', () => {
       n3_execution: { execution_id: 'A4N3E-complete', attempt_number: 1, status: 'COMPLETED', sources: [] },
       nodes: canvasNodes.map(([nodeId], index) => ({
         node_id: nodeId,
-        status: index < 4 ? 'COMPLETED' : index === 4 ? 'NOT_STARTED' : 'LOCKED',
+        status: index < 5 ? 'COMPLETED' : index === 5 ? 'NOT_STARTED' : 'LOCKED',
         updated_at: '2026-10-21T03:00:00Z',
       })),
     }
@@ -281,9 +290,9 @@ describe('TestingValidationProjectPage', () => {
     expect(canvas).toHaveAttribute('data-selected-node', 'CONTEXT_TESTABILITY')
     await user.click(screen.getByRole('button', { name: /Open Context & Testability/ }))
     const panel = screen.getByRole('dialog', { name: 'Context & Testability' })
-    expect(panel).toHaveTextContent('Analysis has not started')
-    expect(panel).toHaveTextContent('Not Started')
+    expect(panel).toHaveTextContent('Waiting for testing facts')
+    expect(panel).toHaveTextContent('Not started')
     expect(screen.queryByRole('button', { name: /Start N4|Run N4/ })).not.toBeInTheDocument()
-    expect(panel).not.toHaveTextContent(/ready|traceability result|testability score/i)
+    expect(panel).not.toHaveTextContent(/Requested outputs|Functional Test Cases|testability score/i)
   })
 })

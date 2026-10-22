@@ -18,6 +18,7 @@ function WorkflowNode({ data, selected }) {
       data-workflow-status={data.status}
       data-workflow-visual={status.visual}
       data-selected={selected ? 'true' : 'false'}
+      data-active={data.active ? 'true' : 'false'}
     >
       <Handle type="target" position={Position.Left} isConnectable={false} className="pointer-events-none !h-px !min-h-0 !w-px !min-w-0 !border-0 !bg-transparent opacity-0" />
       <button
@@ -30,6 +31,7 @@ function WorkflowNode({ data, selected }) {
           {data.attentionCount ? <span className="rounded-full bg-state-warning/15 px-2 py-0.5 text-xs font-semibold text-state-warning">{data.attentionCount}</span> : null}
         </div>
         <div className="mt-3"><StatusBadge label={data.statusLabel ?? status.label} tone={status.tone} /></div>
+        {data.active && data.activityText ? <p className="mt-2 text-xs font-semibold text-content-primary" aria-live="polite">{data.activityText}</p> : null}
         {summary ? <p className="mt-3 text-xs leading-5 text-content-secondary">{summary}</p> : null}
         {data.locked ? <p className="mt-2 text-xs font-semibold text-content-muted">{data.lockedNote ?? 'Not implemented yet'}</p> : null}
       </button>

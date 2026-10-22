@@ -32,7 +32,7 @@ describe('TestingValidationWorkspace', () => {
 
   it('keeps configured Test Generation projects out of the legacy direct-run wizard', () => {
     render(<TestingValidationWorkspace project={testGenerationProject} />)
-    expect(screen.getByText(/seven-node Test Generation canvas/)).toBeInTheDocument()
+    expect(screen.getByText(/eight-node Test Generation canvas/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Requirements')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Test Case Generation/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Testing & Validation/ })).not.toBeInTheDocument()

@@ -8,7 +8,9 @@ import { getWorkflowStatePresentation } from '../../../../components/agents/work
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import TestingValidationCanvas from '../canvas/TestingValidationCanvas.jsx'
 import useTestingValidationWorkflow from '../hooks/useTestingValidationWorkflow.js'
+import useTestingValidationDetails from '../hooks/useTestingValidationDetails.js'
 import ContextTestabilityPanel from '../panels/ContextTestabilityPanel.jsx'
+import HumanApprovalPanel from '../panels/HumanApprovalPanel.jsx'
 import InputOutputSetupPanel from '../panels/InputOutputSetupPanel.jsx'
 import InputPreparationPanel from '../panels/InputPreparationPanel.jsx'
 import TestGenerationResultsPanel from '../panels/TestGenerationResultsPanel.jsx'
@@ -25,6 +27,7 @@ const panelByNodeId = Object.freeze({
   [TESTING_VALIDATION_NODE_IDS.INPUT_OUTPUT_SETUP]: InputOutputSetupPanel,
   [TESTING_VALIDATION_NODE_IDS.INPUT_PREPARATION]: InputPreparationPanel,
   [TESTING_VALIDATION_NODE_IDS.TESTING_INTELLIGENCE]: TestingIntelligencePanel,
+  [TESTING_VALIDATION_NODE_IDS.HUMAN_APPROVAL]: HumanApprovalPanel,
   [TESTING_VALIDATION_NODE_IDS.TESTING_FACT_EXTRACTION]: TestingFactExtractionPanel,
   [TESTING_VALIDATION_NODE_IDS.CONTEXT_TESTABILITY]: ContextTestabilityPanel,
   [TESTING_VALIDATION_NODE_IDS.TEST_PLANNING_REVIEW]: TestPlanningReviewPanel,
@@ -76,6 +79,14 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
     ? { ...selectedDefinition, ...presentation[selectedDefinition.id] }
     : null
   const SelectedPanel = selectedDefinition ? panelByNodeId[selectedDefinition.id] : null
+  const detailNodeId = (
+    (selectedNodeId === TESTING_VALIDATION_NODE_IDS.INPUT_PREPARATION && workflowState.n2_execution)
+    || (selectedNodeId === TESTING_VALIDATION_NODE_IDS.TESTING_INTELLIGENCE && workflowState.n3_execution)
+    || (selectedNodeId === TESTING_VALIDATION_NODE_IDS.HUMAN_APPROVAL && workflowState.reviewed_item_count > 0)
+    || (selectedNodeId === TESTING_VALIDATION_NODE_IDS.TESTING_FACT_EXTRACTION && workflowState.n3_execution)
+    || (selectedNodeId === TESTING_VALIDATION_NODE_IDS.CONTEXT_TESTABILITY && workflowState.n4_execution?.overall_decision)
+  ) ? selectedNodeId : null
+  const details = useTestingValidationDetails(project.agent_project_id, detailNodeId)
 
   const handleSelectNode = useCallback((nodeId) => {
     setSelectedNodeId(nodeId)
@@ -150,6 +161,11 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
               confirmationError={confirmationError}
               confirmationSubmitting={confirmationSubmitting}
               definition={selectedDefinition}
+              detailData={details.data}
+              detailError={details.error}
+              detailStatus={details.status}
+              onLoadMoreDetails={details.loadMore}
+              onRetryDetails={details.retry}
               n1Confirmation={workflowState.n1_confirmation}
               onConfirmN1={handleConfirmN1}
               onSaveOutputs={saveOutputs}
@@ -174,6 +190,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
               onSubmitIntelligenceReview={submitIntelligenceReview}
               retryingIntelligenceSourceId={retryingIntelligenceSourceId}
               reviewSubmitting={reviewSubmitting}
+              reviewedItemCount={workflowState.reviewed_item_count}
               retryingSourceId={retryingSourceId}
               workflowNodeStatus={workflowState.nodes.find(
                 (node) => node.node_id === selectedDefinition.id,
@@ -186,7 +203,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
         </WorkflowNodeModal>
       </div>
 
-      <p className="text-xs text-content-muted">Workflow status and Input Preparation progress are loaded from the persisted Stage 1 record. Node positions remain visual only.</p>
+      <p className="text-xs text-content-muted">Workflow status and visible results come from persisted Agent 4 records. Node positions are visual only.</p>
     </section>
   )
 }

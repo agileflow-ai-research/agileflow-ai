@@ -32,6 +32,7 @@ class Agent4WorkflowStorage:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             self._add_fact_extraction_node(payload)
+            self._add_human_approval_node(payload)
             record = Agent4TestGenerationWorkflowRecord.model_validate(payload)
         except FileNotFoundError:
             return None
@@ -104,9 +105,71 @@ class Agent4WorkflowStorage:
             }.get(fact_stage["status"], fact_stage["status"])
             nodes[intelligence_index]["status"] = "COMPLETED"
             payload["current_node_id"] = "TESTING_FACT_EXTRACTION"
-        nodes.insert(intelligence_index + 1, {
+        human_index = next((
+            index for index, item in enumerate(nodes)
+            if item.get("node_id") == "HUMAN_APPROVAL"
+        ), None)
+        insert_index = (
+            human_index + 1 if human_index is not None else intelligence_index + 1
+        )
+        nodes.insert(insert_index, {
             "node_id": "TESTING_FACT_EXTRACTION",
             "status": fact_status,
+            "updated_at": now,
+        })
+
+    @staticmethod
+    def _add_human_approval_node(payload: dict) -> None:
+        """Upgrade persisted workflows by promoting N3 review to a main node."""
+        nodes = payload.get("nodes") or []
+        if any(item.get("node_id") == "HUMAN_APPROVAL" for item in nodes):
+            return
+        intelligence_index = next((
+            index for index, item in enumerate(nodes)
+            if item.get("node_id") == "TESTING_INTELLIGENCE"
+        ), None)
+        if intelligence_index is None:
+            return
+        now = payload.get("updated_at") or nodes[intelligence_index].get("updated_at")
+        approval_status = "LOCKED"
+        executions = payload.get("n3_executions") or []
+        current_id = payload.get("current_n3_execution_id")
+        execution = next((
+            item for item in reversed(executions)
+            if item.get("execution_id") == current_id
+        ), None)
+        human_stage = next((
+            stage for stage in (execution or {}).get("sub_stages", [])
+            if stage.get("stage") == "TI_HUMAN_REVIEW"
+        ), None)
+        if human_stage is None:
+            human_stages = [
+                stage
+                for source in (execution or {}).get("sources", [])
+                for stage in source.get("sub_stages", [])
+                if stage.get("stage") == "TI_HUMAN_REVIEW"
+            ]
+            human_stage = next((
+                stage for stage in human_stages
+                if stage.get("status") == "WAITING_FOR_HUMAN"
+            ), human_stages[0] if human_stages else None)
+        current_node = payload.get("current_node_id")
+        if execution and execution.get("status") == "WAITING_FOR_HUMAN":
+            approval_status = "WAITING_FOR_HUMAN"
+            nodes[intelligence_index]["status"] = "COMPLETED"
+            payload["current_node_id"] = "HUMAN_APPROVAL"
+        elif (
+            execution and execution.get("status") == "COMPLETED"
+        ) or current_node in {
+            "TESTING_FACT_EXTRACTION", "CONTEXT_TESTABILITY",
+            "TEST_PLANNING_REVIEW", "TEST_GENERATION_RESULTS",
+        } or (human_stage and human_stage.get("status") in {
+            "COMPLETED", "NOT_APPLICABLE",
+        }):
+            approval_status = "COMPLETED"
+        nodes.insert(intelligence_index + 1, {
+            "node_id": "HUMAN_APPROVAL",
+            "status": approval_status,
             "updated_at": now,
         })
 

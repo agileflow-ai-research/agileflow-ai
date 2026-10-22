@@ -13,6 +13,7 @@ import {
   TEST_GENERATION_OUTPUT_OPTIONS,
 } from '../workflow/outputDefinitions.js'
 import NodeShellPanel from './NodeShellPanel.jsx'
+import { DisclosureSection, ResultBanner } from './NodePresentation.jsx'
 
 const groups = [
   { value: 'REQUIREMENTS_QUALITY', label: 'Requirements & Quality artifacts' },
@@ -129,18 +130,21 @@ function InputOutputSetupPanel({
   const busy = Boolean(sourceMutating || outputSaving || confirmationSubmitting || setupConfirmed)
   const canonicalDraftOutputs = canonicalTestGenerationOutputs(draftOutputs)
   const canonicalSavedOutputs = canonicalTestGenerationOutputs(selectedOutputs)
-  const outputsDirty = canonicalDraftOutputs.join('|') !== canonicalSavedOutputs.join('|')
+  const savedOutputsKey = canonicalSavedOutputs.join('|')
+  const outputsDirty = canonicalDraftOutputs.join('|') !== savedOutputsKey
   const hasSources = sources.length > 0
   const hasPrimaryFunctionalSource = sources.some(
     (source) => primaryFunctionalArtifactTypes.has(source.artifact_type),
   )
-  const hasSavedOutputs = canonicalSavedOutputs.length > 0
-  const confirmationEnabled = (
+  const requirementArtifactCount = sources.filter((source) => artifacts.find(
+    (item) => item.value === source.artifact_type,
+  )?.group === 'REQUIREMENTS_QUALITY').length
+  const designArtifactCount = sources.length - requirementArtifactCount
+  const nextEnabled = (
     loadStatus === 'success'
     && hasSources
     && hasPrimaryFunctionalSource
-    && hasSavedOutputs
-    && !outputsDirty
+    && canonicalDraftOutputs.length > 0
     && !sourceMutating
     && !outputSaving
     && !confirmationSubmitting
@@ -206,20 +210,42 @@ function InputOutputSetupPanel({
     if (workflow?.selected_outputs) {
       setDraftOutputs(canonicalTestGenerationOutputs(workflow.selected_outputs))
     }
+    return workflow
+  }
+
+  async function continueSetup() {
+    if (!nextEnabled) return
+    if (outputsDirty) {
+      const workflow = await saveOutputs()
+      if (!workflow) return
+    }
+    await onConfirmN1?.()
   }
 
   return (
     <NodeShellPanel
       definition={definition}
       availability={statusLabel}
+      hideAvailability
       note={setupConfirmed
-        ? 'N1 is complete and frozen. Input Preparation is current and Not Started; no N2 processing has begun.'
-        : 'Sources and desired outputs remain editable draft setup until the human confirmation gate is completed.'}
+        ? 'Agent 4 is preparing the confirmed sources for analysis.'
+        : 'Confirm the sources and requested outputs to start Input Preparation.'}
     >
+      {setupConfirmed ? <ResultBanner
+        tone="success"
+        title="Setup confirmed"
+        description="Agent 4 saved your inputs and requested outputs and started Input Preparation."
+        metrics={[
+          { label: 'Sources received', value: n1Confirmation.source_count },
+          { label: 'Requirement artifacts', value: requirementArtifactCount },
+          { label: 'Design artifacts', value: designArtifactCount },
+          { label: 'Outputs requested', value: n1Confirmation.selected_output_count },
+        ]}
+      /> : null}
       <section aria-labelledby="agent4-source-collection-title" className="space-y-4">
         <div>
-          <h4 id="agent4-source-collection-title" className="font-semibold text-content-primary">Input sources</h4>
-          <p className="mt-1 text-sm text-content-secondary">Add independently traceable TEXT, DOCUMENT, or approved visual IMAGE evidence.</p>
+          <h4 id="agent4-source-collection-title" className="text-card-heading font-semibold text-content-primary">Inputs</h4>
+          <p className="mt-1 text-sm text-content-secondary">Add the requirements, designs, plans, and other evidence Agent 4 will use to produce tests.</p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -278,13 +304,13 @@ function InputOutputSetupPanel({
         {formError ? <p role="alert" className="text-sm text-state-danger">{formError}</p> : null}
         {error ? <p role="alert" className="text-sm text-state-danger">{error}</p> : null}
         <Button loading={Boolean(mutationType)} loadingLabel="Adding source" disabled={busy} onClick={() => { void addSource() }}>
-          Add Source
+          Add source
         </Button>
       </section>
 
       <section aria-labelledby="agent4-collected-sources-title" className="space-y-3 border-t border-default pt-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h4 id="agent4-collected-sources-title" className="font-semibold text-content-primary">Collected sources</h4>
+          <h4 id="agent4-collected-sources-title" className="font-semibold text-content-primary">Collected inputs</h4>
           <span className="text-sm text-content-muted">{sources.length} source{sources.length === 1 ? '' : 's'}</span>
         </div>
         {loadStatus === 'loading' ? <p className="text-sm text-content-secondary">Loading sources…</p> : null}
@@ -302,9 +328,16 @@ function InputOutputSetupPanel({
                     <p className="font-semibold text-content-primary">{source.label || titleFromCode(source.artifact_type)}</p>
                     <StatusBadge label={status.label} tone={status.tone} />
                   </div>
-                  <p className="text-content-secondary">{titleFromCode(source.artifact_type)} · {source.source_type}</p>
+                  <p className="text-content-secondary">{titleFromCode(source.artifact_type)}</p>
                   {source.original_filename ? <p className="truncate text-content-primary" title={source.original_filename}>{source.original_filename}{source.size_bytes ? ` · ${formatBytes(source.size_bytes)}` : ''}</p> : null}
-                  <p className="text-content-muted">{provenanceText(source)}</p>
+                  {source.source_type === 'TEXT' && source.text_content ? <DisclosureSection title="View content" summary="Exact text supplied to Agent 4"><pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-control bg-surface p-3 font-sans text-sm leading-6 text-content-primary">{source.text_content}</pre></DisclosureSection> : null}
+                  <DisclosureSection title="Technical details" summary="Source type, provenance, and identifier">
+                    <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                      <div><dt className="text-content-muted">Source type</dt><dd className="text-content-secondary">{source.source_type}</dd></div>
+                      <div><dt className="text-content-muted">Provenance</dt><dd className="text-content-secondary">{provenanceText(source)}</dd></div>
+                      <div className="sm:col-span-2"><dt className="text-content-muted">Source ID</dt><dd className="break-all text-content-secondary">{source.source_id}</dd></div>
+                    </dl>
+                  </DisclosureSection>
                 </div>
                 <Button
                   variant="ghost"
@@ -324,13 +357,13 @@ function InputOutputSetupPanel({
 
       <section aria-labelledby="agent4-desired-outputs-title" className="space-y-4 border-t border-default pt-5">
         <div>
-          <h4 id="agent4-desired-outputs-title" className="font-semibold text-content-primary">Desired Test Outputs</h4>
+          <h4 id="agent4-desired-outputs-title" className="text-card-heading font-semibold text-content-primary">Outputs</h4>
           <p className="mt-1 text-sm text-content-secondary">
             Choose the artifacts Agent 4 should eventually produce. Selection does not imply readiness, feasibility, or generation.
           </p>
         </div>
         <OutputSelector
-          label="Desired Test Outputs"
+          label="Test Outputs"
           options={TEST_GENERATION_OUTPUT_OPTIONS.map((option) => ({
             ...option,
             disabled: busy,
@@ -338,6 +371,7 @@ function InputOutputSetupPanel({
           selectedValues={draftOutputs}
           onChange={setDraftOutputs}
         />
+        {setupConfirmed ? <div className="rounded-control border border-default bg-elevated p-3"><p className="font-semibold text-content-primary">Requested Outputs</p><ul className="mt-2 grid gap-1 text-sm text-content-secondary sm:grid-cols-2">{canonicalSavedOutputs.map((value) => <li key={value}>✓ {TEST_GENERATION_OUTPUT_OPTIONS.find((option) => option.value === value)?.label || titleFromCode(value)}</li>)}</ul></div> : null}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm">
             <p className="font-medium text-content-primary">
@@ -346,68 +380,55 @@ function InputOutputSetupPanel({
             {outputsDirty ? (
               <p className="text-content-muted">Unsaved changes</p>
             ) : selectionRevision > 0 ? (
-              <p className="text-content-muted">Saved revision {selectionRevision}</p>
+              <p className="text-content-muted">Selection saved</p>
             ) : (
               <p className="text-content-muted">No desired outputs saved yet</p>
             )}
           </div>
-          {!setupConfirmed ? (
-            <Button
-              loading={outputSaving}
-              loadingLabel="Saving output selection"
-              disabled={!outputsDirty || busy}
-              onClick={() => { void saveOutputs() }}
-            >
-              Save Output Selection
-            </Button>
-          ) : null}
         </div>
         {outputSaveError ? <p role="alert" className="text-sm text-state-danger">{outputSaveError}</p> : null}
         <p className="rounded-control border border-default bg-surface p-3 text-sm text-content-secondary">
           {setupConfirmed
             ? 'The confirmed desired outputs are frozen until a future correction workflow is available.'
-            : 'Save desired-output changes before confirming the setup.'}
+            : 'Your selected outputs will be saved when you confirm the setup.'}
         </p>
       </section>
 
       <section aria-labelledby="agent4-setup-confirmation-title" className="space-y-4 border-t border-default pt-5">
-        <div>
-          <h4 id="agent4-setup-confirmation-title" className="font-semibold text-content-primary">Setup Confirmation</h4>
-          <p className="mt-1 text-sm text-content-secondary">
-            Confirm this input and output setup for Test Generation. Confirmation freezes N1 and makes Input Preparation the next node; no tests or preparation work start yet.
-          </p>
-        </div>
         {setupConfirmed ? (
           <Card variant="elevated">
             <div className="space-y-2 text-sm">
-              <p className="font-semibold text-state-success">Setup Confirmed</p>
-              <p className="text-content-secondary">Sources: {n1Confirmation.source_count}</p>
-              <p className="text-content-secondary">Outputs: {n1Confirmation.selected_output_count}</p>
-              <p className="text-content-secondary">
-                Confirmed at: {new Date(n1Confirmation.confirmed_at).toLocaleString()}
-              </p>
+              <p className="font-semibold text-state-success">Human confirmation recorded</p>
+              <p className="text-content-secondary">Your setup is read-only while the workflow continues.</p>
+              <DisclosureSection title="Technical details" summary="Confirmation timestamp and selection revision">
+                <p className="text-content-secondary">Confirmed at {new Date(n1Confirmation.confirmed_at).toLocaleString()}</p>
+                <p className="mt-1 text-content-secondary">Selection revision {selectionRevision}</p>
+              </DisclosureSection>
             </div>
           </Card>
         ) : (
           <>
-            <ul aria-label="Setup confirmation checklist" className="space-y-2 text-sm">
+            <div>
+              <h4 id="agent4-setup-confirmation-title" className="font-semibold text-content-primary">Ready to continue?</h4>
+              <p className="mt-1 text-sm text-content-secondary">This human confirmation saves the output selection and queues Input Preparation. Test generation does not happen at this step.</p>
+            </div>
+            <ul aria-label="Setup confirmation checklist" className="grid gap-2 text-sm sm:grid-cols-2">
               <li>{hasSources ? '✓' : '○'} At least one source collected</li>
               <li>{hasPrimaryFunctionalSource ? '✓' : '○'} Primary functional artifact present</li>
-              <li>{hasSavedOutputs ? '✓' : '○'} {canonicalSavedOutputs.length} saved output{canonicalSavedOutputs.length === 1 ? '' : 's'}</li>
-              <li>{!outputsDirty ? '✓' : '○'} No unsaved output changes</li>
+              <li>{canonicalDraftOutputs.length > 0 ? '✓' : '○'} {canonicalDraftOutputs.length} output{canonicalDraftOutputs.length === 1 ? '' : 's'} selected</li>
             </ul>
-            {outputsDirty ? (
-              <p className="text-sm text-state-warning">Save output selection before confirming.</p>
-            ) : null}
             {confirmationError ? <p role="alert" className="text-sm text-state-danger">{confirmationError}</p> : null}
-            <Button
-              loading={confirmationSubmitting}
-              loadingLabel="Confirming inputs and outputs"
-              disabled={!confirmationEnabled}
-              onClick={() => { void onConfirmN1?.() }}
-            >
-              Confirm Inputs &amp; Outputs
-            </Button>
+            <div className="flex justify-end">
+              <Button
+                size="large"
+                loading={outputSaving || confirmationSubmitting}
+                loadingLabel={outputSaving ? 'Saving setup' : 'Starting preparation'}
+                disabled={!nextEnabled}
+                onClick={() => { void continueSetup() }}
+              >
+                Confirm &amp; Start Preparation
+              </Button>
+            </div>
           </>
         )}
       </section>

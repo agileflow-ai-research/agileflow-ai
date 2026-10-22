@@ -54,9 +54,9 @@ function WorkflowNodeModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-panel border border-default bg-sidebar shadow-surface sm:max-h-[85vh]"
+        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-panel border border-default bg-sidebar shadow-surface sm:max-h-[calc(100dvh-2rem)]"
       >
-        <header className="sticky top-0 z-10 shrink-0 border-b border-default bg-sidebar px-4 py-4 sm:px-6" data-testid="workflow-modal-header">
+        <header className="sticky top-0 z-10 shrink-0 border-b border-default bg-sidebar px-4 py-3 sm:px-6 sm:py-4" data-testid="workflow-modal-header">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-content-muted">{eyebrow}</p>
