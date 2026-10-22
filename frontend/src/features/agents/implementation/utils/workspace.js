@@ -46,6 +46,20 @@ export function repositoryNameError(value) {
   return ''
 }
 
+export function repositoryNameFromProjectName(projectName, fallback = 'project') {
+  function normalize(value) {
+    return String(value ?? '')
+      .trim()
+      .replace(/[^A-Za-z0-9._-]+/gu, '-')
+      .replace(/-+/gu, '-')
+      .replace(/^[._-]+|[._-]+$/gu, '')
+      .slice(0, 100)
+      .replace(/[._-]+$/gu, '')
+  }
+
+  return normalize(projectName) || normalize(fallback) || 'project'
+}
+
 export function requestInput(item) {
   const base = {
     source_type: item.source_type,
