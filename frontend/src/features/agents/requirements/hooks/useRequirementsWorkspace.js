@@ -4,6 +4,7 @@ import useEvidenceDetails from './useEvidenceDetails.js'
 import useRequirementSources from './useRequirementSources.js'
 import useRequirementsWorkflow from './useRequirementsWorkflow.js'
 import useDiscoveryWorkflow from './useDiscoveryWorkflow.js'
+import useQualityWorkflow from './useQualityWorkflow.js'
 
 export default function useRequirementsWorkspace(agentProjectId) {
   const [reloadSequence, setReloadSequence] = useState(0)
@@ -26,6 +27,11 @@ export default function useRequirementsWorkspace(agentProjectId) {
     n3TerminalExecutionIdentity: workflow.n3TerminalExecutionIdentity,
     refreshWorkflow: workflow.refreshWorkflow,
     workflowState: workflow.workflowState,
+  })
+  const quality = useQualityWorkflow({
+    agentProjectId,
+    workflowState: workflow.workflowState,
+    refreshWorkflow: workflow.refreshWorkflow,
   })
 
   const reload = useCallback(() => setReloadSequence((value) => value + 1), [])
@@ -55,6 +61,7 @@ export default function useRequirementsWorkspace(agentProjectId) {
     n3Retrying: discovery.n3Retrying,
     outputSaving: workflow.outputSaving,
     preparationStates: evidence.preparationStates,
+    quality,
     prepareSource: evidence.prepareSource,
     processingStates: evidence.processingStates,
     processSource: evidence.processSource,

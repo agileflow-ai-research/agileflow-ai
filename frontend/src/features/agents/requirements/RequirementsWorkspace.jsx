@@ -7,6 +7,7 @@ import LockedNodeState from './nodes/LockedNodeState.jsx'
 import RequirementSourcesNode from './nodes/RequirementSourcesNode.jsx'
 import N2OrchestrationStatus from './nodes/N2OrchestrationStatus.jsx'
 import DiscoveryStructuringPanel from './discovery/DiscoveryStructuringPanel.jsx'
+import QualityEngineeringPanel from './quality/QualityEngineeringPanel.jsx'
 import useRequirementsWorkspace from './hooks/useRequirementsWorkspace.js'
 import { getRequirementNodeDefinition, REQUIREMENTS_NODE_IDS } from './workflow/nodeDefinitions.js'
 
@@ -106,6 +107,10 @@ function RequirementsWorkspace({
           onRetry={workflow.retryN3}
           onRefresh={workflow.refreshDiscovery}
         />
+      ) : null}
+
+      {workflow.loadStatus === 'success' && activeSection === REQUIREMENTS_NODE_IDS.QUALITY_ENGINEERING ? (
+        <QualityEngineeringPanel workflowState={workflow.workflowState} quality={workflow.quality} />
       ) : null}
 
       {workflow.loadStatus === 'success' && activeNode && !activeNode.active ? (

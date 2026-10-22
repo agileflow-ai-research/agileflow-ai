@@ -9,6 +9,7 @@ from app.modules.agents.requirements.workflow.contracts.n1 import (
 )
 from app.modules.agents.requirements.workflow.contracts.n2 import RequirementN2Execution
 from app.modules.agents.requirements.workflow.contracts.n3 import RequirementN3Execution
+from app.modules.agents.requirements.workflow.contracts.n4 import RequirementN4Execution
 
 
 class RequirementWorkflowResponse(StrictWorkflowContract):
@@ -30,5 +31,7 @@ class RequirementWorkflowResponse(StrictWorkflowContract):
     n2_execution_count: int = 0
     n3_execution: RequirementN3Execution | None = None
     n3_execution_count: int = 0
+    n4_execution: RequirementN4Execution | None = None
+    n4_execution_count: int = 0
     created_at: datetime
     updated_at: datetime

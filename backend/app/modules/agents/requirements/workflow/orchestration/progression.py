@@ -26,6 +26,28 @@ class NoOpN2CompletionProgression:
         return False
 
 
+class N3CompletionProgression(Protocol):
+    def advance_after_n3_complete(self, agent_project_id: str, owner_user_id: str,
+                                  execution_id: str) -> bool: ...
+
+
+class NoOpN3CompletionProgression:
+    def advance_after_n3_complete(self, agent_project_id, owner_user_id, execution_id): return False
+
+
+class N4ProgressionCoordinator:
+    def __init__(self, workflow_storage, n4_orchestration):
+        self._states=workflow_storage; self._n4=n4_orchestration
+    def advance_after_n3_complete(self, agent_project_id, owner_user_id, execution_id):
+        with WORKFLOW_STATE_LOCK:
+            record=self._states.load(agent_project_id=agent_project_id,owner_user_id=owner_user_id)
+            current=next((x for x in record.n3_executions if x.execution_id==record.current_n3_execution_id),None) if record else None
+            if current is None or current.execution_id!=execution_id or current.status is not RequirementN3Status.COMPLETE or current.result_summary is None:return False
+            n4=next((x for x in record.n4_executions if x.execution_id==record.current_n4_execution_id),None)
+            if n4 is not None and n4.status in {"FAILED","BLOCKED"}:return False
+        self._n4.start(agent_project_id,owner_user_id); return True
+
+
 class WorkflowProgressionCoordinator:
     """Validate persisted N2 authority before delegating N3 creation."""
 
