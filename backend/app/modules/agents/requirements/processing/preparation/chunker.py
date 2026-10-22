@@ -35,15 +35,15 @@ class SentenceSegmenter:
 
     @property
     def identity(self) -> tuple[str, str]:
-        if self._spacy_version:
+        if self._spacy_version and self._get_pipeline() is not None:
             return "spacy_blank_en_sentencizer", self._spacy_version
         return "deterministic_sentence_fallback", "1"
 
     def segment(self, text: str) -> list[SentenceSpan]:
         if not text:
             return []
-        if self._spacy_version:
-            pipeline = self._get_pipeline()
+        pipeline = self._get_pipeline() if self._spacy_version else None
+        if pipeline is not None:
             return [SentenceSpan(sentence.start_char, sentence.end_char) for sentence in pipeline(text).sents]
         spans: list[SentenceSpan] = []
         start = 0
@@ -60,15 +60,28 @@ class SentenceSegmenter:
         return spans or [SentenceSpan(0, len(text))]
 
     def _get_pipeline(self):
+        if not self._spacy_version:
+            return None
         if self._pipeline is not None:
             return self._pipeline
         with self._lock:
-            if self._pipeline is None:
-                import spacy
-
-                self._pipeline = spacy.blank("en")
-                self._pipeline.add_pipe("sentencizer")
+            if self._pipeline is None and self._spacy_version:
+                try:
+                    self._pipeline = self._initialize_spacy_pipeline()
+                except Exception:
+                    # Restrict graceful degradation to the optional spaCy
+                    # import and pipeline-initialization boundary. Errors
+                    # raised while applying the pipeline still surface.
+                    self._spacy_version = None
         return self._pipeline
+
+    @staticmethod
+    def _initialize_spacy_pipeline():
+        import spacy
+
+        pipeline = spacy.blank("en")
+        pipeline.add_pipe("sentencizer")
+        return pipeline
 
 
 def build_chunker_configuration(

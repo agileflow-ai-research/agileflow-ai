@@ -1,5 +1,9 @@
 import json
+import sys
+from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError
 from io import BytesIO
+from types import SimpleNamespace
 
 import fitz
 import pytest
@@ -15,6 +19,7 @@ from app.modules.agents.requirements.api.dependencies import (
 from app.modules.agents.requirements.infrastructure.storage import (
     RequirementSourceStorage,
 )
+from app.modules.agents.requirements.contracts.schemas import RequirementSourceType
 from app.modules.agents.requirements.processing.audio.providers.base import (
     SpeechToTextConfiguration,
     SpeechToTextResult,
@@ -22,14 +27,17 @@ from app.modules.agents.requirements.processing.audio.providers.base import (
 )
 from app.modules.agents.requirements.processing.preparation.chunker import (
     DeterministicChunker,
+    SentenceSpan,
     SentenceSegmenter,
     build_chunker_configuration,
 )
+from app.modules.agents.requirements.processing.preparation import chunker as chunker_module
 from app.modules.agents.requirements.processing.preparation.normalizer import (
     normalize_text,
 )
 from app.modules.agents.requirements.processing.preparation.schemas import (
     NormalizedEvidenceResult,
+    NormalizedProvenanceSpan,
 )
 from app.modules.agents.requirements.processing.video.providers.base import (
     VideoAudioExtractionConfiguration,
@@ -208,6 +216,192 @@ def docx_bytes():
     document.add_paragraph("Final paragraph constraint.")
     document.save(output)
     return output.getvalue()
+
+
+def fallback_segmenter(monkeypatch):
+    def missing_spacy(_package):
+        raise PackageNotFoundError("spacy")
+
+    monkeypatch.setattr(chunker_module, "version", missing_spacy)
+    return SentenceSegmenter()
+
+
+def normalized_evidence(text):
+    return NormalizedEvidenceResult(
+        source_id="AUD-999",
+        agent_project_id="AGP-999",
+        source_type=RequirementSourceType.AUDIO,
+        source_sha256="a" * 64,
+        parent_processor_version="1",
+        parent_result_fingerprint="b" * 64,
+        transcription_fingerprint="c" * 64,
+        normalizer_version="1",
+        normalized_text=text,
+        provenance=[
+            NormalizedProvenanceSpan(
+                normalized_start_offset=0,
+                normalized_end_offset=len(text),
+                parent_start_offset=0,
+                parent_end_offset=len(text),
+            )
+        ],
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+def test_sentence_segmenter_uses_spacy_when_initialization_succeeds(
+    monkeypatch,
+):
+    calls = []
+
+    class FakePipeline:
+        def add_pipe(self, name):
+            calls.append(("add_pipe", name))
+
+        def __call__(self, text):
+            calls.append(("segment", text))
+            return SimpleNamespace(
+                sents=[
+                    SimpleNamespace(start_char=0, end_char=4),
+                    SimpleNamespace(start_char=5, end_char=9),
+                ]
+            )
+
+    def blank(language):
+        calls.append(("blank", language))
+        return FakePipeline()
+
+    monkeypatch.setattr(chunker_module, "version", lambda _package: "test-spacy")
+    monkeypatch.setitem(sys.modules, "spacy", SimpleNamespace(blank=blank))
+    segmenter = SentenceSegmenter()
+
+    assert segmenter.identity == ("spacy_blank_en_sentencizer", "test-spacy")
+    assert segmenter.segment("One. Two.") == [SentenceSpan(0, 4), SentenceSpan(5, 9)]
+    assert calls == [
+        ("blank", "en"),
+        ("add_pipe", "sentencizer"),
+        ("segment", "One. Two."),
+    ]
+
+
+def test_sentence_segmenter_uses_fallback_when_spacy_is_missing(monkeypatch):
+    segmenter = fallback_segmenter(monkeypatch)
+
+    assert segmenter.identity == ("deterministic_sentence_fallback", "1")
+    assert segmenter.segment("One. Two?") == [SentenceSpan(0, 4), SentenceSpan(5, 9)]
+
+
+def test_blocked_spacy_import_falls_back_during_audio_preparation(
+    preparation_context, monkeypatch
+):
+    authentication, _, _, _, _ = preparation_context
+    segmenter = app.dependency_overrides[get_sentence_segmenter]()
+    segmenter._spacy_version = "3.8.16"
+    segmenter._pipeline = None
+
+    def blocked_import():
+        raise ImportError(
+            "DLL load failed while importing align: "
+            "An Application Control policy has blocked this file."
+        )
+
+    monkeypatch.setattr(segmenter, "_initialize_spacy_pipeline", blocked_import)
+    client = authentication.client()
+    project_id = create_project(client)
+    source = upload(client, project_id, "AUDIO", "interview.mp3", b"ID3\x04\x00\x00audio")
+    assert process(client, project_id, source["source_id"])["status"] == "COMPLETED"
+
+    prepared = prepare(client, project_id, source["source_id"]).json()["data"]
+    chunk_result = chunks(client, project_id, source["source_id"]).json()["data"]
+
+    assert prepared["status"] == "COMPLETED"
+    assert prepared["chunker"]["sentence_segmenter"] == "checking_sentencizer"
+    assert chunk_result["chunks"]
+
+
+def test_sentence_segmenter_falls_back_on_pipeline_initialization_failure(
+    monkeypatch,
+):
+    monkeypatch.setattr(chunker_module, "version", lambda _package: "test-spacy")
+    monkeypatch.setattr(
+        SentenceSegmenter,
+        "_initialize_spacy_pipeline",
+        staticmethod(lambda: (_ for _ in ()).throw(RuntimeError("pipeline unavailable"))),
+    )
+    segmenter = SentenceSegmenter()
+
+    assert segmenter.identity == ("deterministic_sentence_fallback", "1")
+    assert segmenter.segment("One. Two.") == [SentenceSpan(0, 4), SentenceSpan(5, 9)]
+
+
+def test_failed_spacy_initialization_is_cached(monkeypatch):
+    attempts = 0
+
+    def fail_once():
+        nonlocal attempts
+        attempts += 1
+        raise ImportError("native extension unavailable")
+
+    monkeypatch.setattr(chunker_module, "version", lambda _package: "test-spacy")
+    monkeypatch.setattr(
+        SentenceSegmenter,
+        "_initialize_spacy_pipeline",
+        staticmethod(fail_once),
+    )
+    segmenter = SentenceSegmenter()
+
+    assert segmenter.segment("One. Two.")
+    assert segmenter.segment("Three. Four.")
+    assert segmenter.identity == ("deterministic_sentence_fallback", "1")
+    assert attempts == 1
+
+
+def test_sentence_segmenter_does_not_swallow_pipeline_execution_errors(
+    monkeypatch,
+):
+    class BrokenPipeline:
+        def __call__(self, _text):
+            raise ValueError("invalid pipeline output")
+
+    monkeypatch.setattr(chunker_module, "version", lambda _package: "test-spacy")
+    monkeypatch.setattr(
+        SentenceSegmenter,
+        "_initialize_spacy_pipeline",
+        staticmethod(BrokenPipeline),
+    )
+    segmenter = SentenceSegmenter()
+
+    with pytest.raises(ValueError, match="invalid pipeline output"):
+        segmenter.segment("One sentence.")
+
+
+def test_fallback_chunking_is_deterministic_for_audio_sized_text(monkeypatch):
+    text = " ".join(
+        f"Stakeholder requirement {index} must remain deterministic."
+        for index in range(20)
+    )
+    normalized = normalized_evidence(text)
+    first_segmenter = fallback_segmenter(monkeypatch)
+    first_configuration = build_chunker_configuration(
+        target_chars=900,
+        max_chars=1_200,
+        overlap_sentences=1,
+        segmenter=first_segmenter,
+    )
+    first = DeterministicChunker(first_configuration, first_segmenter).chunk(normalized)
+    second_segmenter = fallback_segmenter(monkeypatch)
+    second_configuration = build_chunker_configuration(
+        target_chars=900,
+        max_chars=1_200,
+        overlap_sentences=1,
+        segmenter=second_segmenter,
+    )
+    second = DeterministicChunker(second_configuration, second_segmenter).chunk(normalized)
+
+    assert first
+    assert all(len(chunk.content) <= first_configuration.max_chars for chunk in first)
+    assert [chunk.chunk_id for chunk in first] == [chunk.chunk_id for chunk in second]
+    assert first_configuration == second_configuration
 
 
 def test_normalizer_is_conservative_and_deterministic():
