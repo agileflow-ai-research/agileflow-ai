@@ -142,7 +142,7 @@ def test_n3_waits_for_atomic_review_then_resumes_without_mutating_h1(n2_context)
     waiting = service.get(project_id, user())
     assert waiting.n3_execution.status == "WAITING_FOR_HUMAN"
     assert waiting.pipeline_status == "WAITING_FOR_HUMAN"
-    assert next(item for item in waiting.n3_execution.sources if item.source_id == sibling["source_id"]).status == "COMPLETE"
+    assert next(item for item in waiting.n3_execution.sources if item.source_id == sibling["source_id"]).status == "QUEUED"
     assert service._semantic._runtime.prompts == []
     semantic_path = root / project_id / "intelligence" / f"{source['source_id']}.semantic-facts.json"
     assert not semantic_path.exists()
@@ -181,8 +181,9 @@ def test_n3_waits_for_atomic_review_then_resumes_without_mutating_h1(n2_context)
     executor.drain()
     completed = load(client, project_id)
     assert completed["nodes"][2]["status"] == "COMPLETED"
+    assert completed["nodes"][3]["status"] == "COMPLETED"
     assert completed["current_node_id"] == "CONTEXT_TESTABILITY"
-    assert completed["nodes"][3]["status"] == "NOT_STARTED"
+    assert completed["nodes"][4]["status"] == "NOT_STARTED"
     assert hybrid_path.read_bytes() == before_hybrid
     assert all(path.read_bytes() == content for path, content in immutable_before.items())
     assert load(client, project_id)["n1_confirmation"] == n1_before
@@ -719,8 +720,13 @@ def test_n3_runs_stages_in_order_once_and_hands_off_to_unstarted_n4(n2_context, 
         def recording(*args, _name=name, _original=original, **kwargs):
             current = service._workflow.load(
                 agent_project_id=project_id, owner_user_id=user().user_id
-            ).n3_executions[-1]
-            assert current.status == "RUNNING"
+            )
+            execution = current.n3_executions[-1]
+            if _name == "semantic":
+                assert current.current_node_id == "TESTING_FACT_EXTRACTION"
+                assert current.nodes[2].status == "COMPLETED"
+                assert current.nodes[3].status == "QUEUED"
+            assert execution.status == "RUNNING"
             calls.append(_name)
             return _original(*args, **kwargs)
 
@@ -738,7 +744,8 @@ def test_n3_runs_stages_in_order_once_and_hands_off_to_unstarted_n4(n2_context, 
     assert completed.n3_execution.status == "COMPLETED"
     assert completed.n3_execution_count == 1
     assert [node.status.value for node in completed.nodes] == [
-        "COMPLETED", "COMPLETED", "COMPLETED", "NOT_STARTED", "LOCKED", "LOCKED",
+        "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED",
+        "NOT_STARTED", "LOCKED", "LOCKED",
     ]
     assert completed.current_node_id == "CONTEXT_TESTABILITY"
     assert completed.pipeline_status == "RUNNING"

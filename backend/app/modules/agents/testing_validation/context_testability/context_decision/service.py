@@ -220,9 +220,9 @@ class Agent4ContextDecisionService:
     @staticmethod
     def _validate_workflow(record):
         """
-        Confirm the N4 boundary. N1-N3 must be COMPLETED, N4 must be NOT_STARTED
-        and current, and N5/N6 must still be LOCKED. This keeps CD1 from running
-        after N4 has already advanced or after the selection changed.
+        Confirm the Context & Testability boundary. Setup, preparation,
+        intelligence, and fact extraction must be complete; this node must be
+        current; and both downstream nodes must still be locked.
         """
         if record is None or record.n1_confirmation is None:
             raise Agent4ContextDecisionGateError("Confirmed selected outputs are required")
@@ -234,14 +234,22 @@ class Agent4ContextDecisionService:
             or confirmation.selected_outputs != record.selected_outputs
         ):
             raise Agent4ContextDecisionGateError("Confirmed selected outputs are stale")
-        statuses = tuple(item.status for item in record.nodes)
+        statuses = {item.node_id: item.status for item in record.nodes}
         if (
-            statuses[:3] != (Agent4WorkflowNodeStatus.COMPLETED,) * 3
-            or statuses[3] not in {
+            any(statuses.get(node_id) is not Agent4WorkflowNodeStatus.COMPLETED for node_id in (
+                Agent4TestGenerationNodeId.INPUT_OUTPUT_SETUP,
+                Agent4TestGenerationNodeId.INPUT_PREPARATION,
+                Agent4TestGenerationNodeId.TESTING_INTELLIGENCE,
+                Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION,
+            ))
+            or statuses.get(Agent4TestGenerationNodeId.CONTEXT_TESTABILITY) not in {
                 Agent4WorkflowNodeStatus.NOT_STARTED,
                 Agent4WorkflowNodeStatus.RUNNING,
             }
-            or statuses[4:] != (Agent4WorkflowNodeStatus.LOCKED,) * 2
+            or statuses.get(Agent4TestGenerationNodeId.TEST_PLANNING_REVIEW)
+            is not Agent4WorkflowNodeStatus.LOCKED
+            or statuses.get(Agent4TestGenerationNodeId.TEST_GENERATION_RESULTS)
+            is not Agent4WorkflowNodeStatus.LOCKED
             or record.current_node_id is not Agent4TestGenerationNodeId.CONTEXT_TESTABILITY
             or record.pipeline_status is not Agent4PipelineStatus.RUNNING
         ):

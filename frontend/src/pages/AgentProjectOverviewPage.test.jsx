@@ -142,7 +142,7 @@ describe('AgentProjectOverviewPage', () => {
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
   })
 
-  it('routes a staged Agent 4 project to the six-node canvas page', async () => {
+  it('routes a staged Agent 4 project to the seven-node canvas page', async () => {
     getAgentProjectById.mockResolvedValue({ data: {
       ...project,
       agent_stage: 'TEST_GENERATION',

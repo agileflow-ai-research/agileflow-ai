@@ -13,6 +13,7 @@ import InputOutputSetupPanel from '../panels/InputOutputSetupPanel.jsx'
 import InputPreparationPanel from '../panels/InputPreparationPanel.jsx'
 import TestGenerationResultsPanel from '../panels/TestGenerationResultsPanel.jsx'
 import TestingIntelligencePanel from '../panels/TestingIntelligencePanel.jsx'
+import TestingFactExtractionPanel from '../panels/TestingFactExtractionPanel.jsx'
 import TestPlanningReviewPanel from '../panels/TestPlanningReviewPanel.jsx'
 import {
   getTestingValidationNodeDefinition,
@@ -24,6 +25,7 @@ const panelByNodeId = Object.freeze({
   [TESTING_VALIDATION_NODE_IDS.INPUT_OUTPUT_SETUP]: InputOutputSetupPanel,
   [TESTING_VALIDATION_NODE_IDS.INPUT_PREPARATION]: InputPreparationPanel,
   [TESTING_VALIDATION_NODE_IDS.TESTING_INTELLIGENCE]: TestingIntelligencePanel,
+  [TESTING_VALIDATION_NODE_IDS.TESTING_FACT_EXTRACTION]: TestingFactExtractionPanel,
   [TESTING_VALIDATION_NODE_IDS.CONTEXT_TESTABILITY]: ContextTestabilityPanel,
   [TESTING_VALIDATION_NODE_IDS.TEST_PLANNING_REVIEW]: TestPlanningReviewPanel,
   [TESTING_VALIDATION_NODE_IDS.TEST_GENERATION_RESULTS]: TestGenerationResultsPanel,

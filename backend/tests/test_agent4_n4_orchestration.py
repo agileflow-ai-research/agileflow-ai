@@ -117,7 +117,7 @@ def test_legacy_start_is_idempotent_ordered_cache_aware_and_waits_for_warnings(n
     assert result.n4_execution.status is Agent4N4ExecutionStatus.WAITING_FOR_HUMAN
     assert [item.status for item in result.n4_execution.stages] == [Agent4N4StageStatus.COMPLETE] * 4
     assert result.pipeline_status.value == "WAITING_FOR_HUMAN"
-    assert result.nodes[4].status is Agent4WorkflowNodeStatus.LOCKED
+    assert result.nodes[5].status is Agent4WorkflowNodeStatus.LOCKED
     assert result.n4_acknowledgement_count == 0
     assert n2_context[5].documents == {}
 
@@ -202,7 +202,7 @@ def test_proceed_completes_n4_and_unlocks_but_does_not_start_n5(n2_context):
     workflow = service.get(project_id, user())
     assert workflow.n4_execution.status is Agent4N4ExecutionStatus.COMPLETED
     assert [item.status.value for item in workflow.nodes] == [
-        "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "NOT_STARTED", "LOCKED",
+        "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "NOT_STARTED", "LOCKED",
     ]
     assert workflow.current_node_id.value == "TEST_PLANNING_REVIEW"
     assert workflow.pipeline_status.value == "RUNNING"
@@ -241,7 +241,7 @@ def test_warning_acknowledgement_is_snapshot_bound_append_only_and_immutable(n2_
         user(),
     )
     assert completed.n4_execution.status is Agent4N4ExecutionStatus.COMPLETED
-    assert completed.nodes[4].status is Agent4WorkflowNodeStatus.NOT_STARTED
+    assert completed.nodes[5].status is Agent4WorkflowNodeStatus.NOT_STARTED
     record = workflow_record(n2_context, project_id)
     assert len(record.n4_acknowledgement_history) == 1
     assert record.n4_acknowledgement_history[0].optional_note == "Reviewed limitations."
@@ -269,7 +269,7 @@ def test_blocked_stops_pipeline_cannot_acknowledge_or_retry_and_preserves_select
     assert workflow.n4_execution.status is Agent4N4ExecutionStatus.BLOCKED
     assert workflow.pipeline_status.value == "BLOCKED"
     assert workflow.current_node_id.value == "CONTEXT_TESTABILITY"
-    assert workflow.nodes[4].status is Agent4WorkflowNodeStatus.LOCKED
+    assert workflow.nodes[5].status is Agent4WorkflowNodeStatus.LOCKED
     assert workflow.selected_outputs == selected
     with pytest.raises(Agent4WorkflowGateError, match="no retryable"):
         service.retry(project_id, user())

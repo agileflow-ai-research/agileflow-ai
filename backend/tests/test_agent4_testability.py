@@ -403,7 +403,7 @@ def test_project_service_uses_confirmed_outputs_cache_force_and_preserves_all_up
     assert trace_path.read_bytes() == immutable[trace_path]
     workflow = load(n2_context[0], project_id)
     assert [item["status"] for item in workflow["nodes"]] == [
-        "COMPLETED", "COMPLETED", "COMPLETED", "NOT_STARTED", "LOCKED", "LOCKED",
+        "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "NOT_STARTED", "LOCKED", "LOCKED",
     ]
     assert workflow["current_node_id"] == "CONTEXT_TESTABILITY"
     assert workflow["pipeline_status"] == "RUNNING" and runs.documents == {}

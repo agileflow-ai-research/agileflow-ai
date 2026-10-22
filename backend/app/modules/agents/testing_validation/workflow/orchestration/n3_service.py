@@ -397,15 +397,44 @@ class Agent4N3OrchestrationService:
                 execution.status = Agent4N3ExecutionStatus.RUNNING
                 execution.started_at = now
                 execution.updated_at = now
-                self._node(record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE).status = Agent4WorkflowNodeStatus.RUNNING
+                active_node = self._execution_node(execution)
+                self._set_processing_node(record, active_node, Agent4WorkflowNodeStatus.RUNNING, now)
                 record.updated_at = now
                 self._workflow.save(record)
+            # Classification and human review are a workflow barrier across all
+            # sources. No source may enter fact extraction while another source
+            # still has an unresolved classification decision.
             for source in list(execution.sources):
                 if execution.retry_source_id and source.source_id != execution.retry_source_id:
                     continue
                 if source.status in {Agent4N3SourceStatus.COMPLETE, Agent4N3SourceStatus.PENDING_ANALYSIS}:
                     continue
-                self._process_source(project_id, user.user_id, execution_id, source.source_id, user)
+                self._process_source(
+                    project_id, user.user_id, execution_id, source.source_id,
+                    user, allow_fact_extraction=False,
+                )
+            checkpoint = self._load_execution(project_id, user.user_id, execution_id)
+            next_stages = [
+                get_next_n3_substage(source.sub_stages)
+                for source in checkpoint.sources
+                if source.status is not Agent4N3SourceStatus.PENDING_ANALYSIS
+            ]
+            if Agent4N3SubStageName.HUMAN_REVIEW not in next_stages:
+                for source in list(checkpoint.sources):
+                    if execution.retry_source_id and source.source_id != execution.retry_source_id:
+                        continue
+                    if source.status in {
+                        Agent4N3SourceStatus.COMPLETE,
+                        Agent4N3SourceStatus.FAILED,
+                        Agent4N3SourceStatus.PENDING_ANALYSIS,
+                    }:
+                        continue
+                    if get_next_n3_substage(source.sub_stages) is not Agent4N3SubStageName.FACT_EXTRACTION:
+                        continue
+                    self._process_source(
+                        project_id, user.user_id, execution_id,
+                        source.source_id, user, allow_fact_extraction=True,
+                    )
             self._finish(project_id, user.user_id, execution_id, user)
         except Exception:
             self._fail_execution(project_id, user.user_id, execution_id)
@@ -413,7 +442,10 @@ class Agent4N3OrchestrationService:
             with self._active_lock:
                 self._active_execution_ids.discard(execution_id)
 
-    def _process_source(self, project_id, owner_id, execution_id, source_id, user):
+    def _process_source(
+        self, project_id, owner_id, execution_id, source_id, user,
+        *, allow_fact_extraction=True,
+    ):
         execution = self._load_execution(project_id, owner_id, execution_id)
         source = self._source(execution, source_id)
         self._ensure_source_sub_stages(source)
@@ -454,6 +486,11 @@ class Agent4N3OrchestrationService:
                     project_id, owner_id, execution_id, source_id,
                     status=Agent4N3SourceStatus.WAITING_FOR_HUMAN,
                 )
+                return
+            if (
+                stage_name is Agent4N3SubStageName.FACT_EXTRACTION
+                and not allow_fact_extraction
+            ):
                 return
             self._begin_sub_stage(
                 project_id, owner_id, execution_id, source_id, stage_name
@@ -541,6 +578,9 @@ class Agent4N3OrchestrationService:
                     semantic = self._semantic.build(
                         project_id, source_id, user, force=False,
                         effective=effective,
+                        started_callback=lambda: self._start_fact_extraction(
+                            project_id, owner_id, execution_id, source_id,
+                        ),
                         progress_callback=lambda results, chunk_count: self._checkpoint_semantic_progress(
                             project_id, owner_id, execution_id, source_id,
                             results, chunk_count,
@@ -604,11 +644,16 @@ class Agent4N3OrchestrationService:
             self._ensure_source_sub_stages(source)
             stage = self._sub_stage(source, stage_name)
             now = self._clock()
-            stage.status = Agent4N3SubStageStatus.RUNNING
-            stage.started_at = now
+            queued_for_capacity = stage_name is Agent4N3SubStageName.FACT_EXTRACTION
+            stage.status = (
+                Agent4N3SubStageStatus.QUEUED
+                if queued_for_capacity else Agent4N3SubStageStatus.RUNNING
+            )
+            stage.started_at = None if queued_for_capacity else now
             stage.completed_at = None
             stage.failed_at = None
-            stage.attempt_count += 1
+            if not queued_for_capacity:
+                stage.attempt_count += 1
             stage.safe_error = None
             stage.retryable = False
             source.status = legacy_status
@@ -619,6 +664,35 @@ class Agent4N3OrchestrationService:
             source.failed_stage = None
             execution.updated_at = now
             self._refresh_execution_sub_stages(execution)
+            if queued_for_capacity:
+                self._set_processing_node(
+                    record, Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION,
+                    Agent4WorkflowNodeStatus.QUEUED, now,
+                )
+            record.updated_at = now
+            self._workflow.save(record)
+
+    def _start_fact_extraction(
+        self, project_id, owner_id, execution_id, source_id,
+    ):
+        """Publish RUNNING only after this source owns semantic model capacity."""
+        with AGENT4_WORKFLOW_STATE_LOCK:
+            record = self._require_record(project_id, owner_id)
+            execution = self._execution(record, execution_id)
+            source = self._source(execution, source_id)
+            stage = self._sub_stage(source, Agent4N3SubStageName.FACT_EXTRACTION)
+            now = self._clock()
+            stage.status = Agent4N3SubStageStatus.RUNNING
+            stage.started_at = now
+            stage.attempt_count += 1
+            source.status = Agent4N3SourceStatus.SEMANTIC_EXTRACTION
+            source.updated_at = now
+            execution.updated_at = now
+            self._refresh_execution_sub_stages(execution)
+            self._set_processing_node(
+                record, Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION,
+                Agent4WorkflowNodeStatus.RUNNING, now,
+            )
             record.updated_at = now
             self._workflow.save(record)
 
@@ -907,7 +981,7 @@ class Agent4N3OrchestrationService:
                     source.retryable for source in execution.sources
                 )
                 execution.error = Agent4N2Message(code="N3_SOURCE_FAILED", message="One or more sources could not complete Testing Intelligence.")
-                self._mark_failed(record, now)
+                self._mark_failed(record, now, execution)
             elif derived is Agent4N3ExecutionStatus.WAITING_FOR_HUMAN:
                 projection = self._build_review_projection(record, execution, owner_id)
                 execution.status = Agent4N3ExecutionStatus.WAITING_FOR_HUMAN
@@ -916,6 +990,11 @@ class Agent4N3OrchestrationService:
                 node = self._node(record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE)
                 node.status = Agent4WorkflowNodeStatus.WAITING_FOR_HUMAN
                 node.updated_at = now
+                fact = self._node(
+                    record, Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION
+                )
+                fact.status = Agent4WorkflowNodeStatus.LOCKED
+                fact.updated_at = now
                 record.pipeline_status = Agent4PipelineStatus.WAITING_FOR_HUMAN
                 record.current_node_id = Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
             elif derived is Agent4N3ExecutionStatus.COMPLETED:
@@ -923,9 +1002,12 @@ class Agent4N3OrchestrationService:
                 execution.completed_at = now
                 execution.retryable = False
                 n3 = self._node(record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE)
+                facts = self._node(record, Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION)
                 n4 = self._node(record, Agent4TestGenerationNodeId.CONTEXT_TESTABILITY)
                 n3.status = Agent4WorkflowNodeStatus.COMPLETED
                 n3.updated_at = now
+                facts.status = Agent4WorkflowNodeStatus.COMPLETED
+                facts.updated_at = now
                 n4.status = Agent4WorkflowNodeStatus.NOT_STARTED
                 n4.updated_at = now
                 record.current_node_id = Agent4TestGenerationNodeId.CONTEXT_TESTABILITY
@@ -970,9 +1052,12 @@ class Agent4N3OrchestrationService:
             execution.updated_at = now
             execution.retryable = False
             n3 = self._node(record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE)
+            facts = self._node(record, Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION)
             n4 = self._node(record, Agent4TestGenerationNodeId.CONTEXT_TESTABILITY)
             n3.status = Agent4WorkflowNodeStatus.COMPLETED
             n3.updated_at = now
+            facts.status = Agent4WorkflowNodeStatus.COMPLETED
+            facts.updated_at = now
             n4.status = Agent4WorkflowNodeStatus.NOT_STARTED
             n4.updated_at = now
             record.current_node_id = Agent4TestGenerationNodeId.CONTEXT_TESTABILITY
@@ -1031,7 +1116,7 @@ class Agent4N3OrchestrationService:
                 }
             ), None)
             if active_stage is None:
-                self._mark_failed(record, now)
+                self._mark_failed(record, now, execution)
                 return None
             active_stage.status = Agent4N3SubStageStatus.QUEUED
             active_stage.started_at = None
@@ -1051,7 +1136,7 @@ class Agent4N3OrchestrationService:
                 review_id=execution.review_id,
             )
         except (Agent4WorkflowGateError, ValueError):
-            self._mark_failed(record, now)
+            self._mark_failed(record, now, execution)
             return None
         self._queue(record, continuation)
         return continuation
@@ -1207,10 +1292,11 @@ class Agent4N3OrchestrationService:
         record.n3_executions.append(execution)
         record.current_n3_execution_id = execution.execution_id
         record.pipeline_status = Agent4PipelineStatus.RUNNING
-        record.current_node_id = Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
-        node = self._node(record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE)
-        node.status = Agent4WorkflowNodeStatus.QUEUED
-        node.updated_at = execution.queued_at
+        active_node = self._execution_node(execution)
+        self._set_processing_node(
+            record, active_node, Agent4WorkflowNodeStatus.QUEUED,
+            execution.queued_at,
+        )
         record.updated_at = execution.queued_at
 
     def _stage(self, project_id, owner_id, execution_id, source_id, status):
@@ -1263,7 +1349,7 @@ class Agent4N3OrchestrationService:
                     source.retryable = True
                     source.updated_at = now
             self._refresh_execution_sub_stages(execution)
-            self._mark_failed(record, now)
+            self._mark_failed(record, now, execution)
             self._workflow.save(record)
 
     def _fail_execution(self, project_id, owner_id, execution_id):
@@ -1299,16 +1385,54 @@ class Agent4N3OrchestrationService:
                 source.retryable = True
                 source.updated_at = now
             self._refresh_execution_sub_stages(execution)
-            self._mark_failed(record, now)
+            self._mark_failed(record, now, execution)
             self._workflow.save(record)
 
-    def _mark_failed(self, record, now):
-        node = self._node(record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE)
+    def _mark_failed(self, record, now, execution):
+        node_id = self._execution_node(execution)
+        node = self._node(record, node_id)
         node.status = Agent4WorkflowNodeStatus.FAILED
         node.updated_at = now
         record.pipeline_status = Agent4PipelineStatus.FAILED
-        record.current_node_id = Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
+        record.current_node_id = node_id
         record.updated_at = now
+
+    @staticmethod
+    def _execution_node(execution):
+        """Map the persisted N3 checkpoint to its authoritative canvas node."""
+        processable = [
+            source for source in execution.sources
+            if source.status is not Agent4N3SourceStatus.PENDING_ANALYSIS
+        ]
+        if processable and all(
+            all(
+                stage.status in SUCCESSFUL_SUB_STAGE_STATUSES
+                for stage in source.sub_stages
+                if stage.stage is not Agent4N3SubStageName.FACT_EXTRACTION
+            )
+            for source in processable
+        ):
+            return Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION
+        return Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
+
+    def _set_processing_node(self, record, node_id, status, now):
+        intelligence = self._node(
+            record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
+        )
+        facts = self._node(
+            record, Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION
+        )
+        if node_id is Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION:
+            intelligence.status = Agent4WorkflowNodeStatus.COMPLETED
+            intelligence.updated_at = now
+            facts.status = status
+            facts.updated_at = now
+        else:
+            intelligence.status = status
+            intelligence.updated_at = now
+            facts.status = Agent4WorkflowNodeStatus.LOCKED
+            facts.updated_at = now
+        record.current_node_id = node_id
 
     def _load_execution(self, project_id, owner_id, execution_id):
         return self._execution(self._require_record(project_id, owner_id), execution_id)

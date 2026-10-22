@@ -380,6 +380,7 @@ def test_chunking_preserves_all_upstream_state_and_workflow(chunking_context):
         "LOCKED",
         "LOCKED",
         "LOCKED",
+        "LOCKED",
     ]
     assert workflow["n1_confirmation"] is not None
     assert workflow["selected_outputs"] == ["UNIT_TEST_CASES"]

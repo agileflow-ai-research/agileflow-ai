@@ -363,7 +363,7 @@ def test_service_cache_force_trust_and_upstream_immutability(n2_context):
     assert all(path.read_bytes() == content for path, content in immutable.items())
     workflow = load(n2_context[0], project_id)
     assert [item["status"] for item in workflow["nodes"]] == [
-        "COMPLETED", "COMPLETED", "COMPLETED", "NOT_STARTED", "LOCKED", "LOCKED",
+        "COMPLETED", "COMPLETED", "COMPLETED", "COMPLETED", "NOT_STARTED", "LOCKED", "LOCKED",
     ]
     assert workflow["current_node_id"] == "CONTEXT_TESTABILITY"
     assert workflow["pipeline_status"] == "RUNNING" and runs.documents == {}

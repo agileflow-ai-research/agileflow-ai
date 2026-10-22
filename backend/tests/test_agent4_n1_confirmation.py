@@ -237,6 +237,7 @@ def test_valid_confirmation_snapshots_exact_setup_and_transitions_workflow(
         "LOCKED",
         "LOCKED",
         "LOCKED",
+        "LOCKED",
     ]
     assert sidecar.read_bytes() == sidecar_before
     assert runs.documents == {}

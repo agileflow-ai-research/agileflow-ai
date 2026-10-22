@@ -90,7 +90,7 @@ class Agent4SemanticFactService:
 
     def build(self, project_id: str, source_id: str,
               user: UserPublicResponse, *, force=False, effective=None,
-              progress_callback=None):
+              progress_callback=None, started_callback=None):
         """
         Build or reuse the S1 semantic manifest for one source.
 
@@ -107,6 +107,8 @@ class Agent4SemanticFactService:
         # duplicate semantic builds, while the workflow lock must remain free
         # so status GETs and restart recovery stay responsive.
         with SEMANTIC_FACT_LOCK:
+            if started_callback is not None:
+                started_callback()
             chunks, rules, zero, hybrid = self._resolve(project_id, source_id, user)
             hybrid_fingerprint = manifest_fingerprint(hybrid)
             effective_fingerprint = None

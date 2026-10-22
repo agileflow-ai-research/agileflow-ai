@@ -120,6 +120,7 @@ class Agent4TraceabilityService:
             and node.get(Agent4TestGenerationNodeId.INPUT_OUTPUT_SETUP) is Agent4WorkflowNodeStatus.COMPLETED
             and node.get(Agent4TestGenerationNodeId.INPUT_PREPARATION) is Agent4WorkflowNodeStatus.COMPLETED
             and node.get(Agent4TestGenerationNodeId.TESTING_INTELLIGENCE) is Agent4WorkflowNodeStatus.COMPLETED
+            and node.get(Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION) is Agent4WorkflowNodeStatus.COMPLETED
             and node.get(Agent4TestGenerationNodeId.CONTEXT_TESTABILITY) in {
                 Agent4WorkflowNodeStatus.NOT_STARTED,
                 Agent4WorkflowNodeStatus.RUNNING,

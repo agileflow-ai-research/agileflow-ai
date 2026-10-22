@@ -64,7 +64,7 @@ def workflow_endpoint(project_id):
     )
 
 
-def test_initializes_and_projects_the_exact_six_node_workflow(agent4_workflow_context):
+def test_initializes_and_projects_the_exact_seven_node_workflow(agent4_workflow_context):
     authentication, _, runs, root = agent4_workflow_context
     client = authentication.client()
     project = create_project(client)
@@ -87,9 +87,9 @@ def test_initializes_and_projects_the_exact_six_node_workflow(agent4_workflow_co
         node_id.value for node_id in AGENT4_TEST_GENERATION_NODE_ORDER
     ]
     assert [node["status"] for node in workflow["nodes"]] == [
-        "WAITING_FOR_HUMAN", "LOCKED", "LOCKED", "LOCKED", "LOCKED", "LOCKED",
+        "WAITING_FOR_HUMAN", "LOCKED", "LOCKED", "LOCKED", "LOCKED", "LOCKED", "LOCKED",
     ]
-    assert len(workflow["nodes"]) == 6
+    assert len(workflow["nodes"]) == 7
     assert "owner_user_id" not in workflow
     assert "path" not in json.dumps(workflow).lower()
     assert runs.documents == {}
@@ -109,6 +109,35 @@ def test_initializes_and_projects_the_exact_six_node_workflow(agent4_workflow_co
     }
     assert all(set(node) == {"node_id", "status", "updated_at"} for node in persisted["nodes"])
     assert not workflow_path.with_suffix(".json.part").exists()
+
+
+def test_load_upgrades_existing_six_node_workflow_without_losing_state(
+    agent4_workflow_context,
+):
+    authentication, _, _, root = agent4_workflow_context
+    client = authentication.client()
+    project = create_project(client)
+    project_id = project["agent_project_id"]
+    response = client.get(workflow_endpoint(project_id))
+    assert response.status_code == 200
+    workflow_path = root / project_id / "workflow.json"
+    payload = json.loads(workflow_path.read_text(encoding="utf-8"))
+    payload["nodes"] = [
+        node for node in payload["nodes"]
+        if node["node_id"] != "TESTING_FACT_EXTRACTION"
+    ]
+    workflow_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = Agent4WorkflowStorage(root).load(
+        agent_project_id=project_id,
+        owner_user_id="USR-001",
+    )
+
+    assert [node.node_id.value for node in loaded.nodes] == [
+        node_id.value for node_id in AGENT4_TEST_GENERATION_NODE_ORDER
+    ]
+    assert loaded.nodes[3].node_id.value == "TESTING_FACT_EXTRACTION"
+    assert loaded.nodes[3].status.value == "LOCKED"
 
 
 def test_repeated_reads_are_idempotent_and_survive_service_recreation(agent4_workflow_context):

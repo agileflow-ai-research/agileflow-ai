@@ -67,7 +67,7 @@ describe('TestingIntelligencePanel', () => {
     expect(screen.getByText((_, element) => element.tagName === 'SPAN' && element.textContent === '4 need your review')).toBeInTheDocument()
     expect(accordion('Human Review')).toHaveAttribute('aria-expanded', 'true')
     expect(accordion('Automatically Extracted Information')).toHaveAttribute('aria-expanded', 'false')
-    expect(accordion('Extracted Testing Facts')).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: /^Extracted Testing Facts/ })).not.toBeInTheDocument()
     expect(accordion('Analysis Progress')).toHaveAttribute('aria-expanded', 'false')
     expect(accordion('Technical Details')).toHaveAttribute('aria-expanded', 'false')
   })
@@ -157,16 +157,10 @@ describe('TestingIntelligencePanel', () => {
     expect(within(panel).getByText('Input validation')).toBeInTheDocument()
   })
 
-  it('does not invent semantic facts before extraction and reports only trusted counts when present', async () => {
-    const user = userEvent.setup()
-    const { unmount } = renderPanel()
-    await user.click(accordion('Extracted Testing Facts'))
-    expect(screen.getByText('Testing facts will be extracted after this review is confirmed.')).toBeInTheDocument()
-    unmount()
-    renderPanel({ n3Execution: { ...execution, sources: [{ ...execution.sources[0], semantic_fact_count: 2 }] } })
-    await user.click(accordion('Extracted Testing Facts'))
-    expect(screen.getByText(/2 grounded testing facts have already been extracted/)).toBeInTheDocument()
-    expect(screen.getByText(/Fact text is not included/)).toBeInTheDocument()
+  it('keeps semantic fact extraction out of the Testing Intelligence panel', () => {
+    renderPanel()
+    expect(screen.queryByText(/grounded testing facts have already been extracted/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Extracted Testing Facts/ })).not.toBeInTheDocument()
   })
 
   it('uses friendly collapsed analysis progress and keeps technical model names out of it', async () => {
@@ -177,7 +171,8 @@ describe('TestingIntelligencePanel', () => {
     expect(panel).toHaveTextContent('✓ Rule analysis')
     expect(panel).toHaveTextContent('✓ AI classification')
     expect(panel).toHaveTextContent('✓ Combined decision')
-    expect(panel).toHaveTextContent('○ Testing fact extraction')
+    expect(panel).toHaveTextContent('○ Human review')
+    expect(panel).not.toHaveTextContent('Testing fact extraction')
     expect(panel).not.toHaveTextContent(/DeBERTa|H1/)
   })
 
@@ -220,24 +215,23 @@ describe('TestingIntelligencePanel', () => {
     const retry = vi.fn()
     const subStages = [
       ['TI_RULE_ANALYSIS', 'COMPLETED'],
-      ['TI_AI_CLASSIFICATION', 'COMPLETED'],
+      ['TI_AI_CLASSIFICATION', 'FAILED'],
       ['TI_HYBRID_DECISION', 'COMPLETED'],
       ['TI_HUMAN_REVIEW', 'COMPLETED'],
       ['TI_EFFECTIVE_CLASSIFICATION', 'COMPLETED'],
-      ['TI_FACT_EXTRACTION', 'FAILED'],
-    ].map(([stage, status]) => ({ stage, status, safe_error: stage === 'TI_FACT_EXTRACTION' ? { code: 'SEMANTIC_GROUNDING_FAILED', message: 'Generated semantic facts could not be grounded in the source evidence.' } : null }))
-    const { unmount } = renderPanel({ intelligenceReview: null, n3Execution: { ...execution, status: 'FAILED', sub_stages: subStages, sources: [{ ...execution.sources[0], status: 'FAILED', failed_stage: 'TI_FACT_EXTRACTION', sub_stages: subStages, error: { message: 'Safe source failure.' } }] }, onRetryIntelligenceSource: retry })
+      ['TI_FACT_EXTRACTION', 'NOT_STARTED'],
+    ].map(([stage, status]) => ({ stage, status, safe_error: stage === 'TI_AI_CLASSIFICATION' ? { code: 'TI_AI_CLASSIFICATION_FAILED', message: 'AI classification could not complete.' } : null }))
+    const { unmount } = renderPanel({ intelligenceReview: null, n3Execution: { ...execution, status: 'FAILED', sub_stages: subStages, sources: [{ ...execution.sources[0], status: 'FAILED', failed_stage: 'TI_AI_CLASSIFICATION', sub_stages: subStages, error: { message: 'Safe source failure.' } }] }, onRetryIntelligenceSource: retry })
     expect(screen.getByText('Failed — retry available')).toBeInTheDocument()
     expect(screen.getByText(/completed steps are preserved/i)).toBeInTheDocument()
-    expect(screen.getByText('Testing fact extraction failed')).toBeInTheDocument()
-    expect(screen.getByText('Generated semantic facts could not be grounded in the source evidence.')).toBeInTheDocument()
-    expect(screen.getByText(/Approved classifications/)).toHaveClass('text-state-success')
-    await user.click(screen.getByRole('button', { name: 'Retry testing fact extraction' }))
+    expect(screen.getByText('Testing Intelligence source failed')).toBeInTheDocument()
+    expect(screen.getByText('AI classification could not complete.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry source' }))
     expect(retry).toHaveBeenCalledWith('A4SRC-one')
     unmount()
     renderPanel({ intelligenceReview: null, n3Execution: { ...execution, status: 'COMPLETED' }, workflowNodeStatus: 'COMPLETED' })
     expect(screen.getByRole('status')).toHaveTextContent('Testing Intelligence complete')
-    expect(screen.getByRole('status')).toHaveTextContent('Ready for Context & Testability')
+    expect(screen.getByRole('status')).toHaveTextContent('Testing Fact Extraction is the next workflow node')
   })
 
   it.each([

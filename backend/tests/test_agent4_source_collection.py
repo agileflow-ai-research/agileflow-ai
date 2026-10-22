@@ -500,6 +500,7 @@ def test_source_mutations_do_not_change_workflow_or_create_runs(source_context):
         "LOCKED",
         "LOCKED",
         "LOCKED",
+        "LOCKED",
     ]
     assert runs.documents == {}
 

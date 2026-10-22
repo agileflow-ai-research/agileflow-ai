@@ -15,6 +15,7 @@ const expectedIds = [
   'INPUT_OUTPUT_SETUP',
   'INPUT_PREPARATION',
   'TESTING_INTELLIGENCE',
+  'TESTING_FACT_EXTRACTION',
   'CONTEXT_TESTABILITY',
   'TEST_PLANNING_REVIEW',
   'TEST_GENERATION_RESULTS',
@@ -28,13 +29,13 @@ const initialWorkflow = {
 }
 
 describe('Agent 4 Test Generation workflow graph', () => {
-  it('defines the frozen six-node order and linear graph', () => {
+  it('defines the frozen seven-node order and linear graph', () => {
     expect(TESTING_VALIDATION_NODE_REGISTRY.map((node) => node.id)).toEqual(expectedIds)
-    expect(TESTING_VALIDATION_NODE_REGISTRY.map((node) => node.sequence)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(TESTING_VALIDATION_NODE_REGISTRY.map((node) => node.sequence)).toEqual([1, 2, 3, 4, 5, 6, 7])
     expect(TESTING_VALIDATION_EDGE_PAIRS).toEqual(expectedIds.slice(0, -1).map(
       (id, index) => [id, expectedIds[index + 1]],
     ))
-    expect(TESTING_VALIDATION_WORKFLOW_EDGES).toHaveLength(5)
+    expect(TESTING_VALIDATION_WORKFLOW_EDGES).toHaveLength(6)
     expect(TESTING_VALIDATION_WORKFLOW_EDGES.every(
       (edge) => edge.type === 'floating' && edge.markerEnd.type === MarkerType.ArrowClosed,
     )).toBe(true)
@@ -44,7 +45,7 @@ describe('Agent 4 Test Generation workflow graph', () => {
     const presentation = createTestingValidationWorkflowPresentation(initialWorkflow)
     const nodes = createTestingValidationWorkflowNodes(presentation)
 
-    expect(nodes).toHaveLength(6)
+    expect(nodes).toHaveLength(7)
     expect(nodes.map((node) => node.position)).toEqual(
       expectedIds.map((id) => TESTING_VALIDATION_DEFAULT_NODE_POSITIONS[id]),
     )
