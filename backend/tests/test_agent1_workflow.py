@@ -45,6 +45,8 @@ WORKFLOW_RESPONSE_FIELDS = {
     "n2_execution_count",
     "n3_execution",
     "n3_execution_count",
+    "n4_execution",
+    "n4_execution_count",
     "created_at",
     "updated_at",
 }

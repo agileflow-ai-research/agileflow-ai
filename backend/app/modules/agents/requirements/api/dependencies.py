@@ -59,6 +59,24 @@ def get_requirement_workflow_storage() -> RequirementWorkflowStorage:
     return RequirementWorkflowStorage(settings.agent1_source_root)
 
 
+def get_requirement_n4_orchestration_service():
+    from app.modules.agents.requirements.quality.dependencies import build_n4_orchestration_service
+    return build_n4_orchestration_service(settings.agent1_source_root)
+
+
+def get_quality_result_service(
+    standalone_service: Annotated[StandaloneService, Depends(get_standalone_service)],
+    workflow_storage: Annotated[RequirementWorkflowStorage, Depends(get_requirement_workflow_storage)],
+):
+    from app.modules.agents.requirements.infrastructure.artifact_store import JsonArtifactStore
+    from app.modules.agents.requirements.quality.api import QualityResultService
+    from app.modules.agents.requirements.quality.storage import QualityStorage
+    return QualityResultService(
+        standalone_service, workflow_storage,
+        QualityStorage(JsonArtifactStore(settings.agent1_source_root)),
+    )
+
+
 def get_agent1_n2_executor() -> Executor:
     return AGENT1_N2_EXECUTOR
 

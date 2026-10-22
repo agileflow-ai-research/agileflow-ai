@@ -240,6 +240,8 @@ def test_projection_without_n2_preserves_fixed_public_response_shape():
         "n2_execution_count": 0,
         "n3_execution": None,
         "n3_execution_count": 0,
+        "n4_execution": None,
+        "n4_execution_count": 0,
         "created_at": NOW,
         "updated_at": NOW,
     }

@@ -5,12 +5,14 @@ import useEvidenceDetails from './useEvidenceDetails.js'
 import useRequirementSources from './useRequirementSources.js'
 import useRequirementsWorkflow from './useRequirementsWorkflow.js'
 import useDiscoveryWorkflow from './useDiscoveryWorkflow.js'
+import useQualityWorkflow from './useQualityWorkflow.js'
 import useRequirementsWorkspace from './useRequirementsWorkspace.js'
 
 vi.mock('./useEvidenceDetails.js', () => ({ default: vi.fn() }))
 vi.mock('./useRequirementSources.js', () => ({ default: vi.fn() }))
 vi.mock('./useRequirementsWorkflow.js', () => ({ default: vi.fn() }))
 vi.mock('./useDiscoveryWorkflow.js', () => ({ default: vi.fn() }))
+vi.mock('./useQualityWorkflow.js', () => ({ default: vi.fn() }))
 
 const noop = () => {}
 
@@ -58,6 +60,7 @@ describe('useRequirementsWorkspace', () => {
       refreshDiscovery: noop,
       retryN3: noop,
     })
+    useQualityWorkflow.mockReturnValue({ error: '', loadStatus: 'idle', result: null, retry: noop, retrying: false })
   })
 
   it('is a thin composition layer that preserves the legacy public interface', () => {
@@ -67,7 +70,7 @@ describe('useRequirementsWorkspace', () => {
       'detailsLoading', 'discoveryArtifacts', 'discoveryError', 'discoveryLoadStatus',
       'error', 'loadPreparedEvidence', 'loadProcessingResult', 'loadStatus', 'n2Retrying',
       'n3Retrying', 'outputSaving', 'preparationStates', 'prepareSource', 'processSource',
-      'processingStates', 'refreshDiscovery', 'reload', 'removeSource', 'removingId',
+      'processingStates', 'quality', 'refreshDiscovery', 'reload', 'removeSource', 'removingId',
       'retryN2', 'retryN3', 'sources', 'uploadingType', 'workflowError', 'workflowState',
     ].sort())
     expect(result.current.loadStatus).toBe('success')

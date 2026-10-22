@@ -10,6 +10,7 @@ from app.common.id_generator import validate_id
 SOURCE_ID_PATTERN = re.compile(r"^(DOC|AUD|VID)-(\d{3,})$")
 SOURCE_EXTENSION_PATTERN = re.compile(r"^\.[a-z0-9]+$")
 N3_EXECUTION_ID_PATTERN = re.compile(r"^N3-[0-9A-F]{16}-\d{3}$")
+EXECUTION_ID_PATTERN = re.compile(r"^N[34]-[0-9A-F]{16}-\d{3}$")
 
 
 class ArtifactPathError(ValueError):
@@ -32,6 +33,12 @@ class RequirementArtifactKind(StrEnum):
     DISCOVERY_CANDIDATES = "DISCOVERY_CANDIDATES"
     DISCOVERY_CLASSIFICATIONS = "DISCOVERY_CLASSIFICATIONS"
     DISCOVERY_STRUCTURED = "DISCOVERY_STRUCTURED"
+    QUALITY_INPUT = "QUALITY_INPUT"
+    QUALITY_EXACT_DUPLICATES = "QUALITY_EXACT_DUPLICATES"
+    QUALITY_SEMANTIC_DUPLICATES = "QUALITY_SEMANTIC_DUPLICATES"
+    QUALITY_CONFLICTS = "QUALITY_CONFLICTS"
+    QUALITY_CLARITY = "QUALITY_CLARITY"
+    QUALITY_FINDINGS = "QUALITY_FINDINGS"
 
 
 SOURCE_ARTIFACT_SUFFIXES = {
@@ -53,6 +60,12 @@ EXECUTION_ARTIFACT_FILENAMES = {
     RequirementArtifactKind.DISCOVERY_CANDIDATES: "candidates.json",
     RequirementArtifactKind.DISCOVERY_CLASSIFICATIONS: "classifications.json",
     RequirementArtifactKind.DISCOVERY_STRUCTURED: "structured-requirements.json",
+    RequirementArtifactKind.QUALITY_INPUT: "quality-input.json",
+    RequirementArtifactKind.QUALITY_EXACT_DUPLICATES: "exact-duplicates.json",
+    RequirementArtifactKind.QUALITY_SEMANTIC_DUPLICATES: "semantic-duplicates.json",
+    RequirementArtifactKind.QUALITY_CONFLICTS: "conflicts.json",
+    RequirementArtifactKind.QUALITY_CLARITY: "clarity.json",
+    RequirementArtifactKind.QUALITY_FINDINGS: "findings.json",
 }
 SOURCE_CLEANUP_SIDECARS = tuple(
     kind
@@ -117,12 +130,13 @@ class RequirementArtifactPaths:
     ) -> Path:
         self._validate_project_id(agent_project_id)
         self._require_kind(kind)
-        if not isinstance(execution_id, str) or not N3_EXECUTION_ID_PATTERN.fullmatch(execution_id):
-            raise ArtifactPathError("Invalid N3 execution identity")
+        if not isinstance(execution_id, str) or not EXECUTION_ID_PATTERN.fullmatch(execution_id):
+            raise ArtifactPathError("Invalid execution identity")
         filename = EXECUTION_ARTIFACT_FILENAMES.get(kind)
         if filename is None:
             raise ArtifactPathError("Artifact kind is not execution-scoped")
-        directory = self._contained(self.project_directory(agent_project_id), "discovery")
+        stage = "discovery" if execution_id.startswith("N3-") else "quality"
+        directory = self._contained(self.project_directory(agent_project_id), stage)
         directory = self._contained(directory, execution_id)
         path = self._contained(directory, filename)
         return self.partial_path(path) if partial else path

@@ -26,6 +26,11 @@ export function deriveRequirementsWorkflowPresentation({
       : authoritativeN2?.status === 'COMPLETE'
         ? WORKFLOW_NODE_STATES.NOT_STARTED
         : WORKFLOW_NODE_STATES.LOCKED,
+    [REQUIREMENTS_NODE_IDS.QUALITY_ENGINEERING]: workflowState?.n4_execution?.status
+      ? WORKFLOW_NODE_STATES[workflowState.n4_execution.status]
+      : workflowState?.n3_execution?.status === 'COMPLETE'
+        ? WORKFLOW_NODE_STATES.NOT_STARTED
+        : WORKFLOW_NODE_STATES.LOCKED,
   }
 
   return Object.fromEntries(REQUIREMENTS_NODE_REGISTRY.map((definition) => [definition.id, {
@@ -34,7 +39,15 @@ export function deriveRequirementsWorkflowPresentation({
       && states[definition.id] === WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
       ? { statusLabel: 'Ready to Continue' }
       : {}),
-    summary: definition.id === REQUIREMENTS_NODE_IDS.DISCOVERY_AND_STRUCTURING
+    summary: definition.id === REQUIREMENTS_NODE_IDS.QUALITY_ENGINEERING
+      ? workflowState?.n4_execution?.status === 'COMPLETE'
+        ? `${workflowState.n4_execution.result_summary?.total_finding_count ?? 0} findings · ${workflowState.n4_execution.result_summary?.clarification_candidate_count ?? 0} require human review`
+        : workflowState?.n4_execution?.status === 'RUNNING' ? 'Analyzing requirement quality'
+          : workflowState?.n4_execution?.status === 'QUEUED' ? 'Quality analysis queued'
+            : workflowState?.n4_execution?.status === 'FAILED' ? 'Quality analysis failed'
+              : workflowState?.n4_execution?.status === 'BLOCKED' ? 'Quality analysis blocked'
+                : states[definition.id] === WORKFLOW_NODE_STATES.LOCKED ? 'Waiting for Requirement Discovery' : definition.summary
+      : definition.id === REQUIREMENTS_NODE_IDS.DISCOVERY_AND_STRUCTURING
       && workflowState?.n3_execution?.status === 'COMPLETE'
       ? `${workflowState.n3_execution.result_summary?.candidate_count ?? 0} candidates · ${workflowState.n3_execution.result_summary?.functional_requirement_count ?? 0} FR · ${workflowState.n3_execution.result_summary?.non_functional_requirement_count ?? 0} NFR · ${workflowState.n3_execution.result_summary?.excluded_candidate_count ?? 0} OTHER`
       : definition.summary,
@@ -42,6 +55,7 @@ export function deriveRequirementsWorkflowPresentation({
 }
 
 export function deriveRequirementsCurrentNodeId({ loadStatus, workflowState }) {
+  if (loadStatus === 'success' && workflowState?.n4_execution) return REQUIREMENTS_NODE_IDS.QUALITY_ENGINEERING
   if (loadStatus === 'success' && workflowState?.n3_execution) {
     return REQUIREMENTS_NODE_IDS.DISCOVERY_AND_STRUCTURING
   }

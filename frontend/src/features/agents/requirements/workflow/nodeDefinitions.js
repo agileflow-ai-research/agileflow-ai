@@ -39,7 +39,7 @@ export const REQUIREMENTS_NODE_DEFINITIONS = Object.freeze([
     title: 'Requirement Quality Engineering',
     purpose: 'Evaluate requirement quality and identify actionable issues.',
     summary: 'Engineer requirement quality',
-    active: false,
+    active: true,
   }),
   Object.freeze({
     id: REQUIREMENTS_NODE_IDS.CLARIFICATION_AND_REFINEMENT,
