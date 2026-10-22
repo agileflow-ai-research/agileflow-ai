@@ -48,6 +48,8 @@ vi.mock('@xyflow/react', async () => {
 })
 
 import WorkflowCanvas from './WorkflowCanvas.jsx'
+import ThemeProvider from '../../../features/theme/ThemeProvider.jsx'
+import { THEME_STORAGE_KEY } from '../../../features/theme/themeContext.js'
 
 const defaultPositions = Object.freeze({
   ONE: Object.freeze({ x: 0, y: 20 }),
@@ -101,6 +103,15 @@ describe('WorkflowCanvas', () => {
     expect(flow.latestProps.proOptions).toEqual({ hideAttribution: true })
     expect(screen.getByTestId('flow-background')).toBeInTheDocument()
     expect(screen.getByTestId('flow-controls')).toBeInTheDocument()
+  })
+
+  it('passes the restored light theme to the workflow renderer', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'light')
+
+    render(<ThemeProvider><CanvasHarness /></ThemeProvider>)
+
+    expect(flow.latestProps.colorMode).toBe('light')
+    window.localStorage.removeItem(THEME_STORAGE_KEY)
   })
 
   it('reports node clicks and visual-only drag changes', async () => {

@@ -47,7 +47,7 @@ export default function ProjectOverviewModal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-2 sm:p-5">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay p-2 backdrop-blur-[2px] sm:p-5">
       <section
         role="dialog"
         aria-modal="true"

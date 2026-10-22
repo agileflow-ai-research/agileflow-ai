@@ -3,9 +3,9 @@ import { sanitizeDisplayText } from './displayText.js'
 const toneClasses = Object.freeze({
   neutral: 'border-default bg-elevated',
   info: 'border-accent-border bg-brand-soft',
-  success: 'border-state-success/40 bg-state-success/10',
-  warning: 'border-state-warning/40 bg-state-warning/10',
-  danger: 'border-state-danger/40 bg-state-danger/10',
+  success: 'border-state-success/40 bg-state-success-soft',
+  warning: 'border-state-warning/40 bg-state-warning-soft',
+  danger: 'border-state-danger/40 bg-state-danger-soft',
 })
 
 export function PresentationSection({ children, description, label, title }) {

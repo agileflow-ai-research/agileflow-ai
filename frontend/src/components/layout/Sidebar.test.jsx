@@ -51,6 +51,7 @@ describe('global project sidebar', () => {
     expect(screen.getByRole('heading', { name: 'Standalone Agents' })).toBeInTheDocument()
     expect(getProjects).toHaveBeenCalledOnce()
     expect(screen.getByRole('link', { name: /Real Full Project/ })).toHaveAttribute('href', '/projects/PRJ-001')
+    expect(screen.getByRole('button', { name: 'Switch to light theme' })).toBeInTheDocument()
     expect(screen.queryByText(/QuickBook|POS/i)).not.toBeInTheDocument()
   })
 

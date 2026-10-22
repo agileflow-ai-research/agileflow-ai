@@ -3,7 +3,7 @@ import { cn } from '../../utils/cn.js'
 const toneClasses = {
   neutral: 'border-default bg-elevated text-content-secondary',
   accent: 'border-accent-border bg-brand-soft text-content-primary',
-  info: 'border-state-info/40 bg-state-info/10 text-state-info',
+  info: 'border-state-info/40 bg-state-info-soft text-state-info',
 }
 
 function Badge({ tone = 'neutral', className, children }) {

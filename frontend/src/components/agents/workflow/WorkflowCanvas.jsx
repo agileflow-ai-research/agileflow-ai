@@ -12,6 +12,7 @@ import '@xyflow/react/dist/style.css'
 import FloatingWorkflowEdge from './FloatingWorkflowEdge.jsx'
 import WorkflowNode from './WorkflowNode.jsx'
 import { positionWorkflowNodes } from './layout.js'
+import { useTheme } from '../../../features/theme/useTheme.js'
 
 const sharedNodeTypes = Object.freeze({ workflow: WorkflowNode })
 const sharedEdgeTypes = Object.freeze({ floating: FloatingWorkflowEdge })
@@ -28,6 +29,7 @@ const WorkflowCanvasInner = forwardRef(function WorkflowCanvasInner(
   },
   ref,
 ) {
+  const { theme } = useTheme()
   const initialNodes = useRef(suppliedNodes)
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes.current)
   const flowInstance = useRef(null)
@@ -93,7 +95,7 @@ const WorkflowCanvasInner = forwardRef(function WorkflowCanvasInner(
         nodeClickDistance={4}
         elementsSelectable
         deleteKeyCode={null}
-        colorMode="dark"
+        colorMode={theme}
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="var(--color-border-default)" />

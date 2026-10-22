@@ -129,7 +129,7 @@ function FindingCard({ clarification, finding, qualityResult }) {
       <RequirementStatement label="Requirement B" requirement={requirements[1]} />
     </div> : <RequirementStatement label="Requirement" requirement={requirements[0]} />}
 
-    {clarity?.evidence_text ? <div className="rounded-control border border-state-warning/40 bg-state-warning/10 p-3">
+    {clarity?.evidence_text ? <div className="rounded-control border border-state-warning/40 bg-state-warning-soft p-3">
       <p className="text-xs font-semibold uppercase tracking-wide text-content-muted">Flagged phrase</p>
       <p className="mt-1 whitespace-pre-wrap break-words text-sm font-semibold text-content-primary">“{clarity.evidence_text}”</p>
       {clarity.explanation ? <><p className="mt-3 text-xs font-semibold uppercase tracking-wide text-content-muted">Why this was flagged</p><p className="mt-1 text-sm text-content-secondary">{clarity.explanation}</p></> : null}

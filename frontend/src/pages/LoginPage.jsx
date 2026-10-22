@@ -114,7 +114,7 @@ function LoginPage() {
       <main className="w-full max-w-lg rounded-panel border border-default bg-surface p-6 shadow-card sm:p-8 lg:p-10">
         {successMessage ? (
           <div
-            className="mb-6 rounded-control border border-state-success/40 bg-state-success/10 px-4 py-3 text-sm text-state-success"
+            className="mb-6 rounded-control border border-state-success/40 bg-state-success-soft px-4 py-3 text-sm text-state-success"
             role="status"
           >
             {successMessage}

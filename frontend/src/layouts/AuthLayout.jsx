@@ -1,11 +1,13 @@
 import Brand from '../components/layout/Brand.jsx'
+import ThemeToggle from '../components/layout/ThemeToggle.jsx'
 import { cn } from '../utils/cn.js'
 
 function AuthLayout({ illustrationSrc, illustrationAlt = '', children }) {
   return (
     <div className="flex min-h-screen flex-col bg-canvas text-content-primary">
-      <header className="mx-auto flex w-full max-w-content px-page py-6">
+      <header className="mx-auto flex w-full max-w-content items-center justify-between px-page py-6">
         <Brand mode="wordmark" />
+        <ThemeToggle compact />
       </header>
       <div
         className={cn(

@@ -136,7 +136,7 @@ function ProjectsPage() {
                     placeholder="Search by name, domain, or description"
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
-                    inputClassName="bg-canvas"
+                    inputClassName="bg-control"
                   />
                   <Select
                     label="Status"
@@ -144,7 +144,7 @@ function ProjectsPage() {
                     options={statusOptions}
                     value={statusFilter}
                     onChange={(event) => setStatusFilter(event.target.value)}
-                    selectClassName="bg-canvas"
+                    selectClassName="bg-control"
                   />
                 </div>
               </div>

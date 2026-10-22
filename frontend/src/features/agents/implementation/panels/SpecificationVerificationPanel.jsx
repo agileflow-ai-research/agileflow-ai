@@ -176,7 +176,7 @@ export default function SpecificationVerificationPanel({
           <p className="mt-1 text-sm text-content-secondary">Why Agent 3 stopped: This source contains artifact classifications that require human confirmation.</p>
         </div>
         {selectedReviewComplete ? (
-          <section className="rounded-control border border-state-success/40 bg-state-success/10 p-4" role="status">
+          <section className="rounded-control border border-state-success/40 bg-state-success-soft p-4" role="status">
             <h3 className="font-semibold text-content-primary">✓ Classification review complete</h3>
             <p className="mt-2 text-sm text-content-secondary">
               {nextReviewSource

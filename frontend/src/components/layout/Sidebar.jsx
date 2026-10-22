@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom'
 import { getProjects } from '../../services/projectService.js'
 import Button from '../ui/Button.jsx'
 import Brand from './Brand.jsx'
+import ThemeToggle from './ThemeToggle.jsx'
 import NavigationIcon from './sidebar/NavigationIcon.jsx'
 import ProjectNavigation from './sidebar/ProjectNavigation.jsx'
 import StandaloneAgentNavigation from './sidebar/StandaloneAgentNavigation.jsx'
@@ -29,7 +30,8 @@ function SidebarContent({ projectsState, agentProjectsState, onNavigate, user, o
             <p className="truncate text-helper-copy text-content-muted">{user?.email}</p>
           </div>
         </div>
-        <Button className="mt-3 w-full justify-start" variant="ghost" size="small" onClick={onLogout}>
+        <ThemeToggle className="mt-3" />
+        <Button className="mt-1 w-full justify-start" variant="ghost" size="small" onClick={onLogout}>
           <NavigationIcon name="logout" />
           Log out
         </Button>
@@ -69,7 +71,8 @@ function Sidebar({ isOpen, isCollapsed, onClose, onNavigate, onToggleCollapse, a
             <div className="my-1 h-px w-8 bg-default/80" />
             <span className="flex h-9 w-9 items-center justify-center rounded-control text-content-muted" title="Projects"><NavigationIcon name="projects" /></span>
             <span className="flex h-9 w-9 items-center justify-center rounded-control text-content-muted" title="Standalone Agents"><NavigationIcon name="agents" /></span>
-            <button type="button" className="mt-auto flex h-9 w-9 items-center justify-center rounded-control text-content-muted transition-colors hover:bg-elevated hover:text-content-primary" aria-label="Log out" onClick={onLogout}><NavigationIcon name="logout" /></button>
+            <ThemeToggle compact className="mt-auto" />
+            <button type="button" className="flex h-9 w-9 items-center justify-center rounded-control text-content-muted transition-colors hover:bg-elevated hover:text-content-primary" aria-label="Log out" onClick={onLogout}><NavigationIcon name="logout" /></button>
           </div>
         ) : (
           <>
@@ -84,7 +87,7 @@ function Sidebar({ isOpen, isCollapsed, onClose, onNavigate, onToggleCollapse, a
 
       {isOpen ? (
         <>
-          <button type="button" className="fixed inset-0 z-30 bg-canvas/80 backdrop-blur-sm lg:hidden" aria-label="Close navigation" onClick={onClose} />
+          <button type="button" className="fixed inset-0 z-30 bg-overlay backdrop-blur-sm lg:hidden" aria-label="Close navigation" onClick={onClose} />
           <aside className="fixed inset-y-0 left-0 z-40 flex w-[min(20rem,90vw)] flex-col border-r border-default bg-sidebar p-4 shadow-surface lg:hidden" aria-label="Mobile navigation">
             <div className="flex h-11 items-center justify-between gap-4 border-b border-default/70 pb-3">
               <Brand size="small" />

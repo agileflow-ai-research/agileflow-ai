@@ -28,7 +28,7 @@ function feasibilityText(output) {
 
 function FindingList({ title, items, tone = 'warning' }) {
   if (!items?.length) return null
-  return <div className={`rounded-control border p-3 ${tone === 'danger' ? 'border-state-danger/40 bg-state-danger/10' : 'border-state-warning/40 bg-state-warning/10'}`}><h5 className="text-sm font-semibold text-content-primary">{title}</h5><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-content-secondary">{items.map((item) => <li key={item.finding_id}>{sanitizeDisplayText(item.message)}</li>)}</ul></div>
+  return <div className={`rounded-control border p-3 ${tone === 'danger' ? 'border-state-danger/40 bg-state-danger-soft' : 'border-state-warning/40 bg-state-warning-soft'}`}><h5 className="text-sm font-semibold text-content-primary">{title}</h5><ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-content-secondary">{items.map((item) => <li key={item.finding_id}>{sanitizeDisplayText(item.message)}</li>)}</ul></div>
 }
 
 function ContextTestabilityPanel({ contextActionSubmitting, contextError, contextResult, definition, detailData, detailError, detailStatus, n4Execution, onAcknowledgeContextWarnings, onLoadMoreDetails, onRetryContextAnalysis, onRetryDetails, statusLabel, workflowNodeStatus }) {
@@ -55,7 +55,7 @@ function ContextTestabilityPanel({ contextActionSubmitting, contextError, contex
     {outputs.length ? <PresentationSection label="Supporting evidence" title="Readiness by requested output"><div className="space-y-3">{outputs.map((output) => {
       const [label, tone, explanation] = decisionPresentation(output)
       return <article key={output.output_code} className="rounded-control border border-default bg-elevated p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-semibold text-content-primary">{outputLabels.get(output.output_code) || words(output.output_code)}</h4><p className="mt-1 text-sm text-content-secondary">{explanation}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${tone === 'success' ? 'bg-state-success/15 text-state-success' : tone === 'warning' ? 'bg-state-warning/15 text-state-warning' : 'bg-state-danger/15 text-state-danger'}`}>{label}</span></div>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><h4 className="font-semibold text-content-primary">{outputLabels.get(output.output_code) || words(output.output_code)}</h4><p className="mt-1 text-sm text-content-secondary">{explanation}</p></div><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${tone === 'success' ? 'bg-state-success-soft text-state-success' : tone === 'warning' ? 'bg-state-warning-soft text-state-warning' : 'bg-state-danger-soft text-state-danger'}`}>{label}</span></div>
         {feasibilityText(output) && output.recommended_representation !== 'STRUCTURED_ARTIFACT' ? <p className="mt-3 text-sm text-content-secondary">{feasibilityText(output)}</p> : null}
         {output.recommended_representation === 'STRUCTURED_ARTIFACT' ? <p className="mt-3 text-sm text-content-secondary">This output is intentionally produced as a structured traceability artifact.</p> : null}
         <div className="mt-3 space-y-2"><FindingList title="What is blocking this output" items={output.blockers} tone="danger" /><FindingList title="Limitations to review" items={output.warnings} /></div>

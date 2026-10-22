@@ -11,7 +11,7 @@ function ResultsWorkspace({ title = 'Results', sections = [], warnings = [], err
       </div>
 
       {warnings.length > 0 && (
-        <Card className="border-state-warning/40 bg-state-warning/10">
+        <Card className="border-state-warning/40 bg-state-warning-soft">
           <h3 className="font-semibold text-content-primary">Warnings</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-body-copy text-content-secondary">
             {warnings.map((warning, index) => <li key={`${index}-${String(warning)}`}>{String(warning)}</li>)}
@@ -20,7 +20,7 @@ function ResultsWorkspace({ title = 'Results', sections = [], warnings = [], err
       )}
 
       {errors.length > 0 && (
-        <Card className="border-state-danger/40 bg-state-danger/10">
+        <Card className="border-state-danger/40 bg-state-danger-soft">
           <h3 className="font-semibold text-content-primary">Errors</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-body-copy text-content-secondary">
             {errors.map((error, index) => <li key={`${index}-${String(error)}`}>{String(error)}</li>)}
