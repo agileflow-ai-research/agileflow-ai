@@ -8,11 +8,12 @@ from app.modules.agents.requirements.workflow.orchestration.n3_transitions impor
     n3_execution_by_id,
 )
 from app.modules.agents.requirements.workflow.storage import WORKFLOW_STATE_LOCK
+from app.modules.agents.requirements.workflow.orchestration.progression import NoOpN3CompletionProgression
 
 
 class RequirementN3Runner:
     def __init__(self, workflow_storage, input_loader, detector, classifier,
-                 structuring, discovery_storage, *, clock):
+                 structuring, discovery_storage, *, clock, progression=None):
         self._states = workflow_storage
         self._inputs = input_loader
         self._detector = detector
@@ -20,6 +21,7 @@ class RequirementN3Runner:
         self._structuring = structuring
         self._artifacts = discovery_storage
         self._clock = clock
+        self._progression = progression or NoOpN3CompletionProgression()
 
     def run(self, agent_project_id, owner_user_id, execution_id):
         stage = "input"
@@ -64,6 +66,7 @@ class RequirementN3Runner:
                 persisted = self._require_execution(record, execution_id)
                 mark_n3_complete(record, persisted, summary, completed_at=self._clock(), updated_at=self._clock())
                 self._states.save(record)
+            self._progression.advance_after_n3_complete(agent_project_id, owner_user_id, execution_id)
         except DiscoveryInputError:
             self._block(agent_project_id, owner_user_id, execution_id)
         except RequirementClassificationError:

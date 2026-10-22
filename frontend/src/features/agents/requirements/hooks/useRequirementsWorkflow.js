@@ -16,7 +16,7 @@ function errorMessage(error, fallback) {
 }
 
 function isStaleActiveResponse(current, next) {
-  return ['n2_execution', 'n3_execution'].some((field) => {
+  return ['n2_execution', 'n3_execution', 'n4_execution'].some((field) => {
     const currentExecution = current?.[field]
     const nextExecution = next?.[field]
     return Boolean(
@@ -110,7 +110,9 @@ export default function useRequirementsWorkflow(agentProjectId, reloadSequence =
   const n2Status = workflowState?.n2_execution?.status
   const n3ExecutionId = workflowState?.n3_execution?.execution_id
   const n3Status = workflowState?.n3_execution?.status
-  const workflowIsActive = ACTIVE_N2_STATUSES.has(n2Status) || ACTIVE_N2_STATUSES.has(n3Status)
+  const n4ExecutionId = workflowState?.n4_execution?.execution_id
+  const n4Status = workflowState?.n4_execution?.status
+  const workflowIsActive = ACTIVE_N2_STATUSES.has(n2Status) || ACTIVE_N2_STATUSES.has(n3Status) || ACTIVE_N2_STATUSES.has(n4Status)
 
   useEffect(() => {
     if (!workflowIsActive) return undefined
@@ -133,7 +135,8 @@ export default function useRequirementsWorkflow(agentProjectId, reloadSequence =
         setWorkflowError('')
         const nextN2Status = response.data.n2_execution?.status
         const nextN3Status = response.data.n3_execution?.status
-        if (ACTIVE_N2_STATUSES.has(nextN2Status) || ACTIVE_N2_STATUSES.has(nextN3Status)) {
+        const nextN4Status = response.data.n4_execution?.status
+        if (ACTIVE_N2_STATUSES.has(nextN2Status) || ACTIVE_N2_STATUSES.has(nextN3Status) || ACTIVE_N2_STATUSES.has(nextN4Status)) {
           scheduleNextPoll()
         }
       } catch (requestError) {
@@ -148,7 +151,7 @@ export default function useRequirementsWorkflow(agentProjectId, reloadSequence =
       active = false
       if (timer !== null) window.clearTimeout(timer)
     }
-  }, [acceptWorkflowState, agentProjectId, n2ExecutionId, n2Status, n3ExecutionId, n3Status, workflowIsActive])
+  }, [acceptWorkflowState, agentProjectId, n2ExecutionId, n2Status, n3ExecutionId, n3Status, n4ExecutionId, n4Status, workflowIsActive])
 
   const changeSelectedOutputs = useCallback(async (selectedOutputs) => {
     if (outputSaving || selectedOutputs.length === 0) return

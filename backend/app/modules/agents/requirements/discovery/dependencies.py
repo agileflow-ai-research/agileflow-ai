@@ -18,7 +18,7 @@ from app.modules.agents.requirements.workflow.orchestration.n3_service import (
     RequirementN3OrchestrationService,
 )
 from app.modules.agents.requirements.workflow.orchestration.progression import (
-    WorkflowProgressionCoordinator,
+    N4ProgressionCoordinator, WorkflowProgressionCoordinator,
 )
 from app.modules.agents.requirements.workflow.storage import RequirementWorkflowStorage
 
@@ -48,7 +48,7 @@ def build_requirement_classification_service() -> RequirementClassificationServi
     )
 
 
-def build_n3_orchestration_service(root: Path) -> RequirementN3OrchestrationService:
+def build_n3_orchestration_service(root: Path, *, progression=None) -> RequirementN3OrchestrationService:
     workflows = RequirementWorkflowStorage(root)
     storage = build_discovery_storage(root)
     return RequirementN3OrchestrationService(
@@ -58,10 +58,14 @@ def build_n3_orchestration_service(root: Path) -> RequirementN3OrchestrationServ
         build_requirement_classification_service(),
         RequirementStructuringService(),
         storage,
+        progression=progression,
     )
 
 
 def build_workflow_progression(root: Path) -> WorkflowProgressionCoordinator:
+    from app.modules.agents.requirements.quality.dependencies import build_n4_orchestration_service
+    states = RequirementWorkflowStorage(root)
+    n4_progression = N4ProgressionCoordinator(states, build_n4_orchestration_service(root))
     return WorkflowProgressionCoordinator(
-        RequirementWorkflowStorage(root), build_n3_orchestration_service(root)
+        states, build_n3_orchestration_service(root, progression=n4_progression)
     )

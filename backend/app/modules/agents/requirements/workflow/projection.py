@@ -51,6 +51,11 @@ def build_workflow_response(
         and execution.confirmed_source_set_digest == confirmation.source_set_digest
         and execution.confirmed_selection_digest == confirmation.selection_digest
     )
+    n4_execution = next(
+        (item for item in reversed(record.n4_executions)
+         if item.execution_id == record.current_n4_execution_id),
+        None,
+    )
     return RequirementWorkflowResponse(
         schema_version=record.schema_version,
         workflow_version=record.workflow_version,
@@ -74,6 +79,8 @@ def build_workflow_response(
         n2_execution_count=len(record.n2_executions),
         n3_execution=n3_execution,
         n3_execution_count=len(record.n3_executions),
+        n4_execution=n4_execution,
+        n4_execution_count=len(record.n4_executions),
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
