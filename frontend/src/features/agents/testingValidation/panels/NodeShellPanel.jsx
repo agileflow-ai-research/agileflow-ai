@@ -1,4 +1,6 @@
-function NodeShellPanel({ definition, availability, children, hideAvailability = false, hideHeader = false, note }) {
+import { DisclosureSection, NextStep } from './NodePresentation.jsx'
+
+function NodeShellPanel({ definition, availability, children, hideAvailability = true, hideHeader = true, note, showWorkflowStages = true }) {
   return (
     <section className="space-y-5" aria-label={`${definition.title} details`}>
       {!hideHeader ? <div>
@@ -10,15 +12,14 @@ function NodeShellPanel({ definition, availability, children, hideAvailability =
         <p className="mt-1 font-semibold text-content-primary">{availability}</p>
       </div> : null}
       {children}
-      <div>
-        <h4 className="font-semibold text-content-primary">Workflow stages</h4>
-        <ul className="mt-2 grid gap-2 sm:grid-cols-2">
-          {definition.futureStages.map((stage) => (
-            <li key={stage} className="rounded-control border border-default bg-surface px-3 py-2 text-sm text-content-secondary">{stage}</li>
+      {showWorkflowStages && definition.futureStages?.length ? <DisclosureSection title="How Agent 4 reached this result" summary="Processing stages and research workflow">
+        <ol className="grid gap-2 sm:grid-cols-2">
+          {definition.futureStages.map((stage, index) => (
+            <li key={stage} className="rounded-control border border-default bg-elevated px-3 py-2 text-sm text-content-secondary"><span className="mr-2 text-content-muted">{index + 1}.</span>{stage}</li>
           ))}
-        </ul>
-      </div>
-      <p className="rounded-control border border-default bg-brand-soft p-4 text-sm text-content-secondary">{note}</p>
+        </ol>
+      </DisclosureSection> : null}
+      <NextStep>{note}</NextStep>
     </section>
   )
 }

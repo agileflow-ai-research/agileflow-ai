@@ -93,6 +93,31 @@ export function getTestGenerationContextResult(agentProjectId) {
   )
 }
 
+function detailPath(agentProjectId, suffix, offset = 0, limit = 5) {
+  const query = new URLSearchParams({ offset: String(offset), limit: String(limit) })
+  return `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/${suffix}?${query}`
+}
+
+export function getPreparedSections(agentProjectId, offset = 0, limit = 5) {
+  return apiClient.get(detailPath(agentProjectId, 'n2/prepared-sections', offset, limit), { authenticated: true })
+}
+
+export function getClassificationDetails(agentProjectId, offset = 0, limit = 5) {
+  return apiClient.get(detailPath(agentProjectId, 'n3/classifications', offset, limit), { authenticated: true })
+}
+
+export function getReviewDecisionDetails(agentProjectId, offset = 0, limit = 5) {
+  return apiClient.get(detailPath(agentProjectId, 'n3/review-decisions', offset, limit), { authenticated: true })
+}
+
+export function getTestingFactDetails(agentProjectId, offset = 0, limit = 5) {
+  return apiClient.get(detailPath(agentProjectId, 'n3/testing-facts', offset, limit), { authenticated: true })
+}
+
+export function getContextDetails(agentProjectId, offset = 0, limit = 5) {
+  return apiClient.get(detailPath(agentProjectId, 'n4/details', offset, limit), { authenticated: true })
+}
+
 export function acknowledgeTestGenerationContextWarnings(agentProjectId, input) {
   return apiClient.post(
     `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow/n4/acknowledge-warnings`,
