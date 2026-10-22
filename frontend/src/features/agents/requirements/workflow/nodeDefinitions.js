@@ -47,6 +47,10 @@ export const REQUIREMENTS_NODE_DEFINITIONS = Object.freeze([
     title: 'Human Clarification & Refinement',
     purpose: 'Resolve requirement ambiguity with human clarification and refinement.',
     summary: 'Clarify and refine requirements',
+    reservedStatus: 'Reserved — next phase',
+    reservedHeadline: 'Reserved — human clarification is not implemented in PP1',
+    reservedDescription: 'Quality findings identified in Requirement Quality Engineering will eventually be reviewed, confirmed, corrected, and refined here with human input.',
+    reservedNote: 'No action is available in the current PP1 workflow.',
     active: false,
   }),
   Object.freeze({
@@ -55,6 +59,10 @@ export const REQUIREMENTS_NODE_DEFINITIONS = Object.freeze([
     title: 'Quality Re-check & Artifact Generation',
     purpose: 'Re-check quality and generate the required requirement artifacts.',
     summary: 'Re-check and generate artifacts',
+    reservedStatus: 'Reserved — future development',
+    reservedHeadline: 'Reserved — quality re-check and artifact generation',
+    reservedDescription: 'After human clarification, requirements will be re-checked and selected artifacts such as User Stories, Acceptance Criteria, Personas, and SRS will be generated here.',
+    reservedNote: 'Not included in the current PP1 prototype.',
     active: false,
   }),
   Object.freeze({
@@ -63,6 +71,10 @@ export const REQUIREMENTS_NODE_DEFINITIONS = Object.freeze([
     title: 'Human Review & Requirement Baseline',
     purpose: 'Complete human review and establish the requirement baseline.',
     summary: 'Review and baseline requirements',
+    reservedStatus: 'Reserved — future development',
+    reservedHeadline: 'Reserved — final review and baseline',
+    reservedDescription: 'Final human approval and requirement baseline creation are planned for a later development phase.',
+    reservedNote: 'No final approval or baseline is persisted by the current PP1 workflow.',
     active: false,
   }),
 ])

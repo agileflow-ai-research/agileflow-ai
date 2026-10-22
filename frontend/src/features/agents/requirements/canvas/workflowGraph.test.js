@@ -57,6 +57,11 @@ describe('Agent 1 workflow graph', () => {
     expect(nodes.slice(4).every(
       (node) => node.data.status === WORKFLOW_NODE_STATES.LOCKED && node.data.locked,
     )).toBe(true)
+    expect(nodes.slice(4).map((node) => node.data.lockedNote)).toEqual([
+      'No action is available in the current PP1 workflow.',
+      'Not included in the current PP1 prototype.',
+      'No final approval or baseline is persisted by the current PP1 workflow.',
+    ])
   })
 
   it('restores supplied nodes to the default layout without mutating input', () => {
