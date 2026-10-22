@@ -295,6 +295,14 @@ def test_review_post_returns_queued_and_workflow_get_does_not_wait_for_semantic_
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             worker = pool.submit(worker_function, *worker_args)
+            worker.result(timeout=2)
+            assert len(executor.tasks) == 1
+            queued_fact = service.get(project_id, user())
+            assert queued_fact.current_node_id == "TESTING_FACT_EXTRACTION"
+            assert queued_fact.nodes[2].status == "COMPLETED"
+            assert queued_fact.nodes[3].status == "QUEUED"
+            semantic_function, semantic_args = executor.tasks.pop(0)
+            semantic_worker = pool.submit(semantic_function, *semantic_args)
             assert semantic_entered.wait(timeout=2)
             started = time.monotonic()
             workflow_request = pool.submit(
@@ -308,7 +316,7 @@ def test_review_post_returns_queued_and_workflow_get_does_not_wait_for_semantic_
             assert payload["n3_execution"]["status"] == "RUNNING"
             assert payload["n3_execution"]["sources"][0]["status"] == "SEMANTIC_EXTRACTION"
             release_semantic.set()
-            worker.result(timeout=5)
+            semantic_worker.result(timeout=5)
     finally:
         release_semantic.set()
         app.dependency_overrides.pop(get_agent4_n3_orchestration_service, None)
@@ -572,10 +580,9 @@ def test_new_n2_completion_queues_exactly_one_n3_execution(n2_context):
     assert runs.documents == {}
 
 
-def test_n3_executor_keeps_a_second_orchestration_lane_available():
-    # Model services retain their own process-wide inference locks. Two N3
-    # lanes prevent a semantic extraction in one project from indefinitely
-    # holding every other project's N2 -> N3 handoff in QUEUED.
+def test_semantic_queue_cannot_starve_testing_intelligence_orchestration():
+    # A project waiting behind Qwen must not occupy a general N3 lane and
+    # prevent another project's N2 -> Testing Intelligence handoff.
     first_started = Event()
     release_first = Event()
     second_started = Event()
@@ -584,8 +591,11 @@ def test_n3_executor_keeps_a_second_orchestration_lane_available():
         first_started.set()
         release_first.wait(timeout=5)
 
-    with ThreadPoolExecutor(max_workers=AGENT4_N3_MAX_WORKERS) as executor:
-        first = executor.submit(occupy_first_lane)
+    with (
+        ThreadPoolExecutor(max_workers=1) as semantic_executor,
+        ThreadPoolExecutor(max_workers=AGENT4_N3_MAX_WORKERS) as executor,
+    ):
+        first = semantic_executor.submit(occupy_first_lane)
         assert first_started.wait(timeout=1)
         second = executor.submit(second_started.set)
         try:

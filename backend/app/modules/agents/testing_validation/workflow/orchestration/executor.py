@@ -16,6 +16,14 @@ AGENT4_N3_EXECUTOR = ThreadPoolExecutor(
     thread_name_prefix="agent4-n3",
 )
 
+# Semantic extraction is intentionally serialized because the local Qwen
+# runtime is memory intensive. Keeping its queue separate prevents projects
+# waiting for Qwen from occupying every general N3 orchestration worker.
+AGENT4_N3_SEMANTIC_EXECUTOR = ThreadPoolExecutor(
+    max_workers=1,
+    thread_name_prefix="agent4-n3-semantic",
+)
+
 
 AGENT4_N4_EXECUTOR = ThreadPoolExecutor(
     max_workers=2,

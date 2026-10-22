@@ -11,7 +11,10 @@ from app.modules.agents.testing_validation.contracts.sources import TestGenerati
 from app.modules.agents.testing_validation.intelligence.effective.service import Agent4EffectiveClassificationService
 from app.modules.agents.testing_validation.intelligence.hybrid.service import manifest_fingerprint
 from app.modules.agents.testing_validation.intelligence.taxonomy import TESTING_INTELLIGENCE_TAXONOMY
-from app.modules.agents.testing_validation.workflow.orchestration.executor import AGENT4_N3_EXECUTOR
+from app.modules.agents.testing_validation.workflow.orchestration.executor import (
+    AGENT4_N3_EXECUTOR,
+    AGENT4_N3_SEMANTIC_EXECUTOR,
+)
 from app.modules.agents.testing_validation.intelligence.semantic.extractor import (
     SemanticExtractionFailedError,
 )
@@ -117,6 +120,7 @@ class Agent4N3OrchestrationService:
         hybrid_storage, rule_storage, zero_shot_storage,
         n4_handoff=None,
         *, executor: Executor = AGENT4_N3_EXECUTOR,
+        semantic_executor: Executor | None = None,
         clock: Callable[[], datetime] = utc_now,
     ):
         self._workflow_service = workflow_service
@@ -134,6 +138,10 @@ class Agent4N3OrchestrationService:
         # unlocks N4; starting N4 remains an explicit action.
         self._n4_handoff = n4_handoff
         self._executor = executor
+        self._semantic_executor = semantic_executor or (
+            AGENT4_N3_SEMANTIC_EXECUTOR
+            if executor is AGENT4_N3_EXECUTOR else executor
+        )
         self._clock = clock
 
     def get(self, project_id, user):
@@ -387,6 +395,7 @@ class Agent4N3OrchestrationService:
             self._fail_submission(project_id, execution.execution_id, user.user_id)
 
     def _run(self, project_id, execution_id, user):
+        handed_off_to_semantic = False
         try:
             with AGENT4_WORKFLOW_STATE_LOCK:
                 record = self._require_record(project_id, user.user_id)
@@ -419,22 +428,64 @@ class Agent4N3OrchestrationService:
                 for source in checkpoint.sources
                 if source.status is not Agent4N3SourceStatus.PENDING_ANALYSIS
             ]
-            if Agent4N3SubStageName.HUMAN_REVIEW not in next_stages:
-                for source in list(checkpoint.sources):
-                    if execution.retry_source_id and source.source_id != execution.retry_source_id:
-                        continue
-                    if source.status in {
-                        Agent4N3SourceStatus.COMPLETE,
-                        Agent4N3SourceStatus.FAILED,
-                        Agent4N3SourceStatus.PENDING_ANALYSIS,
-                    }:
-                        continue
-                    if get_next_n3_substage(source.sub_stages) is not Agent4N3SubStageName.FACT_EXTRACTION:
-                        continue
-                    self._process_source(
+            fact_sources = [
+                source for source in checkpoint.sources
+                if (
+                    (not execution.retry_source_id
+                     or source.source_id == execution.retry_source_id)
+                    and get_next_n3_substage(source.sub_stages)
+                    is Agent4N3SubStageName.FACT_EXTRACTION
+                )
+            ]
+            if (
+                Agent4N3SubStageName.HUMAN_REVIEW not in next_stages
+                and fact_sources
+            ):
+                for source in fact_sources:
+                    self._begin_sub_stage(
                         project_id, user.user_id, execution_id,
-                        source.source_id, user, allow_fact_extraction=True,
+                        source.source_id, Agent4N3SubStageName.FACT_EXTRACTION,
                     )
+                self._semantic_executor.submit(
+                    self._run_fact_phase, project_id, execution_id, user,
+                )
+                handed_off_to_semantic = True
+                return
+            self._finish(project_id, user.user_id, execution_id, user)
+        except Exception:
+            self._fail_execution(project_id, user.user_id, execution_id)
+        finally:
+            if not handed_off_to_semantic:
+                with self._active_lock:
+                    self._active_execution_ids.discard(execution_id)
+
+    def _run_fact_phase(self, project_id, execution_id, user):
+        """Run serialized Qwen work without occupying a general N3 worker."""
+        try:
+            execution = self._load_execution(
+                project_id, user.user_id, execution_id
+            )
+            for source in list(execution.sources):
+                if (
+                    execution.retry_source_id
+                    and source.source_id != execution.retry_source_id
+                ):
+                    continue
+                if source.status in {
+                    Agent4N3SourceStatus.COMPLETE,
+                    Agent4N3SourceStatus.FAILED,
+                    Agent4N3SourceStatus.PENDING_ANALYSIS,
+                }:
+                    continue
+                if (
+                    get_next_n3_substage(source.sub_stages)
+                    is not Agent4N3SubStageName.FACT_EXTRACTION
+                ):
+                    continue
+                self._process_source(
+                    project_id, user.user_id, execution_id,
+                    source.source_id, user, allow_fact_extraction=True,
+                )
             self._finish(project_id, user.user_id, execution_id, user)
         except Exception:
             self._fail_execution(project_id, user.user_id, execution_id)
