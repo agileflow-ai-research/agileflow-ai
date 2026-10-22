@@ -7,6 +7,7 @@ import Input from '../../../../components/ui/Input.jsx'
 import Select from '../../../../components/ui/Select.jsx'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import Textarea from '../../../../components/ui/Textarea.jsx'
+import { sanitizeDisplayText } from '../displayText.js'
 import useTestingValidationSources from '../hooks/useTestingValidationSources.js'
 import {
   canonicalTestGenerationOutputs,
@@ -66,7 +67,7 @@ function originLabel(origin) {
 }
 
 function provenanceText(source) {
-  return `Normally supplied by ${originLabel(source.normally_supplied_by)} · Manually supplied in standalone Agent 4`
+  return `Normally supplied by ${originLabel(source.normally_supplied_by)} | Manually supplied in standalone Agent 4`
 }
 
 function formatBytes(size) {
@@ -297,12 +298,12 @@ function InputOutputSetupPanel({
             type="file"
             accept={sourceType === 'DOCUMENT' ? '.pdf,.docx,.txt,.md,.json,.yaml,.yml' : '.png,.jpg,.jpeg,.webp'}
             disabled={busy}
-            helperText={sourceType === 'DOCUMENT' ? 'PDF, DOCX, TXT, MD, JSON, YAML, or YML · maximum 10 MiB' : 'PNG, JPG, JPEG, or WEBP · maximum 5 MiB'}
+            helperText={sourceType === 'DOCUMENT' ? 'PDF, DOCX, TXT, MD, JSON, YAML, or YML | maximum 10 MiB' : 'PNG, JPG, JPEG, or WEBP | maximum 5 MiB'}
             onChange={(event) => { setFile(event.target.files?.[0] ?? null); setFormError('') }}
           />
         )}
         {formError ? <p role="alert" className="text-sm text-state-danger">{formError}</p> : null}
-        {error ? <p role="alert" className="text-sm text-state-danger">{error}</p> : null}
+        {error ? <p role="alert" className="text-sm text-state-danger">{sanitizeDisplayText(error)}</p> : null}
         <Button loading={Boolean(mutationType)} loadingLabel="Adding source" disabled={busy} onClick={() => { void addSource() }}>
           Add source
         </Button>
@@ -325,12 +326,12 @@ function InputOutputSetupPanel({
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 space-y-1 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-semibold text-content-primary">{source.label || titleFromCode(source.artifact_type)}</p>
+                    <p className="font-semibold text-content-primary">{sanitizeDisplayText(source.label || titleFromCode(source.artifact_type))}</p>
                     <StatusBadge label={status.label} tone={status.tone} />
                   </div>
                   <p className="text-content-secondary">{titleFromCode(source.artifact_type)}</p>
-                  {source.original_filename ? <p className="truncate text-content-primary" title={source.original_filename}>{source.original_filename}{source.size_bytes ? ` · ${formatBytes(source.size_bytes)}` : ''}</p> : null}
-                  {source.source_type === 'TEXT' && source.text_content ? <DisclosureSection title="View content" summary="Exact text supplied to Agent 4"><pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-control bg-surface p-3 font-sans text-sm leading-6 text-content-primary">{source.text_content}</pre></DisclosureSection> : null}
+                  {source.original_filename ? <p className="truncate text-content-primary" title={sanitizeDisplayText(source.original_filename)}>{sanitizeDisplayText(source.original_filename)}{source.size_bytes ? ` | ${formatBytes(source.size_bytes)}` : ''}</p> : null}
+                  {source.source_type === 'TEXT' && source.text_content ? <DisclosureSection title="View content" summary="Exact text supplied to Agent 4"><pre className="max-h-80 overflow-auto whitespace-pre-wrap rounded-control bg-surface p-3 font-sans text-sm leading-6 text-content-primary">{sanitizeDisplayText(source.text_content)}</pre></DisclosureSection> : null}
                   <DisclosureSection title="Technical details" summary="Source type, provenance, and identifier">
                     <dl className="grid gap-2 text-sm sm:grid-cols-2">
                       <div><dt className="text-content-muted">Source type</dt><dd className="text-content-secondary">{source.source_type}</dd></div>
@@ -386,7 +387,7 @@ function InputOutputSetupPanel({
             )}
           </div>
         </div>
-        {outputSaveError ? <p role="alert" className="text-sm text-state-danger">{outputSaveError}</p> : null}
+        {outputSaveError ? <p role="alert" className="text-sm text-state-danger">{sanitizeDisplayText(outputSaveError)}</p> : null}
         <p className="rounded-control border border-default bg-surface p-3 text-sm text-content-secondary">
           {setupConfirmed
             ? 'The confirmed desired outputs are frozen until a future correction workflow is available.'
@@ -417,7 +418,7 @@ function InputOutputSetupPanel({
               <li>{hasPrimaryFunctionalSource ? '✓' : '○'} Primary functional artifact present</li>
               <li>{canonicalDraftOutputs.length > 0 ? '✓' : '○'} {canonicalDraftOutputs.length} output{canonicalDraftOutputs.length === 1 ? '' : 's'} selected</li>
             </ul>
-            {confirmationError ? <p role="alert" className="text-sm text-state-danger">{confirmationError}</p> : null}
+            {confirmationError ? <p role="alert" className="text-sm text-state-danger">{sanitizeDisplayText(confirmationError)}</p> : null}
             <div className="flex justify-end">
               <Button
                 size="large"

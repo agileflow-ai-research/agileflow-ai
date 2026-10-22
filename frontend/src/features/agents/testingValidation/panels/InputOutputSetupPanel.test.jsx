@@ -94,7 +94,7 @@ describe('InputOutputSetupPanel', () => {
     expect(screen.getByText('Loading sources…')).toBeInTheDocument()
     expect(await screen.findByText('3 sources')).toBeInTheDocument()
     expect(screen.getByText('Transfer rules')).toBeInTheDocument()
-    expect(screen.getByText('openapi.yaml · 2.0 KB')).toBeInTheDocument()
+    expect(screen.getByText('openapi.yaml | 2.0 KB')).toBeInTheDocument()
     expect(screen.getByText('Checkout flow')).toBeInTheDocument()
     expect(screen.getByText('Ready')).toBeInTheDocument()
     expect(screen.getByText('Uploaded')).toBeInTheDocument()

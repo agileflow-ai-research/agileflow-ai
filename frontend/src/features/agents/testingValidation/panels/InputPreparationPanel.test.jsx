@@ -50,14 +50,16 @@ describe('InputPreparationPanel', () => {
       workflowNodeStatus="COMPLETED"
       detailStatus="success"
       detailData={{ total: 6, has_more: true, items: [{
-        chunk_id: 'A4CHK-real', source_label: 'Functional Requirements',
+        chunk_id: 'A4CHK-real', source_label: 'Functional Requirements Â· Ready',
         artifact_type: 'FUNCTIONAL_REQUIREMENTS', sequence: 1, section_count: 6,
         heading_path: ['Authorization'], structure_type: 'PARAGRAPH', token_count: 7,
-        text: 'Only administrators may delete bookings.',
+        text: 'â€œOnly administrators may delete bookings.â€',
       }] }}
       onLoadMoreDetails={loadMore}
     />)
-    expect(screen.getByText('Only administrators may delete bookings.')).toBeInTheDocument()
+    expect(screen.getByText('"Only administrators may delete bookings."')).toBeInTheDocument()
+    expect(screen.getByText(/Functional Requirements \| Ready - Section 1 of 6/)).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/Â|â€œ|â€/)
     expect(screen.getByText(/Section 1 of 6/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /Show more \(5 remaining\)/ }))
     expect(loadMore).toHaveBeenCalledTimes(1)

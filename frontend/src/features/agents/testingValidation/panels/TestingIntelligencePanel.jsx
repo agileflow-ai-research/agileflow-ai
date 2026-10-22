@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 
 import Button from '../../../../components/ui/Button.jsx'
+import { sanitizeDisplayText } from '../displayText.js'
 import { INTELLIGENCE_TECHNICAL_LABELS as technical, relationshipPresentation, reviewLabelPresentation } from '../intelligenceReviewPresentation.js'
 import { DetailLoadState, DisclosureSection, LoadMoreButton, NextStep, PresentationSection, ResultBanner } from './NodePresentation.jsx'
 
@@ -15,7 +16,7 @@ function groupKey(item) {
 }
 
 function friendlySourceName(value = '') {
-  const stem = value.replace(/\.[^.]+$/, '').replace(/^\d+[_-]+/, '')
+  const stem = sanitizeDisplayText(value).replace(/\.[^.]+$/, '').replace(/^\d+[_-]+/, '')
   return stem.split(/[_-]+/).filter(Boolean).map((word) => {
     const upper = word.toUpperCase()
     if (['API', 'SRS', 'UI', 'UX'].includes(upper)) return upper
@@ -28,7 +29,7 @@ function AccordionSection({ children, id, onToggle, open, summary, title }) {
   const panelId = `${id}-panel`
   return <section className="overflow-hidden rounded-control border border-default bg-surface">
     <button type="button" aria-controls={panelId} aria-expanded={open} className="flex w-full items-center justify-between gap-4 p-3 text-left sm:p-4" onClick={onToggle}>
-      <span><span className="block font-semibold text-content-primary">{title}</span><span className="mt-0.5 block text-sm text-content-secondary">{summary}</span></span>
+      <span><span className="block font-semibold text-content-primary">{sanitizeDisplayText(title)}</span><span className="mt-0.5 block text-sm text-content-secondary">{sanitizeDisplayText(summary)}</span></span>
       <span aria-hidden="true" className="text-content-muted">{open ? '▾' : '▸'}</span>
     </button>
     <div id={panelId} hidden={!open} className="border-t border-default p-3 sm:p-4">{children}</div>
@@ -37,13 +38,15 @@ function AccordionSection({ children, id, onToggle, open, summary, title }) {
 
 function HighlightedEvidence({ evidence, quotes }) {
   const [expanded, setExpanded] = useState(false)
-  const long = evidence.length > EVIDENCE_PREVIEW_LENGTH
-  const visible = long && !expanded ? `${evidence.slice(0, EVIDENCE_PREVIEW_LENGTH).trimEnd()}…` : evidence
-  const quote = quotes.find((candidate) => candidate && visible.includes(candidate))
+  const cleanEvidence = sanitizeDisplayText(evidence || '')
+  const cleanQuotes = quotes.map((candidate) => sanitizeDisplayText(candidate))
+  const long = cleanEvidence.length > EVIDENCE_PREVIEW_LENGTH
+  const visible = long && !expanded ? `${cleanEvidence.slice(0, EVIDENCE_PREVIEW_LENGTH).trimEnd()}...` : cleanEvidence
+  const quote = cleanQuotes.find((candidate) => candidate && visible.includes(candidate))
   const before = quote ? visible.slice(0, visible.indexOf(quote)) : visible
   const after = quote ? visible.slice(visible.indexOf(quote) + quote.length) : ''
   return <div>
-    <blockquote className="rounded-control border-l-2 border-accent-border bg-elevated p-3 text-sm leading-6 text-content-primary">“{before}{quote ? <mark className="rounded-sm bg-state-warning/20 px-0.5 text-content-primary">{quote}</mark> : null}{after}”</blockquote>
+    <blockquote className="rounded-control border-l-2 border-accent-border bg-elevated p-3 text-sm leading-6 text-content-primary">"{before}{quote ? <mark className="rounded-sm bg-state-warning/20 px-0.5 text-content-primary">{quote}</mark> : null}{after}"</blockquote>
     {long ? <Button className="mt-2" size="small" variant="outline" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Show less evidence' : 'Show full evidence'}</Button> : null}
   </div>
 }
@@ -56,9 +59,9 @@ function ReviewDecisionRow({ choice, item, note, onChange, onNote, onSelect, sel
     <div className="flex items-start gap-3">
       <input aria-label={`Select ${presentation.title} for batch review`} checked={selected} className="mt-1 h-4 w-4" disabled={conflict} title={conflict ? 'Conflicts must be reviewed individually.' : undefined} type="checkbox" onChange={(event) => onSelect(event.target.checked)} />
       <div className="min-w-0 flex-1">
-        <p className="font-semibold text-content-primary">{presentation.question}</p>
-        <p className="mt-1 text-sm text-content-muted">{presentation.description}</p>
-        {conflict ? <div className="mt-2 rounded-control border border-state-warning/40 bg-state-warning/10 p-2"><p className="text-sm font-semibold text-state-warning">Needs careful review</p><p className="text-sm text-content-secondary">The automated methods disagreed about this item.</p></div> : <p className="mt-2 text-sm text-content-secondary">{relationship.explanation}</p>}
+        <p className="font-semibold text-content-primary">{sanitizeDisplayText(presentation.question)}</p>
+        <p className="mt-1 text-sm text-content-muted">{sanitizeDisplayText(presentation.description)}</p>
+        {conflict ? <div className="mt-2 rounded-control border border-state-warning/40 bg-state-warning/10 p-2"><p className="text-sm font-semibold text-state-warning">Needs careful review</p><p className="text-sm text-content-secondary">The automated methods disagreed about this item.</p></div> : <p className="mt-2 text-sm text-content-secondary">{sanitizeDisplayText(relationship.explanation)}</p>}
         {choice ? <div className="mt-3 flex flex-wrap items-center gap-3" aria-live="polite"><span className="font-medium text-content-primary">{choice === 'ACCEPT' ? '✓ Correct' : '✕ Incorrect'}</span><Button size="small" variant="outline" onClick={() => onChange(null)}>Change</Button></div> : <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label={`Decision for ${presentation.title}`}><Button size="small" variant="outline" onClick={() => onChange('ACCEPT')}>Correct</Button><Button size="small" variant="outline" onClick={() => onChange('REJECT')}>Incorrect</Button></div>}
         {choice ? <label className="mt-3 block text-sm text-content-secondary">Optional note<textarea className="mt-1 min-h-16 w-full rounded-control border border-default bg-surface p-2 text-content-primary" maxLength={1000} value={note || ''} onChange={(event) => onNote(event.target.value)} /></label> : null}
       </div>
@@ -70,13 +73,13 @@ function TechnicalReviewDetails({ items }) {
   return <div className="space-y-3">{items.map((item) => <dl key={itemKey(item)} className="grid gap-2 rounded-control bg-elevated p-3 text-sm sm:grid-cols-2">
     <div><dt className="text-content-muted">{technical.model}</dt><dd className="text-content-secondary">{technical.modelName}</dd></div>
     <div><dt className="text-content-muted">{technical.hybridPolicy}</dt><dd className="text-content-secondary">{technical.hybridPolicyName}</dd></div>
-    <div><dt className="text-content-muted">{technical.taxonomyCode}</dt><dd className="text-content-secondary">{item.label}</dd></div>
-    <div><dt className="text-content-muted">{technical.relationship}</dt><dd className="text-content-secondary">{item.relationship}</dd></div>
+    <div><dt className="text-content-muted">{technical.taxonomyCode}</dt><dd className="text-content-secondary">{sanitizeDisplayText(item.label)}</dd></div>
+    <div><dt className="text-content-muted">{technical.relationship}</dt><dd className="text-content-secondary">{sanitizeDisplayText(item.relationship)}</dd></div>
     <div><dt className="text-content-muted">{technical.modelScore}</dt><dd className="text-content-secondary">{item.model_score == null ? 'Not available' : item.model_score.toFixed(4)}</dd></div>
     <div><dt className="text-content-muted">{technical.ruleDetected}</dt><dd className="text-content-secondary">{item.rule_detected ? 'Yes' : 'No'}</dd></div>
-    <div><dt className="text-content-muted">{technical.ruleEvidence}</dt><dd className="text-content-secondary">{item.rule_evidence_quotes.length ? item.rule_evidence_quotes.join(' · ') : 'None'}</dd></div>
-    <div><dt className="text-content-muted">{technical.chunkId}</dt><dd className="break-all text-content-secondary">{item.chunk_id}</dd></div>
-    <div><dt className="text-content-muted">{technical.hybridResult}</dt><dd className="break-all text-content-secondary">{item.hybrid_result_id}</dd></div>
+    <div><dt className="text-content-muted">{technical.ruleEvidence}</dt><dd className="text-content-secondary">{item.rule_evidence_quotes.length ? sanitizeDisplayText(item.rule_evidence_quotes.join(' | ')) : 'None'}</dd></div>
+    <div><dt className="text-content-muted">{technical.chunkId}</dt><dd className="break-all text-content-secondary">{sanitizeDisplayText(item.chunk_id)}</dd></div>
+    <div><dt className="text-content-muted">{technical.hybridResult}</dt><dd className="break-all text-content-secondary">{sanitizeDisplayText(item.hybrid_result_id)}</dd></div>
   </dl>)}</div>
 }
 
@@ -107,7 +110,7 @@ function analysisProgressPresentation({ execution, onRetry, retryingSourceId, so
   })}</ul>{failed.map((source) => {
     const failedSubStage = source.sub_stages?.find((stage) => ['FAILED', 'INTERRUPTED'].includes(stage.status))
     const factFailure = failedSubStage?.stage === 'TI_FACT_EXTRACTION' || ['TI_FACT_EXTRACTION', 'SEMANTIC_EXTRACTION'].includes(source.failed_stage)
-    return <div key={source.source_id} className="mt-3 rounded-control border border-state-danger/40 p-3"><p className="font-semibold text-state-danger">{factFailure ? 'Testing fact extraction failed' : 'Testing Intelligence source failed'}</p><p className="mt-1 text-sm text-content-secondary"><span className="font-medium">Source:</span> {source.label || source.original_filename || source.source_id}</p><p className="mt-1 text-sm text-content-secondary"><span className="font-medium">Reason:</span> {failedSubStage?.safe_error?.message || source.error?.message || 'This source could not be analyzed.'}</p>{source.retryable !== false ? <Button className="mt-2" size="small" variant="outline" loading={retryingSourceId === source.source_id} disabled={Boolean(retryingSourceId)} onClick={() => { void onRetry(source.source_id) }}>{factFailure ? 'Retry testing fact extraction' : 'Retry source'}</Button> : <p className="mt-2 text-sm text-content-muted">Retry is unavailable until the source input is corrected.</p>}</div>
+    return <div key={source.source_id} className="mt-3 rounded-control border border-state-danger/40 p-3"><p className="font-semibold text-state-danger">{factFailure ? 'Testing fact extraction failed' : 'Testing Intelligence source failed'}</p><p className="mt-1 text-sm text-content-secondary"><span className="font-medium">Source:</span> {sanitizeDisplayText(source.label || source.original_filename || source.source_id)}</p><p className="mt-1 text-sm text-content-secondary"><span className="font-medium">Reason:</span> {sanitizeDisplayText(failedSubStage?.safe_error?.message || source.error?.message || 'This source could not be analyzed.')}</p>{source.retryable !== false ? <Button className="mt-2" size="small" variant="outline" loading={retryingSourceId === source.source_id} disabled={Boolean(retryingSourceId)} onClick={() => { void onRetry(source.source_id) }}>{factFailure ? 'Retry testing fact extraction' : 'Retry source'}</Button> : <p className="mt-2 text-sm text-content-muted">Retry is unavailable until the source input is corrected.</p>}</div>
   })}</div>
   return { completed, content }
 }
@@ -188,14 +191,14 @@ export function ReviewExperience({ execution, onRetry, onSubmit, retryingSourceI
           const expanded = activeGroupKey === group.key
           const quotes = [...new Set(group.items.flatMap((item) => item.rule_evidence_quotes || []))]
           return <article key={group.key} ref={(element) => { if (element) groupRefs.current.set(group.key, element) }} className="rounded-control border border-default bg-surface">
-            <button type="button" aria-controls={`${group.key}-content`} aria-expanded={expanded} className="flex w-full items-start justify-between gap-3 p-3 text-left" onClick={() => setExpandedGroup(expanded ? '' : group.key)}><span><span className="block font-semibold text-content-primary">{groupReviewed ? '✓ ' : ''}{friendlySourceName(group.sourceLabel)}</span><span className="mt-0.5 block text-xs text-content-muted">{group.sourceLabel}</span></span><span className="text-sm text-content-secondary">{groupReviewed ? `${group.items.length} decisions completed` : `${group.items.length} to confirm`}</span></button>
+            <button type="button" aria-controls={`${group.key}-content`} aria-expanded={expanded} className="flex w-full items-start justify-between gap-3 p-3 text-left" onClick={() => setExpandedGroup(expanded ? '' : group.key)}><span><span className="block font-semibold text-content-primary">{groupReviewed ? '✓ ' : ''}{friendlySourceName(group.sourceLabel)}</span><span className="mt-0.5 block text-xs text-content-muted">{sanitizeDisplayText(group.sourceLabel)}</span></span><span className="text-sm text-content-secondary">{groupReviewed ? `${group.items.length} decisions completed` : `${group.items.length} to confirm`}</span></button>
             <div id={`${group.key}-content`} hidden={!expanded} className="space-y-3 border-t border-default p-3"><div><p className="mb-2 text-sm font-semibold text-content-primary">Evidence from your source</p><HighlightedEvidence evidence={group.evidence} quotes={quotes} /></div><p className="text-sm font-semibold text-content-primary">Agent 4’s interpretation</p><p className="text-sm text-content-secondary">Is Agent 4’s interpretation correct? Your answer becomes part of the persisted effective classification.</p>{group.items.map((item) => { const key = itemKey(item); return <ReviewDecisionRow key={key} choice={choices[key]} item={item} note={notes[key]} selected={Boolean(selected[key])} onChange={(decision) => decide(item, decision)} onNote={(value) => setNotes((current) => ({ ...current, [key]: value }))} onSelect={(checked) => setSelected((current) => ({ ...current, [key]: checked }))} /> })}</div>
           </article>
         })}
       </div>}
     </AccordionSection>
 
-    <AccordionSection id="automatic-information" title="Automatically Extracted Information" summary={`${automatic} classifications handled automatically`} open={automaticOpen} onToggle={() => setAutomaticOpen((value) => !value)}><p className="mb-3 text-sm text-content-secondary">Agent 4 automatically handled {automatic} clear classifications.</p><div className="space-y-2 text-sm">{Object.entries(review.auto_accepted_label_counts || {}).map(([code, count]) => <p key={code} className="flex justify-between gap-3"><span className="text-content-secondary">{reviewLabelPresentation(code).title}</span><strong className="text-content-primary">{count}</strong></p>)}<p className="flex justify-between gap-3"><span className="text-content-secondary">Rejected low-evidence classifications</span><strong className="text-content-primary">{review.auto_rejected_count}</strong></p></div></AccordionSection>
+    <AccordionSection id="automatic-information" title="Automatically Extracted Information" summary={`${automatic} classifications handled automatically`} open={automaticOpen} onToggle={() => setAutomaticOpen((value) => !value)}><p className="mb-3 text-sm text-content-secondary">Agent 4 automatically handled {automatic} clear classifications.</p><div className="space-y-2 text-sm">{Object.entries(review.auto_accepted_label_counts || {}).map(([code, count]) => <p key={code} className="flex justify-between gap-3"><span className="text-content-secondary">{sanitizeDisplayText(reviewLabelPresentation(code).title)}</span><strong className="text-content-primary">{count}</strong></p>)}<p className="flex justify-between gap-3"><span className="text-content-secondary">Rejected low-evidence classifications</span><strong className="text-content-primary">{review.auto_rejected_count}</strong></p></div></AccordionSection>
     <AccordionSection id="analysis-progress" title="How Agent 4 reached this result" summary={`${progress.completed} of 3 intelligence steps complete`} open={progressOpen} onToggle={() => setProgressOpen((value) => !value)}>{progress.content}</AccordionSection>
     <AccordionSection id="technical-details" title="Technical details" summary="Models, policy, scores, taxonomy codes, and identifiers" open={technicalOpen} onToggle={() => setTechnicalOpen((value) => !value)}><TechnicalReviewDetails items={review.items} /></AccordionSection>
 
@@ -219,16 +222,16 @@ function TestingIntelligencePanel({ definition, detailData, detailError, detailS
   const needsReview = sources.reduce((count, source) => count + (source.pending_review_items || 0), 0)
   const analyzed = sources.filter((source) => source.hybrid_complete || ['COMPLETED', 'WAITING_FOR_HUMAN'].includes(source.status)).length
   return <section className="space-y-4" aria-label={`${definition.title} details`}>
-    {intelligenceError ? <p role="alert" className="text-sm text-state-danger">{intelligenceError}</p> : null}
+    {intelligenceError ? <p role="alert" className="text-sm text-state-danger">{sanitizeDisplayText(intelligenceError)}</p> : null}
     {n3Execution ? <PresentationSection label="Result" title="What Agent 4 understood"><ResultBanner tone={complete ? 'success' : ['FAILED', 'INTERRUPTED'].includes(status) ? 'danger' : needsReview ? 'warning' : 'info'} title={complete ? 'Testing Intelligence complete' : ['FAILED', 'INTERRUPTED'].includes(status) ? failureTitle : activeTitle} description={needsReview ? 'Clear interpretations can continue automatically; uncertain items are held for human confirmation.' : 'Agent 4 is identifying testing concerns in the prepared evidence.'} metrics={[{ label: 'Sources analyzed', value: analyzed }, { label: 'Classifications accepted', value: accepted }, { label: 'Need review', value: needsReview }]} /></PresentationSection> : <ResultBanner title="Waiting for prepared inputs" description="Testing Intelligence starts automatically after Input Preparation." />}
     <PresentationSection label="View analyzed output" title={`Identified Testing Concerns${detailData ? ` (${detailData.total})` : ''}`} description="Each decision below comes from the persisted combined rule and AI analysis.">
       <DetailLoadState error={detailError} onRetry={onRetryDetails} status={detailStatus} />
       {detailData?.items?.length ? <div className="space-y-2">{detailData.items.map((item) => {
         const label = reviewLabelPresentation(item.label).title
         const decision = item.effective_decision || item.hybrid_decision
-        return <DisclosureSection key={`${item.chunk_id}:${item.label}`} title={label} summary={`${item.source_label} Â· ${decision === 'ACCEPTED' ? 'Accepted' : decision === 'REVIEW_REQUIRED' ? 'Needs human review' : 'Not accepted'}`}><p className="text-xs font-semibold uppercase tracking-wide text-content-muted">Source evidence</p><blockquote className="mt-2 whitespace-pre-wrap rounded-control border-l-2 border-accent-border bg-elevated p-3 text-sm text-content-primary">â€œ{item.evidence_quote}â€</blockquote><dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-content-muted">Pattern-based analysis</dt><dd>{item.rule_detected ? 'Detected' : 'Not detected'}</dd></div><div><dt className="text-content-muted">AI support</dt><dd>{item.model_score == null ? 'Not available' : `${Math.round(item.model_score * 100)}%`}</dd></div><div><dt className="text-content-muted">Combined decision</dt><dd>{item.hybrid_decision.replaceAll('_', ' ')}</dd></div><div><dt className="text-content-muted">Approved decision</dt><dd>{item.effective_decision?.replaceAll('_', ' ') || 'Pending'}</dd></div><div className="sm:col-span-2"><dt className="text-content-muted">Technical details</dt><dd className="break-all">{item.label} Â· {item.hybrid_relationship} Â· {item.chunk_id}</dd></div></dl></DisclosureSection>
+        return <DisclosureSection key={`${item.chunk_id}:${item.label}`} title={sanitizeDisplayText(label)} summary={`${sanitizeDisplayText(item.source_label)} | ${decision === 'ACCEPTED' ? 'Accepted' : decision === 'REVIEW_REQUIRED' ? 'Needs human review' : 'Not accepted'}`}><p className="text-xs font-semibold uppercase tracking-wide text-content-muted">Source evidence</p><blockquote className="mt-2 whitespace-pre-wrap rounded-control border-l-2 border-accent-border bg-elevated p-3 text-sm text-content-primary">"{sanitizeDisplayText(item.evidence_quote)}"</blockquote><dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-content-muted">Pattern-based analysis</dt><dd>{item.rule_detected ? 'Detected' : 'Not detected'}</dd></div><div><dt className="text-content-muted">AI support</dt><dd>{item.model_score == null ? 'Not available' : `${Math.round(item.model_score * 100)}%`}</dd></div><div><dt className="text-content-muted">Combined decision</dt><dd>{sanitizeDisplayText(item.hybrid_decision.replaceAll('_', ' '))}</dd></div><div><dt className="text-content-muted">Approved decision</dt><dd>{sanitizeDisplayText(item.effective_decision?.replaceAll('_', ' ') || 'Pending')}</dd></div><div className="sm:col-span-2"><dt className="text-content-muted">Technical details</dt><dd className="break-all">{sanitizeDisplayText(item.label)} | {sanitizeDisplayText(item.hybrid_relationship)} | {sanitizeDisplayText(item.chunk_id)}</dd></div></dl></DisclosureSection>
       })}</div> : detailStatus === 'success' ? <p className="text-sm text-content-secondary">No persisted classification decisions are available yet.</p> : null}
-      {detailData?.has_more ? <LoadMoreButton disabled={detailStatus === 'loading-more'} onClick={onLoadMoreDetails}>{detailStatus === 'loading-more' ? 'Loadingâ€¦' : `Show more (${detailData.total - detailData.items.length} remaining)`}</LoadMoreButton> : null}
+      {detailData?.has_more ? <LoadMoreButton disabled={detailStatus === 'loading-more'} onClick={onLoadMoreDetails}>{detailStatus === 'loading-more' ? 'Loading...' : `Show more (${detailData.total - detailData.items.length} remaining)`}</LoadMoreButton> : null}
     </PresentationSection>
     {n3Execution ? <DisclosureSection title="How Agent 4 reached this result" summary="Pattern-based analysis, AI classification, and combined analysis">{progress?.content}</DisclosureSection> : null}
     {['FAILED', 'INTERRUPTED'].includes(status) ? <p className="text-sm text-content-secondary">Completed steps are preserved. Retry only the failed step or source.</p> : null}
