@@ -16,6 +16,8 @@ describe('GenerateDesignPlanningPanel', () => {
     project,
     input: {
       requirements: 'Requirements content',
+      project_start_date: '2026-11-01',
+      expected_project_duration: '3 months',
       development_team_count: '5',
       sprint_duration: '14',
     },

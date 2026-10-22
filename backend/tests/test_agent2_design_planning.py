@@ -484,3 +484,155 @@ def test_historical_agent2_run_retrieval(agent2_context):
     assert retrieved_data["errors"] == []
     assert retrieved_data["started_at"] == completed_run["started_at"]
     assert retrieved_data["completed_at"] == completed_run["completed_at"]
+
+
+def test_timeline_based_sprint_plan_accepts_dates_without_team_count(agent2_context):
+    authentication, _, runs, provider = agent2_context
+    provider.response = {"SPRINT_PLAN": SPRINTS}
+    client = authentication.client()
+    project = create_project(client)
+    response = client.post(
+        f"/api/v1/agents/design-planning/{project['agent_project_id']}/run",
+        json={
+            "requirements": "Build booking platform",
+            "planning_mode": "TIMELINE_BASED",
+            "project_start_date": "2026-11-01",
+            "expected_project_duration": "2 months",
+            "sprint_duration": 14,
+            "selected_outputs": ["SPRINT_PLAN"],
+        },
+    )
+    assert response.status_code == 200
+    result = response.json()["data"]
+    assert result["status"] == "COMPLETED"
+    sprint = result["outputs"]["SPRINT_PLAN"][0]
+    assert sprint["start_date"] == "2026-11-01"
+    assert sprint["end_date"] == "2026-11-15"
+    assert sprint["duration_days"] == 14
+    assert sprint["capacity_points"] is None
+    assert sprint["utilization_percent"] is None
+    assert "Timeline-based" in sprint["estimate_basis"]
+
+
+def test_missing_sprint_duration_blocks_timeline_planning(agent2_context):
+    authentication, _, _, _ = agent2_context
+    client = authentication.client()
+    project = create_project(client)
+    response = client.post(
+        f"/api/v1/agents/design-planning/{project['agent_project_id']}/run",
+        json={
+            "requirements": "Build booking platform",
+            "planning_mode": "TIMELINE_BASED",
+            "project_start_date": "2026-11-01",
+            "expected_project_duration": "2 months",
+            "selected_outputs": ["SPRINT_PLAN"],
+        },
+    )
+    assert response.status_code == 422
+    assert "sprint_duration" in response.text
+
+
+def test_missing_project_start_date_blocks_timeline_planning(agent2_context):
+    authentication, _, _, _ = agent2_context
+    client = authentication.client()
+    project = create_project(client)
+    response = client.post(
+        f"/api/v1/agents/design-planning/{project['agent_project_id']}/run",
+        json={
+            "requirements": "Build booking platform",
+            "planning_mode": "TIMELINE_BASED",
+            "expected_project_duration": "2 months",
+            "sprint_duration": 14,
+            "selected_outputs": ["SPRINT_PLAN"],
+        },
+    )
+    assert response.status_code == 422
+    assert "project_start_date" in response.text
+
+
+def test_capacity_aware_sprint_plan_requires_team_count(agent2_context):
+    authentication, _, _, _ = agent2_context
+    client = authentication.client()
+    project = create_project(client)
+    response = client.post(
+        f"/api/v1/agents/design-planning/{project['agent_project_id']}/run",
+        json={
+            "requirements": "Build booking platform",
+            "planning_mode": "CAPACITY_AWARE",
+            "project_start_date": "2026-11-01",
+            "expected_project_duration": "2 months",
+            "sprint_duration": 14,
+            "selected_outputs": ["SPRINT_PLAN"],
+        },
+    )
+    assert response.status_code == 422
+    assert "development_team_count" in response.text
+
+
+def test_task_assignment_requires_development_team_count(agent2_context):
+    authentication, _, _, _ = agent2_context
+    client = authentication.client()
+    project = create_project(client)
+    response = client.post(
+        f"/api/v1/agents/design-planning/{project['agent_project_id']}/run",
+        json={
+            "requirements": "Build booking platform",
+            "selected_outputs": ["TASK_ASSIGNMENT"],
+        },
+    )
+    assert response.status_code == 422
+    assert "development_team_count" in response.text
+
+
+def test_jira_plan_alone_does_not_require_development_team_count(agent2_context):
+    authentication, _, _, provider = agent2_context
+    provider.response = {"JIRA_PLAN": {
+        "epics": EPICS, "stories": STORIES, "tasks": TASKS,
+        "sprints": SPRINTS, "assignments": [],
+        "priorities": [{"item_id": "STORY-001", "priority": "HIGH"}],
+        "synchronization": "NOT_PERFORMED",
+    }}
+    client = authentication.client()
+    project = create_project(client)
+    response = client.post(
+        f"/api/v1/agents/design-planning/{project['agent_project_id']}/run",
+        json={
+            "requirements": "Guests book rooms",
+            "selected_outputs": ["JIRA_PLAN"],
+        },
+    )
+    assert response.status_code == 200
+    result = response.json()["data"]
+    assert result["status"] == "COMPLETED"
+    assert result["outputs"]["JIRA_PLAN"]["assignments"] == []
+
+
+def test_sprint_plan_and_jira_plan_work_without_task_assignment(agent2_context):
+    authentication, _, _, provider = agent2_context
+    provider.response = {
+        "SPRINT_PLAN": SPRINTS,
+        "JIRA_PLAN": {
+            "epics": EPICS, "stories": STORIES, "tasks": TASKS,
+            "sprints": SPRINTS, "assignments": [],
+            "priorities": [{"item_id": "STORY-001", "priority": "HIGH"}],
+            "synchronization": "NOT_PERFORMED",
+        },
+    }
+    client = authentication.client()
+    project = create_project(client)
+    response = client.post(
+        f"/api/v1/agents/design-planning/{project['agent_project_id']}/run",
+        json={
+            "requirements": "Guests book rooms",
+            "planning_mode": "TIMELINE_BASED",
+            "project_start_date": "2026-11-01",
+            "expected_project_duration": "60 days",
+            "sprint_duration": 14,
+            "selected_outputs": ["SPRINT_PLAN", "JIRA_PLAN"],
+        },
+    )
+    assert response.status_code == 200
+    result = response.json()["data"]
+    assert result["status"] == "COMPLETED"
+    assert result["outputs"]["JIRA_PLAN"]["assignments"] == []
+    assert result["outputs"]["SPRINT_PLAN"][0]["start_date"] == "2026-11-01"

@@ -81,6 +81,7 @@ export function deriveDesignPlanningPresentation(workspaceSnapshot = {}) {
     input.development_team_count ||
     input.sprint_duration ||
     input.expected_project_duration ||
+    input.project_start_date ||
     input.developer_roles ||
     input.developer_skills ||
     input.team_composition,

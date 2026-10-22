@@ -125,11 +125,15 @@ describe('DesignPlanningProjectPage', () => {
     await user.click(within(modal).getByRole('button', { name: /next — technical & planning/i }))
     expect(within(modal).getByTestId('agent2-panel-TECHNICAL_PLANNING')).toBeInTheDocument()
 
-    // Fill team count and sprint duration in Node 3 (dynamically required because SPRINT_PLAN was selected in Node 2)
-    const teamInput = within(modal).getByLabelText(/development team count/i)
+    // Fill timeline planning inputs in Node 3 (required because SPRINT_PLAN was selected in Node 2)
+    const startDateInput = within(modal).getByLabelText(/project start date/i)
+    const durationInput = within(modal).getByLabelText(/expected project duration/i)
     const sprintInput = within(modal).getByLabelText(/sprint duration/i)
-    await user.type(teamInput, '6')
+    const teamInput = within(modal).getByLabelText(/development team count/i)
+    await user.type(startDateInput, '2026-11-01')
+    await user.type(durationInput, '3 months')
     await user.type(sprintInput, '10')
+    await user.type(teamInput, '6')
 
     // Navigate forward to Node 4: Human Review
     await user.click(within(modal).getByRole('button', { name: /next — human review/i }))

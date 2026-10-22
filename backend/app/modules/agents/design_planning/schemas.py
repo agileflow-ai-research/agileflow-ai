@@ -25,10 +25,13 @@ class DesignPlanningOutputCode(StrEnum):
     JIRA_PLAN = "JIRA_PLAN"
 
 
+class PlanningMode(StrEnum):
+    TIMELINE_BASED = "TIMELINE_BASED"
+    CAPACITY_AWARE = "CAPACITY_AWARE"
+
+
 CAPACITY_OUTPUTS = {
-    DesignPlanningOutputCode.SPRINT_PLAN,
     DesignPlanningOutputCode.TASK_ASSIGNMENT,
-    DesignPlanningOutputCode.JIRA_PLAN,
 }
 
 
@@ -51,6 +54,8 @@ class Agent2RunRequest(BaseModel):
     database_preference: str | None = None
     ui_ux_constraints: str | None = None
     architecture_notes: str | None = None
+    planning_mode: PlanningMode | None = None
+    project_start_date: str | None = None
     development_team_count: int | None = Field(default=None, gt=0)
     sprint_duration: int | None = Field(default=None, gt=0)
     expected_project_duration: str | None = None
@@ -63,8 +68,8 @@ class Agent2RunRequest(BaseModel):
         "requirements", "srs", "user_stories", "acceptance_criteria",
         "technical_constraints", "preferred_technology_stack",
         "deployment_preference", "database_preference", "ui_ux_constraints",
-        "architecture_notes", "expected_project_duration", "developer_roles",
-        "developer_skills", "team_composition",
+        "architecture_notes", "project_start_date", "expected_project_duration",
+        "developer_roles", "developer_skills", "team_composition",
     )
     @classmethod
     def normalize_text(cls, value: str | None) -> str | None:
@@ -86,12 +91,28 @@ class Agent2RunRequest(BaseModel):
                 "at least one usable specification source is required: requirements, SRS, user_stories, or acceptance_criteria"
             )
         selected = set(self.selected_outputs)
-        if selected & CAPACITY_OUTPUTS and self.development_team_count is None:
-            raise ValueError(
-                "development_team_count is required for SPRINT_PLAN, TASK_ASSIGNMENT, and JIRA_PLAN"
-            )
-        if DesignPlanningOutputCode.SPRINT_PLAN in selected and self.sprint_duration is None:
-            raise ValueError("sprint_duration is required for SPRINT_PLAN")
+        is_sprint_plan = DesignPlanningOutputCode.SPRINT_PLAN in selected
+        is_task_assignment = DesignPlanningOutputCode.TASK_ASSIGNMENT in selected
+
+        mode = self.planning_mode or (
+            PlanningMode.CAPACITY_AWARE
+            if self.development_team_count and not self.project_start_date
+            else PlanningMode.TIMELINE_BASED
+        )
+
+        if is_sprint_plan:
+            if not self.sprint_duration:
+                raise ValueError("sprint_duration is required for SPRINT_PLAN")
+            if not self.project_start_date:
+                raise ValueError("project_start_date is required for SPRINT_PLAN")
+            if not self.expected_project_duration:
+                raise ValueError("expected_project_duration is required for SPRINT_PLAN")
+            if mode == PlanningMode.CAPACITY_AWARE and not self.development_team_count:
+                raise ValueError("development_team_count is required for CAPACITY_AWARE sprint planning")
+
+        if is_task_assignment and not self.development_team_count:
+            raise ValueError("development_team_count is required for TASK_ASSIGNMENT")
+
         return self
 
 
@@ -113,6 +134,8 @@ class Agent2InputContext(BaseModel):
     database_preference: str | None = None
     ui_ux_constraints: str | None = None
     architecture_notes: str | None = None
+    planning_mode: PlanningMode = PlanningMode.TIMELINE_BASED
+    project_start_date: str | None = None
     development_team_count: int | None = Field(default=None, gt=0)
     sprint_duration: int | None = Field(default=None, gt=0)
     expected_project_duration: str | None = None
@@ -304,13 +327,15 @@ class Sprint(BaseModel):
     id: str = Field(pattern=r"^SPRINT-\d{3,}$")
     name: str
     duration_days: int = Field(gt=0)
-    capacity_points: int = Field(gt=0)
+    capacity_points: int | None = Field(default=None, gt=0)
     item_refs: list[str] = Field(min_length=1)
     dependency_notes: list[str]
     planned_points: int = Field(default=0, ge=0)
-    utilization_percent: float = Field(default=0, ge=0)
+    utilization_percent: float | None = Field(default=None, ge=0)
     planning_warnings: list[str] = Field(default_factory=list)
     estimate_basis: str = "Estimated capacity uses team count × sprint duration in days."
+    start_date: str | None = None
+    end_date: str | None = None
 
 
 class TaskAssignment(BaseModel):
@@ -339,7 +364,7 @@ class JiraPlan(BaseModel):
     stories: list[PlanningStory] = Field(min_length=1)
     tasks: list[PlanningTask] = Field(min_length=1)
     sprints: list[Sprint]
-    assignments: list[TaskAssignment]
+    assignments: list[TaskAssignment] = Field(default_factory=list)
     priorities: list[JiraPriority] = Field(min_length=1)
     synchronization: Literal["NOT_PERFORMED"]
 

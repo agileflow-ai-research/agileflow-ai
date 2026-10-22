@@ -180,4 +180,9 @@ class Agent2Engine:
         jira = outputs.get("JIRA_PLAN")
         if jira:
             enhance_sprints(context, jira["sprints"], jira["tasks"], jira["stories"])
-            jira["assignments"] = build_assignments(context, jira["tasks"], jira["sprints"])
+            if outputs.get("TASK_ASSIGNMENT"):
+                jira["assignments"] = outputs["TASK_ASSIGNMENT"]
+            elif context.development_team_count:
+                jira["assignments"] = build_assignments(context, jira["tasks"], jira["sprints"])
+            else:
+                jira["assignments"] = []

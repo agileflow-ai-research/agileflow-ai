@@ -170,11 +170,15 @@ export default function useDesignPlanningWorkflow(project) {
 
   const validateNode3 = useCallback(() => {
     const nextErrors = getPlanningErrors(input, selectedOutputs)
-    if (Object.keys(nextErrors).length > 0) {
-      setErrors((prev) => ({ ...prev, ...nextErrors }))
-      return false
-    }
-    return true
+    setErrors((prev) => {
+      const updated = { ...prev }
+      delete updated.project_start_date
+      delete updated.expected_project_duration
+      delete updated.sprint_duration
+      delete updated.development_team_count
+      return { ...updated, ...nextErrors }
+    })
+    return Object.keys(nextErrors).length === 0
   }, [input, selectedOutputs])
 
   const [runState, setRunState] = useState('idle')

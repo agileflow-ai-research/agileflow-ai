@@ -4,6 +4,7 @@ import Input from '../../../../components/ui/Input.jsx'
 import Textarea from '../../../../components/ui/Textarea.jsx'
 import { cn } from '../../../../utils/cn.js'
 import {
+  PLANNING_MODES,
   getRequiredPlanningFields,
 } from '../constants/agent2Config.js'
 import { DESIGN_PLANNING_NODE_IDS } from '../constants/workflow.js'
@@ -16,10 +17,14 @@ export default function TechnicalPlanningPanel({
   onNavigate,
   onValidate,
 }) {
-  const requiredPlanning = getRequiredPlanningFields(selectedOutputs)
+  const planningMode = input.planning_mode || PLANNING_MODES.TIMELINE_BASED
+  const requiredPlanning = getRequiredPlanningFields(selectedOutputs, input)
   const isTeamCountRequired = Boolean(requiredPlanning.development_team_count)
   const isSprintDurationRequired = Boolean(requiredPlanning.sprint_duration)
-  const hasContractRequiredInputs = isTeamCountRequired || isSprintDurationRequired
+  const isStartDateRequired = Boolean(requiredPlanning.project_start_date)
+  const isDurationRequired = Boolean(requiredPlanning.expected_project_duration)
+  const hasContractRequiredInputs = Object.keys(requiredPlanning).length > 0
+  const isSprintPlanSelected = selectedOutputs.includes('SPRINT_PLAN')
 
   // Check if current selection contains planning outputs
   const planningOutputCodes = [
@@ -50,6 +55,79 @@ export default function TechnicalPlanningPanel({
     }
   }
 
+  /* Sprint Planning Method Card (shown when SPRINT_PLAN is selected) */
+  const sprintPlanningMethodCard = isSprintPlanSelected ? (
+    <Card className="border border-[#7c3aed]/50 bg-[#150c2a] p-6 space-y-4">
+      <div>
+        <div className="flex items-center gap-2">
+          <h3 className="text-card-heading font-semibold text-content-primary">
+            Sprint Planning Method
+          </h3>
+          <span className="inline-flex items-center rounded-full bg-brand/20 px-2.5 py-0.5 text-xs font-semibold text-[#c084fc]">
+            SPRINT_PLAN
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-content-muted">
+          Choose whether to plan sprints purely against your project timeline or additionally constrain by team capacity.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Sprint Planning Method">
+        <label
+          className={cn(
+            'flex cursor-pointer items-start gap-3 rounded-control border p-4 transition-all',
+            planningMode === PLANNING_MODES.TIMELINE_BASED
+              ? 'border-[#7c3aed] bg-[#2a144f]/80 ring-1 ring-[#7c3aed]'
+              : 'border-default bg-[#0b0517] hover:border-[#7c3aed]/50 hover:bg-[#1a0f30]',
+          )}
+        >
+          <input
+            type="radio"
+            name="planning_mode"
+            value={PLANNING_MODES.TIMELINE_BASED}
+            checked={planningMode === PLANNING_MODES.TIMELINE_BASED}
+            onChange={() => onUpdateField?.('planning_mode', PLANNING_MODES.TIMELINE_BASED)}
+            className="mt-1 h-4 w-4 accent-brand cursor-pointer"
+          />
+          <div className="space-y-1">
+            <span className="block text-sm font-semibold text-content-primary">
+              Timeline-based
+            </span>
+            <span className="block text-xs text-content-secondary leading-relaxed">
+              Organize generated work across the project timeline.
+            </span>
+          </div>
+        </label>
+
+        <label
+          className={cn(
+            'flex cursor-pointer items-start gap-3 rounded-control border p-4 transition-all',
+            planningMode === PLANNING_MODES.CAPACITY_AWARE
+              ? 'border-[#7c3aed] bg-[#2a144f]/80 ring-1 ring-[#7c3aed]'
+              : 'border-default bg-[#0b0517] hover:border-[#7c3aed]/50 hover:bg-[#1a0f30]',
+          )}
+        >
+          <input
+            type="radio"
+            name="planning_mode"
+            value={PLANNING_MODES.CAPACITY_AWARE}
+            checked={planningMode === PLANNING_MODES.CAPACITY_AWARE}
+            onChange={() => onUpdateField?.('planning_mode', PLANNING_MODES.CAPACITY_AWARE)}
+            className="mt-1 h-4 w-4 accent-brand cursor-pointer"
+          />
+          <div className="space-y-1">
+            <span className="block text-sm font-semibold text-content-primary">
+              Capacity-aware
+            </span>
+            <span className="block text-xs text-content-secondary leading-relaxed">
+              Also consider development team size when distributing workload.
+            </span>
+          </div>
+        </label>
+      </div>
+    </Card>
+  ) : null
+
   /* 1. Required inputs card */
   const requiredInputsCard = (
     <Card className="border border-[#7c3aed]/50 bg-[#150c2a] p-6 space-y-4">
@@ -69,27 +147,47 @@ export default function TechnicalPlanningPanel({
           )}
         </div>
         <p className="mt-1 text-sm text-content-muted">
-          Fields required because of selected outputs.
+          Fields required because of selected outputs and planning method.
         </p>
       </div>
 
       {hasContractRequiredInputs ? (
         <div className="grid gap-4 sm:grid-cols-2">
-          {isTeamCountRequired && (
+          {isStartDateRequired && (
             <div className="space-y-1.5">
               <Input
-                label="Development team count *"
-                type="number"
-                min="1"
-                value={input.development_team_count || ''}
-                error={errors.development_team_count}
-                onChange={(e) => onUpdateField?.('development_team_count', e.target.value)}
-                placeholder="Team count (e.g. 4)"
+                label="Project start date *"
+                type="date"
+                value={input.project_start_date || ''}
+                error={errors.project_start_date}
+                onChange={(e) => onUpdateField?.('project_start_date', e.target.value)}
+                placeholder="YYYY-MM-DD"
                 inputClassName="bg-[#0b0517] border-default"
+                required
               />
-              {!errors.development_team_count && (
+              {!errors.project_start_date && (
                 <span className="block text-xs text-[#a78bfa]">
-                  {requiredPlanning.development_team_count.reason}
+                  {requiredPlanning.project_start_date.reason}
+                </span>
+              )}
+            </div>
+          )}
+
+          {isDurationRequired && (
+            <div className="space-y-1.5">
+              <Input
+                label="Expected project duration *"
+                type="text"
+                value={input.expected_project_duration || ''}
+                error={errors.expected_project_duration}
+                onChange={(e) => onUpdateField?.('expected_project_duration', e.target.value)}
+                placeholder="e.g. 3 months or 2026-12-31"
+                inputClassName="bg-[#0b0517] border-default"
+                required
+              />
+              {!errors.expected_project_duration && (
+                <span className="block text-xs text-[#a78bfa]">
+                  {requiredPlanning.expected_project_duration.reason}
                 </span>
               )}
             </div>
@@ -106,10 +204,32 @@ export default function TechnicalPlanningPanel({
                 onChange={(e) => onUpdateField?.('sprint_duration', e.target.value)}
                 placeholder="Sprint duration in days (e.g. 14)"
                 inputClassName="bg-[#0b0517] border-default"
+                required
               />
               {!errors.sprint_duration && (
                 <span className="block text-xs text-[#a78bfa]">
                   {requiredPlanning.sprint_duration.reason}
+                </span>
+              )}
+            </div>
+          )}
+
+          {isTeamCountRequired && (
+            <div className="space-y-1.5">
+              <Input
+                label="Development team count *"
+                type="number"
+                min="1"
+                value={input.development_team_count || ''}
+                error={errors.development_team_count}
+                onChange={(e) => onUpdateField?.('development_team_count', e.target.value)}
+                placeholder="Team count (e.g. 4)"
+                inputClassName="bg-[#0b0517] border-default"
+                required
+              />
+              {!errors.development_team_count && (
+                <span className="block text-xs text-[#a78bfa]">
+                  {requiredPlanning.development_team_count.reason}
                 </span>
               )}
             </div>
@@ -134,7 +254,7 @@ export default function TechnicalPlanningPanel({
             Recommended inputs
           </h3>
           <span className="inline-flex items-center rounded-full bg-[#1e1438] px-2 py-0.5 text-xs text-content-muted">
-            Optional
+            Recommended
           </span>
         </div>
         <p className="mt-1 text-sm text-content-muted">
@@ -143,18 +263,27 @@ export default function TechnicalPlanningPanel({
       </div>
 
       <div className="space-y-4">
-        {/* If team count or sprint duration were NOT contract-required, keep them accessible here as optional inputs */}
-        {(!isTeamCountRequired || !isSprintDurationRequired || !hasContractRequiredInputs) && (
-          <div className="grid gap-3 sm:grid-cols-3">
-            {!isTeamCountRequired && (
+        {/* If team count, sprint duration, start date, or duration were NOT contract-required, keep them accessible here */}
+        {(!isTeamCountRequired || !isSprintDurationRequired || !isStartDateRequired || !isDurationRequired) && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {!isStartDateRequired && (
               <Input
-                label="Development team count"
-                type="number"
-                min="1"
-                value={input.development_team_count || ''}
-                error={errors.development_team_count}
-                onChange={(e) => onUpdateField?.('development_team_count', e.target.value)}
-                placeholder="Optional team count"
+                label="Project start date"
+                type="date"
+                value={input.project_start_date || ''}
+                helperText="Recommended"
+                onChange={(e) => onUpdateField?.('project_start_date', e.target.value)}
+                placeholder="YYYY-MM-DD"
+                inputClassName="bg-[#0b0517] border-default"
+              />
+            )}
+            {!isDurationRequired && (
+              <Input
+                label="Expected project duration"
+                value={input.expected_project_duration || ''}
+                helperText="Recommended"
+                onChange={(e) => onUpdateField?.('expected_project_duration', e.target.value)}
+                placeholder="e.g. 3 months"
                 inputClassName="bg-[#0b0517] border-default"
               />
             )}
@@ -165,35 +294,33 @@ export default function TechnicalPlanningPanel({
                 min="1"
                 value={input.sprint_duration || ''}
                 error={errors.sprint_duration}
+                helperText="Recommended"
                 onChange={(e) => onUpdateField?.('sprint_duration', e.target.value)}
                 placeholder="Optional sprint duration"
                 inputClassName="bg-[#0b0517] border-default"
               />
             )}
-            <Input
-              label="Expected project duration"
-              value={input.expected_project_duration || ''}
-              onChange={(e) => onUpdateField?.('expected_project_duration', e.target.value)}
-              placeholder="e.g. 3 months"
-              inputClassName="bg-[#0b0517] border-default"
-            />
+            {!isTeamCountRequired && (
+              <Input
+                label="Development team count"
+                type="number"
+                min="1"
+                value={input.development_team_count || ''}
+                error={errors.development_team_count}
+                helperText="Recommended"
+                onChange={(e) => onUpdateField?.('development_team_count', e.target.value)}
+                placeholder="Optional team count"
+                inputClassName="bg-[#0b0517] border-default"
+              />
+            )}
           </div>
-        )}
-
-        {isTeamCountRequired && isSprintDurationRequired && (
-          <Input
-            label="Expected project duration"
-            value={input.expected_project_duration || ''}
-            onChange={(e) => onUpdateField?.('expected_project_duration', e.target.value)}
-            placeholder="e.g. 3 months"
-            inputClassName="bg-[#0b0517] border-default"
-          />
         )}
 
         <Textarea
           label="Developer Roles"
           rows={3}
           value={input.developer_roles || ''}
+          helperText="Recommended"
           onChange={(e) => onUpdateField?.('developer_roles', e.target.value)}
           placeholder="e.g. 2 Frontend, 2 Backend, 1 QA"
           textareaClassName="bg-[#0b0517] border-default"
@@ -202,6 +329,7 @@ export default function TechnicalPlanningPanel({
           label="Developer Skills"
           rows={3}
           value={input.developer_skills || ''}
+          helperText="Recommended"
           onChange={(e) => onUpdateField?.('developer_skills', e.target.value)}
           placeholder="e.g. React, Python, FastAPI, Docker"
           textareaClassName="bg-[#0b0517] border-default"
@@ -210,6 +338,7 @@ export default function TechnicalPlanningPanel({
           label="Team Composition"
           rows={3}
           value={input.team_composition || ''}
+          helperText="Recommended"
           onChange={(e) => onUpdateField?.('team_composition', e.target.value)}
           placeholder="e.g. Cross-functional agile team"
           textareaClassName="bg-[#0b0517] border-default"
@@ -246,6 +375,7 @@ export default function TechnicalPlanningPanel({
         <Input
           label="Preferred Technology Stack"
           value={input.preferred_technology_stack || ''}
+          helperText="Optional"
           onChange={(e) => onUpdateField?.('preferred_technology_stack', e.target.value)}
           placeholder="e.g. React 19, FastAPI, PostgreSQL"
           inputClassName="bg-[#0b0517] border-default"
@@ -254,6 +384,7 @@ export default function TechnicalPlanningPanel({
           label="Technical Constraints"
           rows={3}
           value={input.technical_constraints || ''}
+          helperText="Optional"
           onChange={(e) => onUpdateField?.('technical_constraints', e.target.value)}
           placeholder="e.g. Must run on Linux ARM64, response time < 200ms"
           textareaClassName="bg-[#0b0517] border-default"
@@ -262,6 +393,7 @@ export default function TechnicalPlanningPanel({
           <Input
             label="Deployment Preference"
             value={input.deployment_preference || ''}
+            helperText="Optional"
             onChange={(e) => onUpdateField?.('deployment_preference', e.target.value)}
             placeholder="e.g. Docker, AWS ECS"
             inputClassName="bg-[#0b0517] border-default"
@@ -269,6 +401,7 @@ export default function TechnicalPlanningPanel({
           <Input
             label="Database Preference"
             value={input.database_preference || ''}
+            helperText="Optional"
             onChange={(e) => onUpdateField?.('database_preference', e.target.value)}
             placeholder="e.g. PostgreSQL 16"
             inputClassName="bg-[#0b0517] border-default"
@@ -278,6 +411,7 @@ export default function TechnicalPlanningPanel({
           label="UI/UX Constraints"
           rows={3}
           value={input.ui_ux_constraints || ''}
+          helperText="Optional"
           onChange={(e) => onUpdateField?.('ui_ux_constraints', e.target.value)}
           placeholder="e.g. Responsive dark theme, WCAG 2.1 AA compliant"
           textareaClassName="bg-[#0b0517] border-default"
@@ -286,6 +420,7 @@ export default function TechnicalPlanningPanel({
           label="Architecture Notes"
           rows={3}
           value={input.architecture_notes || ''}
+          helperText="Optional"
           onChange={(e) => onUpdateField?.('architecture_notes', e.target.value)}
           placeholder="e.g. Clean architecture, modular monolith"
           textareaClassName="bg-[#0b0517] border-default"
@@ -349,6 +484,9 @@ export default function TechnicalPlanningPanel({
         )}
       </Card>
 
+      {/* Sprint Planning Method selector when SPRINT_PLAN is selected */}
+      {sprintPlanningMethodCard}
+
       {/* Main content cards: organized conditionally */}
       {isArchitectureOnly ? (
         /* Architecture-only outputs: show technical preferences prominently, then required inputs (none required) and recommended */
@@ -382,7 +520,13 @@ export default function TechnicalPlanningPanel({
           <li className="flex items-start gap-2">
             <span className="text-content-muted" aria-hidden="true">•</span>
             <span>
-              <code className="text-xs font-semibold text-content-primary">SPRINT_PLAN</code> requires development_team_count + sprint_duration
+              <code className="text-xs font-semibold text-content-primary">TIMELINE_BASED + SPRINT_PLAN</code> requires project_start_date + expected_project_duration + sprint_duration (team count optional)
+            </span>
+          </li>
+          <li className="flex items-start gap-2">
+            <span className="text-content-muted" aria-hidden="true">•</span>
+            <span>
+              <code className="text-xs font-semibold text-content-primary">CAPACITY_AWARE + SPRINT_PLAN</code> requires project_start_date + expected_project_duration + sprint_duration + development_team_count
             </span>
           </li>
           <li className="flex items-start gap-2">
@@ -394,7 +538,7 @@ export default function TechnicalPlanningPanel({
           <li className="flex items-start gap-2">
             <span className="text-content-muted" aria-hidden="true">•</span>
             <span>
-              <code className="text-xs font-semibold text-content-primary">JIRA_PLAN</code> requires development_team_count
+              <code className="text-xs font-semibold text-content-primary">JIRA_PLAN</code> does not require development_team_count; tasks remain unassigned unless requested
             </span>
           </li>
         </ul>

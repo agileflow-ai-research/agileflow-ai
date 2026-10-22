@@ -25,6 +25,7 @@ describe('HumanReviewPanel', () => {
       database_preference: 'PostgreSQL 16',
       ui_ux_constraints: 'Dark theme',
       architecture_notes: 'Modular monolith',
+      project_start_date: '2026-11-01',
       development_team_count: '5',
       sprint_duration: '14',
       expected_project_duration: '3 months',
@@ -128,6 +129,7 @@ describe('HumanReviewPanel', () => {
         {...validProps}
         input={{
           ...validProps.input,
+          planning_mode: 'CAPACITY_AWARE',
           development_team_count: '',
           sprint_duration: '',
         }}
@@ -137,7 +139,7 @@ describe('HumanReviewPanel', () => {
     )
 
     const alertBox = screen.getByRole('alert')
-    expect(within(alertBox).getByText(/development team count is required because sprint_plan was selected/i)).toBeInTheDocument()
+    expect(within(alertBox).getByText(/development team count is required for capacity-aware sprint planning/i)).toBeInTheDocument()
     expect(within(alertBox).getByText(/sprint duration is required because sprint_plan was selected/i)).toBeInTheDocument()
 
     const editNode3Buttons = screen.getAllByRole('button', { name: 'Edit in Node 3' })

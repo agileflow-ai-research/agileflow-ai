@@ -42,7 +42,7 @@ describe('OutputSelectionPanel', () => {
     expect(screen.getByLabelText('Jira-ready Plan')).toBeInTheDocument()
 
     // Dependency hints
-    expect(screen.getByText(/requires: development_team_count \+ sprint_duration/i)).toBeInTheDocument()
+    expect(screen.getByText(/requires: project_start_date \+ expected_project_duration \+ sprint_duration/i)).toBeInTheDocument()
 
     // Selection behavior card
     expect(screen.getByRole('heading', { name: /selection behavior/i })).toBeInTheDocument()

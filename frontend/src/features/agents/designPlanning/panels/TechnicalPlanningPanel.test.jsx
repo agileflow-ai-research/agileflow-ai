@@ -58,7 +58,7 @@ describe('TechnicalPlanningPanel', () => {
 
     // Conditional validation card
     expect(screen.getByRole('heading', { name: /conditional validation/i })).toBeInTheDocument()
-    expect(screen.getByText(/SPRINT_PLAN/)).toBeInTheDocument()
+    expect(screen.getAllByText(/SPRINT_PLAN/).length).toBeGreaterThan(0)
     expect(screen.getByText(/TASK_ASSIGNMENT/)).toBeInTheDocument()
     expect(screen.getByText(/JIRA_PLAN/)).toBeInTheDocument()
 
@@ -97,7 +97,7 @@ describe('TechnicalPlanningPanel', () => {
     expect(screen.getByText('Sprint duration is required because SPRINT_PLAN was selected.')).toBeInTheDocument()
   })
 
-  it('dynamically requires team count and sprint duration when SPRINT_PLAN is selected', () => {
+  it('TIMELINE_BASED + SPRINT_PLAN requires project_start_date, expected duration, and sprint_duration without development_team_count', () => {
     render(
       <TechnicalPlanningPanel
         {...defaultProps}
@@ -105,9 +105,34 @@ describe('TechnicalPlanningPanel', () => {
       />,
     )
 
-    expect(screen.getByLabelText(/development team count \*/i)).toBeInTheDocument()
+    // Method selector shown
+    expect(screen.getByRole('heading', { name: /sprint planning method/i })).toBeInTheDocument()
+    expect(screen.getByLabelText(/timeline-based/i)).toBeChecked()
+
+    // Required inputs for timeline mode
+    expect(screen.getByLabelText(/project start date \*/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/expected project duration \*/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/sprint duration \(days\) \*/i)).toBeInTheDocument()
-    expect(screen.getAllByText(/required because sprint_plan was selected/i).length).toBeGreaterThan(0)
+
+    // Team count is NOT required in TIMELINE_BASED mode
+    expect(screen.queryByLabelText(/development team count \*/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/^development team count$/i)).toBeInTheDocument()
+  })
+
+  it('CAPACITY_AWARE + SPRINT_PLAN requires development_team_count in addition to timeline fields', () => {
+    render(
+      <TechnicalPlanningPanel
+        {...defaultProps}
+        input={{ ...defaultProps.input, planning_mode: 'CAPACITY_AWARE' }}
+        selectedOutputs={['SPRINT_PLAN']}
+      />,
+    )
+
+    expect(screen.getByLabelText(/capacity-aware/i)).toBeChecked()
+    expect(screen.getByLabelText(/project start date \*/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/expected project duration \*/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/sprint duration \(days\) \*/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/development team count \*/i)).toBeInTheDocument()
   })
 
   it('dynamically requires team count only when TASK_ASSIGNMENT is selected', () => {
@@ -124,7 +149,7 @@ describe('TechnicalPlanningPanel', () => {
     expect(screen.getByLabelText(/^sprint duration \(days\)$/i)).toBeInTheDocument()
   })
 
-  it('dynamically requires team count only when JIRA_PLAN is selected', () => {
+  it('JIRA_PLAN alone does not require development_team_count', () => {
     render(
       <TechnicalPlanningPanel
         {...defaultProps}
@@ -132,9 +157,51 @@ describe('TechnicalPlanningPanel', () => {
       />,
     )
 
-    expect(screen.getByLabelText(/development team count \*/i)).toBeInTheDocument()
-    expect(screen.getByText(/required because jira_plan was selected/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/^sprint duration \(days\)$/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/development team count \*/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/none required/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^development team count$/i)).toBeInTheDocument()
+  })
+
+  it('SPRINT_PLAN + JIRA_PLAN works without TASK_ASSIGNMENT and without requiring team count in timeline mode', () => {
+    render(
+      <TechnicalPlanningPanel
+        {...defaultProps}
+        selectedOutputs={['SPRINT_PLAN', 'JIRA_PLAN']}
+      />,
+    )
+
+    expect(screen.getByLabelText(/project start date \*/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/sprint duration \(days\) \*/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/development team count \*/i)).not.toBeInTheDocument()
+  })
+
+  it('existing values survive planning-mode changes', async () => {
+    const user = userEvent.setup()
+    const onUpdateField = vi.fn()
+
+    render(
+      <TechnicalPlanningPanel
+        {...defaultProps}
+        input={{
+          ...defaultProps.input,
+          planning_mode: 'TIMELINE_BASED',
+          project_start_date: '2026-11-01',
+          expected_project_duration: '3 months',
+          sprint_duration: '14',
+          development_team_count: '6',
+        }}
+        selectedOutputs={['SPRINT_PLAN']}
+        onUpdateField={onUpdateField}
+      />,
+    )
+
+    expect(screen.getByLabelText(/project start date/i)).toHaveValue('2026-11-01')
+    expect(screen.getByLabelText(/expected project duration/i)).toHaveValue('3 months')
+    expect(screen.getByLabelText(/development team count/i)).toHaveValue(6)
+
+    // Switch to Capacity-aware
+    await user.click(screen.getByLabelText(/capacity-aware/i))
+    expect(onUpdateField).toHaveBeenCalledWith('planning_mode', 'CAPACITY_AWARE')
   })
 
   it('does not require planning fields for architecture-only outputs and shows technical preferences prominently', () => {

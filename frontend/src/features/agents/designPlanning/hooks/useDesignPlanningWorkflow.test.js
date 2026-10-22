@@ -137,7 +137,7 @@ describe('useDesignPlanningWorkflow', () => {
     })
     expect(valid).toBe(true)
 
-    // Select TASK_ASSIGNMENT: requires team count only
+    // Select TASK_ASSIGNMENT: requires team count only (Rule 5)
     act(() => {
       result.current.clearOutputs()
       result.current.toggleOutput('TASK_ASSIGNMENT')
@@ -149,7 +149,7 @@ describe('useDesignPlanningWorkflow', () => {
     expect(result.current.errors.development_team_count).toMatch(/Development team count is required because TASK_ASSIGNMENT was selected/i)
     expect(result.current.errors.sprint_duration).toBeUndefined()
 
-    // Select JIRA_PLAN: requires team count only
+    // Select JIRA_PLAN alone: does NOT require team count (Rule 6)
     act(() => {
       result.current.clearOutputs()
       result.current.toggleOutput('JIRA_PLAN')
@@ -157,10 +157,10 @@ describe('useDesignPlanningWorkflow', () => {
     act(() => {
       valid = result.current.validateNode3()
     })
-    expect(valid).toBe(false)
-    expect(result.current.errors.development_team_count).toMatch(/Development team count is required because JIRA_PLAN was selected/i)
+    expect(valid).toBe(true)
+    expect(result.current.errors.development_team_count).toBeUndefined()
 
-    // Select SPRINT_PLAN: requires team count and sprint duration
+    // Select SPRINT_PLAN in TIMELINE_BASED mode (Rule 1, 2, 3)
     act(() => {
       result.current.clearOutputs()
       result.current.toggleOutput('SPRINT_PLAN')
@@ -169,12 +169,17 @@ describe('useDesignPlanningWorkflow', () => {
       valid = result.current.validateNode3()
     })
     expect(valid).toBe(false)
-    expect(result.current.errors.development_team_count).toMatch(/Development team count is required because SPRINT_PLAN was selected/i)
+    // Missing project_start_date, expected_project_duration, sprint_duration
+    expect(result.current.errors.project_start_date).toMatch(/Project start date is required because SPRINT_PLAN was selected/i)
+    expect(result.current.errors.expected_project_duration).toMatch(/Expected project duration is required because SPRINT_PLAN was selected/i)
     expect(result.current.errors.sprint_duration).toMatch(/Sprint duration is required because SPRINT_PLAN was selected/i)
+    // Team count is NOT required in TIMELINE_BASED mode
+    expect(result.current.errors.development_team_count).toBeUndefined()
 
-    // Provide valid team count and sprint duration -> passes
+    // Provide timeline inputs without development_team_count -> passes (Rule 1)
     act(() => {
-      result.current.updateField('development_team_count', '5')
+      result.current.updateField('project_start_date', '2026-11-01')
+      result.current.updateField('expected_project_duration', '3 months')
       result.current.updateField('sprint_duration', '14')
     })
     act(() => {
@@ -182,12 +187,43 @@ describe('useDesignPlanningWorkflow', () => {
     })
     expect(valid).toBe(true)
 
-    // Recalculates requirements when outputs change while preserving input values
+    // Switch to CAPACITY_AWARE: now requires development_team_count (Rule 4)
+    act(() => {
+      result.current.updateField('planning_mode', 'CAPACITY_AWARE')
+    })
+    act(() => {
+      valid = result.current.validateNode3()
+    })
+    expect(valid).toBe(false)
+    expect(result.current.errors.development_team_count).toMatch(/Development team count is required for capacity-aware sprint planning/i)
+
+    // Provide development_team_count -> passes in CAPACITY_AWARE mode
+    act(() => {
+      result.current.updateField('development_team_count', '5')
+    })
+    act(() => {
+      valid = result.current.validateNode3()
+    })
+    expect(valid).toBe(true)
+
+    // SPRINT_PLAN + JIRA_PLAN works without TASK_ASSIGNMENT (Rule 7)
+    act(() => {
+      result.current.updateField('planning_mode', 'TIMELINE_BASED')
+      result.current.updateField('development_team_count', '')
+      result.current.toggleOutput('JIRA_PLAN')
+    })
+    act(() => {
+      valid = result.current.validateNode3()
+    })
+    expect(valid).toBe(true)
+
+    // Recalculates requirements when outputs change while preserving input values (Rule 8)
     act(() => {
       result.current.clearOutputs()
       result.current.toggleOutput('SYSTEM_ARCHITECTURE')
     })
-    expect(result.current.input.development_team_count).toBe('5')
+    expect(result.current.input.project_start_date).toBe('2026-11-01')
+    expect(result.current.input.expected_project_duration).toBe('3 months')
     expect(result.current.input.sprint_duration).toBe('14')
     act(() => {
       valid = result.current.validateNode3()
@@ -338,6 +374,7 @@ describe('useDesignPlanningWorkflow', () => {
     expect(runDesignPlanningAgent).toHaveBeenCalledWith('AGP-002', {
       requirements: 'Some requirement',
       development_team_count: 4,
+      planning_mode: 'TIMELINE_BASED',
       selected_outputs: ['SYSTEM_ARCHITECTURE'],
     })
     expect(runRes).toEqual(mockRunResult.data)

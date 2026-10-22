@@ -20,7 +20,7 @@ export default function HumanReviewPanel({
 }) {
   const validationIssues = getValidationIssues(input, selectedOutputs)
   const isBlocked = validationIssues.length > 0
-  const requiredPlanning = getRequiredPlanningFields(selectedOutputs)
+  const requiredPlanning = getRequiredPlanningFields(selectedOutputs, input)
 
   const activeSpecs = specificationSources
     .map((source) => {
@@ -49,7 +49,6 @@ export default function HumanReviewPanel({
     { label: 'Database', value: input.database_preference },
     { label: 'Deployment', value: input.deployment_preference },
     { label: 'Architecture notes', value: input.architecture_notes },
-    { label: 'Expected project duration', value: input.expected_project_duration },
     { label: 'Technical constraints', value: input.technical_constraints },
     { label: 'UI/UX constraints', value: input.ui_ux_constraints },
     { label: 'Developer roles', value: input.developer_roles },
@@ -208,11 +207,32 @@ export default function HumanReviewPanel({
               <li className="flex items-start gap-1.5">
                 <span className="text-content-muted">•</span>
                 <span>
-                  <strong className="font-medium text-content-primary">Development team count:</strong>{' '}
-                  {Number(input.development_team_count) > 0 ? input.development_team_count : 'Not provided'}
-                  {requiredPlanning.development_team_count ? (
+                  <strong className="font-medium text-content-primary">Planning mode:</strong>{' '}
+                  {input.planning_mode === 'CAPACITY_AWARE' ? 'Capacity-aware' : 'Timeline-based'}
+                </span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-content-muted">•</span>
+                <span>
+                  <strong className="font-medium text-content-primary">Project start date:</strong>{' '}
+                  {input.project_start_date?.trim() ? input.project_start_date : 'Not provided'}
+                  {requiredPlanning.project_start_date ? (
                     <span className="ml-1.5 text-[#fbbf24]">
-                      ({requiredPlanning.development_team_count.reason})
+                      ({requiredPlanning.project_start_date.reason})
+                    </span>
+                  ) : (
+                    <span className="ml-1.5 text-content-muted">(Optional)</span>
+                  )}
+                </span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-content-muted">•</span>
+                <span>
+                  <strong className="font-medium text-content-primary">Expected project duration:</strong>{' '}
+                  {input.expected_project_duration?.trim() ? input.expected_project_duration : 'Not provided'}
+                  {requiredPlanning.expected_project_duration ? (
+                    <span className="ml-1.5 text-[#fbbf24]">
+                      ({requiredPlanning.expected_project_duration.reason})
                     </span>
                   ) : (
                     <span className="ml-1.5 text-content-muted">(Optional)</span>
@@ -227,6 +247,20 @@ export default function HumanReviewPanel({
                   {requiredPlanning.sprint_duration ? (
                     <span className="ml-1.5 text-[#fbbf24]">
                       ({requiredPlanning.sprint_duration.reason})
+                    </span>
+                  ) : (
+                    <span className="ml-1.5 text-content-muted">(Optional)</span>
+                  )}
+                </span>
+              </li>
+              <li className="flex items-start gap-1.5">
+                <span className="text-content-muted">•</span>
+                <span>
+                  <strong className="font-medium text-content-primary">Development team count:</strong>{' '}
+                  {Number(input.development_team_count) > 0 ? input.development_team_count : 'Not provided'}
+                  {requiredPlanning.development_team_count ? (
+                    <span className="ml-1.5 text-[#fbbf24]">
+                      ({requiredPlanning.development_team_count.reason})
                     </span>
                   ) : (
                     <span className="ml-1.5 text-content-muted">(Optional)</span>

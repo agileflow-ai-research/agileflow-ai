@@ -1,3 +1,8 @@
+export const PLANNING_MODES = Object.freeze({
+  TIMELINE_BASED: 'TIMELINE_BASED',
+  CAPACITY_AWARE: 'CAPACITY_AWARE',
+})
+
 export const initialInput = Object.freeze({
   requirements: '',
   SRS: '',
@@ -9,6 +14,8 @@ export const initialInput = Object.freeze({
   database_preference: '',
   ui_ux_constraints: '',
   architecture_notes: '',
+  planning_mode: PLANNING_MODES.TIMELINE_BASED,
+  project_start_date: '',
   development_team_count: '',
   sprint_duration: '',
   expected_project_duration: '',
@@ -146,8 +153,8 @@ export const outputGroups = Object.freeze([
       {
         value: 'SPRINT_PLAN',
         label: 'Sprint Plan',
-        description: 'Capacity-aware sprint organization.',
-        dependencyHint: 'development_team_count + sprint_duration',
+        description: 'Timeline-based or capacity-aware sprint organization.',
+        dependencyHint: 'project_start_date + expected_project_duration + sprint_duration',
       },
       {
         value: 'TASK_ASSIGNMENT',
@@ -159,7 +166,7 @@ export const outputGroups = Object.freeze([
         value: 'JIRA_PLAN',
         label: 'Jira-ready Plan',
         description: 'Structured export data; no Jira Cloud synchronization.',
-        dependencyHint: 'development_team_count',
+        dependencyHint: 'SPRINT_PLAN (unassigned by default)',
       },
     ],
   },
@@ -169,20 +176,25 @@ export const allOutputValues = Object.freeze(
   outputGroups.flatMap((group) => group.outputs.map((out) => out.value)),
 )
 
-export function getRequiredPlanningFields(selectedOutputs = []) {
+export function getRequiredPlanningFields(selectedOutputs = [], input = {}) {
   const required = {}
-  const teamTriggers = ['SPRINT_PLAN', 'TASK_ASSIGNMENT', 'JIRA_PLAN'].filter((code) =>
-    selectedOutputs.includes(code),
-  )
-  if (teamTriggers.length > 0) {
-    required.development_team_count = {
-      field: 'development_team_count',
-      label: 'Development team count',
-      triggers: teamTriggers,
-      reason: `Development team count is required because ${teamTriggers.join(', ')} was selected.`,
+  const planningMode = input.planning_mode || PLANNING_MODES.TIMELINE_BASED
+  const hasSprintPlan = selectedOutputs.includes('SPRINT_PLAN')
+  const hasTaskAssignment = selectedOutputs.includes('TASK_ASSIGNMENT')
+
+  if (hasSprintPlan) {
+    required.project_start_date = {
+      field: 'project_start_date',
+      label: 'Project start date',
+      triggers: ['SPRINT_PLAN'],
+      reason: 'Project start date is required because SPRINT_PLAN was selected.',
     }
-  }
-  if (selectedOutputs.includes('SPRINT_PLAN')) {
+    required.expected_project_duration = {
+      field: 'expected_project_duration',
+      label: 'Expected project duration',
+      triggers: ['SPRINT_PLAN'],
+      reason: 'Expected project duration is required because SPRINT_PLAN was selected.',
+    }
     required.sprint_duration = {
       field: 'sprint_duration',
       label: 'Sprint duration',
@@ -190,22 +202,61 @@ export function getRequiredPlanningFields(selectedOutputs = []) {
       reason: 'Sprint duration is required because SPRINT_PLAN was selected.',
     }
   }
+
+  const teamTriggers = []
+  if (hasSprintPlan && planningMode === PLANNING_MODES.CAPACITY_AWARE) {
+    teamTriggers.push('SPRINT_PLAN (Capacity-aware)')
+  }
+  if (hasTaskAssignment) {
+    teamTriggers.push('TASK_ASSIGNMENT')
+  }
+
+  if (teamTriggers.length > 0) {
+    const reason =
+      hasSprintPlan && planningMode === PLANNING_MODES.CAPACITY_AWARE && !hasTaskAssignment
+        ? 'Development team count is required for capacity-aware sprint planning.'
+        : `Development team count is required because ${teamTriggers.join(', ')} was selected.`
+    required.development_team_count = {
+      field: 'development_team_count',
+      label: 'Development team count',
+      triggers: teamTriggers,
+      reason,
+    }
+  }
+
   return required
 }
 
 export function getPlanningErrors(input = {}, selectedOutputs = []) {
   const nextErrors = {}
-  const teamTriggers = ['SPRINT_PLAN', 'TASK_ASSIGNMENT', 'JIRA_PLAN'].filter((code) =>
-    selectedOutputs.includes(code),
-  )
-  if (teamTriggers.length > 0 && !(Number(input.development_team_count) > 0)) {
+  const planningMode = input.planning_mode || PLANNING_MODES.TIMELINE_BASED
+  const hasSprintPlan = selectedOutputs.includes('SPRINT_PLAN')
+  const hasTaskAssignment = selectedOutputs.includes('TASK_ASSIGNMENT')
+
+  if (hasSprintPlan) {
+    if (!input.project_start_date?.trim()) {
+      nextErrors.project_start_date =
+        'Project start date is required because SPRINT_PLAN was selected.'
+    }
+    if (!input.expected_project_duration?.trim()) {
+      nextErrors.expected_project_duration =
+        'Expected project duration is required because SPRINT_PLAN was selected.'
+    }
+    if (!(Number(input.sprint_duration) > 0)) {
+      nextErrors.sprint_duration =
+        'Sprint duration is required because SPRINT_PLAN was selected.'
+    }
+    if (planningMode === PLANNING_MODES.CAPACITY_AWARE && !(Number(input.development_team_count) > 0)) {
+      nextErrors.development_team_count =
+        'Development team count is required for capacity-aware sprint planning.'
+    }
+  }
+
+  if (hasTaskAssignment && !(Number(input.development_team_count) > 0)) {
     nextErrors.development_team_count =
-      `Development team count is required because ${teamTriggers.join(', ')} was selected.`
+      'Development team count is required because TASK_ASSIGNMENT was selected.'
   }
-  if (selectedOutputs.includes('SPRINT_PLAN') && !(Number(input.sprint_duration) > 0)) {
-    nextErrors.sprint_duration =
-      'Sprint duration is required because SPRINT_PLAN was selected.'
-  }
+
   return nextErrors
 }
 
@@ -230,11 +281,18 @@ export function getValidationIssues(input = {}, selectedOutputs = []) {
     })
   }
   const planning = getPlanningErrors(input, selectedOutputs)
-  if (planning.development_team_count) {
+  if (planning.project_start_date) {
     issues.push({
-      id: 'team_missing',
+      id: 'project_start_date_missing',
       targetNodeId: 'TECHNICAL_PLANNING',
-      message: planning.development_team_count,
+      message: planning.project_start_date,
+    })
+  }
+  if (planning.expected_project_duration) {
+    issues.push({
+      id: 'expected_project_duration_missing',
+      targetNodeId: 'TECHNICAL_PLANNING',
+      message: planning.expected_project_duration,
     })
   }
   if (planning.sprint_duration) {
@@ -242,6 +300,13 @@ export function getValidationIssues(input = {}, selectedOutputs = []) {
       id: 'sprint_missing',
       targetNodeId: 'TECHNICAL_PLANNING',
       message: planning.sprint_duration,
+    })
+  }
+  if (planning.development_team_count) {
+    issues.push({
+      id: 'team_missing',
+      targetNodeId: 'TECHNICAL_PLANNING',
+      message: planning.development_team_count,
     })
   }
   return issues
