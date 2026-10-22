@@ -10,8 +10,8 @@ export function deriveDesignPlanningPresentation(workspaceSnapshot = {}) {
 
   // Check if explicit node status overrides were supplied
   const explicitN1 = workspaceSnapshot[DESIGN_PLANNING_NODE_IDS.PROJECT_SPECIFICATIONS]
-  const explicitN2 = workspaceSnapshot[DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING]
-  const explicitN3 = workspaceSnapshot[DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION]
+  const explicitN2 = workspaceSnapshot[DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION]
+  const explicitN3 = workspaceSnapshot[DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING]
 
   const input = workspaceSnapshot.input ?? {}
   const uploadStatus = workspaceSnapshot.uploadStatus ?? {}
@@ -49,7 +49,24 @@ export function deriveDesignPlanningPresentation(workspaceSnapshot = {}) {
     attentionCount: explicitN1?.attentionCount ?? n1Attention,
   }
 
-  // Node 2: Technical & Planning
+  // Node 2: Output Selection
+  const outputCount = selectedOutputs.length
+  let n2Status = WORKFLOW_NODE_STATES.NOT_STARTED
+  let n2Summary = 'Select desired design and planning outputs.'
+
+  if (outputCount > 0) {
+    n2Status = WORKFLOW_NODE_STATES.COMPLETE
+    n2Summary = `${outputCount} of 14 outputs selected`
+  }
+
+  presentation[DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION] = {
+    status: explicitN2?.status ?? n2Status,
+    statusLabel: explicitN2?.statusLabel,
+    summary: explicitN2?.summary ?? n2Summary,
+    attentionCount: explicitN2?.attentionCount,
+  }
+
+  // Node 3: Technical & Planning
   const planningErrors = getPlanningErrors(input, selectedOutputs)
   const hasPlanningErrors = Object.keys(planningErrors).length > 0
   const hasTechnicalInput = Boolean(
@@ -69,46 +86,31 @@ export function deriveDesignPlanningPresentation(workspaceSnapshot = {}) {
     input.team_composition,
   )
 
-  let n2Status = WORKFLOW_NODE_STATES.NOT_STARTED
-  let n2Summary = 'Configure technical context and team parameters.'
-  let n2Attention
-
-  if (hasPlanningErrors) {
-    n2Status = WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
-    n2Summary = 'Planning inputs required for selected outputs'
-    n2Attention = Object.keys(planningErrors).length
-  } else if (hasTechnicalInput || hasPlanningInput) {
-    n2Status = WORKFLOW_NODE_STATES.COMPLETE
-    n2Summary = 'Technical context and team parameters configured.'
-  }
-
-  presentation[DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING] = {
-    status: explicitN2?.status ?? n2Status,
-    statusLabel: explicitN2?.statusLabel,
-    summary: explicitN2?.summary ?? n2Summary,
-    attentionCount: explicitN2?.attentionCount ?? n2Attention,
-  }
-
-  // Node 3: Output Selection
-  const outputCount = selectedOutputs.length
   let n3Status = WORKFLOW_NODE_STATES.NOT_STARTED
-  let n3Summary = 'Select desired design and planning outputs.'
+  let n3Label
+  let n3Summary = 'Configure technical context and team parameters.'
   let n3Attention
 
   if (outputCount > 0) {
     if (hasPlanningErrors) {
       n3Status = WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
-      n3Summary = `${outputCount} selected · Planning inputs required`
-      n3Attention = 1
+      n3Label = 'Action Required'
+      n3Attention = Object.keys(planningErrors).length
+      n3Summary = Object.values(planningErrors)[0]
     } else {
       n3Status = WORKFLOW_NODE_STATES.COMPLETE
-      n3Summary = `${outputCount} of 14 outputs selected`
+      n3Summary = (hasTechnicalInput || hasPlanningInput)
+        ? 'Technical context and team parameters configured.'
+        : 'Contract-required inputs satisfied.'
     }
+  } else if (hasTechnicalInput || hasPlanningInput) {
+    n3Status = WORKFLOW_NODE_STATES.COMPLETE
+    n3Summary = 'Technical context and team parameters configured.'
   }
 
-  presentation[DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION] = {
+  presentation[DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING] = {
     status: explicitN3?.status ?? n3Status,
-    statusLabel: explicitN3?.statusLabel,
+    statusLabel: explicitN3?.statusLabel ?? n3Label,
     summary: explicitN3?.summary ?? n3Summary,
     attentionCount: explicitN3?.attentionCount ?? n3Attention,
   }

@@ -169,18 +169,42 @@ export const allOutputValues = Object.freeze(
   outputGroups.flatMap((group) => group.outputs.map((out) => out.value)),
 )
 
+export function getRequiredPlanningFields(selectedOutputs = []) {
+  const required = {}
+  const teamTriggers = ['SPRINT_PLAN', 'TASK_ASSIGNMENT', 'JIRA_PLAN'].filter((code) =>
+    selectedOutputs.includes(code),
+  )
+  if (teamTriggers.length > 0) {
+    required.development_team_count = {
+      field: 'development_team_count',
+      label: 'Development team count',
+      triggers: teamTriggers,
+      reason: `Development team count is required because ${teamTriggers.join(', ')} was selected.`,
+    }
+  }
+  if (selectedOutputs.includes('SPRINT_PLAN')) {
+    required.sprint_duration = {
+      field: 'sprint_duration',
+      label: 'Sprint duration',
+      triggers: ['SPRINT_PLAN'],
+      reason: 'Sprint duration is required because SPRINT_PLAN was selected.',
+    }
+  }
+  return required
+}
+
 export function getPlanningErrors(input = {}, selectedOutputs = []) {
   const nextErrors = {}
-  const needsTeam = selectedOutputs.some((code) =>
-    ['SPRINT_PLAN', 'TASK_ASSIGNMENT', 'JIRA_PLAN'].includes(code),
+  const teamTriggers = ['SPRINT_PLAN', 'TASK_ASSIGNMENT', 'JIRA_PLAN'].filter((code) =>
+    selectedOutputs.includes(code),
   )
-  if (needsTeam && !(Number(input.development_team_count) > 0)) {
+  if (teamTriggers.length > 0 && !(Number(input.development_team_count) > 0)) {
     nextErrors.development_team_count =
-      'A positive team count is required for capacity or assignment planning.'
+      `Development team count is required because ${teamTriggers.join(', ')} was selected.`
   }
   if (selectedOutputs.includes('SPRINT_PLAN') && !(Number(input.sprint_duration) > 0)) {
     nextErrors.sprint_duration =
-      'A positive sprint duration is required for sprint planning.'
+      'Sprint duration is required because SPRINT_PLAN was selected.'
   }
   return nextErrors
 }

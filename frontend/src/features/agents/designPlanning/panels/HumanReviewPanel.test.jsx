@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -44,37 +44,38 @@ describe('HumanReviewPanel', () => {
     onNavigate: vi.fn(),
   }
 
-  it('renders summary metrics, specification summary, technical summary, and selected outputs', () => {
+  it('renders summary metrics, specification summary, selected outputs, and technical summary in order', () => {
     render(<HumanReviewPanel {...validProps} />)
 
     // Summary metrics
-    expect(screen.getByText('Specification sources')).toBeInTheDocument()
-    expect(screen.getByText('Developers')).toBeInTheDocument()
-    expect(screen.getByText('5')).toBeInTheDocument()
-    expect(screen.getByText('Sprint duration')).toBeInTheDocument()
-    expect(screen.getByText('14 days')).toBeInTheDocument()
-    expect(screen.getByText('Selected outputs')).toBeInTheDocument()
-    expect(screen.getByText('2')).toBeInTheDocument()
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(within(metrics).getByText('Specification sources')).toBeInTheDocument()
+    expect(within(metrics).getByText('Selected outputs')).toBeInTheDocument()
+    expect(within(metrics).getByText('Developers')).toBeInTheDocument()
+    expect(within(metrics).getByText('5')).toBeInTheDocument()
+    expect(within(metrics).getByText('Sprint duration')).toBeInTheDocument()
+    expect(within(metrics).getByText('14 days')).toBeInTheDocument()
 
-    // Specification summary
+    // 1. Specification summary
     expect(screen.getByRole('heading', { name: /specification summary \(1\)/i })).toBeInTheDocument()
     expect(screen.getByText(/uploaded: SRS\.docx/i)).toBeInTheDocument()
     expect(screen.getByText(/users can register, book rooms/i)).toBeInTheDocument()
 
-    // Technical & Planning summary
-    expect(screen.getByRole('heading', { name: /technical & planning summary/i })).toBeInTheDocument()
-    expect(screen.getByText(/BookEase · Hospitality/i)).toBeInTheDocument()
-    expect(screen.getByText(/React 19, FastAPI, PostgreSQL/i)).toBeInTheDocument()
-    expect(screen.getByText(/Modular monolith/i)).toBeInTheDocument()
-
-    // Selected outputs
+    // 2. Selected outputs
     expect(screen.getByRole('heading', { name: /selected outputs \(2\)/i })).toBeInTheDocument()
     expect(screen.getByText('System Architecture')).toBeInTheDocument()
     expect(screen.getByText('SYSTEM_ARCHITECTURE')).toBeInTheDocument()
     expect(screen.getByText('Sprint Plan')).toBeInTheDocument()
     expect(screen.getByText('SPRINT_PLAN')).toBeInTheDocument()
 
-    // Validation success banner
+    // 3. Technical & Planning summary with requirement rationale
+    expect(screen.getByRole('heading', { name: /technical & planning summary/i })).toBeInTheDocument()
+    expect(screen.getByText(/BookEase · Hospitality/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/required because sprint_plan was selected/i).length).toBeGreaterThan(0)
+    expect(screen.getByText(/React 19, FastAPI, PostgreSQL/i)).toBeInTheDocument()
+    expect(screen.getByText(/Modular monolith/i)).toBeInTheDocument()
+
+    // 4. Validation success banner
     expect(screen.getByText(/all validation requirements satisfied/i)).toBeInTheDocument()
 
     // Standalone review callout
@@ -110,12 +111,18 @@ describe('HumanReviewPanel', () => {
     const proceedBtn = screen.getByRole('button', { name: /proceed to generate design & planning/i })
     expect(proceedBtn).toBeDisabled()
 
-    // Quick navigation button works
+    // Quick navigation buttons work
     await user.click(screen.getByRole('button', { name: 'Edit in Node 1' }))
     expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.PROJECT_SPECIFICATIONS)
+
+    await user.click(screen.getByRole('button', { name: 'Edit in Node 2' }))
+    expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION)
   })
 
-  it('displays planning constraint validation issue when SPRINT_PLAN lacks team count or sprint duration', () => {
+  it('displays planning constraint validation issue when SPRINT_PLAN lacks team count or sprint duration with Edit in Node 3', async () => {
+    const user = userEvent.setup()
+    const onNavigate = vi.fn()
+
     render(
       <HumanReviewPanel
         {...validProps}
@@ -125,12 +132,18 @@ describe('HumanReviewPanel', () => {
           sprint_duration: '',
         }}
         selectedOutputs={['SPRINT_PLAN']}
+        onNavigate={onNavigate}
       />,
     )
 
-    expect(screen.getByRole('alert')).toBeInTheDocument()
-    expect(screen.getByText(/positive team count is required/i)).toBeInTheDocument()
-    expect(screen.getByText(/positive sprint duration is required/i)).toBeInTheDocument()
+    const alertBox = screen.getByRole('alert')
+    expect(within(alertBox).getByText(/development team count is required because sprint_plan was selected/i)).toBeInTheDocument()
+    expect(within(alertBox).getByText(/sprint duration is required because sprint_plan was selected/i)).toBeInTheDocument()
+
+    const editNode3Buttons = screen.getAllByRole('button', { name: 'Edit in Node 3' })
+    expect(editNode3Buttons.length).toBeGreaterThan(0)
+    await user.click(editNode3Buttons[0])
+    expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING)
   })
 
   it('allows checking the review confirmation and enables Proceed button', async () => {
@@ -185,7 +198,7 @@ describe('HumanReviewPanel', () => {
     expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.GENERATE_DESIGN_PLANNING)
   })
 
-  it('navigates back to Output Selection', async () => {
+  it('navigates back to Technical & Planning', async () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
 
@@ -196,7 +209,7 @@ describe('HumanReviewPanel', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: /back — output selection/i }))
-    expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION)
+    await user.click(screen.getByRole('button', { name: /back — technical & planning/i }))
+    expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING)
   })
 })

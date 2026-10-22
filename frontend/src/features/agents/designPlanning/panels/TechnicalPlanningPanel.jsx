@@ -2,104 +2,151 @@ import Button from '../../../../components/ui/Button.jsx'
 import Card from '../../../../components/ui/Card.jsx'
 import Input from '../../../../components/ui/Input.jsx'
 import Textarea from '../../../../components/ui/Textarea.jsx'
+import { cn } from '../../../../utils/cn.js'
+import {
+  getRequiredPlanningFields,
+} from '../constants/agent2Config.js'
 import { DESIGN_PLANNING_NODE_IDS } from '../constants/workflow.js'
 
 export default function TechnicalPlanningPanel({
   input = {},
+  selectedOutputs = [],
   errors = {},
   onUpdateField,
   onNavigate,
   onValidate,
 }) {
+  const requiredPlanning = getRequiredPlanningFields(selectedOutputs)
+  const isTeamCountRequired = Boolean(requiredPlanning.development_team_count)
+  const isSprintDurationRequired = Boolean(requiredPlanning.sprint_duration)
+  const hasContractRequiredInputs = isTeamCountRequired || isSprintDurationRequired
+
+  // Check if current selection contains planning outputs
+  const planningOutputCodes = [
+    'PRODUCT_BACKLOG',
+    'EPICS',
+    'FEATURES',
+    'USER_STORIES',
+    'TASKS',
+    'SPRINT_PLAN',
+    'TASK_ASSIGNMENT',
+    'JIRA_PLAN',
+  ]
+  const hasPlanningOutputs = selectedOutputs.some((code) =>
+    planningOutputCodes.includes(code),
+  )
+  const isArchitectureOnly = selectedOutputs.length > 0 && !hasPlanningOutputs
+
   function handleContinue() {
     const isValid = onValidate ? onValidate() : true
     if (isValid && onNavigate) {
-      onNavigate(DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION)
+      onNavigate(DESIGN_PLANNING_NODE_IDS.HUMAN_REVIEW)
     }
   }
 
   function handleBack() {
     if (onNavigate) {
-      onNavigate(DESIGN_PLANNING_NODE_IDS.PROJECT_SPECIFICATIONS)
+      onNavigate(DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION)
     }
   }
 
-  return (
-    <div className="space-y-6" data-testid="agent2-panel-TECHNICAL_PLANNING">
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Technical preferences card */}
-        <Card className="border-default bg-[#150c2a] p-6 space-y-4">
-          <div>
-            <h3 className="text-card-heading font-semibold text-content-primary">
-              Technical preferences
-            </h3>
-            <p className="mt-1 text-sm text-content-muted">
-              Optional design constraints.
-            </p>
-          </div>
-          <div className="space-y-4">
-            <Input
-              label="Preferred Technology Stack"
-              value={input.preferred_technology_stack || ''}
-              onChange={(e) => onUpdateField?.('preferred_technology_stack', e.target.value)}
-              placeholder="e.g. React 19, FastAPI, PostgreSQL"
-              inputClassName="bg-[#0b0517] border-default"
-            />
-            <Textarea
-              label="Technical Constraints"
-              rows={3}
-              value={input.technical_constraints || ''}
-              onChange={(e) => onUpdateField?.('technical_constraints', e.target.value)}
-              placeholder="e.g. Must run on Linux ARM64, response time < 200ms"
-              textareaClassName="bg-[#0b0517] border-default"
-            />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Input
-                label="Deployment Preference"
-                value={input.deployment_preference || ''}
-                onChange={(e) => onUpdateField?.('deployment_preference', e.target.value)}
-                placeholder="e.g. Docker, AWS ECS"
-                inputClassName="bg-[#0b0517] border-default"
-              />
-              <Input
-                label="Database Preference"
-                value={input.database_preference || ''}
-                onChange={(e) => onUpdateField?.('database_preference', e.target.value)}
-                placeholder="e.g. PostgreSQL 16"
-                inputClassName="bg-[#0b0517] border-default"
-              />
-            </div>
-            <Textarea
-              label="UI/UX Constraints"
-              rows={3}
-              value={input.ui_ux_constraints || ''}
-              onChange={(e) => onUpdateField?.('ui_ux_constraints', e.target.value)}
-              placeholder="e.g. Responsive dark theme, WCAG 2.1 AA compliant"
-              textareaClassName="bg-[#0b0517] border-default"
-            />
-            <Textarea
-              label="Architecture Notes"
-              rows={3}
-              value={input.architecture_notes || ''}
-              onChange={(e) => onUpdateField?.('architecture_notes', e.target.value)}
-              placeholder="e.g. Clean architecture, modular monolith"
-              textareaClassName="bg-[#0b0517] border-default"
-            />
-          </div>
-        </Card>
+  /* 1. Required inputs card */
+  const requiredInputsCard = (
+    <Card className="border border-[#7c3aed]/50 bg-[#150c2a] p-6 space-y-4">
+      <div>
+        <div className="flex items-center gap-2">
+          <h3 className="text-card-heading font-semibold text-content-primary">
+            Required inputs
+          </h3>
+          {hasContractRequiredInputs ? (
+            <span className="inline-flex items-center rounded-full bg-state-warning/15 px-2.5 py-0.5 text-xs font-semibold text-state-warning">
+              Contract required
+            </span>
+          ) : (
+            <span className="inline-flex items-center rounded-full bg-[#064e3b] px-2.5 py-0.5 text-xs font-semibold text-[#34d399]">
+              ✓ None required
+            </span>
+          )}
+        </div>
+        <p className="mt-1 text-sm text-content-muted">
+          Fields required because of selected outputs.
+        </p>
+      </div>
 
-        {/* Planning inputs card */}
-        <Card className="border-default bg-[#150c2a] p-6 space-y-4">
-          <div>
-            <h3 className="text-card-heading font-semibold text-content-primary">
-              Planning inputs
-            </h3>
-            <p className="mt-1 text-sm text-content-muted">
-              Used by sprint and assignment outputs.
-            </p>
-          </div>
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-3">
+      {hasContractRequiredInputs ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {isTeamCountRequired && (
+            <div className="space-y-1.5">
+              <Input
+                label="Development team count *"
+                type="number"
+                min="1"
+                value={input.development_team_count || ''}
+                error={errors.development_team_count}
+                onChange={(e) => onUpdateField?.('development_team_count', e.target.value)}
+                placeholder="Team count (e.g. 4)"
+                inputClassName="bg-[#0b0517] border-default"
+              />
+              {!errors.development_team_count && (
+                <span className="block text-xs text-[#a78bfa]">
+                  {requiredPlanning.development_team_count.reason}
+                </span>
+              )}
+            </div>
+          )}
+
+          {isSprintDurationRequired && (
+            <div className="space-y-1.5">
+              <Input
+                label="Sprint duration (days) *"
+                type="number"
+                min="1"
+                value={input.sprint_duration || ''}
+                error={errors.sprint_duration}
+                onChange={(e) => onUpdateField?.('sprint_duration', e.target.value)}
+                placeholder="Sprint duration in days (e.g. 14)"
+                inputClassName="bg-[#0b0517] border-default"
+              />
+              {!errors.sprint_duration && (
+                <span className="block text-xs text-[#a78bfa]">
+                  {requiredPlanning.sprint_duration.reason}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-control border border-[#065f46]/40 bg-[#064e3b]/15 p-4 text-xs text-[#34d399]">
+          {selectedOutputs.length === 0
+            ? 'Select outputs in Node 2 to determine if technical planning inputs are contract-required.'
+            : 'Your selected outputs do not require team count or sprint duration. All planning parameters are optional.'}
+        </div>
+      )}
+    </Card>
+  )
+
+  /* 2. Recommended inputs card */
+  const recommendedInputsCard = (
+    <Card className="border-default bg-[#150c2a] p-6 space-y-4">
+      <div>
+        <div className="flex items-center gap-2">
+          <h3 className="text-card-heading font-semibold text-content-primary">
+            Recommended inputs
+          </h3>
+          <span className="inline-flex items-center rounded-full bg-[#1e1438] px-2 py-0.5 text-xs text-content-muted">
+            Optional
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-content-muted">
+          Useful for improving selected planning/design outputs but not contract-required.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {/* If team count or sprint duration were NOT contract-required, keep them accessible here as optional inputs */}
+        {(!isTeamCountRequired || !isSprintDurationRequired || !hasContractRequiredInputs) && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {!isTeamCountRequired && (
               <Input
                 label="Development team count"
                 type="number"
@@ -107,9 +154,11 @@ export default function TechnicalPlanningPanel({
                 value={input.development_team_count || ''}
                 error={errors.development_team_count}
                 onChange={(e) => onUpdateField?.('development_team_count', e.target.value)}
-                placeholder="Team count"
+                placeholder="Optional team count"
                 inputClassName="bg-[#0b0517] border-default"
               />
+            )}
+            {!isSprintDurationRequired && (
               <Input
                 label="Sprint duration (days)"
                 type="number"
@@ -117,44 +166,209 @@ export default function TechnicalPlanningPanel({
                 value={input.sprint_duration || ''}
                 error={errors.sprint_duration}
                 onChange={(e) => onUpdateField?.('sprint_duration', e.target.value)}
-                placeholder="Sprint duration"
+                placeholder="Optional sprint duration"
                 inputClassName="bg-[#0b0517] border-default"
               />
-              <Input
-                label="Expected project duration"
-                value={input.expected_project_duration || ''}
-                onChange={(e) => onUpdateField?.('expected_project_duration', e.target.value)}
-                placeholder="Expected duration"
-                inputClassName="bg-[#0b0517] border-default"
-              />
-            </div>
-            <Textarea
-              label="Developer Roles"
-              rows={3}
-              value={input.developer_roles || ''}
-              onChange={(e) => onUpdateField?.('developer_roles', e.target.value)}
-              placeholder="e.g. 2 Frontend, 2 Backend, 1 QA"
-              textareaClassName="bg-[#0b0517] border-default"
-            />
-            <Textarea
-              label="Developer Skills"
-              rows={3}
-              value={input.developer_skills || ''}
-              onChange={(e) => onUpdateField?.('developer_skills', e.target.value)}
-              placeholder="e.g. React, Python, FastAPI, Docker"
-              textareaClassName="bg-[#0b0517] border-default"
-            />
-            <Textarea
-              label="Team Composition"
-              rows={3}
-              value={input.team_composition || ''}
-              onChange={(e) => onUpdateField?.('team_composition', e.target.value)}
-              placeholder="e.g. Cross-functional agile team"
-              textareaClassName="bg-[#0b0517] border-default"
+            )}
+            <Input
+              label="Expected project duration"
+              value={input.expected_project_duration || ''}
+              onChange={(e) => onUpdateField?.('expected_project_duration', e.target.value)}
+              placeholder="e.g. 3 months"
+              inputClassName="bg-[#0b0517] border-default"
             />
           </div>
-        </Card>
+        )}
+
+        {isTeamCountRequired && isSprintDurationRequired && (
+          <Input
+            label="Expected project duration"
+            value={input.expected_project_duration || ''}
+            onChange={(e) => onUpdateField?.('expected_project_duration', e.target.value)}
+            placeholder="e.g. 3 months"
+            inputClassName="bg-[#0b0517] border-default"
+          />
+        )}
+
+        <Textarea
+          label="Developer Roles"
+          rows={3}
+          value={input.developer_roles || ''}
+          onChange={(e) => onUpdateField?.('developer_roles', e.target.value)}
+          placeholder="e.g. 2 Frontend, 2 Backend, 1 QA"
+          textareaClassName="bg-[#0b0517] border-default"
+        />
+        <Textarea
+          label="Developer Skills"
+          rows={3}
+          value={input.developer_skills || ''}
+          onChange={(e) => onUpdateField?.('developer_skills', e.target.value)}
+          placeholder="e.g. React, Python, FastAPI, Docker"
+          textareaClassName="bg-[#0b0517] border-default"
+        />
+        <Textarea
+          label="Team Composition"
+          rows={3}
+          value={input.team_composition || ''}
+          onChange={(e) => onUpdateField?.('team_composition', e.target.value)}
+          placeholder="e.g. Cross-functional agile team"
+          textareaClassName="bg-[#0b0517] border-default"
+        />
       </div>
+    </Card>
+  )
+
+  /* 3. Optional technical preferences card */
+  const technicalPreferencesCard = (
+    <Card
+      className={cn(
+        'border bg-[#150c2a] p-6 space-y-4',
+        isArchitectureOnly ? 'border-[#7c3aed]/50' : 'border-default',
+      )}
+    >
+      <div>
+        <div className="flex items-center gap-2">
+          <h3 className="text-card-heading font-semibold text-content-primary">
+            Optional technical preferences
+          </h3>
+          {isArchitectureOnly && (
+            <span className="inline-flex items-center rounded-full bg-brand/20 px-2.5 py-0.5 text-xs font-semibold text-[#c084fc]">
+              Design context
+            </span>
+          )}
+        </div>
+        <p className="mt-1 text-sm text-content-muted">
+          Other existing technical fields and architecture constraints.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        <Input
+          label="Preferred Technology Stack"
+          value={input.preferred_technology_stack || ''}
+          onChange={(e) => onUpdateField?.('preferred_technology_stack', e.target.value)}
+          placeholder="e.g. React 19, FastAPI, PostgreSQL"
+          inputClassName="bg-[#0b0517] border-default"
+        />
+        <Textarea
+          label="Technical Constraints"
+          rows={3}
+          value={input.technical_constraints || ''}
+          onChange={(e) => onUpdateField?.('technical_constraints', e.target.value)}
+          placeholder="e.g. Must run on Linux ARM64, response time < 200ms"
+          textareaClassName="bg-[#0b0517] border-default"
+        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Deployment Preference"
+            value={input.deployment_preference || ''}
+            onChange={(e) => onUpdateField?.('deployment_preference', e.target.value)}
+            placeholder="e.g. Docker, AWS ECS"
+            inputClassName="bg-[#0b0517] border-default"
+          />
+          <Input
+            label="Database Preference"
+            value={input.database_preference || ''}
+            onChange={(e) => onUpdateField?.('database_preference', e.target.value)}
+            placeholder="e.g. PostgreSQL 16"
+            inputClassName="bg-[#0b0517] border-default"
+          />
+        </div>
+        <Textarea
+          label="UI/UX Constraints"
+          rows={3}
+          value={input.ui_ux_constraints || ''}
+          onChange={(e) => onUpdateField?.('ui_ux_constraints', e.target.value)}
+          placeholder="e.g. Responsive dark theme, WCAG 2.1 AA compliant"
+          textareaClassName="bg-[#0b0517] border-default"
+        />
+        <Textarea
+          label="Architecture Notes"
+          rows={3}
+          value={input.architecture_notes || ''}
+          onChange={(e) => onUpdateField?.('architecture_notes', e.target.value)}
+          placeholder="e.g. Clean architecture, modular monolith"
+          textareaClassName="bg-[#0b0517] border-default"
+        />
+      </div>
+    </Card>
+  )
+
+  return (
+    <div className="space-y-6" data-testid="agent2-panel-TECHNICAL_PLANNING">
+      {/* Top Banner: Selected outputs indicator */}
+      <Card className="border-default bg-[#150c2a] p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-content-primary">
+                Selected Outputs
+              </h3>
+              <span className="inline-flex items-center rounded-control border border-[#3c2463] bg-[#211438] px-2.5 py-0.5 text-xs font-medium text-content-secondary">
+                {selectedOutputs.length} of 14 selected
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-content-muted">
+              Provide the additional technical and planning information required for your selected outputs.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onNavigate?.(DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION)}
+            className="text-xs text-[#a78bfa] hover:text-white hover:bg-brand/20 underline"
+          >
+            Change outputs (Node 2)
+          </Button>
+        </div>
+
+        {selectedOutputs.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Currently selected outputs list">
+            {selectedOutputs.map((code) => {
+              const isPlanningTrigger = ['SPRINT_PLAN', 'TASK_ASSIGNMENT', 'JIRA_PLAN'].includes(code)
+              return (
+                <span
+                  key={code}
+                  className={cn(
+                    'inline-flex items-center rounded-control border px-2 py-0.5 text-[11px] font-mono',
+                    isPlanningTrigger
+                      ? 'border-[#7c3aed] bg-[#2a144f] text-[#c084fc] font-semibold'
+                      : 'border-default bg-[#0b0517] text-content-secondary',
+                  )}
+                >
+                  {code}
+                </span>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="mt-3 rounded-control border border-state-warning/30 bg-state-warning/10 p-2.5 text-xs text-state-warning">
+            No outputs selected yet. Output Selection (Node 2) determines which planning fields are required.
+          </div>
+        )}
+      </Card>
+
+      {/* Main content cards: organized conditionally */}
+      {isArchitectureOnly ? (
+        /* Architecture-only outputs: show technical preferences prominently, then required inputs (none required) and recommended */
+        <div className="space-y-6">
+          {technicalPreferencesCard}
+          <div className="grid gap-6 lg:grid-cols-2">
+            {requiredInputsCard}
+            {recommendedInputsCard}
+          </div>
+        </div>
+      ) : (
+        /* Planning outputs or standard view: Required inputs, then Recommended & Technical */
+        <div className="space-y-6">
+          {requiredInputsCard}
+          <div className="grid gap-6 lg:grid-cols-2">
+            {recommendedInputsCard}
+            {technicalPreferencesCard}
+          </div>
+        </div>
+      )}
 
       {/* Conditional validation callout card */}
       <Card className="border-default bg-[#150c2a] p-6">
@@ -162,7 +376,7 @@ export default function TechnicalPlanningPanel({
           Conditional validation
         </h3>
         <p className="mt-1 text-sm text-content-muted">
-          Planning data is checked before Agent2Engine runs.
+          Contract-required planning parameters mirror backend validation rules:
         </p>
         <ul className="mt-4 space-y-2 text-sm text-content-secondary">
           <li className="flex items-start gap-2">
@@ -194,14 +408,14 @@ export default function TechnicalPlanningPanel({
           onClick={handleBack}
           className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
         >
-          Back — Project & Specifications
+          Back — Output Selection
         </Button>
         <Button
           type="button"
           variant="primary"
           onClick={handleContinue}
         >
-          Next — Output Selection
+          Next — Human Review
         </Button>
       </div>
     </div>

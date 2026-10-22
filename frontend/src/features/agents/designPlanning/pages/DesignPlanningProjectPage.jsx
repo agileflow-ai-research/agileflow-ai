@@ -169,14 +169,6 @@ function DesignPlanningProjectPage({
               onNavigate={handleSelectNode}
               onValidate={workflow.validateNode1}
             />
-          ) : visibleModalNodeId === DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING ? (
-            <TechnicalPlanningPanel
-              input={workflow.input}
-              errors={workflow.errors}
-              onUpdateField={workflow.updateField}
-              onNavigate={handleSelectNode}
-              onValidate={workflow.validateNode2}
-            />
           ) : visibleModalNodeId === DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION ? (
             <OutputSelectionPanel
               input={workflow.input}
@@ -185,6 +177,15 @@ function DesignPlanningProjectPage({
               onToggleOutput={workflow.toggleOutput}
               onSelectAll={workflow.selectAllOutputs}
               onClearAll={workflow.clearOutputs}
+              onNavigate={handleSelectNode}
+              onValidate={workflow.validateNode2}
+            />
+          ) : visibleModalNodeId === DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING ? (
+            <TechnicalPlanningPanel
+              input={workflow.input}
+              selectedOutputs={workflow.selectedOutputs}
+              errors={workflow.errors}
+              onUpdateField={workflow.updateField}
               onNavigate={handleSelectNode}
               onValidate={workflow.validateNode3}
             />

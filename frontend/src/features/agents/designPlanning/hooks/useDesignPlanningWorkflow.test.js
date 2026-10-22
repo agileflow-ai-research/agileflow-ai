@@ -97,44 +97,12 @@ describe('useDesignPlanningWorkflow', () => {
     expect(valid).toBe(true)
   })
 
-  it('validates node 2 planning constraints based on selected outputs', () => {
-    const { result } = renderHook(() => useDesignPlanningWorkflow(project))
-
-    // With no outputs selected, empty planning inputs pass
-    let valid
-    act(() => {
-      valid = result.current.validateNode2()
-    })
-    expect(valid).toBe(true)
-
-    // Select SPRINT_PLAN: requires team count and sprint duration
-    act(() => {
-      result.current.toggleOutput('SPRINT_PLAN')
-    })
-    act(() => {
-      valid = result.current.validateNode2()
-    })
-    expect(valid).toBe(false)
-    expect(result.current.errors.development_team_count).toBeDefined()
-    expect(result.current.errors.sprint_duration).toBeDefined()
-
-    // Provide valid team count and sprint duration
-    act(() => {
-      result.current.updateField('development_team_count', '5')
-      result.current.updateField('sprint_duration', '14')
-    })
-    act(() => {
-      valid = result.current.validateNode2()
-    })
-    expect(valid).toBe(true)
-  })
-
-  it('validates node 3 output selection', () => {
+  it('validates node 2 output selection', () => {
     const { result } = renderHook(() => useDesignPlanningWorkflow(project))
 
     let valid
     act(() => {
-      valid = result.current.validateNode3()
+      valid = result.current.validateNode2()
     })
     expect(valid).toBe(false)
     expect(result.current.errors.outputs).toMatch(/select at least one output/i)
@@ -142,6 +110,85 @@ describe('useDesignPlanningWorkflow', () => {
     act(() => {
       result.current.toggleOutput('API_SPECIFICATION')
     })
+    act(() => {
+      valid = result.current.validateNode2()
+    })
+    expect(valid).toBe(true)
+  })
+
+  it('validates node 3 planning constraints dynamically based on selected outputs', () => {
+    const { result } = renderHook(() => useDesignPlanningWorkflow(project))
+
+    // With no outputs selected, planning validation passes
+    let valid
+    act(() => {
+      valid = result.current.validateNode3()
+    })
+    expect(valid).toBe(true)
+
+    // Architecture-only outputs do not require planning fields
+    act(() => {
+      result.current.toggleOutput('SYSTEM_ARCHITECTURE')
+      result.current.toggleOutput('DATABASE_SCHEMA')
+      result.current.toggleOutput('API_SPECIFICATION')
+    })
+    act(() => {
+      valid = result.current.validateNode3()
+    })
+    expect(valid).toBe(true)
+
+    // Select TASK_ASSIGNMENT: requires team count only
+    act(() => {
+      result.current.clearOutputs()
+      result.current.toggleOutput('TASK_ASSIGNMENT')
+    })
+    act(() => {
+      valid = result.current.validateNode3()
+    })
+    expect(valid).toBe(false)
+    expect(result.current.errors.development_team_count).toMatch(/Development team count is required because TASK_ASSIGNMENT was selected/i)
+    expect(result.current.errors.sprint_duration).toBeUndefined()
+
+    // Select JIRA_PLAN: requires team count only
+    act(() => {
+      result.current.clearOutputs()
+      result.current.toggleOutput('JIRA_PLAN')
+    })
+    act(() => {
+      valid = result.current.validateNode3()
+    })
+    expect(valid).toBe(false)
+    expect(result.current.errors.development_team_count).toMatch(/Development team count is required because JIRA_PLAN was selected/i)
+
+    // Select SPRINT_PLAN: requires team count and sprint duration
+    act(() => {
+      result.current.clearOutputs()
+      result.current.toggleOutput('SPRINT_PLAN')
+    })
+    act(() => {
+      valid = result.current.validateNode3()
+    })
+    expect(valid).toBe(false)
+    expect(result.current.errors.development_team_count).toMatch(/Development team count is required because SPRINT_PLAN was selected/i)
+    expect(result.current.errors.sprint_duration).toMatch(/Sprint duration is required because SPRINT_PLAN was selected/i)
+
+    // Provide valid team count and sprint duration -> passes
+    act(() => {
+      result.current.updateField('development_team_count', '5')
+      result.current.updateField('sprint_duration', '14')
+    })
+    act(() => {
+      valid = result.current.validateNode3()
+    })
+    expect(valid).toBe(true)
+
+    // Recalculates requirements when outputs change while preserving input values
+    act(() => {
+      result.current.clearOutputs()
+      result.current.toggleOutput('SYSTEM_ARCHITECTURE')
+    })
+    expect(result.current.input.development_team_count).toBe('5')
+    expect(result.current.input.sprint_duration).toBe('14')
     act(() => {
       valid = result.current.validateNode3()
     })

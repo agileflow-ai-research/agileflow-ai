@@ -109,27 +109,27 @@ describe('DesignPlanningProjectPage', () => {
     await user.type(reqTextarea, 'Core booking system requirement')
     expect(reqTextarea).toHaveValue('Core booking system requirement')
 
-    // Navigate to Node 2 via button
-    await user.click(within(modal).getByRole('button', { name: /next — technical & planning/i }))
-    expect(within(modal).getByTestId('agent2-panel-TECHNICAL_PLANNING')).toBeInTheDocument()
-
-    // Fill team count and sprint duration in Node 2
-    const teamInput = within(modal).getByLabelText(/development team count/i)
-    const sprintInput = within(modal).getByLabelText(/sprint duration/i)
-    await user.type(teamInput, '6')
-    await user.type(sprintInput, '10')
-
-    // Navigate to Node 3 via button
+    // Navigate to Node 2: Output Selection via button
     await user.click(within(modal).getByRole('button', { name: /next — output selection/i }))
     expect(within(modal).getByTestId('agent2-panel-OUTPUT_SELECTION')).toBeInTheDocument()
 
-    // Select SPRINT_PLAN and SYSTEM_ARCHITECTURE checkboxes in Node 3
+    // Select SPRINT_PLAN and SYSTEM_ARCHITECTURE checkboxes in Node 2
     const sprintCheckbox = within(modal).getByLabelText('Sprint Plan')
     const archCheckbox = within(modal).getByLabelText('System Architecture')
     await user.click(sprintCheckbox)
     await user.click(archCheckbox)
     expect(sprintCheckbox).toBeChecked()
     expect(archCheckbox).toBeChecked()
+
+    // Navigate to Node 3: Technical & Planning via button
+    await user.click(within(modal).getByRole('button', { name: /next — technical & planning/i }))
+    expect(within(modal).getByTestId('agent2-panel-TECHNICAL_PLANNING')).toBeInTheDocument()
+
+    // Fill team count and sprint duration in Node 3 (dynamically required because SPRINT_PLAN was selected in Node 2)
+    const teamInput = within(modal).getByLabelText(/development team count/i)
+    const sprintInput = within(modal).getByLabelText(/sprint duration/i)
+    await user.type(teamInput, '6')
+    await user.type(sprintInput, '10')
 
     // Navigate forward to Node 4: Human Review
     await user.click(within(modal).getByRole('button', { name: /next — human review/i }))

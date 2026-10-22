@@ -102,16 +102,16 @@ describe('OutputSelectionPanel', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Select at least one output.')
   })
 
-  it('navigates back to Technical & Planning', async () => {
+  it('navigates back to Project & Specifications', async () => {
     const user = userEvent.setup()
     const onNavigate = vi.fn()
     render(<OutputSelectionPanel {...defaultProps} onNavigate={onNavigate} />)
 
-    await user.click(screen.getByRole('button', { name: /back — technical & planning/i }))
-    expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING)
+    await user.click(screen.getByRole('button', { name: /back — project & specifications/i }))
+    expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.PROJECT_SPECIFICATIONS)
   })
 
-  it('calls onValidate and navigates to Human Review', async () => {
+  it('calls onValidate and navigates to Technical & Planning', async () => {
     const user = userEvent.setup()
     const onValidate = vi.fn(() => true)
     const onNavigate = vi.fn()
@@ -124,8 +124,8 @@ describe('OutputSelectionPanel', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: /next — human review/i }))
+    await user.click(screen.getByRole('button', { name: /next — technical & planning/i }))
     expect(onValidate).toHaveBeenCalled()
-    expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.HUMAN_REVIEW)
+    expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING)
   })
 })

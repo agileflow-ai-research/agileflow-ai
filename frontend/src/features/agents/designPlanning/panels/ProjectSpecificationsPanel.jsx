@@ -39,7 +39,7 @@ export default function ProjectSpecificationsPanel({
   function handleContinue() {
     const isValid = onValidate ? onValidate() : true
     if (isValid && onNavigate) {
-      onNavigate(DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING)
+      onNavigate(DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION)
     }
   }
 
@@ -348,7 +348,7 @@ export default function ProjectSpecificationsPanel({
           variant="primary"
           onClick={handleContinue}
         >
-          Next — Technical & Planning
+          Next — Output Selection
         </Button>
       </div>
     </div>

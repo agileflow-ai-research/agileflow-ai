@@ -14,8 +14,8 @@ describe('Agent 2 Workflow Graph and Layout', () => {
     expect(DESIGN_PLANNING_NODE_REGISTRY).toHaveLength(8)
     const expectedIds = [
       DESIGN_PLANNING_NODE_IDS.PROJECT_SPECIFICATIONS,
-      DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING,
       DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION,
+      DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING,
       DESIGN_PLANNING_NODE_IDS.HUMAN_REVIEW,
       DESIGN_PLANNING_NODE_IDS.GENERATE_DESIGN_PLANNING,
       DESIGN_PLANNING_NODE_IDS.DESIGN_RESULTS,
@@ -35,8 +35,8 @@ describe('Agent 2 Workflow Graph and Layout', () => {
   it('implements 5-node top row + 3-node return row snake layout coordinates', () => {
     const topRow = [
       DESIGN_PLANNING_NODE_IDS.PROJECT_SPECIFICATIONS,
-      DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING,
       DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION,
+      DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING,
       DESIGN_PLANNING_NODE_IDS.HUMAN_REVIEW,
       DESIGN_PLANNING_NODE_IDS.GENERATE_DESIGN_PLANNING,
     ]
@@ -64,7 +64,18 @@ describe('Agent 2 Workflow Graph and Layout', () => {
 
   it('constructs 7 floating edges with closed arrow markers connecting consecutive nodes', () => {
     expect(DESIGN_PLANNING_EDGE_PAIRS).toHaveLength(7)
-    expect(DESIGN_PLANNING_WORKFLOW_EDGES).toHaveLength(7)
+    expect(DESIGN_PLANNING_EDGE_PAIRS[0]).toEqual([
+      DESIGN_PLANNING_NODE_IDS.PROJECT_SPECIFICATIONS,
+      DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION,
+    ])
+    expect(DESIGN_PLANNING_EDGE_PAIRS[1]).toEqual([
+      DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION,
+      DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING,
+    ])
+    expect(DESIGN_PLANNING_EDGE_PAIRS[2]).toEqual([
+      DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING,
+      DESIGN_PLANNING_NODE_IDS.HUMAN_REVIEW,
+    ])
 
     const nodeIds = new Set(DESIGN_PLANNING_NODE_REGISTRY.map((n) => n.id))
 

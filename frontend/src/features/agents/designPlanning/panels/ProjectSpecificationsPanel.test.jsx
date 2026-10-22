@@ -51,7 +51,7 @@ describe('ProjectSpecificationsPanel', () => {
     expect(screen.getByPlaceholderText(/users can register and log in/i)).toBeInTheDocument()
 
     // Navigation button
-    expect(screen.getByRole('button', { name: /next — technical & planning/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /next — output selection/i })).toBeInTheDocument()
   })
 
   it('triggers onSetActiveSource when switching tabs', async () => {
@@ -172,8 +172,8 @@ describe('ProjectSpecificationsPanel', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: /next — technical & planning/i }))
+    await user.click(screen.getByRole('button', { name: /next — output selection/i }))
     expect(onValidate).toHaveBeenCalled()
-    expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING)
+    expect(onNavigate).toHaveBeenCalledWith(DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION)
   })
 })

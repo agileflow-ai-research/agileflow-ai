@@ -161,6 +161,14 @@ export default function useDesignPlanningWorkflow(project) {
   }, [input])
 
   const validateNode2 = useCallback(() => {
+    if (selectedOutputs.length === 0) {
+      setErrors((prev) => ({ ...prev, outputs: 'Select at least one output.' }))
+      return false
+    }
+    return true
+  }, [selectedOutputs])
+
+  const validateNode3 = useCallback(() => {
     const nextErrors = getPlanningErrors(input, selectedOutputs)
     if (Object.keys(nextErrors).length > 0) {
       setErrors((prev) => ({ ...prev, ...nextErrors }))
@@ -168,14 +176,6 @@ export default function useDesignPlanningWorkflow(project) {
     }
     return true
   }, [input, selectedOutputs])
-
-  const validateNode3 = useCallback(() => {
-    if (selectedOutputs.length === 0) {
-      setErrors((prev) => ({ ...prev, outputs: 'Select at least one output.' }))
-      return false
-    }
-    return true
-  }, [selectedOutputs])
 
   const [runState, setRunState] = useState('idle')
   const [runResult, setRunResult] = useState(null)

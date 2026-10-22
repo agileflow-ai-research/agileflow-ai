@@ -23,13 +23,13 @@ export default function OutputSelectionPanel({
   function handleContinue() {
     const isValid = onValidate ? onValidate() : true
     if (isValid && onNavigate) {
-      onNavigate(DESIGN_PLANNING_NODE_IDS.HUMAN_REVIEW)
+      onNavigate(DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING)
     }
   }
 
   function handleBack() {
     if (onNavigate) {
-      onNavigate(DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING)
+      onNavigate(DESIGN_PLANNING_NODE_IDS.PROJECT_SPECIFICATIONS)
     }
   }
 
@@ -148,7 +148,7 @@ export default function OutputSelectionPanel({
           aria-label="Planning requirements warning"
           className="rounded-card border border-[#b45309]/60 bg-[#78350f]/20 p-4 text-sm text-[#fbbf24]"
         >
-          <strong className="font-semibold">Planning parameters required:</strong> Selected outputs include sprint or assignment deliverables. Please provide team count and sprint duration in Node 2 (Technical & Planning).
+          <strong className="font-semibold">Planning parameters required:</strong> Selected outputs include sprint or assignment deliverables. You will configure team count and sprint duration in Node 3 (Technical & Planning).
         </div>
       )}
 
@@ -170,14 +170,14 @@ export default function OutputSelectionPanel({
           onClick={handleBack}
           className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
         >
-          Back — Technical & Planning
+          Back — Project & Specifications
         </Button>
         <Button
           type="button"
           variant="primary"
           onClick={handleContinue}
         >
-          Next — Human Review
+          Next — Technical & Planning
         </Button>
       </div>
     </div>
