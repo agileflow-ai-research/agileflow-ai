@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createAgentProject } from '../services/agentProjectService.js'
@@ -8,14 +8,24 @@ import CreateAgentProjectPage from './CreateAgentProjectPage.jsx'
 
 vi.mock('../services/agentProjectService.js', () => ({ createAgentProject: vi.fn() }))
 
-function renderCreate(path = '/agents/design-planning/new') {
+function OverviewDestination() {
+  const location = useLocation()
+  return <h1>Overview destination {location.state?.agentProjectEntry ?? 'existing'}</h1>
+}
+
+function SwitchAgentButton() {
+  const navigate = useNavigate()
+  return <button type="button" onClick={() => navigate('/agents/implementation/new')}>Switch agent</button>
+}
+
+function renderCreate(path = '/agents/design-planning/new', { withSwitcher = false } = {}) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/agents/:agentSlug/new" element={<CreateAgentProjectPage />} />
+        <Route path="/agents/:agentSlug/new" element={<>{withSwitcher ? <SwitchAgentButton /> : null}<CreateAgentProjectPage /></>} />
         <Route path="/agents" element={<h1>Hub</h1>} />
         <Route path="/agents/:agentSlug" element={<h1>List</h1>} />
-        <Route path="/agent-projects/:agentProjectId" element={<h1>Overview destination</h1>} />
+        <Route path="/agent-projects/:agentProjectId" element={<OverviewDestination />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -43,7 +53,8 @@ describe('CreateAgentProjectPage', () => {
     expect(payload).not.toHaveProperty('agent_project_id')
     expect(payload).not.toHaveProperty('owner_user_id')
     expect(payload).not.toHaveProperty('status')
-    expect(await screen.findByRole('heading', { name: 'Overview destination' })).toBeInTheDocument()
+    expect(payload).not.toHaveProperty('agentStage')
+    expect(await screen.findByRole('heading', { name: 'Overview destination created' })).toBeInTheDocument()
   })
 
   it('requires only name/domain and prevents duplicate pending submission', async () => {
@@ -71,5 +82,57 @@ describe('CreateAgentProjectPage', () => {
     await user.click(screen.getByRole('button', { name: 'Create Project' }))
     expect(await screen.findByText('Domain is invalid.')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: /domain/i })).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it.each([
+    ['/agents/requirements/new', 'Requirements'],
+    ['/agents/design-planning/new', 'Design'],
+    ['/agents/implementation/new', 'Implementation'],
+  ])('hides Agent Stage for non-Agent-4 creation at %s', (path) => {
+    renderCreate(path)
+    expect(screen.queryByRole('group', { name: /agent stage/i })).not.toBeInTheDocument()
+  })
+
+  it('requires an available Agent 4 stage and submits Test Generation', async () => {
+    const user = userEvent.setup()
+    createAgentProject.mockResolvedValue({ data: { agent_project_id: 'AGP-010' } })
+    renderCreate('/agents/testing-validation/new')
+
+    expect(screen.getByRole('group', { name: /agent stage/i })).toBeInTheDocument()
+    expect(screen.getByText('Generate planned and traceable test specifications')).toBeInTheDocument()
+    expect(screen.getByText('Execute and validate implementation')).toBeInTheDocument()
+    expect(screen.getByText('Available')).toBeInTheDocument()
+    expect(screen.getByText('Coming Soon')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /testing & validation/i })).toBeDisabled()
+
+    await fillForm(user)
+    await user.click(screen.getByRole('button', { name: 'Create Project' }))
+    expect(screen.getByText('Select an available Agent Stage.')).toBeInTheDocument()
+    expect(createAgentProject).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('radio', { name: /test generation/i }))
+    await user.click(screen.getByRole('button', { name: 'Create Project' }))
+    expect(createAgentProject).toHaveBeenCalledWith({
+      agentType: 'TESTING_VALIDATION',
+      agentStage: 'TEST_GENERATION',
+      name: 'Planning',
+      domain: 'SaaS',
+      description: ' Context ',
+    })
+  })
+
+  it('clears a selected stage when routing away from Agent 4', async () => {
+    const user = userEvent.setup()
+    createAgentProject.mockResolvedValue({ data: { agent_project_id: 'AGP-011' } })
+    renderCreate('/agents/testing-validation/new', { withSwitcher: true })
+    await user.click(screen.getByRole('radio', { name: /test generation/i }))
+    await user.click(screen.getByRole('button', { name: 'Switch agent' }))
+
+    expect(screen.queryByRole('group', { name: /agent stage/i })).not.toBeInTheDocument()
+    await fillForm(user)
+    await user.click(screen.getByRole('button', { name: 'Create Project' }))
+    expect(createAgentProject).toHaveBeenCalledWith({
+      agentType: 'IMPLEMENTATION', name: 'Planning', domain: 'SaaS', description: ' Context ',
+    })
   })
 })

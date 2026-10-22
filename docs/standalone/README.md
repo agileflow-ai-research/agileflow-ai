@@ -30,7 +30,8 @@ The S2 workspace is deliberately a truthful extension point. It has no Agent 1â
 4. [Agent 1 Requirements Contract](AGENT_1_REQUIREMENTS_CONTRACT.md) — Requirement Gathering and Analysis Agent inputs, source priorities, selectable outputs, result expectations, and clarification loop.
 5. [Agent 2 Design and Planning Contract](AGENT_2_DESIGN_PLANNING_CONTRACT.md) — Project Management and Design Agent specification/team inputs, conditional planning validation, outputs, and Jira-compatible plan boundary.
 6. [Agent 3 Implementation Contract](AGENT_3_IMPLEMENTATION_CONTRACT.md) — Implementation and Git Automation Agent inputs, selectable outputs, mandatory execution evidence, runnable-code goal, correction loop, and Git boundary.
-7. [Agent 4 Testing and Validation Contract](AGENT_4_TESTING_VALIDATION_CONTRACT.md) — Testing, Validation and Security Agent's separate `TEST_GENERATION` and `VALIDATION` modes, inputs, outputs, flows, and traceability.
+7. [Agent 3 Implementation Status](AGENT_3_IMPLEMENTATION_STATUS.md) — current implemented boundary, workflow status, architecture, models, APIs, persistence, verification baseline, limitations, and explicit future work.
+8. [Agent 4 Testing and Validation Contract](AGENT_4_TESTING_VALIDATION_CONTRACT.md) — Testing, Validation and Security Agent's separate `TEST_GENERATION` and `VALIDATION` modes, inputs, outputs, flows, and traceability.
 
 ## Required Reading
 
@@ -41,7 +42,7 @@ Every member must read this README plus:
 - the UI/API contract; and
 - the contract for the member's assigned specialist agent.
 
-The shared-foundation owners must read all seven contracts because they own the common infrastructure consumed by every agent. Agent-specific implementers should consult other agent contracts when defining interoperability, but must not modify or redefine another member's contract independently.
+The shared-foundation owners must read all seven contracts because they own the common infrastructure consumed by every agent. The Agent 3 status document is an implementation report, not an additional contract. Agent-specific implementers should consult other agent contracts when defining interoperability, but must not modify or redefine another member's contract independently.
 
 ## Change Control
 

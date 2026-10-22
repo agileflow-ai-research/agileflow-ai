@@ -59,6 +59,11 @@ class AgentType(str, Enum):
     TESTING_VALIDATION = "TESTING_VALIDATION"
 
 
+class AgentStage(str, Enum):
+    TEST_GENERATION = "TEST_GENERATION"
+    VALIDATION = "VALIDATION"
+
+
 class AgentProjectStatus(str, Enum):
     ACTIVE = "ACTIVE"
     ARCHIVED = "ARCHIVED"

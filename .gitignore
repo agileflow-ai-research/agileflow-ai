@@ -24,3 +24,8 @@ Thumbs.db
 *.log
 docs/ui-reference/agent2/
 models/
+
+# Local staged specialist inputs
+backend/storage/standalone/implementation/
+
+backend/storage/standalone/

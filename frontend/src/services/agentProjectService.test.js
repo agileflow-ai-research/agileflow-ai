@@ -23,6 +23,11 @@ describe('agentProjectService', () => {
       agent_type: 'REQUIREMENTS', name: 'A', domain: 'B', description: 'Context',
     }, { authenticated: true })
 
+    createAgentProject({ agentType: 'TESTING_VALIDATION', agentStage: 'TEST_GENERATION', name: 'Q', domain: 'B' })
+    expect(apiClient.post).toHaveBeenNthCalledWith(2, '/agent-projects', {
+      agent_type: 'TESTING_VALIDATION', agent_stage: 'TEST_GENERATION', name: 'Q', domain: 'B',
+    }, { authenticated: true })
+
     getAgentProjects({ agentType: 'TESTING_VALIDATION', status: 'ARCHIVED' })
     expect(apiClient.get).toHaveBeenCalledWith('/agent-projects?agent_type=TESTING_VALIDATION&status=ARCHIVED', { authenticated: true })
   })
@@ -31,7 +36,7 @@ describe('agentProjectService', () => {
     createAgentProject({ agentType: 'IMPLEMENTATION', name: 'A', domain: 'B', description: ' ' })
     expect(apiClient.post.mock.calls[0][1]).toEqual({ agent_type: 'IMPLEMENTATION', name: 'A', domain: 'B' })
 
-    updateAgentProject('AGP-001', { status: 'ARCHIVED', owner_user_id: 'USR-999', agent_type: 'REQUIREMENTS' })
+    updateAgentProject('AGP-001', { status: 'ARCHIVED', owner_user_id: 'USR-999', agent_type: 'REQUIREMENTS', agent_stage: 'VALIDATION' })
     expect(apiClient.patch).toHaveBeenCalledWith('/agent-projects/AGP-001', { status: 'ARCHIVED' }, { authenticated: true })
   })
 

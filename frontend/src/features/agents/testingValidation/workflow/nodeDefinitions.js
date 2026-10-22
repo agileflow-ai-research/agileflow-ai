@@ -1,0 +1,95 @@
+export const TESTING_VALIDATION_NODE_IDS = Object.freeze({
+  INPUT_OUTPUT_SETUP: 'INPUT_OUTPUT_SETUP',
+  INPUT_PREPARATION: 'INPUT_PREPARATION',
+  TESTING_INTELLIGENCE: 'TESTING_INTELLIGENCE',
+  TESTING_FACT_EXTRACTION: 'TESTING_FACT_EXTRACTION',
+  CONTEXT_TESTABILITY: 'CONTEXT_TESTABILITY',
+  TEST_PLANNING_REVIEW: 'TEST_PLANNING_REVIEW',
+  TEST_GENERATION_RESULTS: 'TEST_GENERATION_RESULTS',
+})
+
+export const TESTING_VALIDATION_NODE_DEFINITIONS = Object.freeze([
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.INPUT_OUTPUT_SETUP,
+    sequence: 1,
+    title: 'Input & Output Setup',
+    shortTitle: 'Input & Output',
+    panelKey: 'input-output-setup',
+    purpose: 'Collect testing inputs and choose desired test outputs.',
+    summary: 'Configure testing inputs and outputs.',
+    lockedNote: 'Available when this workflow reaches setup.',
+    futureStages: Object.freeze(['Artifact sources', 'Source types', 'Output selection', 'Human confirmation']),
+  }),
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.INPUT_PREPARATION,
+    sequence: 2,
+    title: 'Input Preparation',
+    shortTitle: 'Preparation',
+    panelKey: 'input-preparation',
+    purpose: 'Prepare confirmed inputs for testing analysis.',
+    summary: 'Extract, normalize, and chunk confirmed inputs.',
+    lockedNote: 'Available after setup is confirmed.',
+    futureStages: Object.freeze(['Extraction', 'Normalization', 'Chunking']),
+  }),
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.TESTING_INTELLIGENCE,
+    sequence: 3,
+    title: 'Testing Intelligence',
+    shortTitle: 'Intelligence',
+    panelKey: 'testing-intelligence',
+    purpose: 'Understand testing-relevant meaning from prepared chunks.',
+    summary: 'Classify evidence and approve uncertain decisions.',
+    lockedNote: 'Available after input preparation.',
+    futureStages: Object.freeze(['Rule Classification', 'Zero-Shot Classification', 'Hybrid Decision', 'Human Review', 'Approved Classifications']),
+  }),
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.TESTING_FACT_EXTRACTION,
+    sequence: 4,
+    title: 'Testing Fact Extraction',
+    shortTitle: 'Fact Extraction',
+    panelKey: 'testing-fact-extraction',
+    purpose: 'Extract grounded testing facts from approved classifications.',
+    summary: 'Extract testing facts with the local semantic model.',
+    lockedNote: 'Available after Testing Intelligence.',
+    futureStages: Object.freeze(['Semantic Test-Fact Extraction']),
+  }),
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.CONTEXT_TESTABILITY,
+    sequence: 5,
+    title: 'Context & Testability',
+    shortTitle: 'Testability',
+    panelKey: 'context-testability',
+    purpose: 'Assess traceability, testability, and generation feasibility for selected outputs.',
+    summary: 'Assess traceability, testability, and generation feasibility.',
+    lockedNote: 'Available after Testing Fact Extraction.',
+    futureStages: Object.freeze(['Traceability', 'Testability', 'Generation feasibility', 'Context decision']),
+  }),
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.TEST_PLANNING_REVIEW,
+    sequence: 6,
+    title: 'Test Planning & Human Review',
+    shortTitle: 'Planning & Review',
+    panelKey: 'test-planning-review',
+    purpose: 'Reserved for the future Test Case Plan and mandatory human review workflow.',
+    summary: 'Test planning is the next separate implementation step.',
+    lockedNote: 'Next implementation step.',
+    futureStages: Object.freeze(['Not implemented in the current workflow']),
+  }),
+  Object.freeze({
+    id: TESTING_VALIDATION_NODE_IDS.TEST_GENERATION_RESULTS,
+    sequence: 7,
+    title: 'Test Generation & Results',
+    shortTitle: 'Generation & Results',
+    panelKey: 'test-generation-results',
+    purpose: 'Reserved for future detailed test generation and results.',
+    summary: 'Test generation and results are not implemented yet.',
+    lockedNote: 'Future workflow step.',
+    futureStages: Object.freeze(['Not implemented in the current workflow']),
+  }),
+])
+
+export const TESTING_VALIDATION_NODE_REGISTRY = TESTING_VALIDATION_NODE_DEFINITIONS
+
+export function getTestingValidationNodeDefinition(nodeId) {
+  return TESTING_VALIDATION_NODE_REGISTRY.find((node) => node.id === nodeId) ?? null
+}

@@ -6,18 +6,15 @@ import pytest
 
 from app.common.model_provider import (
     ModelProviderError,
-    ModelStructuredOutputError,
     OpenAICompatibleProvider,
-    UnavailableModelProvider,
 )
 from app.main import app
-from app.modules.agent1.engine import Agent1Engine, _selected_schema, find_exact_duplicates
-from app.modules.agent1.schemas import (
+from app.modules.agents.requirements.engine import Agent1Engine, _selected_schema, find_exact_duplicates
+from app.modules.agents.requirements.schemas import (
     Agent1InputContext,
     QualityFindingCategory,
     RequirementOutputCode,
 )
-from app.modules.agent1.router import get_agent1_engine
 from app.modules.standalone.router import (
     get_agent_project_repository,
     get_agent_run_repository,
@@ -144,34 +141,6 @@ class FixedProvider:
         return deepcopy(self.response)
 
 
-class FailingProvider:
-    def generate_structured(self, **kwargs):
-        del kwargs
-        raise ModelProviderError("provider unavailable")
-
-
-class InvalidJsonProvider:
-    def generate_structured(self, **kwargs):
-        del kwargs
-        raise ModelStructuredOutputError("invalid json")
-
-
-@pytest.fixture
-def agent1_context(authentication_context):
-    projects = FakeAgentProjectRepository()
-    runs = FakeAgentRunRepository()
-    provider = FixedProvider({"FUNCTIONAL_REQUIREMENTS": VALID_FUNCTIONAL})
-    app.dependency_overrides[get_agent_project_repository] = lambda: projects
-    app.dependency_overrides[get_agent_run_repository] = lambda: runs
-    app.dependency_overrides[get_agent1_engine] = lambda: Agent1Engine(provider)
-    try:
-        yield authentication_context, projects, runs, provider
-    finally:
-        app.dependency_overrides.pop(get_agent_project_repository, None)
-        app.dependency_overrides.pop(get_agent_run_repository, None)
-        app.dependency_overrides.pop(get_agent1_engine, None)
-
-
 def create_project(client, agent_type="REQUIREMENTS"):
     response = client.post(
         "/api/v1/agent-projects",
@@ -193,157 +162,26 @@ def run_payload():
     }
 
 
-def test_agent1_run_uses_shared_lifecycle_and_respects_selected_outputs(
-    agent1_context,
-):
-    authentication, _, runs, provider = agent1_context
-    client = authentication.client()
-    project = create_project(client)
+def test_legacy_agent1_run_route_is_unavailable(authentication_context):
+    projects = FakeAgentProjectRepository()
+    runs = FakeAgentRunRepository()
+    app.dependency_overrides[get_agent_project_repository] = lambda: projects
+    app.dependency_overrides[get_agent_run_repository] = lambda: runs
+    try:
+        client = authentication_context.client()
+        project = create_project(client)
+        path = f"/api/v1/agents/requirements/{project['agent_project_id']}/run"
 
-    response = client.post(
-        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
-        json=run_payload(),
-    )
+        response = client.post(path, json=run_payload())
 
-    assert response.status_code == 200
-    result = response.json()["data"]
-    assert result["status"] == "COMPLETED"
-    assert result["agent_type"] == "REQUIREMENTS"
-    assert result["run_mode"] == "DEFAULT"
-    assert result["selected_outputs"] == ["FUNCTIONAL_REQUIREMENTS"]
-    assert set(result["outputs"]) == {"FUNCTIONAL_REQUIREMENTS"}
-    persisted = runs.documents[result["run_id"]]
-    assert persisted["status"] == "COMPLETED"
-    assert persisted["started_at"] is not None
-    assert persisted["completed_at"] is not None
-    assert persisted["input_snapshot"]["project_name"] == "BookEase"
-    assert persisted["input_snapshot"]["sources"] == [
-        {
-            "source_id": "TEXT-001",
-            "source_type": "TEXT",
-            "content": "Members need to search the catalogue.",
-        }
-    ]
-    assert len(provider.calls) == 1
-    assert set(provider.calls[0]["json_schema"]["properties"]) == {
-        "FUNCTIONAL_REQUIREMENTS"
-    }
-
-    history = client.get(
-        f"/api/v1/agent-projects/{project['agent_project_id']}/runs"
-    ).json()["data"]
-    assert [item["run_id"] for item in history] == [result["run_id"]]
-
-
-def test_agent1_rejects_wrong_type_foreign_and_archived_projects(agent1_context):
-    authentication, _, _, _ = agent1_context
-    owner_client = authentication.client("USR-001")
-    foreign_client = authentication.client("USR-002")
-
-    wrong_type = create_project(owner_client, "DESIGN_PLANNING")
-    assert owner_client.post(
-        f"/api/v1/agents/requirements/{wrong_type['agent_project_id']}/run",
-        json=run_payload(),
-    ).status_code == 422
-
-    project = create_project(owner_client)
-    assert foreign_client.post(
-        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
-        json=run_payload(),
-    ).status_code == 404
-
-    owner_client.patch(
-        f"/api/v1/agent-projects/{project['agent_project_id']}",
-        json={"status": "ARCHIVED"},
-    )
-    assert owner_client.post(
-        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
-        json=run_payload(),
-    ).status_code == 409
-
-
-@pytest.mark.parametrize(
-    "payload, field",
-    [
-        ({"text": "   ", "selected_outputs": ["SRS"]}, "text"),
-        ({"text": "A valid source", "selected_outputs": []}, "selected_outputs"),
-        (
-            {"text": "A valid source", "selected_outputs": ["NOT_SUPPORTED"]},
-            "selected_outputs.0",
-        ),
-    ],
-)
-def test_agent1_rejects_invalid_input_before_creating_a_run(
-    agent1_context, payload, field
-):
-    authentication, _, runs, _ = agent1_context
-    client = authentication.client()
-    project = create_project(client)
-
-    response = client.post(
-        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
-        json=payload,
-    )
-
-    assert response.status_code == 422
-    assert any(item["field"] == field for item in response.json()["errors"])
-    assert runs.documents == {}
-
-
-def test_malformed_structured_output_fails_and_persists_structured_error(
-    agent1_context,
-):
-    authentication, _, runs, provider = agent1_context
-    client = authentication.client()
-    project = create_project(client)
-    provider.response = {"FUNCTIONAL_REQUIREMENTS": [{"id": "FR-001"}]}
-
-    response = client.post(
-        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
-        json=run_payload(),
-    )
-
-    assert response.status_code == 200
-    result = response.json()["data"]
-    assert result["status"] == "FAILED"
-    assert result["outputs"] == {}
-    assert result["errors"][0]["code"] == "STRUCTURED_OUTPUT_INVALID"
-    assert runs.documents[result["run_id"]]["status"] == "FAILED"
-
-
-def test_invalid_source_reference_is_structured_output_failure(agent1_context):
-    authentication, _, _, provider = agent1_context
-    client = authentication.client()
-    project = create_project(client)
-    provider.response["FUNCTIONAL_REQUIREMENTS"][0]["source_refs"] = ["TEXT-999"]
-
-    response = client.post(
-        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
-        json=run_payload(),
-    )
-
-    result = response.json()["data"]
-    assert result["status"] == "FAILED"
-    assert result["errors"][0]["code"] == "STRUCTURED_OUTPUT_INVALID"
-
-
-def test_model_failure_transitions_running_run_to_failed(agent1_context):
-    authentication, _, runs, _ = agent1_context
-    app.dependency_overrides[get_agent1_engine] = lambda: Agent1Engine(
-        FailingProvider()
-    )
-    client = authentication.client()
-    project = create_project(client)
-
-    result = client.post(
-        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
-        json=run_payload(),
-    ).json()["data"]
-
-    assert result["status"] == "FAILED"
-    assert result["errors"][0]["code"] == "MODEL_EXECUTION_FAILED"
-    assert runs.documents[result["run_id"]]["started_at"] is not None
-    assert runs.documents[result["run_id"]]["completed_at"] is not None
+        assert response.status_code == 404
+        assert "/api/v1/agents/requirements/{agent_project_id}/run" not in app.openapi()[
+            "paths"
+        ]
+        assert runs.documents == {}
+    finally:
+        app.dependency_overrides.pop(get_agent_project_repository, None)
+        app.dependency_overrides.pop(get_agent_run_repository, None)
 
 
 def test_provider_schema_combines_definitions_and_is_strict():
@@ -482,66 +320,21 @@ def test_unexpected_blank_and_backend_metadata_outputs_are_rejected(response):
         )
 
 
-def test_invalid_json_provider_content_becomes_structured_output_invalid(
-    agent1_context,
-):
-    authentication, _, _, _ = agent1_context
-    app.dependency_overrides[get_agent1_engine] = lambda: Agent1Engine(
-        InvalidJsonProvider()
-    )
-    client = authentication.client()
-    project = create_project(client)
-
-    result = client.post(
-        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
-        json=run_payload(),
-    ).json()["data"]
-
-    assert result["status"] == "FAILED"
-    assert result["errors"][0]["code"] == "STRUCTURED_OUTPUT_INVALID"
-
-
-def test_missing_provider_configuration_is_a_safe_persisted_failure(
-    agent1_context,
-):
-    authentication, _, runs, _ = agent1_context
-    app.dependency_overrides[get_agent1_engine] = lambda: Agent1Engine(
-        UnavailableModelProvider("MODEL_API_KEY is not configured")
-    )
-    client = authentication.client()
-    project = create_project(client)
-
-    result = client.post(
-        f"/api/v1/agents/requirements/{project['agent_project_id']}/run",
-        json=run_payload(),
-    ).json()["data"]
-
-    assert result["status"] == "FAILED"
-    assert result["errors"] == [
-        {
-            "code": "MODEL_EXECUTION_FAILED",
-            "message": "The configured model provider could not generate the requested outputs",
-            "details": None,
-        }
-    ]
-    assert "MODEL_API_KEY" not in str(result)
-    assert runs.documents[result["run_id"]]["status"].value == "FAILED"
-
-
-def test_quality_issue_adds_only_required_supplemental_clarification():
+def test_quality_findings_do_not_add_unselected_clarification_artifact():
     quality = deepcopy(ALL_OUTPUTS["QUALITY_FINDINGS"])
     quality[0]["affected_refs"] = ["TEXT-001"]
-    outputs = Agent1Engine(
+    execution = Agent1Engine(
         FixedProvider({"QUALITY_FINDINGS": quality})
-    ).execute(CLINIC_CONTEXT, [RequirementOutputCode.QUALITY_FINDINGS])
+    ).execute_with_metadata(
+        CLINIC_CONTEXT, [RequirementOutputCode.QUALITY_FINDINGS]
+    )
 
-    assert set(outputs) == {"QUALITY_FINDINGS", "CLARIFICATION_QUESTIONS"}
-    assert outputs["CLARIFICATION_QUESTIONS"][0]["related_refs"] == [
-        "TEXT-001"
-    ]
+    assert set(execution.outputs) == {"QUALITY_FINDINGS"}
+    assert "CLARIFICATION_QUESTIONS" not in execution.outputs
+    assert execution.clarification_recommended is True
 
 
-def test_exact_duplicate_adds_clarification_without_unselected_quality_output():
+def test_exact_duplicate_recommends_but_does_not_add_unselected_clarification():
     duplicate_context = Agent1InputContext(
         project_name=CLINIC_CONTEXT.project_name,
         domain=CLINIC_CONTEXT.domain,
@@ -553,18 +346,66 @@ def test_exact_duplicate_adds_clarification_without_unselected_quality_output():
             }
         ],
     )
-    outputs = Agent1Engine(
+    execution = Agent1Engine(
         FixedProvider({"FUNCTIONAL_REQUIREMENTS": VALID_FUNCTIONAL})
-    ).execute(
+    ).execute_with_metadata(
         duplicate_context,
         [RequirementOutputCode.FUNCTIONAL_REQUIREMENTS],
     )
 
-    assert set(outputs) == {
-        "FUNCTIONAL_REQUIREMENTS",
-        "CLARIFICATION_QUESTIONS",
+    assert set(execution.outputs) == {"FUNCTIONAL_REQUIREMENTS"}
+    assert "CLARIFICATION_QUESTIONS" not in execution.outputs
+    assert "QUALITY_FINDINGS" not in execution.outputs
+    assert execution.clarification_recommended is True
+
+
+def test_selected_clarification_questions_are_returned_and_validated():
+    outputs = Agent1Engine(
+        FixedProvider({
+            "CLARIFICATION_QUESTIONS": [
+                {
+                    **ALL_OUTPUTS["CLARIFICATION_QUESTIONS"][0],
+                    "related_refs": ["TEXT-001"],
+                }
+            ]
+        })
+    ).execute(
+        CLINIC_CONTEXT,
+        [RequirementOutputCode.CLARIFICATION_QUESTIONS],
+    )
+
+    assert set(outputs) == {"CLARIFICATION_QUESTIONS"}
+    assert outputs["CLARIFICATION_QUESTIONS"][0]["id"] == "CQ-001"
+
+
+def test_provider_extra_unselected_clarification_is_filtered():
+    response = {
+        "FUNCTIONAL_REQUIREMENTS": VALID_FUNCTIONAL,
+        "CLARIFICATION_QUESTIONS": [
+            {
+                **ALL_OUTPUTS["CLARIFICATION_QUESTIONS"][0],
+                "related_refs": ["TEXT-001"],
+            }
+        ],
     }
-    assert "QUALITY_FINDINGS" not in outputs
+    execution = Agent1Engine(FixedProvider(response)).execute_with_metadata(
+        CLINIC_CONTEXT,
+        [RequirementOutputCode.FUNCTIONAL_REQUIREMENTS],
+    )
+
+    assert set(execution.outputs) == {"FUNCTIONAL_REQUIREMENTS"}
+    assert execution.clarification_recommended is True
+
+
+def test_engine_does_not_mutate_selected_outputs():
+    selected = [RequirementOutputCode.FUNCTIONAL_REQUIREMENTS]
+    original = list(selected)
+
+    Agent1Engine(
+        FixedProvider({"FUNCTIONAL_REQUIREMENTS": VALID_FUNCTIONAL})
+    ).execute(CLINIC_CONTEXT, selected)
+
+    assert selected == original
 
 
 class StubResponse:

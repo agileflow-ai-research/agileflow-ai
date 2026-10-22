@@ -1,6 +1,11 @@
+from datetime import datetime, timezone
+
+from bson import BSON
+
 from app.core.config import Settings
 from app.database import collections
 from app.database import mongodb
+from app.modules.standalone.schemas import AgentProject
 
 
 EXPECTED_COLLECTIONS = {
@@ -21,6 +26,8 @@ EXPECTED_COLLECTIONS = {
     "WORKFLOW_EVENTS": "workflow_events",
     "AGENT_PROJECTS": "agent_projects",
     "AGENT_RUNS": "agent_runs",
+    "GITHUB_CONNECTIONS": "github_connections",
+    "GITHUB_REPOSITORY_BINDINGS": "github_repository_bindings",
 }
 
 
@@ -102,3 +109,30 @@ def test_database_helpers_use_shared_client(monkeypatch) -> None:
 
     mongodb.close_mongodb_client()
     assert fake_client.closed is True
+
+
+def test_shared_client_decodes_bson_project_timestamps_as_utc_aware() -> None:
+    stored_at = datetime(2026, 10, 21, 0, 30, tzinfo=timezone.utc)
+    encoded = BSON.encode(
+        {
+            "agent_project_id": "AGP-001",
+            "owner_user_id": "USR-001",
+            "agent_type": "REQUIREMENTS",
+            "name": "Decoded project",
+            "description": "",
+            "domain": "Requirements",
+            "status": "ACTIVE",
+            "created_at": stored_at,
+            "updated_at": stored_at,
+        }
+    )
+
+    document = BSON(encoded).decode(
+        codec_options=mongodb.get_database().codec_options
+    )
+    project = AgentProject.model_validate(document)
+
+    assert project.created_at.tzinfo is not None
+    assert project.updated_at.tzinfo is not None
+    assert project.created_at.utcoffset() == timezone.utc.utcoffset(stored_at)
+    assert project.updated_at.utcoffset() == timezone.utc.utcoffset(stored_at)

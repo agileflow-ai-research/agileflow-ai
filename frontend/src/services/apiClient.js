@@ -22,11 +22,12 @@ function notifyUnauthorized(error) {
 }
 
 export class ApiError extends Error {
-  constructor({ status, message, errors, workflow_stage, next_action, cause }) {
+  constructor({ status, message, errors, data, workflow_stage, next_action, cause }) {
     super(message, { cause })
     this.name = 'ApiError'
     this.status = status
     this.errors = errors
+    this.data = data
     this.workflow_stage = workflow_stage
     this.next_action = next_action
   }
@@ -37,6 +38,7 @@ function createApiError(status, payload, fallbackMessage, cause) {
     status,
     message: payload?.message || fallbackMessage,
     errors: Array.isArray(payload?.errors) ? payload.errors : [],
+    data: payload?.data ?? null,
     workflow_stage: payload?.workflow_stage ?? null,
     next_action: payload?.next_action ?? null,
     cause,
@@ -71,10 +73,8 @@ export async function request(
 ) {
   const requestHeaders = new Headers(headers)
   const token = authenticated ? getAccessToken() : null
-
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
-
-  if (body !== undefined && !requestHeaders.has('Content-Type') && !isFormData) {
+  if (body !== undefined && !isFormData && !requestHeaders.has('Content-Type')) {
     requestHeaders.set('Content-Type', 'application/json')
   }
   if (token) {
@@ -127,7 +127,13 @@ export const apiClient = {
   post(path, body, options) {
     return request(path, { ...options, method: 'POST', body })
   },
+  put(path, body, options) {
+    return request(path, { ...options, method: 'PUT', body })
+  },
   patch(path, body, options) {
     return request(path, { ...options, method: 'PATCH', body })
+  },
+  delete(path, options) {
+    return request(path, { ...options, method: 'DELETE' })
   },
 }

@@ -16,6 +16,7 @@ from app.common.status import (
     AgentProjectStatus,
     AgentRunMode,
     AgentRunStatus,
+    AgentStage,
     AgentType,
 )
 
@@ -48,12 +49,30 @@ class AgentProjectCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent_type: AgentType
+    agent_stage: AgentStage | None = None
     name: str
     domain: str
     description: str = ""
 
     _validate_name = field_validator("name")(_require_nonblank)
     _validate_domain = field_validator("domain")(_require_nonblank)
+
+    @model_validator(mode="after")
+    def validate_agent_stage(self) -> "AgentProjectCreateRequest":
+        if self.agent_type is AgentType.TESTING_VALIDATION:
+            if self.agent_stage is None:
+                raise ValueError(
+                    "agent_stage is required for TESTING_VALIDATION projects"
+                )
+            if self.agent_stage is AgentStage.VALIDATION:
+                raise ValueError(
+                    "VALIDATION stage is not available yet"
+                )
+        elif self.agent_stage is not None:
+            raise ValueError(
+                "agent_stage is only valid for TESTING_VALIDATION projects"
+            )
+        return self
 
 
 class AgentProjectUpdateRequest(BaseModel):
@@ -90,6 +109,7 @@ class AgentProject(BaseModel):
     agent_project_id: str
     owner_user_id: str
     agent_type: AgentType
+    agent_stage: AgentStage | None = None
     name: str
     description: str = ""
     domain: str

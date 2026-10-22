@@ -11,7 +11,7 @@ from app.common.document_extractor import (
     extract_document_text,
 )
 from app.main import app
-from app.modules.agent2.router import get_agent2_engine
+from app.modules.agents.design_planning.router import get_agent2_engine
 from app.modules.standalone.router import get_agent_project_repository, get_agent_run_repository
 from test_standalone_foundation import FakeAgentProjectRepository, FakeAgentRunRepository
 

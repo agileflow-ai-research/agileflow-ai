@@ -39,6 +39,76 @@ body {
   outline-offset: 3px;
 }
 
+.react-flow__controls {
+  overflow: hidden;
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-surface);
+}
+
+.react-flow__controls-button {
+  border-color: var(--color-border-default);
+  background: var(--color-bg-surface);
+  color: var(--color-text-secondary);
+}
+
+.react-flow__controls-button:hover {
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow__edge-path {
+  stroke: var(--color-border-accent);
+  stroke-width: 1.5;
+}
+
+.workflow-node {
+  border-color: var(--color-border-default);
+}
+
+.workflow-node--selected {
+  outline: 2px solid var(--color-border-accent);
+  outline-offset: 3px;
+}
+
+.workflow-node--processing {
+  border-color: color-mix(in srgb, var(--color-border-accent) 82%, #7c3aed);
+  animation: workflow-processing-pulse 1.8s ease-in-out infinite;
+}
+
+.workflow-node--warning {
+  border-color: var(--color-state-warning);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-state-warning) 42%, transparent), 0 0 20px color-mix(in srgb, var(--color-state-warning) 22%, transparent);
+}
+
+.workflow-node--failed {
+  border-color: var(--color-state-danger);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-state-danger) 48%, transparent), 0 0 22px color-mix(in srgb, var(--color-state-danger) 26%, transparent);
+}
+
+.workflow-node--blocked {
+  border-color: color-mix(in srgb, var(--color-state-danger) 62%, var(--color-border-default));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-state-danger) 12%, transparent);
+}
+
+.workflow-node--success {
+  border-color: color-mix(in srgb, var(--color-state-success) 62%, var(--color-border-default));
+}
+
+.workflow-node--locked {
+  border-color: var(--color-border-default);
+  box-shadow: none;
+}
+
+@keyframes workflow-processing-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border-accent) 35%, transparent), 0 0 12px color-mix(in srgb, #7c3aed 18%, transparent); }
+  50% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border-accent) 58%, transparent), 0 0 26px color-mix(in srgb, #7c3aed 34%, transparent); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -47,5 +117,10 @@ body {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  .workflow-node--processing {
+    animation: none;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border-accent) 45%, transparent), 0 0 16px color-mix(in srgb, #7c3aed 24%, transparent);
   }
 }

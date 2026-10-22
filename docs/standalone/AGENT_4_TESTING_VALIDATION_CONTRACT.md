@@ -198,6 +198,55 @@ Source/project handling, dependency resolution, builds, test execution, scanners
 
 ## 7. Isolation and Reuse
 
+### Secure Validation Execution Implementation
+
+Executable `VALIDATION` is separated from `Agent4Engine` by a `ValidationExecutor`
+boundary. `Agent4Engine` selects validation actions and interprets evidence;
+`SandboxedValidationExecutor` alone stages files and invokes the sandbox. Shared
+`AgentProject` and `AgentRun` lifecycle behavior remains outside the executor.
+
+**A temporary directory is not a sandbox.** Temporary workspaces provide staging and
+cleanup only. Executable validation is permitted only inside the bounded Docker
+runtime. There is no unrestricted host-subprocess fallback. If Docker, its daemon, or
+the required local image is unavailable, requested executable validation fails with
+`TOOL_EXECUTION_FAILED`. Static-analysis-only validation may return explicitly
+skipped execution evidence because it executes no supplied project code.
+
+Supported Progress Presentation 1 profiles are server controlled:
+
+| Profile | Local image | Fixed build | Fixed test |
+|---|---|---|---|
+| `PYTHON_PYTEST` | `agileflow/agent4-python-pytest:1.0` | `python -m compileall -q .` | `python -m pytest -q --disable-warnings --cov=.` |
+| `NODE_NPM_TEST` | `agileflow/agent4-node-test:1.0` | `npm run build --if-present` | `npm test` |
+
+The runtime uses `--pull never`; image provisioning is an administrator-controlled
+setup step. Node dependencies must already be available in the supplied workspace or
+image. Runtime dependency download is deliberately unsupported.
+
+Every container has network mode `none`, a read-only root filesystem, all Linux
+capabilities dropped, `no-new-privileges`, a numeric non-root identity (the service
+UID/GID on POSIX or `65532:65532` where needed),
+1 CPU, 512 MiB memory, a 128-PID limit, a 64 MiB temporary filesystem, and a
+30-second command timeout. The intended project workspace is the only host bind
+mount. The repository root, host home directories, Docker socket, privileged mode,
+and host namespaces are never mounted or enabled. Container removal is enforced after
+success, failure, and timeout; unconfirmed cleanup is a safe execution failure.
+
+`build_command` and `run_command` remain only for exact backward-compatible selection
+of fixed profiles. They are not shell strings. Arbitrary executable names,
+`python -c`, `npx` packages, shell operators, added flags, and command overrides are
+rejected before a run is created. New clients use `validation_profile`.
+
+Staged paths reject empty paths, POSIX or Windows absolute paths, Windows drive paths
+including drive-relative forms, `..`, symlinks/reparse points, and resolved targets
+outside the workspace. File count and content size are bounded. Resolved paths are
+checked beneath the workspace immediately before exclusive, no-follow creation where
+supported.
+
+The built-in Python AST security check remains a limited static analyzer. Its results
+retain `ACTUAL_SCANNER_FINDING`; model observations must remain separately identified
+and must never be presented as scanner evidence.
+
 Both modes are capabilities of the same reusable Agent 4 engine/component, with mode-specific validation and execution paths. The standalone manual-input adapter and future integrated Shared Knowledge Base adapter feed that reusable component.
 
 Standalone Agent 4 does not require Agents 1–3 to have run, create H3 or H5 Approval, write automatically to integrated test/result/finding/traceability collections, or advance the Central SDLC Orchestrator.

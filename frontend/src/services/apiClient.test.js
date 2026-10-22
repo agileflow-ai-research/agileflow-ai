@@ -140,6 +140,29 @@ describe('apiClient response contract', () => {
     })
   })
 
+  it('preserves safe reconciliation data from an API error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            success: false,
+            message: 'Repository created but binding failed',
+            errors: [{ field: 'repository', message: 'Reconciliation required' }],
+            data: { repository: { created: true, full_name: 'octocat/quickbook' } },
+          },
+          { status: 502, statusText: 'Bad Gateway' },
+        ),
+      ),
+    )
+    const { request } = await import('./apiClient.js')
+
+    await expect(request('/repository')).rejects.toMatchObject({
+      status: 502,
+      data: { repository: { created: true, full_name: 'octocat/quickbook' } },
+    })
+  })
+
   it('wraps a network failure in a safe status-zero ApiError', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
     const { ApiError, request } = await import('./apiClient.js')
@@ -168,5 +191,38 @@ describe('apiClient response contract', () => {
       message: 'Bad Gateway',
       errors: [],
     })
+  })
+
+  it('passes FormData through without forcing a content type or JSON encoding', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ success: true, message: 'Uploaded', data: {} }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const { request } = await import('./apiClient.js')
+    const body = new FormData()
+    body.append('source_type', 'DOCUMENT')
+
+    await request('/uploads', { method: 'POST', body })
+
+    const options = fetchMock.mock.calls[0][1]
+    expect(options.body).toBe(body)
+    expect(options.headers.has('Content-Type')).toBe(false)
+  })
+
+  it('sends JSON through the centralized PUT helper', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ success: true, message: 'Saved', data: {} }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const { apiClient } = await import('./apiClient.js')
+
+    await apiClient.put('/reviews/CHK-001', { action: 'ACCEPT' }, { authenticated: true })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://api.test/api/v1/reviews/CHK-001',
+      expect.objectContaining({
+        method: 'PUT', body: JSON.stringify({ action: 'ACCEPT' }),
+      }),
+    )
   })
 })

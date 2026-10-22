@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 
 import ArtifactViewer from './ArtifactViewer.jsx'
-import RequirementsResults from './RequirementsResults.jsx'
+import RequirementsResults from '../../features/agents/requirements/RequirementsResults.jsx'
 import DesignPlanningResults from './agent-2/DesignPlanningResults.jsx'
+import TestingValidationResults from '../../features/agents/testingValidation/TestingValidationResults.jsx'
 import ErrorState from '../feedback/ErrorState.jsx'
 import LoadingState from '../feedback/LoadingState.jsx'
 import Button from '../ui/Button.jsx'
@@ -122,6 +123,8 @@ function RunDetail({ agentProjectId, runId, onClose }) {
           isHistorical
           title="Persisted design and planning outputs"
         />
+      ) : run.agent_type === 'TESTING_VALIDATION' ? (
+        <TestingValidationResults outputs={manifest} runMode={run.run_mode} title={run.run_mode === 'TEST_GENERATION' ? 'Persisted generated test outputs' : 'Persisted validation evidence'} />
       ) : (
         <ArtifactViewer heading="Output manifest" metadata="Persisted manifest metadata">
           {Object.keys(manifest).length > 0 ? (
