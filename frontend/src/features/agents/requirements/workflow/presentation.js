@@ -34,19 +34,43 @@ export function deriveRequirementsWorkflowPresentation({
   }
 
   return Object.fromEntries(REQUIREMENTS_NODE_REGISTRY.map((definition) => [definition.id, {
-    status: definition.active ? states[definition.id] : WORKFLOW_NODE_STATES.LOCKED,
-    ...(definition.id === REQUIREMENTS_NODE_IDS.INPUT_COLLECTION
+    status: !definition.active
+      ? WORKFLOW_NODE_STATES.LOCKED
+      : definition.id === REQUIREMENTS_NODE_IDS.QUALITY_ENGINEERING
+        && workflowState?.n4_execution?.status === 'COMPLETE'
+        && (workflowState.n4_execution.result_summary?.total_finding_count ?? 0) > 0
+        ? WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
+        : states[definition.id],
+    ...(!definition.active
+      ? { statusLabel: definition.reservedStatus }
+      : definition.id === REQUIREMENTS_NODE_IDS.INPUT_COLLECTION
       && states[definition.id] === WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN
       ? { statusLabel: 'Ready to Continue' }
-      : {}),
+      : states[definition.id] === WORKFLOW_NODE_STATES.QUEUED
+        ? { statusLabel: 'Preparing to start' }
+        : states[definition.id] === WORKFLOW_NODE_STATES.FAILED
+          ? { statusLabel: 'Could not complete' }
+          : states[definition.id] === WORKFLOW_NODE_STATES.BLOCKED
+            ? { statusLabel: 'Inputs changed — cannot continue' }
+            : definition.id === REQUIREMENTS_NODE_IDS.QUALITY_ENGINEERING
+              && workflowState?.n4_execution?.status === 'COMPLETE'
+              && (workflowState.n4_execution.result_summary?.total_finding_count ?? 0) > 0
+              ? { statusLabel: 'Needs human review' }
+              : {}),
     summary: definition.id === REQUIREMENTS_NODE_IDS.QUALITY_ENGINEERING
       ? workflowState?.n4_execution?.status === 'COMPLETE'
         ? `${workflowState.n4_execution.result_summary?.total_finding_count ?? 0} findings · ${workflowState.n4_execution.result_summary?.clarification_candidate_count ?? 0} require human review`
-        : workflowState?.n4_execution?.status === 'RUNNING' ? 'Analyzing requirement quality'
-          : workflowState?.n4_execution?.status === 'QUEUED' ? 'Quality analysis queued'
-            : workflowState?.n4_execution?.status === 'FAILED' ? 'Quality analysis failed'
-              : workflowState?.n4_execution?.status === 'BLOCKED' ? 'Quality analysis blocked'
+        : workflowState?.n4_execution?.status === 'RUNNING' ? 'Checking requirement quality…'
+          : workflowState?.n4_execution?.status === 'QUEUED' ? 'Preparing to start quality analysis'
+            : workflowState?.n4_execution?.status === 'FAILED' ? 'Quality analysis could not complete'
+              : workflowState?.n4_execution?.status === 'BLOCKED' ? 'Inputs changed — cannot continue'
                 : states[definition.id] === WORKFLOW_NODE_STATES.LOCKED ? 'Waiting for Requirement Discovery' : definition.summary
+      : definition.id === REQUIREMENTS_NODE_IDS.PROCESSING_AND_CHUNKING
+        && states[definition.id] === WORKFLOW_NODE_STATES.RUNNING
+        ? 'Processing requirement sources…'
+      : definition.id === REQUIREMENTS_NODE_IDS.DISCOVERY_AND_STRUCTURING
+        && states[definition.id] === WORKFLOW_NODE_STATES.RUNNING
+        ? 'Discovering and structuring requirements…'
       : definition.id === REQUIREMENTS_NODE_IDS.DISCOVERY_AND_STRUCTURING
       && workflowState?.n3_execution?.status === 'COMPLETE'
       ? `${workflowState.n3_execution.result_summary?.candidate_count ?? 0} candidates · ${workflowState.n3_execution.result_summary?.functional_requirement_count ?? 0} FR · ${workflowState.n3_execution.result_summary?.non_functional_requirement_count ?? 0} NFR · ${workflowState.n3_execution.result_summary?.excluded_candidate_count ?? 0} OTHER`
