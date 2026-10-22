@@ -1,3 +1,10 @@
+"""
+Disk persistence for the N4.3 feasibility result.
+
+Path: <root>/<agent_project_id>/context-testability/feasibility.json. One result per project.
+Same owner check and atomic .part-then-replace write as the other stores.
+"""
+
 import json
 from pathlib import Path
 
