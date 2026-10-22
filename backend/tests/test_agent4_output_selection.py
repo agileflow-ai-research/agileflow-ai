@@ -92,6 +92,7 @@ def assert_waiting_workflow(workflow):
         "LOCKED",
         "LOCKED",
         "LOCKED",
+        "LOCKED",
     ]
 
 

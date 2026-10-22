@@ -9,6 +9,7 @@ import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import TestingValidationCanvas from '../canvas/TestingValidationCanvas.jsx'
 import useTestingValidationWorkflow from '../hooks/useTestingValidationWorkflow.js'
 import ContextTestabilityPanel from '../panels/ContextTestabilityPanel.jsx'
+import HumanApprovalPanel from '../panels/HumanApprovalPanel.jsx'
 import InputOutputSetupPanel from '../panels/InputOutputSetupPanel.jsx'
 import InputPreparationPanel from '../panels/InputPreparationPanel.jsx'
 import TestGenerationResultsPanel from '../panels/TestGenerationResultsPanel.jsx'
@@ -25,6 +26,7 @@ const panelByNodeId = Object.freeze({
   [TESTING_VALIDATION_NODE_IDS.INPUT_OUTPUT_SETUP]: InputOutputSetupPanel,
   [TESTING_VALIDATION_NODE_IDS.INPUT_PREPARATION]: InputPreparationPanel,
   [TESTING_VALIDATION_NODE_IDS.TESTING_INTELLIGENCE]: TestingIntelligencePanel,
+  [TESTING_VALIDATION_NODE_IDS.HUMAN_APPROVAL]: HumanApprovalPanel,
   [TESTING_VALIDATION_NODE_IDS.TESTING_FACT_EXTRACTION]: TestingFactExtractionPanel,
   [TESTING_VALIDATION_NODE_IDS.CONTEXT_TESTABILITY]: ContextTestabilityPanel,
   [TESTING_VALIDATION_NODE_IDS.TEST_PLANNING_REVIEW]: TestPlanningReviewPanel,

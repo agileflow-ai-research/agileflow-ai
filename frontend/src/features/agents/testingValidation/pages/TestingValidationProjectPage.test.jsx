@@ -20,6 +20,7 @@ const canvasNodes = vi.hoisted(() => ([
   ['INPUT_OUTPUT_SETUP', 'Input & Output Setup'],
   ['INPUT_PREPARATION', 'Input Preparation'],
   ['TESTING_INTELLIGENCE', 'Testing Intelligence'],
+  ['HUMAN_APPROVAL', 'Human Approval'],
   ['TESTING_FACT_EXTRACTION', 'Testing Fact Extraction'],
   ['CONTEXT_TESTABILITY', 'Context & Testability'],
   ['TEST_PLANNING_REVIEW', 'Test Planning & Human Review'],
@@ -103,7 +104,7 @@ describe('TestingValidationProjectPage', () => {
     startTestGenerationPreparation.mockResolvedValue({ data: workflow })
   })
 
-  it('loads the authoritative workflow and renders its seven node states', async () => {
+  it('loads the authoritative workflow and renders its eight node states', async () => {
     renderPage()
 
     expect(screen.getByText('Loading Test Generation workflow')).toBeInTheDocument()
@@ -113,9 +114,9 @@ describe('TestingValidationProjectPage', () => {
     expect(getTestGenerationWorkflow).toHaveBeenCalledWith(
       'AGP-404', expect.objectContaining({ signal: expect.any(AbortSignal) }),
     )
-    expect(screen.getAllByRole('button', { name: /Open / })).toHaveLength(7)
+    expect(screen.getAllByRole('button', { name: /Open / })).toHaveLength(8)
     expect(screen.getAllByText('Available - Waiting for Setup')).toHaveLength(1)
-    expect(screen.getAllByText('LOCKED')).toHaveLength(6)
+    expect(screen.getAllByText('LOCKED')).toHaveLength(7)
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument()
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
@@ -140,6 +141,7 @@ describe('TestingValidationProjectPage', () => {
     ['Input & Output Setup', /Sources and desired outputs remain editable draft setup/],
     ['Input Preparation', /No extraction, normalization, or chunking/],
     ['Testing Intelligence', /automatically analyze prepared inputs when this stage begins/],
+    ['Human Approval', /becomes available after Testing Intelligence/],
     ['Testing Fact Extraction', /starts after Testing Intelligence/],
     ['Context & Testability', /Deterministic traceability, testability, feasibility, and context-decision evidence/],
     ['Test Planning & Human Review', /Mandatory Human Approval Gate/],
@@ -252,7 +254,7 @@ describe('TestingValidationProjectPage', () => {
     )
     expect(screen.getAllByText('COMPLETE')).toHaveLength(1)
     expect(screen.getAllByText('NOT_STARTED')).toHaveLength(1)
-    expect(screen.getAllByText('LOCKED')).toHaveLength(5)
+    expect(screen.getAllByText('LOCKED')).toHaveLength(6)
     expect(screen.queryByRole('button', { name: /Start N|Run N|Extract now/ })).not.toBeInTheDocument()
     expect(runTestingValidationAgent).not.toHaveBeenCalled()
 
@@ -271,7 +273,7 @@ describe('TestingValidationProjectPage', () => {
       n3_execution: { execution_id: 'A4N3E-complete', attempt_number: 1, status: 'COMPLETED', sources: [] },
       nodes: canvasNodes.map(([nodeId], index) => ({
         node_id: nodeId,
-        status: index < 4 ? 'COMPLETED' : index === 4 ? 'NOT_STARTED' : 'LOCKED',
+        status: index < 5 ? 'COMPLETED' : index === 5 ? 'NOT_STARTED' : 'LOCKED',
         updated_at: '2026-10-21T03:00:00Z',
       })),
     }

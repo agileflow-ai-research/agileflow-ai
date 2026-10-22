@@ -64,7 +64,7 @@ def workflow_endpoint(project_id):
     )
 
 
-def test_initializes_and_projects_the_exact_seven_node_workflow(agent4_workflow_context):
+def test_initializes_and_projects_the_exact_eight_node_workflow(agent4_workflow_context):
     authentication, _, runs, root = agent4_workflow_context
     client = authentication.client()
     project = create_project(client)
@@ -87,9 +87,9 @@ def test_initializes_and_projects_the_exact_seven_node_workflow(agent4_workflow_
         node_id.value for node_id in AGENT4_TEST_GENERATION_NODE_ORDER
     ]
     assert [node["status"] for node in workflow["nodes"]] == [
-        "WAITING_FOR_HUMAN", "LOCKED", "LOCKED", "LOCKED", "LOCKED", "LOCKED", "LOCKED",
+        "WAITING_FOR_HUMAN", "LOCKED", "LOCKED", "LOCKED", "LOCKED", "LOCKED", "LOCKED", "LOCKED",
     ]
-    assert len(workflow["nodes"]) == 7
+    assert len(workflow["nodes"]) == 8
     assert "owner_user_id" not in workflow
     assert "path" not in json.dumps(workflow).lower()
     assert runs.documents == {}
@@ -111,7 +111,7 @@ def test_initializes_and_projects_the_exact_seven_node_workflow(agent4_workflow_
     assert not workflow_path.with_suffix(".json.part").exists()
 
 
-def test_load_upgrades_existing_six_node_workflow_without_losing_state(
+def test_load_upgrades_workflow_missing_fact_node_without_losing_state(
     agent4_workflow_context,
 ):
     authentication, _, _, root = agent4_workflow_context
@@ -136,7 +136,34 @@ def test_load_upgrades_existing_six_node_workflow_without_losing_state(
     assert [node.node_id.value for node in loaded.nodes] == [
         node_id.value for node_id in AGENT4_TEST_GENERATION_NODE_ORDER
     ]
-    assert loaded.nodes[3].node_id.value == "TESTING_FACT_EXTRACTION"
+    assert loaded.nodes[4].node_id.value == "TESTING_FACT_EXTRACTION"
+    assert loaded.nodes[4].status.value == "LOCKED"
+
+
+def test_load_upgrades_workflow_missing_human_approval_node(
+    agent4_workflow_context,
+):
+    authentication, _, _, root = agent4_workflow_context
+    client = authentication.client()
+    project_id = create_project(client)["agent_project_id"]
+    workflow_path = root / project_id / "workflow.json"
+    assert client.get(workflow_endpoint(project_id)).status_code == 200
+    payload = json.loads(workflow_path.read_text(encoding="utf-8"))
+    payload["nodes"] = [
+        node for node in payload["nodes"]
+        if node["node_id"] != "HUMAN_APPROVAL"
+    ]
+    workflow_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = Agent4WorkflowStorage(root).load(
+        agent_project_id=project_id,
+        owner_user_id="USR-001",
+    )
+
+    assert [node.node_id.value for node in loaded.nodes] == [
+        node_id.value for node_id in AGENT4_TEST_GENERATION_NODE_ORDER
+    ]
+    assert loaded.nodes[3].node_id.value == "HUMAN_APPROVAL"
     assert loaded.nodes[3].status.value == "LOCKED"
 
 

@@ -3,9 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { INTELLIGENCE_REVIEW_LABELS } from '../intelligenceReviewPresentation.js'
+import HumanApprovalPanel from './HumanApprovalPanel.jsx'
 import TestingIntelligencePanel from './TestingIntelligencePanel.jsx'
 
-const definition = { title: 'Testing Intelligence', purpose: 'Classify evidence and extract testing facts.', futureStages: [] }
+const definition = { title: 'Human Approval', purpose: 'Approve uncertain classifications.', futureStages: [] }
 const execution = {
   attempt_number: 1,
   status: 'WAITING_FOR_HUMAN',
@@ -40,6 +41,11 @@ const review = {
 
 function renderPanel(overrides = {}) {
   const props = { definition, intelligenceError: '', intelligenceReview: review, n3Execution: execution, onRetryIntelligenceSource: vi.fn(), onSubmitIntelligenceReview: vi.fn(), retryingIntelligenceSourceId: null, reviewSubmitting: false, statusLabel: 'Needs review', workflowNodeStatus: 'WAITING_FOR_HUMAN', ...overrides }
+  return { ...props, ...render(<HumanApprovalPanel {...props} />) }
+}
+
+function renderIntelligencePanel(overrides = {}) {
+  const props = { definition: { ...definition, title: 'Testing Intelligence' }, intelligenceError: '', n3Execution: execution, onRetryIntelligenceSource: vi.fn(), retryingIntelligenceSourceId: null, workflowNodeStatus: 'RUNNING', ...overrides }
   return { ...props, ...render(<TestingIntelligencePanel {...props} />) }
 }
 
@@ -171,7 +177,7 @@ describe('TestingIntelligencePanel', () => {
     expect(panel).toHaveTextContent('✓ Rule analysis')
     expect(panel).toHaveTextContent('✓ AI classification')
     expect(panel).toHaveTextContent('✓ Combined decision')
-    expect(panel).toHaveTextContent('○ Human review')
+    expect(panel).not.toHaveTextContent('Human review')
     expect(panel).not.toHaveTextContent('Testing fact extraction')
     expect(panel).not.toHaveTextContent(/DeBERTa|H1/)
   })
@@ -221,7 +227,7 @@ describe('TestingIntelligencePanel', () => {
       ['TI_EFFECTIVE_CLASSIFICATION', 'COMPLETED'],
       ['TI_FACT_EXTRACTION', 'NOT_STARTED'],
     ].map(([stage, status]) => ({ stage, status, safe_error: stage === 'TI_AI_CLASSIFICATION' ? { code: 'TI_AI_CLASSIFICATION_FAILED', message: 'AI classification could not complete.' } : null }))
-    const { unmount } = renderPanel({ intelligenceReview: null, n3Execution: { ...execution, status: 'FAILED', sub_stages: subStages, sources: [{ ...execution.sources[0], status: 'FAILED', failed_stage: 'TI_AI_CLASSIFICATION', sub_stages: subStages, error: { message: 'Safe source failure.' } }] }, onRetryIntelligenceSource: retry })
+    const { unmount } = renderIntelligencePanel({ n3Execution: { ...execution, status: 'FAILED', sub_stages: subStages, sources: [{ ...execution.sources[0], status: 'FAILED', failed_stage: 'TI_AI_CLASSIFICATION', sub_stages: subStages, error: { message: 'Safe source failure.' } }] }, onRetryIntelligenceSource: retry, workflowNodeStatus: 'FAILED' })
     expect(screen.getByText('Failed — retry available')).toBeInTheDocument()
     expect(screen.getByText(/completed steps are preserved/i)).toBeInTheDocument()
     expect(screen.getByText('Testing Intelligence source failed')).toBeInTheDocument()
@@ -229,9 +235,9 @@ describe('TestingIntelligencePanel', () => {
     await user.click(screen.getByRole('button', { name: 'Retry source' }))
     expect(retry).toHaveBeenCalledWith('A4SRC-one')
     unmount()
-    renderPanel({ intelligenceReview: null, n3Execution: { ...execution, status: 'COMPLETED' }, workflowNodeStatus: 'COMPLETED' })
+    renderIntelligencePanel({ n3Execution: { ...execution, status: 'COMPLETED' }, workflowNodeStatus: 'COMPLETED' })
     expect(screen.getByRole('status')).toHaveTextContent('Testing Intelligence complete')
-    expect(screen.getByRole('status')).toHaveTextContent('Testing Fact Extraction is the next workflow node')
+    expect(screen.getByRole('status')).toHaveTextContent('Human Approval is the next workflow checkpoint')
   })
 
   it.each([
@@ -243,7 +249,7 @@ describe('TestingIntelligencePanel', () => {
   ])('renders %s state from authoritative execution progress', (status, trigger, label) => {
     const subStages = [['TI_RULE_ANALYSIS', 'COMPLETED'], ['TI_FACT_EXTRACTION', status === 'INTERRUPTED' ? 'INTERRUPTED' : 'RUNNING']]
       .map(([stage, stageStatus]) => ({ stage, status: stageStatus, safe_error: stageStatus === 'INTERRUPTED' ? { code: 'N3_EXECUTION_INTERRUPTED', message: 'Saved processing was interrupted.' } : null }))
-    renderPanel({ intelligenceReview: null, n3Execution: { ...execution, status, trigger, sub_stages: subStages, sources: [{ ...execution.sources[0], status: status === 'INTERRUPTED' ? 'FAILED' : status, sub_stages: subStages, error: status === 'INTERRUPTED' ? { message: 'Saved processing was interrupted.' } : null }] }, workflowNodeStatus: status })
+    renderIntelligencePanel({ n3Execution: { ...execution, status, trigger, sub_stages: subStages, sources: [{ ...execution.sources[0], status: status === 'INTERRUPTED' ? 'FAILED' : status, sub_stages: subStages, error: status === 'INTERRUPTED' ? { message: 'Saved processing was interrupted.' } : null }] }, workflowNodeStatus: status })
     expect(screen.getByText(label)).toBeInTheDocument()
   })
 
