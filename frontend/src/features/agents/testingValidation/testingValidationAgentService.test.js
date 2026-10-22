@@ -8,6 +8,11 @@ import {
   deleteTestingValidationSource,
   getTestGenerationWorkflow,
   getTestGenerationContextResult,
+  getClassificationDetails,
+  getContextDetails,
+  getPreparedSections,
+  getReviewDecisionDetails,
+  getTestingFactDetails,
   listTestingValidationSources,
   runTestingValidationAgent,
   retryTestGenerationContextAnalysis,
@@ -81,6 +86,22 @@ describe('testingValidationAgentService', () => {
       { warning_snapshot_fingerprint: 'a'.repeat(64), optional_note: 'Reviewed' },
       { authenticated: true },
     )
+  })
+
+  it('uses authenticated paginated read-only detail routes', () => {
+    getPreparedSections('AGP-004', 5, 5)
+    getClassificationDetails('AGP-004', 10, 5)
+    getReviewDecisionDetails('AGP-004', 0, 5)
+    getTestingFactDetails('AGP-004', 0, 10)
+    getContextDetails('AGP-004', 5, 5)
+
+    expect(apiClient.get.mock.calls).toEqual([
+      ['/agents/testing-validation/AGP-004/test-generation/workflow/n2/prepared-sections?offset=5&limit=5', { authenticated: true }],
+      ['/agents/testing-validation/AGP-004/test-generation/workflow/n3/classifications?offset=10&limit=5', { authenticated: true }],
+      ['/agents/testing-validation/AGP-004/test-generation/workflow/n3/review-decisions?offset=0&limit=5', { authenticated: true }],
+      ['/agents/testing-validation/AGP-004/test-generation/workflow/n3/testing-facts?offset=0&limit=10', { authenticated: true }],
+      ['/agents/testing-validation/AGP-004/test-generation/workflow/n4/details?offset=5&limit=5', { authenticated: true }],
+    ])
   })
 
   it('uses the canonical authenticated source CRUD routes', () => {

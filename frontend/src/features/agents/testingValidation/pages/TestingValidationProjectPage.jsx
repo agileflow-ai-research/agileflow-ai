@@ -3,11 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import WorkflowControls from '../../../../components/agents/workflow/WorkflowControls.jsx'
 import WorkflowNodeModal from '../../../../components/agents/workflow/WorkflowNodeModal.jsx'
 import ErrorState from '../../../../components/feedback/ErrorState.jsx'
+import { sanitizeDisplayText } from '../displayText.js'
 import LoadingState from '../../../../components/feedback/LoadingState.jsx'
 import { getWorkflowStatePresentation } from '../../../../components/agents/workflowState.js'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import TestingValidationCanvas from '../canvas/TestingValidationCanvas.jsx'
 import useTestingValidationWorkflow from '../hooks/useTestingValidationWorkflow.js'
+import useTestingValidationDetails from '../hooks/useTestingValidationDetails.js'
 import ContextTestabilityPanel from '../panels/ContextTestabilityPanel.jsx'
 import HumanApprovalPanel from '../panels/HumanApprovalPanel.jsx'
 import InputOutputSetupPanel from '../panels/InputOutputSetupPanel.jsx'
@@ -78,6 +80,14 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
     ? { ...selectedDefinition, ...presentation[selectedDefinition.id] }
     : null
   const SelectedPanel = selectedDefinition ? panelByNodeId[selectedDefinition.id] : null
+  const detailNodeId = (
+    (selectedNodeId === TESTING_VALIDATION_NODE_IDS.INPUT_PREPARATION && workflowState.n2_execution)
+    || (selectedNodeId === TESTING_VALIDATION_NODE_IDS.TESTING_INTELLIGENCE && workflowState.n3_execution)
+    || (selectedNodeId === TESTING_VALIDATION_NODE_IDS.HUMAN_APPROVAL && workflowState.reviewed_item_count > 0)
+    || (selectedNodeId === TESTING_VALIDATION_NODE_IDS.TESTING_FACT_EXTRACTION && workflowState.n3_execution)
+    || (selectedNodeId === TESTING_VALIDATION_NODE_IDS.CONTEXT_TESTABILITY && workflowState.n4_execution?.overall_decision)
+  ) ? selectedNodeId : null
+  const details = useTestingValidationDetails(project.agent_project_id, detailNodeId)
 
   const handleSelectNode = useCallback((nodeId) => {
     setSelectedNodeId(nodeId)
@@ -104,7 +114,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
       <header className="flex flex-col gap-4 border-b border-default pb-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 id="testing-validation-canvas-title" className="text-page-heading font-semibold text-content-primary">{project.name}</h1>
+            <h1 id="testing-validation-canvas-title" className="text-page-heading font-semibold text-content-primary">{sanitizeDisplayText(project.name)}</h1>
             <StatusBadge label={projectStatus.label} tone={projectStatus.tone} />
           </div>
           <p className="mt-1 text-sm text-content-secondary">Agent 4 — Test Generation</p>
@@ -125,7 +135,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
           <div className="p-4 sm:p-6">
             <ErrorState
               title="Unable to load Test Generation workflow"
-              message={loadError}
+              message={sanitizeDisplayText(loadError)}
               onRetry={retry}
               retryLabel="Retry"
             />
@@ -152,6 +162,11 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
               confirmationError={confirmationError}
               confirmationSubmitting={confirmationSubmitting}
               definition={selectedDefinition}
+              detailData={details.data}
+              detailError={details.error}
+              detailStatus={details.status}
+              onLoadMoreDetails={details.loadMore}
+              onRetryDetails={details.retry}
               n1Confirmation={workflowState.n1_confirmation}
               onConfirmN1={handleConfirmN1}
               onSaveOutputs={saveOutputs}
@@ -176,6 +191,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
               onSubmitIntelligenceReview={submitIntelligenceReview}
               retryingIntelligenceSourceId={retryingIntelligenceSourceId}
               reviewSubmitting={reviewSubmitting}
+              reviewedItemCount={workflowState.reviewed_item_count}
               retryingSourceId={retryingSourceId}
               workflowNodeStatus={workflowState.nodes.find(
                 (node) => node.node_id === selectedDefinition.id,
@@ -188,7 +204,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
         </WorkflowNodeModal>
       </div>
 
-      <p className="text-xs text-content-muted">Workflow status and Input Preparation progress are loaded from the persisted Stage 1 record. Node positions remain visual only.</p>
+      <p className="text-xs text-content-muted">Workflow status and visible results come from persisted Agent 4 records. Node positions are visual only.</p>
     </section>
   )
 }

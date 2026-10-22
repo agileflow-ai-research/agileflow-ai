@@ -1,21 +1,10 @@
-import NodeShellPanel from './NodeShellPanel.jsx'
+import { NextStep, ResultBanner } from './NodePresentation.jsx'
 
-function TestGenerationResultsPanel({ definition, statusLabel }) {
-  return (
-    <NodeShellPanel
-      definition={definition}
-      availability={statusLabel}
-      note="Test generation and results are not implemented yet. This shell generates no tests and performs no execution."
-    >
-      <div className="rounded-control border border-default bg-elevated p-4">
-        <h4 className="font-semibold text-content-primary">Stage 1 result contract</h4>
-        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div><dt className="text-xs uppercase tracking-wide text-content-muted">Representation</dt><dd className="mt-1 text-sm text-content-primary">SPECIFICATION or EXECUTABLE_CODE</dd></div>
-          <div><dt className="text-xs uppercase tracking-wide text-content-muted">execution_status</dt><dd className="mt-1 text-sm font-semibold text-content-primary">NOT_EXECUTED</dd></div>
-        </dl>
-      </div>
-    </NodeShellPanel>
-  )
+function TestGenerationResultsPanel({ definition }) {
+  return <section className="space-y-4" aria-label={`${definition.title} details`}>
+    <ResultBanner tone="neutral" title="Reserved — future development" description="Detailed test generation, executable code, execution, and result reporting are not implemented. This node displays no generated or simulated output." />
+    <NextStep>No action is available in this reserved node.</NextStep>
+  </section>
 }
 
 export default TestGenerationResultsPanel

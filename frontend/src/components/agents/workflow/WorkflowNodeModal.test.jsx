@@ -31,6 +31,7 @@ describe('WorkflowNodeModal', () => {
     expect(screen.getByText('Agent workflow')).toBeInTheDocument()
     expect(screen.getByText('Needs Your Review')).toBeInTheDocument()
     expect(screen.getByTestId('workflow-modal-body')).toHaveClass('overflow-y-auto')
+    expect(screen.getByRole('dialog')).toHaveClass('max-h-[calc(100dvh-1rem)]')
   })
 
   it('closes from the button and Escape', async () => {

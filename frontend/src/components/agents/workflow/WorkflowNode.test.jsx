@@ -23,6 +23,9 @@ describe('WorkflowNode status presentation', () => {
     ['FAILED', 'failed'],
     ['BLOCKED', 'blocked'],
     ['COMPLETE', 'success'],
+    ['READY', 'success'],
+    ['READY_WITH_WARNINGS', 'warning'],
+    ['INTERRUPTED', 'failed'],
     ['LOCKED', 'locked'],
   ])('maps %s through the shared visual system', (status, visual) => {
     const node = renderNode(status)
@@ -37,6 +40,14 @@ describe('WorkflowNode status presentation', () => {
     expect(node).toHaveClass('workflow-node--processing')
     expect(node).toHaveClass('workflow-node--selected')
     expect(node).toHaveAttribute('data-selected', 'true')
+  })
+
+  it('communicates authoritative activity with text instead of color alone', () => {
+    render(<WorkflowNode data={{ title: 'Testing Fact Extraction', status: 'RUNNING', statusLabel: 'Processing', active: true, activityText: 'Extracting grounded testing factsâ€¦' }} />)
+    const node = screen.getByRole('button', { name: 'Open Testing Fact Extraction' }).parentElement
+    expect(node).toHaveAttribute('data-active', 'true')
+    expect(screen.getByText('Processing')).toBeInTheDocument()
+    expect(screen.getByText('Extracting grounded testing factsâ€¦')).toHaveAttribute('aria-live', 'polite')
   })
 
   it('renders locked state and keeps required edge handles non-interactive', () => {

@@ -22,7 +22,7 @@ execution that was left RUNNING after a restart (see the orchestration services)
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from app.common.model_provider import build_model_provider
@@ -128,6 +128,18 @@ from app.modules.agents.testing_validation.workflow.storage import (
     Agent4WorkflowStorage,
     Agent4WorkflowStorageError,
 )
+from app.modules.agents.testing_validation.details.schemas import (
+    ClassificationDetailsPage,
+    ContextDetailProjection,
+    PreparedSectionsPage,
+    ReviewDecisionsPage,
+    TestingFactsPage,
+)
+from app.modules.agents.testing_validation.details.service import (
+    Agent4DetailService,
+    Agent4DetailSourceNotFoundError,
+    Agent4DetailUnavailableError,
+)
 
 
 router = APIRouter(prefix="/agents/testing-validation", tags=["testing-validation-agent"])
@@ -179,6 +191,22 @@ def get_agent4_source_service(
 ) -> Agent4SourceService:
     return Agent4SourceService(
         standalone_service, source_storage, workflow_storage
+    )
+
+
+def get_agent4_detail_service(
+    standalone_service: Annotated[StandaloneService, Depends(get_standalone_service)],
+    workflow_storage: Annotated[Agent4WorkflowStorage, Depends(get_agent4_workflow_storage)],
+    source_storage: Annotated[Agent4SourceStorage, Depends(get_agent4_source_storage)],
+) -> Agent4DetailService:
+    """Build the persisted-artifact reader without constructing any AI runtime."""
+    root = settings.agent4_storage_root
+    return Agent4DetailService(
+        standalone_service, workflow_storage, source_storage,
+        Agent4ChunkStorage(root), Agent4RuleStorage(root), Agent4ZeroShotStorage(root),
+        Agent4HybridStorage(root), Agent4EffectiveStorage(root), Agent4SemanticStorage(root),
+        Agent4TraceabilityStorage(root), Agent4TestabilityStorage(root),
+        Agent4FeasibilityStorage(root), Agent4ContextDecisionStorage(root),
     )
 
 
@@ -378,6 +406,127 @@ def get_test_generation_workflow(
     return SuccessResponse(
         message="Agent 4 Test Generation workflow retrieved", data=workflow
     )
+
+
+def _detail_error(exc: Exception) -> JSONResponse:
+    if isinstance(exc, AgentProjectNotFoundError):
+        return _error(status.HTTP_404_NOT_FOUND, "Agent project not found", "agent_project_id", "Agent project not found")
+    if isinstance(exc, Agent4DetailSourceNotFoundError):
+        return _error(status.HTTP_404_NOT_FOUND, "Source not found", "source_id", str(exc))
+    if isinstance(exc, (Agent4DetailUnavailableError, Agent4WorkflowStageError, WrongAgent4WorkflowProjectError)):
+        return _error(status.HTTP_409_CONFLICT, "Detail unavailable", "workflow", str(exc))
+    if isinstance(exc, ArchivedAgentProjectError):
+        return _error(status.HTTP_409_CONFLICT, "Agent project is archived", "agent_project_id", "Reactivate the project before viewing details")
+    if isinstance(exc, (Agent4WorkflowStorageError, StandaloneServiceError, RuntimeError)):
+        return _error(status.HTTP_503_SERVICE_UNAVAILABLE, "Detail unavailable", "workflow", "Persisted Agent 4 evidence could not be loaded")
+    return _error(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid request", "agent_project_id", "The detail request is invalid")
+
+
+DETAIL_READ_ERRORS = (
+    AgentProjectNotFoundError,
+    ArchivedAgentProjectError,
+    Agent4DetailSourceNotFoundError,
+    Agent4DetailUnavailableError,
+    Agent4WorkflowStageError,
+    WrongAgent4WorkflowProjectError,
+    Agent4WorkflowStorageError,
+    StandaloneServiceError,
+    RuntimeError,
+    ValueError,
+)
+
+
+@router.get(
+    "/{agent_project_id}/test-generation/workflow/n2/prepared-sections",
+    response_model=SuccessResponse[PreparedSectionsPage],
+)
+def get_test_generation_prepared_sections(
+    agent_project_id: str,
+    service: Annotated[Agent4DetailService, Depends(get_agent4_detail_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    source_id: str | None = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=50)] = 5,
+):
+    try:
+        result = service.prepared_sections(agent_project_id, current_user, source_id=source_id, offset=offset, limit=limit)
+    except DETAIL_READ_ERRORS as exc:
+        return _detail_error(exc)
+    return SuccessResponse(message="Prepared sections retrieved", data=result)
+
+
+@router.get(
+    "/{agent_project_id}/test-generation/workflow/n3/classifications",
+    response_model=SuccessResponse[ClassificationDetailsPage],
+)
+def get_test_generation_classifications(
+    agent_project_id: str,
+    service: Annotated[Agent4DetailService, Depends(get_agent4_detail_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    source_id: str | None = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=50)] = 5,
+):
+    try:
+        result = service.classifications(agent_project_id, current_user, source_id=source_id, offset=offset, limit=limit)
+    except DETAIL_READ_ERRORS as exc:
+        return _detail_error(exc)
+    return SuccessResponse(message="Classification details retrieved", data=result)
+
+
+@router.get(
+    "/{agent_project_id}/test-generation/workflow/n3/review-decisions",
+    response_model=SuccessResponse[ReviewDecisionsPage],
+)
+def get_test_generation_review_decisions(
+    agent_project_id: str,
+    service: Annotated[Agent4DetailService, Depends(get_agent4_detail_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=50)] = 5,
+):
+    try:
+        result = service.review_decisions(agent_project_id, current_user, offset=offset, limit=limit)
+    except DETAIL_READ_ERRORS as exc:
+        return _detail_error(exc)
+    return SuccessResponse(message="Human review decisions retrieved", data=result)
+
+
+@router.get(
+    "/{agent_project_id}/test-generation/workflow/n3/testing-facts",
+    response_model=SuccessResponse[TestingFactsPage],
+)
+def get_test_generation_testing_facts(
+    agent_project_id: str,
+    service: Annotated[Agent4DetailService, Depends(get_agent4_detail_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    source_id: str | None = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=50)] = 5,
+):
+    try:
+        result = service.testing_facts(agent_project_id, current_user, source_id=source_id, offset=offset, limit=limit)
+    except DETAIL_READ_ERRORS as exc:
+        return _detail_error(exc)
+    return SuccessResponse(message="Grounded testing facts retrieved", data=result)
+
+
+@router.get(
+    "/{agent_project_id}/test-generation/workflow/n4/details",
+    response_model=SuccessResponse[ContextDetailProjection],
+)
+def get_test_generation_context_details(
+    agent_project_id: str,
+    service: Annotated[Agent4DetailService, Depends(get_agent4_detail_service)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=50)] = 5,
+):
+    try:
+        result = service.context_details(agent_project_id, current_user, offset=offset, limit=limit)
+    except DETAIL_READ_ERRORS as exc:
+        return _detail_error(exc)
+    return SuccessResponse(message="Context evidence details retrieved", data=result)
 
 
 @router.put(
