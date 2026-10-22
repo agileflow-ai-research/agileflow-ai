@@ -75,6 +75,83 @@ class JiraConnectionRepository:
             ) from exc
         return _clean_document(persisted or document)
 
+    def update_tokens_atomic(
+        self,
+        owner_id: str,
+        expected_refresh_token: str,
+        new_access_token: str,
+        new_refresh_token: str | None,
+        expires_at: datetime,
+        now: datetime,
+    ) -> dict[str, Any] | None:
+        """Atomically rotate Jira OAuth tokens conditioned on the expected refresh token.
+
+        Guarantees concurrency safety by verifying the expected refresh token matches,
+        preventing race conditions where concurrent calls overwrite newer rotated tokens.
+        """
+        filter_query: dict[str, Any] = {
+            "owner_id": owner_id,
+            "provider": "JIRA",
+            "refresh_token": expected_refresh_token,
+        }
+        set_fields: dict[str, Any] = {
+            "access_token": new_access_token,
+            "expires_at": expires_at,
+            "updated_at": now,
+            "status": "CONNECTED",
+            "reauthorization_reason": None,
+        }
+        if new_refresh_token is not None:
+            set_fields["refresh_token"] = new_refresh_token
+
+        update_query: dict[str, Any] = {
+            "$set": set_fields,
+            "$inc": {"version": 1},
+        }
+
+        try:
+            persisted = self._collection.find_one_and_update(
+                filter_query,
+                update_query,
+                projection={"_id": 0},
+                return_document=ReturnDocument.AFTER,
+            )
+        except PyMongoError as exc:
+            raise JiraConnectionRepositoryError(
+                "Could not atomically update rotated Jira tokens"
+            ) from exc
+
+        return _clean_document(persisted) if persisted is not None else None
+
+    def mark_reauthorization_required(
+        self,
+        owner_id: str,
+        reason: str = "Jira authorization expired or revoked; reauthorization required",
+    ) -> dict[str, Any] | None:
+        """Mark a Jira connection as requiring reauthorization without deleting it.
+
+        Ensures failed authentication does not corrupt or delete Agent 2 run data.
+        """
+        try:
+            persisted = self._collection.find_one_and_update(
+                {"owner_id": owner_id, "provider": "JIRA"},
+                {
+                    "$set": {
+                        "status": "REAUTHORIZATION_REQUIRED",
+                        "reauthorization_reason": reason,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+                projection={"_id": 0},
+                return_document=ReturnDocument.AFTER,
+            )
+        except PyMongoError as exc:
+            raise JiraConnectionRepositoryError(
+                "Could not update Jira connection status to reauthorization required"
+            ) from exc
+
+        return _clean_document(persisted) if persisted is not None else None
+
     def delete_by_owner(self, owner_id: str) -> bool:
         """Remove a Jira connection for the authenticated owner.
 

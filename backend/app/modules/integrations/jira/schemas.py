@@ -17,6 +17,7 @@ class JiraStatusResponse(BaseModel):
     connected: bool
     connected_at: datetime | None = None
     expires_at: datetime | None = None
+    reauthorization_required: bool | None = None
 
 
 class JiraConnectResponse(BaseModel):
@@ -34,6 +35,26 @@ class JiraDisconnectResponse(BaseModel):
 
     disconnected: bool = True
     message: str = "Jira connection removed successfully"
+
+
+class AtlassianAccessibleResource(BaseModel):
+    """Normalized internal representation of an accessible Atlassian Cloud resource.
+
+    Obtained from GET https://api.atlassian.com/oauth/token/accessible-resources.
+    Contains only safe resource metadata without credentials.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(description="Atlassian Cloud Site ID (cloudId)")
+    name: str = Field(description="Display name of the site")
+    url: str = Field(description="Canonical URL of the site")
+    scopes: list[str] = Field(
+        default_factory=list, description="Scopes authorized for this resource"
+    )
+    avatar_url: str | None = Field(
+        default=None, description="Site avatar image URL if available"
+    )
 
 
 class JiraConnectionDocument(BaseModel):
@@ -58,3 +79,6 @@ class JiraConnectionDocument(BaseModel):
     updated_at: datetime
     scope: str
     token_type: str = "Bearer"
+    status: Literal["CONNECTED", "REAUTHORIZATION_REQUIRED"] = "CONNECTED"
+    reauthorization_reason: str | None = None
+    version: int = 1

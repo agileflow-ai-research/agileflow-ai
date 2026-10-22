@@ -15,6 +15,7 @@ from app.modules.auth.dependencies import (
 )
 from app.modules.auth.repository import UserRepository
 from app.modules.auth.schemas import UserPublicResponse
+from app.modules.integrations.jira.client import JiraApiClient
 from app.modules.integrations.jira.repository import JiraConnectionRepository
 from app.modules.integrations.jira.schemas import (
     JiraConnectResponse,
@@ -76,6 +77,15 @@ def get_jira_oauth_service(
         repository=repository,
         state_store=state_store,
         client=client,
+    )
+
+
+def get_jira_api_client(
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+) -> JiraApiClient:
+    return JiraApiClient(
+        service=service,
+        timeout_seconds=settings.jira_http_timeout_seconds,
     )
 
 
