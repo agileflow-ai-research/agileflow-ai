@@ -110,16 +110,16 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
   }, [enteringExistingProject, loadStatus, project.agent_project_id])
 
   return (
-    <section className="min-w-0 space-y-4" aria-labelledby="testing-validation-canvas-title">
-      <header className="flex flex-col gap-4 border-b border-default pb-4 xl:flex-row xl:items-center xl:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 id="testing-validation-canvas-title" className="text-page-heading font-semibold text-content-primary">{sanitizeDisplayText(project.name)}</h1>
+    <section className="min-w-0 space-y-3" aria-labelledby="testing-validation-canvas-title">
+      <header className="flex flex-col gap-3 rounded-panel border border-default/80 bg-surface px-4 py-3.5 shadow-surface xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 id="testing-validation-canvas-title" className="truncate text-page-heading font-semibold leading-tight tracking-tight text-content-primary">{sanitizeDisplayText(project.name)}</h1>
             <StatusBadge label={projectStatus.label} tone={projectStatus.tone} />
           </div>
-          <p className="mt-1 text-sm text-content-secondary">Agent 4 — Test Generation</p>
+          <p className="mt-1 text-xs font-medium uppercase tracking-[0.1em] text-content-muted">Testing · Test Generation</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
           <WorkflowControls
             onAutoArrange={() => canvasRef.current?.autoArrange()}
             onResetLayout={() => canvasRef.current?.resetLayout()}
@@ -128,7 +128,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
         </div>
       </header>
 
-      <div className="overflow-hidden rounded-panel border border-default bg-surface">
+      <div className="overflow-hidden rounded-panel border border-default/80 bg-surface shadow-surface">
         {loadStatus === 'loading' ? (
           <LoadingState message="Loading Test Generation workflow" />
         ) : loadStatus === 'error' ? (
@@ -204,7 +204,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
         </WorkflowNodeModal>
       </div>
 
-      <p className="text-xs text-content-muted">Workflow status and visible results come from persisted Agent 4 records. Node positions are visual only.</p>
+      <p className="px-1 text-[0.6875rem] text-content-muted">Workflow status and visible results come from persisted Agent 4 records. Node positions are visual only.</p>
     </section>
   )
 }

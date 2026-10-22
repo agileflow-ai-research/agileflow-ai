@@ -1,6 +1,6 @@
 export default function HumanDecisionCallout({ eyebrow = 'Your review is required', title, description, evidence, outcome, children }) {
   return (
-    <section className="rounded-control border border-state-warning/40 bg-state-warning/10 p-4" aria-label="Human decision required">
+    <section className="rounded-control border border-state-warning/40 bg-state-warning-soft p-4" aria-label="Human decision required">
       <p className="text-xs font-semibold uppercase tracking-wider text-state-warning">{eyebrow}</p>
       <h3 className="mt-2 text-card-heading font-semibold text-content-primary">{title}</h3>
       {description ? <p className="mt-2 text-sm text-content-secondary">{description}</p> : null}

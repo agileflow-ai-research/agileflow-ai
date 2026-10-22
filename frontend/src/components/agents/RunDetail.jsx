@@ -20,7 +20,7 @@ function RunMessageList({ title, messages, tone }) {
   if (!Array.isArray(messages) || messages.length === 0) return null
 
   return (
-    <Card className={tone === 'danger' ? 'border-state-danger/40 bg-state-danger/10' : 'border-state-warning/40 bg-state-warning/10'}>
+    <Card className={tone === 'danger' ? 'border-state-danger/40 bg-state-danger-soft' : 'border-state-warning/40 bg-state-warning-soft'}>
       <h3 className="font-semibold text-content-primary">{title}</h3>
       <ul className="mt-3 space-y-3">
         {messages.map((item, index) => (

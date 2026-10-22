@@ -1,11 +1,10 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   getAgentProjectById,
-  getAgentProjectRun,
   getAgentProjectRuns,
   updateAgentProject,
 } from '../services/agentProjectService.js'
@@ -14,7 +13,7 @@ import { getGitHubConnection } from '../features/agents/implementation/services/
 import AgentProjectOverviewPage from './AgentProjectOverviewPage.jsx'
 
 vi.mock('../services/agentProjectService.js', () => ({
-  getAgentProjectById: vi.fn(), getAgentProjectRuns: vi.fn(), getAgentProjectRun: vi.fn(), updateAgentProject: vi.fn(),
+  getAgentProjectById: vi.fn(), getAgentProjectRuns: vi.fn(), updateAgentProject: vi.fn(),
 }))
 vi.mock('../features/agents/requirements/requirementsAgentService.js', () => ({
   deleteRequirementSource: vi.fn(),
@@ -104,25 +103,23 @@ describe('AgentProjectOverviewPage', () => {
     listRequirementSources.mockResolvedValue({ data: [] })
   })
 
-  it('loads the AGP project and real run history with all shared presentations', async () => {
+  it('loads the AGP project while keeping run history out of the page UI', async () => {
     renderOverview()
     expect(await screen.findByRole('heading', { level: 1, name: 'Quality Gate' })).toBeInTheDocument()
     expect(getAgentProjectById).toHaveBeenCalledWith('AGP-001')
     expect(getAgentProjectRuns).toHaveBeenCalledWith('AGP-001')
     expect(screen.getAllByText('Testing & Validation Agent').length).toBeGreaterThan(0)
-    ;['Queued', 'Running', 'Completed', 'Failed', 'Standard run', 'Test Case Generation', 'Testing & Validation'].forEach((text) => {
-      expect(screen.getAllByText(text).length).toBeGreaterThan(0)
-    })
-    expect(screen.getByText('RUN-004')).toBeInTheDocument()
-    expect(screen.getByText('SECURITY_REPORT')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Test Case Generation/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Testing & Validation/ })).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Run History' })).not.toBeInTheDocument()
+    expect(screen.queryByText('RUN-004')).not.toBeInTheDocument()
   })
 
-  it('shows a truthful empty run history', async () => {
+  it('does not render an empty run-history placeholder', async () => {
     getAgentProjectRuns.mockResolvedValue({ data: [] })
     renderOverview()
-    expect(await screen.findByText('No runs yet.')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Quality Gate' })).toBeInTheDocument()
+    expect(screen.queryByText('No runs yet.')).not.toBeInTheDocument()
   })
 
   it('mounts the Agent 3 canvas at the compatible project URL', async () => {
@@ -202,25 +199,6 @@ describe('AgentProjectOverviewPage', () => {
     vi.restoreAllMocks()
   })
 
-  it('loads persisted run detail with warnings, errors, and an honest manifest', async () => {
-    const user = userEvent.setup()
-    getAgentProjectRun.mockResolvedValue({ data: {
-      ...runs[0], warnings: [{ code: 'PARTIAL', message: 'Some evidence is partial', details: { source: 'scanner' } }],
-      errors: [{ code: 'VALIDATION_FAILED', message: 'A quality gate failed' }],
-      output_manifest: { SECURITY_REPORT: { reference: 'artifact-1' } },
-    } })
-    renderOverview()
-    await screen.findByText('RUN-004')
-    const failedCard = screen.getByText('RUN-004').closest('[data-variant]')
-    await user.click(within(failedCard).getByRole('button', { name: 'View details for run RUN-004' }))
-    expect(await screen.findByRole('heading', { name: 'Run details' })).toBeInTheDocument()
-    expect(getAgentProjectRun).toHaveBeenCalledWith('AGP-001', 'RUN-004')
-    expect(screen.getByText('Some evidence is partial')).toBeInTheDocument()
-    expect(screen.getByText('A quality gate failed')).toBeInTheDocument()
-    expect(screen.getByText(/artifact-1/)).toBeInTheDocument()
-    expect(document.body).not.toHaveTextContent('undefined')
-  })
-
   it('handles invalid, missing, and retryable project states safely', async () => {
     const invalidView = renderOverview('/agent-projects/not-an-id')
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid project address')
@@ -240,9 +218,7 @@ describe('AgentProjectOverviewPage', () => {
     await screen.findByRole('heading', { level: 1, name: 'BookEase' })
     expect(await screen.findByLabelText('Agent 1 requirements project')).toHaveAttribute('data-entry-mode', 'existing')
     expect(screen.getByLabelText('Agent 1 requirements workflow canvas')).toBeInTheDocument()
-    expect(screen.getByLabelText('Agent 1 requirements project').compareDocumentPosition(
-      screen.getByRole('region', { name: 'Run History' }),
-    ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByRole('region', { name: 'Run History' })).not.toBeInTheDocument()
     expect(listRequirementSources).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
   })
@@ -263,27 +239,4 @@ describe('AgentProjectOverviewPage', () => {
     expect(screen.getByRole('button', { name: 'Reactivate Project' })).toBeInTheDocument()
   })
 
-  it('reloads and renders persisted Agent 1 output_manifest content', async () => {
-    const user = userEvent.setup()
-    const requirementRun = {
-      run_id: 'RUN-201', agent_type: 'REQUIREMENTS', status: 'COMPLETED', run_mode: 'DEFAULT',
-      selected_outputs: ['USER_STORIES'], created_at: '2026-10-14T12:00:00Z',
-      started_at: '2026-10-14T12:00:01Z', completed_at: '2026-10-14T12:00:02Z',
-    }
-    getAgentProjectById.mockResolvedValue({ data: { ...project, agent_type: 'REQUIREMENTS', name: 'Clinic Booking' } })
-    getAgentProjectRuns.mockResolvedValue({ data: [requirementRun] })
-    getAgentProjectRun.mockResolvedValue({ data: {
-      ...requirementRun, warnings: [], errors: [],
-      output_manifest: { USER_STORIES: [{ id: 'US-001', actor: 'patient', goal: 'book a dental appointment', benefit: 'I avoid telephone booking', source_refs: ['TEXT-001'], requirement_refs: [] }] },
-    } })
-
-    renderOverview()
-    await screen.findByText('RUN-201')
-    await user.click(screen.getByRole('button', { name: 'View details for run RUN-201' }))
-
-    expect(await screen.findByRole('heading', { name: 'Persisted requirements outputs' })).toBeInTheDocument()
-    expect(screen.getByText((_, node) => node.tagName === 'P' && node.textContent.includes('I want book a dental appointment'))).toBeInTheDocument()
-    expect(screen.getByText((_, node) => node.tagName === 'P' && node.textContent.includes('so that I avoid telephone booking'))).toBeInTheDocument()
-    expect(screen.queryByText(/"actor"/)).not.toBeInTheDocument()
-  })
 })

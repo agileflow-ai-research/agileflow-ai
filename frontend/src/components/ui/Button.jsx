@@ -2,16 +2,16 @@ import { cn } from '../../utils/cn.js'
 import Spinner from './Spinner.jsx'
 
 const variantClasses = {
-  primary: 'bg-brand text-content-primary shadow-brand-glow hover:bg-brand-hover',
+  primary: 'bg-brand text-content-on-primary shadow-brand-glow hover:bg-brand-hover',
   secondary: 'bg-elevated text-content-primary hover:bg-brand-soft',
   outline:
-    'border border-accent-border bg-transparent text-content-primary hover:bg-brand-soft',
+    'border border-accent-border bg-outline-button text-content-primary hover:bg-brand-soft',
   ghost: 'bg-transparent text-content-secondary hover:bg-elevated hover:text-content-primary',
-  danger: 'bg-state-danger text-content-primary hover:opacity-90',
+  danger: 'bg-state-danger text-content-on-primary hover:opacity-90',
 }
 
 const sizeClasses = {
-  small: 'min-h-10 px-3 py-2 text-sm',
+  small: 'min-h-9 px-3 py-1.5 text-sm',
   medium: 'min-h-10 px-4 py-2.5 text-sm',
   large: 'min-h-11 px-5 py-3 text-base',
 }

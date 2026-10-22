@@ -28,7 +28,7 @@ function WorkflowNode({ data, selected }) {
       >
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-semibold text-content-primary">{data.title}</h3>
-          {data.attentionCount ? <span className="rounded-full bg-state-warning/15 px-2 py-0.5 text-xs font-semibold text-state-warning">{data.attentionCount}</span> : null}
+          {data.attentionCount ? <span className="rounded-full bg-state-warning-soft px-2 py-0.5 text-xs font-semibold text-state-warning">{data.attentionCount}</span> : null}
         </div>
         <div className="mt-3"><StatusBadge label={data.statusLabel ?? status.label} tone={status.tone} /></div>
         {data.active && data.activityText ? <p className="mt-2 text-xs font-semibold text-content-primary" aria-live="polite">{data.activityText}</p> : null}

@@ -2,10 +2,10 @@ import { cn } from '../../utils/cn.js'
 
 const toneClasses = {
   neutral: 'border-default bg-elevated text-content-secondary',
-  info: 'border-state-info/40 bg-state-info/10 text-state-info',
-  success: 'border-state-success/40 bg-state-success/10 text-state-success',
-  warning: 'border-state-warning/40 bg-state-warning/10 text-state-warning',
-  danger: 'border-state-danger/40 bg-state-danger/10 text-state-danger',
+  info: 'border-state-info/40 bg-state-info-soft text-state-info',
+  success: 'border-state-success/40 bg-state-success-soft text-state-success',
+  warning: 'border-state-warning/40 bg-state-warning-soft text-state-warning',
+  danger: 'border-state-danger/40 bg-state-danger-soft text-state-danger',
   accent: 'border-accent-border/50 bg-brand-soft text-highlight',
 }
 
