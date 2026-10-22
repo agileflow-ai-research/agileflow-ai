@@ -32,15 +32,18 @@ describe('TestingFactExtractionPanel', () => {
       workflowNodeStatus="COMPLETED"
       detailStatus="success"
       detailData={{ total: 1, has_more: false, items: [{
-        fact_id: 'A4FACT-real', source_id: 'A4SRC-one', source_label: 'Requirements',
+        fact_id: 'A4FACT-real', source_id: 'A4SRC-one', source_label: 'Requirements Â· Ready',
         chunk_id: 'A4CHK-one', sequence: 1, fact_type: 'AUTHORIZATION_RULE',
         related_labels: ['AUTHORIZATION'],
-        evidence_quote: 'Only administrators may delete bookings.',
-        structured_values: { actor: 'administrators', action: 'delete', target: 'bookings' },
+        evidence_quote: 'â€œOnly administrators may delete bookings.â€',
+        structured_values: { actor: 'administrators', action: 'delete', target: 'bookingâ€™s records' },
       }] }}
     />)
     expect(screen.getByText('Authorization Rule')).toBeInTheDocument()
     expect(screen.getByText(/Only administrators may delete bookings\./)).toBeInTheDocument()
+    expect(screen.getByText('Requirements | Ready')).toBeInTheDocument()
+    expect(screen.getByText("booking's records")).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/Â|â€œ|â€|â€™/)
     expect(screen.getByText('Grounded')).toBeInTheDocument()
   })
 

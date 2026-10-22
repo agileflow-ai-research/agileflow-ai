@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import WorkflowControls from '../../../../components/agents/workflow/WorkflowControls.jsx'
 import WorkflowNodeModal from '../../../../components/agents/workflow/WorkflowNodeModal.jsx'
 import ErrorState from '../../../../components/feedback/ErrorState.jsx'
+import { sanitizeDisplayText } from '../displayText.js'
 import LoadingState from '../../../../components/feedback/LoadingState.jsx'
 import { getWorkflowStatePresentation } from '../../../../components/agents/workflowState.js'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
@@ -113,7 +114,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
       <header className="flex flex-col gap-4 border-b border-default pb-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h1 id="testing-validation-canvas-title" className="text-page-heading font-semibold text-content-primary">{project.name}</h1>
+            <h1 id="testing-validation-canvas-title" className="text-page-heading font-semibold text-content-primary">{sanitizeDisplayText(project.name)}</h1>
             <StatusBadge label={projectStatus.label} tone={projectStatus.tone} />
           </div>
           <p className="mt-1 text-sm text-content-secondary">Agent 4 — Test Generation</p>
@@ -134,7 +135,7 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
           <div className="p-4 sm:p-6">
             <ErrorState
               title="Unable to load Test Generation workflow"
-              message={loadError}
+              message={sanitizeDisplayText(loadError)}
               onRetry={retry}
               retryLabel="Retry"
             />

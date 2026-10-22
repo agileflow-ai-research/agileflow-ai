@@ -29,12 +29,12 @@ const intelligenceNodeByStage = Object.freeze({
 })
 
 const activityTextByStage = Object.freeze({
-  TI_RULE_ANALYSIS: 'Analyzing requirement patternsâ€¦',
-  TI_AI_CLASSIFICATION: 'Classifying testing concernsâ€¦',
-  TI_HYBRID_DECISION: 'Combining rules and AI evidenceâ€¦',
+  TI_RULE_ANALYSIS: 'Analyzing requirement patterns...',
+  TI_AI_CLASSIFICATION: 'Classifying testing concerns...',
+  TI_HYBRID_DECISION: 'Combining rules and AI evidence...',
   TI_HUMAN_REVIEW: 'Waiting for your classification review',
-  TI_EFFECTIVE_CLASSIFICATION: 'Applying your review decisionsâ€¦',
-  TI_FACT_EXTRACTION: 'Extracting grounded testing factsâ€¦',
+  TI_EFFECTIVE_CLASSIFICATION: 'Applying your review decisions...',
+  TI_FACT_EXTRACTION: 'Extracting grounded testing facts...',
 })
 
 function activeLocation(workflow) {
@@ -49,7 +49,7 @@ function activeLocation(workflow) {
       id: intelligenceNodeByStage[stage.stage] || TESTING_VALIDATION_NODE_IDS.TESTING_INTELLIGENCE,
       human: stage.status === 'WAITING_FOR_HUMAN',
       queued: stage.status === 'QUEUED',
-      text: activityTextByStage[stage.stage] || 'Processing persisted workflow evidenceâ€¦',
+      text: activityTextByStage[stage.stage] || 'Processing persisted workflow evidence...',
     }
   }
   const n4 = workflow.n4_execution
@@ -58,12 +58,12 @@ function activeLocation(workflow) {
       id: TESTING_VALIDATION_NODE_IDS.CONTEXT_TESTABILITY,
       human: n4.status === 'WAITING_FOR_HUMAN',
       queued: n4.status === 'QUEUED',
-      text: n4.status === 'WAITING_FOR_HUMAN' ? 'Waiting for your acknowledgement' : 'Assessing context and test readinessâ€¦',
+      text: n4.status === 'WAITING_FOR_HUMAN' ? 'Waiting for your acknowledgement' : 'Assessing context and test readiness...',
     }
   }
   const n2 = workflow.n2_execution
   if (n2 && ['QUEUED', 'RUNNING'].includes(n2.status)) {
-    return { id: TESTING_VALIDATION_NODE_IDS.INPUT_PREPARATION, human: false, queued: n2.status === 'QUEUED', text: 'Preparing confirmed source evidenceâ€¦' }
+    return { id: TESTING_VALIDATION_NODE_IDS.INPUT_PREPARATION, human: false, queued: n2.status === 'QUEUED', text: 'Preparing confirmed source evidence...' }
   }
   if (workflow.current_node_id === TESTING_VALIDATION_NODE_IDS.INPUT_OUTPUT_SETUP) {
     return { id: TESTING_VALIDATION_NODE_IDS.INPUT_OUTPUT_SETUP, human: true, text: 'Waiting for setup confirmation' }

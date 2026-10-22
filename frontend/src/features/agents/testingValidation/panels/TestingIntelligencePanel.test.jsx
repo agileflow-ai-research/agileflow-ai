@@ -58,15 +58,17 @@ describe('TestingIntelligencePanel', () => {
     renderIntelligencePanel({
       detailStatus: 'success',
       detailData: { total: 1, has_more: false, items: [{
-        source_id: 'A4SRC-one', source_label: 'Requirements', chunk_id: 'A4CHK-one',
+        source_id: 'A4SRC-one', source_label: 'Requirements Â· Accepted', chunk_id: 'A4CHK-one',
         sequence: 1, label: 'AUTHORIZATION',
-        evidence_quote: 'Only administrators may delete bookings.', rule_detected: true,
+        evidence_quote: 'â€œOnly administrators may delete bookings.â€', rule_detected: true,
         model_score: 0.82, hybrid_relationship: 'AGREEMENT', hybrid_decision: 'ACCEPTED',
         effective_decision: 'ACCEPTED', effective_origin: 'H1_AUTO_ACCEPTED',
       }] },
     })
     expect(screen.getByText('Permission / authorization')).toBeInTheDocument()
     expect(screen.getByText(/Only administrators may delete bookings\./)).toBeInTheDocument()
+    expect(screen.getByText('Requirements | Accepted | Accepted')).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/Â|â€œ|â€/)
     expect(screen.getByText('82%')).toBeInTheDocument()
     const technical = screen.getAllByText('Technical details').find((element) => element.closest('details'))
     expect(technical.closest('details')).not.toHaveAttribute('open')
@@ -76,15 +78,17 @@ describe('TestingIntelligencePanel', () => {
     renderPanel({
       workflowNodeStatus: 'COMPLETED', reviewedItemCount: 1,
       detailStatus: 'success', detailData: { total: 1, has_more: false, items: [{
-        review_id: 'A4N3R-one', source_id: 'A4SRC-one', source_label: 'Requirements',
-        chunk_id: 'A4CHK-one', evidence_quote: 'Only administrators may delete bookings.',
-        label: 'AUTHORIZATION', human_decision: 'ACCEPT', note: 'Confirmed.',
+        review_id: 'A4N3R-one', source_id: 'A4SRC-one', source_label: 'Requirements Â· Accepted',
+        chunk_id: 'A4CHK-one', evidence_quote: 'â€œOnly administrators may delete bookings.â€',
+        label: 'AUTHORIZATION', human_decision: 'ACCEPT', note: 'Agentâ€™s decision confirmed.',
         effective_decision: 'ACCEPTED', reviewed_at: '2026-10-22T10:00:00Z',
       }] },
     })
     expect(screen.getByText('Human Review Decisions (1)')).toBeInTheDocument()
     expect(screen.getByText(/Only administrators may delete bookings\./)).toBeInTheDocument()
-    expect(screen.getByText('Confirmed.')).toBeInTheDocument()
+    expect(screen.getByText("Agent's decision confirmed.")).toBeInTheDocument()
+    expect(screen.getByText('Requirements | Accepted | Marked correct')).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/Â|â€œ|â€|â€™/)
   })
 
   it('defines friendly presentation metadata for all 15 T1 labels', () => {
