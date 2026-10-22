@@ -91,11 +91,6 @@ class Agent4SemanticFactService:
     def build(self, project_id: str, source_id: str,
               user: UserPublicResponse, *, force=False, effective=None,
               progress_callback=None):
-        # Semantic generation may take minutes. Its artifact lock prevents
-        # duplicate semantic builds, while the workflow lock must remain free
-        # so status GETs and stale recovery stay observational and responsive.
-        with SEMANTIC_FACT_LOCK:
-              user: UserPublicResponse, *, force=False, effective=None):
         """
         Build or reuse the S1 semantic manifest for one source.
 
@@ -108,7 +103,10 @@ class Agent4SemanticFactService:
         Otherwise each chunk's previous result is reused when its H1 result ID
         and accepted labels still match, so unchanged chunks do not call Qwen again.
         """
-        with AGENT4_WORKFLOW_STATE_LOCK, SEMANTIC_FACT_LOCK:
+        # Semantic generation may take minutes. Its artifact lock prevents
+        # duplicate semantic builds, while the workflow lock must remain free
+        # so status GETs and restart recovery stay responsive.
+        with SEMANTIC_FACT_LOCK:
             chunks, rules, zero, hybrid = self._resolve(project_id, source_id, user)
             hybrid_fingerprint = manifest_fingerprint(hybrid)
             effective_fingerprint = None
