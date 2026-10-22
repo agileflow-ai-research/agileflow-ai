@@ -1,3 +1,17 @@
+"""
+N4.3 technical evidence extractor (FB1 input). Pure logic, no I/O.
+
+Scope: TARGET-SYSTEM evidence only. Every value comes from the TR1 graph, which
+is built from confirmed N1 source content. The AgileFlow host stack is never
+read here. This module does not probe the host, scan the filesystem, or run
+any command.
+
+Each category collects explicit text evidence (regex patterns in catalog.py),
+plus structured facts from the graph (API operations, UI flow steps, entities,
+architecture nodes). Nothing is inferred from defaults or from the host
+environment. Missing evidence is recorded as an empty category, not guessed.
+"""
+
 import re
 from dataclasses import dataclass, field
 
@@ -69,6 +83,12 @@ class TechnicalEvidenceInventory:
 
 
 def _technical_match(line, match, requires_context):
+    """
+    Precision guard for technology mentions. A match is rejected when it is
+    negated ("no pytest", "not Java") within 32 characters before it. A pattern
+    that needs context is kept only if the line also has a technical context word,
+    so a plain English use of a common word does not count as a stack declaration.
+    """
     prefix = line[max(0, match.start() - 32):match.start()]
     if re.search(NEGATED_TECHNOLOGY_PATTERN, prefix, re.I):
         return False
@@ -76,6 +96,11 @@ def _technical_match(line, match, requires_context):
 
 
 def _add_regex_evidence(accumulator, node):
+    """
+    Scan one TR1 node's display text, line by line, for explicit technical
+    declarations. Each match records a value and the node it came from, so the
+    evidence stays traceable. Example: "the backend uses FastAPI" records FASTAPI.
+    """
     for line in node.display_value.splitlines():
         for category, patterns in TECHNOLOGY_PATTERNS.items():
             for entry in patterns:
@@ -127,6 +152,11 @@ def _add_regex_evidence(accumulator, node):
 
 
 def build_technical_evidence_inventory(graph):
+    """
+    Build the N4.3 technical evidence inventory from the TR1 graph.
+    Returns an inventory with a fingerprint over all categories, which FB1 stores
+    so that a changed technical context invalidates the cached feasibility result.
+    """
     evidence = {category: _Evidence() for category in TECHNICAL_EVIDENCE_ORDER}
     nodes = {item.node_id: item for item in graph.nodes}
     for node in graph.nodes:
@@ -167,6 +197,9 @@ def build_technical_evidence_inventory(graph):
         "BUILD_GRADLE": "GRADLE", "REQUIREMENTS_TXT": "PIP",
         "PYPROJECT_TOML": "PYTHON_PACKAGE",
     }
+    # A named manifest file (for example package.json) implies its package ecosystem
+    # only when the manifest itself is in the trusted text. The ecosystem is not
+    # invented from the file name alone.
     manifest_item = evidence[C.DEPENDENCY_MANIFEST_TYPE]
     for manifest, ecosystem in manifest_ecosystems.items():
         if manifest not in manifest_item.values:
