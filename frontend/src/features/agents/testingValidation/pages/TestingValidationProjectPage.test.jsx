@@ -109,7 +109,9 @@ describe('TestingValidationProjectPage', () => {
     expect(await screen.findByLabelText('Agent 4 test generation workflow canvas')).toHaveAttribute(
       'data-selected-node', 'INPUT_OUTPUT_SETUP',
     )
-    expect(getTestGenerationWorkflow).toHaveBeenCalledWith('AGP-404')
+    expect(getTestGenerationWorkflow).toHaveBeenCalledWith(
+      'AGP-404', expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
     expect(screen.getAllByRole('button', { name: /Open / })).toHaveLength(6)
     expect(screen.getAllByText('Available - Waiting for Setup')).toHaveLength(1)
     expect(screen.getAllByText('LOCKED')).toHaveLength(5)
@@ -119,10 +121,24 @@ describe('TestingValidationProjectPage', () => {
     expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(1)
   })
 
+  it('replaces initial loading with a safe error and recovers through Retry', async () => {
+    const user = userEvent.setup()
+    getTestGenerationWorkflow
+      .mockRejectedValueOnce({ status: 503, errors: [{ message: 'Workflow request failed safely.' }] })
+      .mockResolvedValueOnce({ data: workflow })
+    renderPage()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to load Test Generation workflow')
+    expect(screen.getByRole('alert')).toHaveTextContent('Workflow request failed safely.')
+    expect(screen.queryByText('Loading Test Generation workflow')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByLabelText('Agent 4 test generation workflow canvas')).toBeInTheDocument()
+  })
+
   it.each([
     ['Input & Output Setup', /Sources and desired outputs remain editable draft setup/],
     ['Input Preparation', /No extraction, normalization, or chunking/],
-    ['Testing Intelligence', /execution details will appear when N3 is queued/],
+    ['Testing Intelligence', /automatically analyze prepared inputs when this stage begins/],
     ['Context & Testability', /Deterministic traceability, testability, feasibility, and context-decision evidence/],
     ['Test Planning & Human Review', /Mandatory Human Approval Gate/],
     ['Test Generation & Results', /NOT_EXECUTED/],
@@ -158,7 +174,7 @@ describe('TestingValidationProjectPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Workflow temporarily unavailable')
     expect(screen.queryByLabelText('Agent 4 test generation workflow canvas')).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByLabelText('Agent 4 test generation workflow canvas')).toBeInTheDocument()
     expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(2)
   })
@@ -221,6 +237,7 @@ describe('TestingValidationProjectPage', () => {
     await screen.findByLabelText('Agent 4 test generation workflow canvas')
     await user.click(screen.getByRole('button', { name: /Open Input & Output Setup/ }))
     await screen.findByText('✓ Primary functional artifact present')
+    getTestGenerationWorkflow.mockResolvedValue({ data: confirmed })
 
     await user.click(screen.getByRole('button', { name: 'Confirm Inputs & Outputs' }))
 

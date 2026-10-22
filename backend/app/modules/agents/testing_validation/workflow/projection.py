@@ -63,6 +63,7 @@ def build_agent4_workflow_response(
                 completed_at=item.completed_at,
                 failed_at=item.failed_at,
                 interrupted_at=item.interrupted_at,
+                sub_stages=[stage.model_copy(deep=True) for stage in item.sub_stages],
             )
             for item in record.n3_executions
         ],

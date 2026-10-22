@@ -16,6 +16,7 @@ export const TESTING_VALIDATION_NODE_DEFINITIONS = Object.freeze([
     panelKey: 'input-output-setup',
     purpose: 'Collect testing inputs and choose desired test outputs.',
     summary: 'Configure testing inputs and outputs.',
+    lockedNote: 'Available when this workflow reaches setup.',
     futureStages: Object.freeze(['Artifact sources', 'Source types', 'Output selection', 'Human confirmation']),
   }),
   Object.freeze({
@@ -26,6 +27,7 @@ export const TESTING_VALIDATION_NODE_DEFINITIONS = Object.freeze([
     panelKey: 'input-preparation',
     purpose: 'Prepare confirmed inputs for testing analysis.',
     summary: 'Extract, normalize, and chunk confirmed inputs.',
+    lockedNote: 'Available after setup is confirmed.',
     futureStages: Object.freeze(['Extraction', 'Normalization', 'Chunking']),
   }),
   Object.freeze({
@@ -36,6 +38,7 @@ export const TESTING_VALIDATION_NODE_DEFINITIONS = Object.freeze([
     panelKey: 'testing-intelligence',
     purpose: 'Understand testing-relevant meaning from prepared chunks.',
     summary: 'Classify evidence and extract testing facts.',
+    lockedNote: 'Available after input preparation.',
     futureStages: Object.freeze(['Rule Classification', 'Zero-Shot Classification', 'Hybrid Decision', 'Semantic Test-Fact Extraction']),
   }),
   Object.freeze({
@@ -44,9 +47,10 @@ export const TESTING_VALIDATION_NODE_DEFINITIONS = Object.freeze([
     title: 'Context & Testability',
     shortTitle: 'Testability',
     panelKey: 'context-testability',
-    purpose: 'Connect artifacts and determine whether requested testing outputs are feasible.',
-    summary: 'Assess traceability and output feasibility.',
-    futureStages: Object.freeze(['Traceability', 'Readiness', 'Selected-output feasibility']),
+    purpose: 'Assess traceability, testability, and generation feasibility for selected outputs.',
+    summary: 'Assess traceability, testability, and generation feasibility.',
+    lockedNote: 'Available after Testing Intelligence.',
+    futureStages: Object.freeze(['Traceability', 'Testability', 'Generation feasibility', 'Context decision']),
   }),
   Object.freeze({
     id: TESTING_VALIDATION_NODE_IDS.TEST_PLANNING_REVIEW,
@@ -54,9 +58,10 @@ export const TESTING_VALIDATION_NODE_DEFINITIONS = Object.freeze([
     title: 'Test Planning & Human Review',
     shortTitle: 'Planning & Review',
     panelKey: 'test-planning-review',
-    purpose: 'Create a Test Case Plan and require human approval before detailed generation.',
-    summary: 'Plan test scenarios and require human approval.',
-    futureStages: Object.freeze(['Deterministic plan', 'AI enrichment', 'Validation', 'Mandatory human review']),
+    purpose: 'Reserved for the future Test Case Plan and mandatory human review workflow.',
+    summary: 'Test planning is the next separate implementation step.',
+    lockedNote: 'Next implementation step.',
+    futureStages: Object.freeze(['Not implemented in the current workflow']),
   }),
   Object.freeze({
     id: TESTING_VALIDATION_NODE_IDS.TEST_GENERATION_RESULTS,
@@ -64,9 +69,10 @@ export const TESTING_VALIDATION_NODE_DEFINITIONS = Object.freeze([
     title: 'Test Generation & Results',
     shortTitle: 'Generation & Results',
     panelKey: 'test-generation-results',
-    purpose: 'Generate approved tests and present final Stage 1 traceability and results.',
-    summary: 'Generate approved tests and report traceability and gaps.',
-    futureStages: Object.freeze(['Detailed Test Generation', 'Schema and Reference Validation', 'Final Test Traceability', 'Results and Gap Reporting']),
+    purpose: 'Reserved for future detailed test generation and results.',
+    summary: 'Test generation and results are not implemented yet.',
+    lockedNote: 'Future workflow step.',
+    futureStages: Object.freeze(['Not implemented in the current workflow']),
   }),
 ])
 

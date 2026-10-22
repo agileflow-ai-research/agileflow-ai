@@ -56,6 +56,8 @@ describe('Agent 4 Test Generation workflow graph', () => {
     expect(nodes.slice(1).every((node) => (
       node.data.status === WORKFLOW_NODE_STATES.LOCKED && node.data.locked
     ))).toBe(true)
+    expect(nodes[3].data.lockedNote).toBe('Available after Testing Intelligence.')
+    expect(nodes[3].data.lockedNote).not.toMatch(/not implemented/i)
     expect(presentation.INPUT_OUTPUT_SETUP.current).toBe(true)
     expect(presentation.INPUT_PREPARATION.current).toBe(false)
   })

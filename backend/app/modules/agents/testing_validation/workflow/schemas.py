@@ -228,6 +228,55 @@ class Agent4N3SourceStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class Agent4N3SubStageName(StrEnum):
+    RULE_ANALYSIS = "TI_RULE_ANALYSIS"
+    AI_CLASSIFICATION = "TI_AI_CLASSIFICATION"
+    HYBRID_DECISION = "TI_HYBRID_DECISION"
+    HUMAN_REVIEW = "TI_HUMAN_REVIEW"
+    EFFECTIVE_CLASSIFICATION = "TI_EFFECTIVE_CLASSIFICATION"
+    FACT_EXTRACTION = "TI_FACT_EXTRACTION"
+
+
+class Agent4N3SubStageStatus(StrEnum):
+    NOT_STARTED = "NOT_STARTED"
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    WAITING_FOR_HUMAN = "WAITING_FOR_HUMAN"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    INTERRUPTED = "INTERRUPTED"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class Agent4N3ChunkDisposition(StrEnum):
+    SUCCESS = "SUCCESS"
+    SUCCESS_WITH_WARNINGS = "SUCCESS_WITH_WARNINGS"
+    EMPTY = "EMPTY"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    FAILED = "FAILED"
+
+
+class Agent4N3SubStageProgress(StrictAgent4WorkflowContract):
+    stage: Agent4N3SubStageName
+    status: Agent4N3SubStageStatus = Agent4N3SubStageStatus.NOT_STARTED
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    failed_at: datetime | None = None
+    attempt_count: int = Field(default=0, ge=0)
+    artifact_reference: str | None = Field(default=None, max_length=255)
+    summary: dict[str, int | str | bool] = Field(default_factory=dict)
+    safe_error: Agent4N2Message | None = None
+    retryable: bool = False
+
+
+class Agent4N3ChunkProgress(StrictAgent4WorkflowContract):
+    chunk_id: str = Field(pattern=r"^A4CHK-[0-9a-f]{32}$")
+    status: Agent4N3ChunkDisposition
+    fact_count: int = Field(default=0, ge=0)
+    warning_count: int = Field(default=0, ge=0)
+    safe_error: Agent4N2Message | None = None
+
+
 class Agent4N3SourceExecution(StrictAgent4WorkflowContract):
     source_id: str = Field(pattern=r"^A4SRC-[0-9a-f]{32}$")
     artifact_type: TestGenerationInputArtifactType
@@ -244,9 +293,14 @@ class Agent4N3SourceExecution(StrictAgent4WorkflowContract):
     pending_review_items: int = Field(default=0, ge=0)
     accepted_label_count: int = Field(default=0, ge=0)
     semantic_fact_count: int = Field(default=0, ge=0)
+    sub_stages: list[Agent4N3SubStageProgress] = Field(default_factory=list)
+    fact_extraction_chunks: list[Agent4N3ChunkProgress] = Field(default_factory=list)
+    current_sub_stage: Agent4N3SubStageName | None = None
+    last_completed_sub_stage: Agent4N3SubStageName | None = None
     failed_stage: str | None = Field(default=None, max_length=80)
     warnings: list[Agent4N2Message] = Field(default_factory=list)
     error: Agent4N2Message | None = None
+    retryable: bool = False
     started_at: datetime | None = None
     updated_at: datetime
     completed_at: datetime | None = None
@@ -256,7 +310,8 @@ class Agent4N3Execution(StrictAgent4WorkflowContract):
     execution_id: str = Field(pattern=r"^A4N3E-[0-9a-f]{32}$")
     attempt_number: int = Field(ge=1)
     trigger: Literal[
-        "N2_COMPLETION", "LEGACY_START", "SOURCE_RETRY", "HUMAN_REVIEW_RESUME"
+        "N2_COMPLETION", "LEGACY_START", "SOURCE_RETRY", "HUMAN_REVIEW_RESUME",
+        "RESTART_RECOVERY",
     ]
     retry_source_id: str | None = Field(
         default=None, pattern=r"^A4SRC-[0-9a-f]{32}$"
@@ -266,6 +321,7 @@ class Agent4N3Execution(StrictAgent4WorkflowContract):
     n2_execution_id: str = Field(pattern=r"^A4N2E-[0-9a-f]{32}$")
     chunk_snapshot_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     sources: list[Agent4N3SourceExecution] = Field(min_length=1)
+    sub_stages: list[Agent4N3SubStageProgress] = Field(default_factory=list)
     review_snapshot_fingerprint: str | None = Field(
         default=None, pattern=r"^[0-9a-f]{64}$"
     )
@@ -293,6 +349,7 @@ class Agent4N3ExecutionSummary(StrictAgent4WorkflowContract):
     completed_at: datetime | None
     failed_at: datetime | None
     interrupted_at: datetime | None
+    sub_stages: list[Agent4N3SubStageProgress] = Field(default_factory=list)
 
 
 class Agent4N4ExecutionStatus(StrEnum):

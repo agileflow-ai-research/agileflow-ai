@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from app.common.id_generator import validate_id
 
-from .schemas import TestingSemanticManifest
+from .schemas import TestingSemanticManifest, TestingSemanticResult
 
 
 SOURCE_ID_PATTERN = re.compile(r"^A4SRC-[0-9a-f]{32}$")
@@ -58,6 +58,72 @@ class Agent4SemanticStorage:
                 "Agent 4 semantic facts could not be persisted"
             ) from exc
 
+    def load_checkpoint(
+        self, *, agent_project_id, owner_user_id, source_id,
+        chunk_set_fingerprint, hybrid_manifest_fingerprint,
+        effective_manifest_fingerprint,
+    ):
+        path = self._checkpoint_path(agent_project_id, source_id)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return []
+        if (
+            payload.get("owner_user_id") != owner_user_id
+            or payload.get("agent_project_id") != agent_project_id
+            or payload.get("source_id") != source_id
+            or payload.get("chunk_set_fingerprint") != chunk_set_fingerprint
+            or payload.get("hybrid_manifest_fingerprint") != hybrid_manifest_fingerprint
+            or payload.get("effective_manifest_fingerprint")
+            != effective_manifest_fingerprint
+        ):
+            return []
+        try:
+            return [TestingSemanticResult.model_validate(item)
+                    for item in payload.get("results", [])]
+        except ValidationError:
+            return []
+
+    def save_checkpoint(
+        self, *, agent_project_id, owner_user_id, source_id,
+        chunk_set_fingerprint, hybrid_manifest_fingerprint,
+        effective_manifest_fingerprint, results,
+    ):
+        path = self._checkpoint_path(agent_project_id, source_id)
+        partial = path.with_suffix(path.suffix + ".part")
+        payload = {
+            "owner_user_id": owner_user_id,
+            "agent_project_id": agent_project_id,
+            "source_id": source_id,
+            "chunk_set_fingerprint": chunk_set_fingerprint,
+            "hybrid_manifest_fingerprint": hybrid_manifest_fingerprint,
+            "effective_manifest_fingerprint": effective_manifest_fingerprint,
+            "results": [item.model_dump(mode="json") for item in results],
+        }
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            partial.write_text(
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            partial.replace(path)
+        except (OSError, TypeError, ValueError) as exc:
+            try:
+                partial.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise Agent4SemanticStorageError(
+                "Agent 4 semantic checkpoint could not be persisted"
+            ) from exc
+
+    def clear_checkpoint(self, *, agent_project_id, source_id):
+        try:
+            self._checkpoint_path(agent_project_id, source_id).unlink(missing_ok=True)
+        except OSError as exc:
+            raise Agent4SemanticStorageError(
+                "Agent 4 semantic checkpoint could not be cleared"
+            ) from exc
+
     def _path(self, project_id, source_id):
         try:
             validate_id(project_id, "AGP")
@@ -73,3 +139,8 @@ class Agent4SemanticStorage:
         except ValueError as exc:
             raise Agent4SemanticStorageError("Unsafe Agent 4 intelligence path") from exc
         return path
+
+    def _checkpoint_path(self, project_id, source_id):
+        return self._path(project_id, source_id).with_name(
+            f"{source_id}.semantic-facts.checkpoint.json"
+        )

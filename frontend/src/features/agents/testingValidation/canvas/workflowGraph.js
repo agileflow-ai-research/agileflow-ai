@@ -38,6 +38,7 @@ export function createTestingValidationWorkflowNodes(presentation) {
         status: current?.status ?? WORKFLOW_NODE_STATES.LOCKED,
         statusLabel: current?.statusLabel,
         locked: current?.locked ?? true,
+        lockedNote: definition.lockedNote,
       },
     }
   })

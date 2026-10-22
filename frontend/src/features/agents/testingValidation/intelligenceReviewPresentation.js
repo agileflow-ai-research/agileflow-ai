@@ -13,14 +13,28 @@ export const INTELLIGENCE_REVIEW_LABELS = Object.freeze({
   ERROR_HANDLING: { title: 'Error handling', question: 'Does this text describe how the system should respond to an error?', description: 'Observable behavior for invalid operations or failures.' },
   ACCEPTANCE_CONDITION: { title: 'Acceptance condition', question: 'Does this text describe an acceptance condition?', description: 'A condition that must be true for a feature to be accepted.' },
   STATE_PERSISTENCE: { title: 'Data persistence', question: 'Does this text describe required storage or state-persistence behavior?', description: 'A requirement to retain, retrieve, or transition state.' },
-  NON_TESTABLE_CONTEXT: { title: 'Background context', question: 'Is this text useful context without a direct testable concern?', description: 'Descriptive context rather than a directly testable requirement.' },
+  NON_TESTABLE_CONTEXT: { title: 'Supporting / non-testable context', question: 'Is this mainly supporting context rather than something that should directly drive a test?', description: 'Descriptive context rather than a directly testable requirement.' },
 })
 
 export const INTELLIGENCE_RELATIONSHIPS = Object.freeze({
   CONFLICT: { priority: 0, explanation: 'The automated methods disagreed about this category. Please review it carefully.' },
   RULE_ONLY: { priority: 1, explanation: 'A deterministic rule identified this category, but the AI model did not strongly confirm it.' },
-  MODEL_ONLY: { priority: 2, explanation: 'The AI model identified this category, but the deterministic rules did not confirm it.' },
+  MODEL_ONLY: { priority: 2, explanation: 'AI classification suggested this, but deterministic rules did not independently confirm it.' },
   AMBIGUOUS: { priority: 3, explanation: 'The available evidence is not clear enough for an automatic decision.' },
+})
+
+export const INTELLIGENCE_TECHNICAL_LABELS = Object.freeze({
+  model: 'Model',
+  modelName: 'DeBERTa',
+  hybridPolicy: 'Hybrid policy',
+  hybridPolicyName: 'H1',
+  taxonomyCode: 'Raw taxonomy code',
+  relationship: 'Relationship',
+  modelScore: 'DeBERTa score',
+  ruleDetected: 'Rule detected',
+  ruleEvidence: 'Rule evidence',
+  chunkId: 'Chunk ID',
+  hybridResult: 'Hybrid result',
 })
 
 export function reviewLabelPresentation(code, fallbackDescription = '') {

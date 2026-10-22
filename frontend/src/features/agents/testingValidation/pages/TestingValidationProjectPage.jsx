@@ -120,9 +120,10 @@ function TestingValidationProjectPage({ project, projectStatus, projectActions, 
         ) : loadStatus === 'error' ? (
           <div className="p-4 sm:p-6">
             <ErrorState
-              title="Workflow unavailable"
+              title="Unable to load Test Generation workflow"
               message={loadError}
               onRetry={retry}
+              retryLabel="Retry"
             />
           </div>
         ) : (

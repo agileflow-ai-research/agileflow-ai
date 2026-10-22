@@ -18,9 +18,7 @@ from app.modules.agents.testing_validation.preparation.chunking.storage import A
 from app.modules.agents.testing_validation.workflow.schemas import (
     Agent4N2ExecutionStatus, Agent4TestGenerationNodeId, Agent4WorkflowNodeStatus,
 )
-from app.modules.agents.testing_validation.workflow.storage import (
-    AGENT4_WORKFLOW_STATE_LOCK, Agent4WorkflowStorage,
-)
+from app.modules.agents.testing_validation.workflow.storage import Agent4WorkflowStorage
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.standalone.service import StandaloneService
 
@@ -74,8 +72,12 @@ class Agent4SemanticFactService:
         self._clock = clock
 
     def build(self, project_id: str, source_id: str,
-              user: UserPublicResponse, *, force=False, effective=None):
-        with AGENT4_WORKFLOW_STATE_LOCK, SEMANTIC_FACT_LOCK:
+              user: UserPublicResponse, *, force=False, effective=None,
+              progress_callback=None):
+        # Semantic generation may take minutes. Its artifact lock prevents
+        # duplicate semantic builds, while the workflow lock must remain free
+        # so status GETs and stale recovery stay observational and responsive.
+        with SEMANTIC_FACT_LOCK:
             chunks, rules, zero, hybrid = self._resolve(project_id, source_id, user)
             hybrid_fingerprint = manifest_fingerprint(hybrid)
             effective_fingerprint = None
@@ -101,6 +103,14 @@ class Agent4SemanticFactService:
                     cached, chunks, hybrid, hybrid_fingerprint, effective
                 ):
                     return cached
+            checkpoint = [] if force else self._storage.load_checkpoint(
+                agent_project_id=project_id,
+                owner_user_id=user.user_id,
+                source_id=source_id,
+                chunk_set_fingerprint=chunks.chunk_set_fingerprint,
+                hybrid_manifest_fingerprint=hybrid_fingerprint,
+                effective_manifest_fingerprint=effective_fingerprint,
+            )
             now = self._clock()
             hybrid_by_id = {result.chunk.chunk_id: result for result in hybrid.results}
             results = []
@@ -121,6 +131,10 @@ class Agent4SemanticFactService:
                 reusable = self._reusable_result(
                     None if force else cached, context, hybrid_result
                 )
+                if reusable is None and checkpoint:
+                    reusable = self._reusable_result(
+                        checkpoint, context, hybrid_result,
+                    )
                 if context.eligibility is SemanticEligibility.ELIGIBLE:
                     eligible.append(chunk.chunk_id)
                     result = reusable or extract_semantic_result(
@@ -152,39 +166,64 @@ class Agent4SemanticFactService:
                         context_fingerprint=context.context_fingerprint,
                     )
                 results.append(result)
-            metrics = SemanticManifestMetrics(
-                chunk_count=len(results), eligible_count=len(eligible),
-                waiting_review_count=len(waiting),
-                not_applicable_count=len(not_applicable),
-                fact_count=sum(len(result.facts) for result in results),
-                warning_count=sum(len(result.warnings) for result in results),
-            )
-            manifest = TestingSemanticManifest(
-                semantic_stage_version=constants.SEMANTIC_STAGE_VERSION,
-                prompt_version=constants.SEMANTIC_PROMPT_VERSION,
-                grounding_version=constants.SEMANTIC_GROUNDING_VERSION,
-                generation_policy_version=constants.SEMANTIC_GENERATION_POLICY_VERSION,
-                model_id=constants.SEMANTIC_MODEL_ID,
-                model_revision=constants.SEMANTIC_MODEL_REVISION,
-                generation_configuration_fingerprint=generation_configuration_fingerprint(),
-                generation_policy=SemanticGenerationPolicyMetadata(
-                    do_sample=False,
-                    max_input_tokens=constants.MAX_SEMANTIC_INPUT_TOKENS,
-                    max_new_tokens=constants.MAX_SEMANTIC_NEW_TOKENS,
-                    max_attempts=constants.MAX_SEMANTIC_ATTEMPTS,
-                    local_files_only=True,
-                ),
-                agent_project_id=project_id, source_id=source_id,
-                chunk_set_fingerprint=chunks.chunk_set_fingerprint,
-                hybrid_manifest_fingerprint=hybrid_fingerprint,
-                effective_manifest_fingerprint=effective_fingerprint,
-                chunk_ids=chunks.chunk_ids, eligible_chunk_ids=eligible,
-                waiting_review_chunk_ids=waiting,
-                not_applicable_chunk_ids=not_applicable,
-                results=results, metrics=metrics, processed_at=now,
+                self._storage.save_checkpoint(
+                    agent_project_id=project_id,
+                    owner_user_id=user.user_id,
+                    source_id=source_id,
+                    chunk_set_fingerprint=chunks.chunk_set_fingerprint,
+                    hybrid_manifest_fingerprint=hybrid_fingerprint,
+                    effective_manifest_fingerprint=effective_fingerprint,
+                    results=results,
+                )
+                if progress_callback is not None:
+                    progress_callback(results, len(chunks.chunk_ids))
+            manifest = self._manifest(
+                project_id, source_id, chunks, hybrid_fingerprint,
+                effective_fingerprint, results, eligible, waiting,
+                not_applicable, now,
             )
             self._storage.save(manifest, owner_user_id=user.user_id)
+            self._storage.clear_checkpoint(
+                agent_project_id=project_id, source_id=source_id,
+            )
             return manifest
+
+    @staticmethod
+    def _manifest(
+        project_id, source_id, chunks, hybrid_fingerprint,
+        effective_fingerprint, results, eligible, waiting, not_applicable, now,
+    ):
+        metrics = SemanticManifestMetrics(
+            chunk_count=len(results), eligible_count=len(eligible),
+            waiting_review_count=len(waiting),
+            not_applicable_count=len(not_applicable),
+            fact_count=sum(len(result.facts) for result in results),
+            warning_count=sum(len(result.warnings) for result in results),
+        )
+        return TestingSemanticManifest(
+            semantic_stage_version=constants.SEMANTIC_STAGE_VERSION,
+            prompt_version=constants.SEMANTIC_PROMPT_VERSION,
+            grounding_version=constants.SEMANTIC_GROUNDING_VERSION,
+            generation_policy_version=constants.SEMANTIC_GENERATION_POLICY_VERSION,
+            model_id=constants.SEMANTIC_MODEL_ID,
+            model_revision=constants.SEMANTIC_MODEL_REVISION,
+            generation_configuration_fingerprint=generation_configuration_fingerprint(),
+            generation_policy=SemanticGenerationPolicyMetadata(
+                do_sample=False,
+                max_input_tokens=constants.MAX_SEMANTIC_INPUT_TOKENS,
+                max_new_tokens=constants.MAX_SEMANTIC_NEW_TOKENS,
+                max_attempts=constants.MAX_SEMANTIC_ATTEMPTS,
+                local_files_only=True,
+            ),
+            agent_project_id=project_id, source_id=source_id,
+            chunk_set_fingerprint=chunks.chunk_set_fingerprint,
+            hybrid_manifest_fingerprint=hybrid_fingerprint,
+            effective_manifest_fingerprint=effective_fingerprint,
+            chunk_ids=chunks.chunk_ids, eligible_chunk_ids=eligible,
+            waiting_review_chunk_ids=waiting,
+            not_applicable_chunk_ids=not_applicable,
+            results=results, metrics=metrics, processed_at=now,
+        )
 
     def _resolve(self, project_id, source_id, user):
         project = self._standalone.require_active_project(user.user_id, project_id)
@@ -316,8 +355,9 @@ class Agent4SemanticFactService:
     def _reusable_result(cached, context, hybrid_result):
         if cached is None:
             return None
+        results = cached if isinstance(cached, list) else cached.results
         candidate = next(
-            (item for item in cached.results if item.chunk.chunk_id == context.chunk_id),
+            (item for item in results if item.chunk.chunk_id == context.chunk_id),
             None,
         )
         if candidate is None:

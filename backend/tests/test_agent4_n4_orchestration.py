@@ -154,6 +154,45 @@ def test_new_n3_completion_handoff_queues_once_and_submission_failure_is_retryab
     assert failed.n4_executions[-1].retryable
 
 
+def test_n4_handoff_reserves_execution_before_publishing_queued_state(
+    n2_context, monkeypatch,
+):
+    project_id, service, executor, _ = setup_n4(n2_context)
+    record = workflow_record(n2_context, project_id)
+    n3 = record.n3_executions[-1]
+    original_save = service._workflow.save
+    queued_saves = []
+
+    def checked_save(current_record):
+        current = (
+            current_record.n4_executions[-1]
+            if current_record.n4_executions else None
+        )
+        if current is not None and current.status is Agent4N4ExecutionStatus.QUEUED:
+            queued_saves.append(current.execution_id)
+            assert (
+                current.execution_id
+                in Agent4N4OrchestrationService._active_execution_ids
+            )
+        result = original_save(current_record)
+        if current is not None and current.status is Agent4N4ExecutionStatus.QUEUED:
+            concurrent_projection = service.get(project_id, user())
+            assert (
+                concurrent_projection.n4_execution.status
+                is Agent4N4ExecutionStatus.QUEUED
+            )
+        return result
+
+    monkeypatch.setattr(service._workflow, "save", checked_save)
+    service.start_after_n3(
+        project_id, user().user_id, n3.execution_id, user()
+    )
+
+    assert len(queued_saves) == 1
+    assert len(executor.tasks) == 1
+    executor.drain()
+
+
 def test_proceed_completes_n4_and_unlocks_but_does_not_start_n5(n2_context):
     project_id, service, executor, _ = setup_n4(
         n2_context, decision=ContextDecisionStatus.PROCEED

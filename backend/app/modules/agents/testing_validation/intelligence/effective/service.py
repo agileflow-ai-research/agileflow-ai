@@ -41,6 +41,13 @@ class Agent4EffectiveClassificationService:
         self._storage = storage
         self._clock = clock
 
+    def get_current(self, agent_project_id, source_id, owner_user_id):
+        return self._storage.load(
+            agent_project_id=agent_project_id,
+            owner_user_id=owner_user_id,
+            source_id=source_id,
+        )
+
     def build(self, hybrid, *, owner_user_id, review: Agent4N3ReviewEvent | None = None):
         fingerprint = manifest_fingerprint(hybrid)
         resolutions = {}

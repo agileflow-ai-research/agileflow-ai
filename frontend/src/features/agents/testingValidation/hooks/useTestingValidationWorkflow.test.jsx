@@ -16,7 +16,7 @@ import {
   submitTestGenerationIntelligenceReview,
   updateTestGenerationOutputs,
 } from '../testingValidationAgentService.js'
-import useTestingValidationWorkflow from './useTestingValidationWorkflow.js'
+import useTestingValidationWorkflow, { shouldPollTestingValidationWorkflow } from './useTestingValidationWorkflow.js'
 
 vi.mock('../testingValidationAgentService.js', () => ({
   acknowledgeTestGenerationContextWarnings: vi.fn(),
@@ -161,6 +161,30 @@ describe('useTestingValidationWorkflow', () => {
     expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(2)
   })
 
+  it('derives polling from the latest whole workflow, including handoff gaps and terminal states', () => {
+    expect(shouldPollTestingValidationWorkflow(n2Workflow('QUEUED'))).toBe(true)
+    expect(shouldPollTestingValidationWorkflow(n2Workflow('RUNNING'))).toBe(true)
+    expect(shouldPollTestingValidationWorkflow(n2Workflow('COMPLETED'))).toBe(true)
+    expect(shouldPollTestingValidationWorkflow(n3Workflow('RUNNING'))).toBe(true)
+    expect(shouldPollTestingValidationWorkflow(n3Workflow('WAITING_FOR_HUMAN'))).toBe(false)
+    expect(shouldPollTestingValidationWorkflow(n4Workflow('RUNNING'))).toBe(true)
+    expect(shouldPollTestingValidationWorkflow(n4Workflow('WAITING_FOR_HUMAN'))).toBe(false)
+    expect(shouldPollTestingValidationWorkflow(n4Workflow('BLOCKED'))).toBe(false)
+    expect(shouldPollTestingValidationWorkflow(n4Workflow('COMPLETED'))).toBe(false)
+  })
+
+  it('refreshes authoritative state immediately when the page becomes visible', async () => {
+    const latest = n3Workflow('RUNNING')
+    const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+    await waitFor(() => expect(result.current.loadStatus).toBe('success'))
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: latest })
+
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    await waitFor(() => expect(result.current.workflowState).toEqual(latest))
+  })
+
   it('exposes a safe load error and explicit retry', async () => {
     getTestGenerationWorkflow
       .mockRejectedValueOnce({ status: 503, errors: [{ message: 'Workflow unavailable' }] })
@@ -173,6 +197,50 @@ describe('useTestingValidationWorkflow', () => {
     expect(result.current.loadStatus).toBe('loading')
     await waitFor(() => expect(result.current.loadStatus).toBe('success'))
     expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(2)
+  })
+
+  it('times out a hanging initial workflow request and recovers on retry', async () => {
+    vi.useFakeTimers()
+    getTestGenerationWorkflow.mockImplementationOnce((_projectId, { signal }) => (
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject({ cause: { name: 'AbortError' } }))
+      })
+    )).mockResolvedValueOnce({ data: workflow() })
+    try {
+      const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+      expect(result.current.loadStatus).toBe('loading')
+      await act(async () => { await vi.advanceTimersByTimeAsync(15000) })
+      expect(result.current.loadStatus).toBe('error')
+      expect(result.current.loadError).toBe('The Test Generation workflow request timed out.')
+
+      act(() => result.current.retry())
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(result.current.loadStatus).toBe('success')
+      expect(result.current.workflowState).toEqual(workflow())
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('aborts an outstanding workflow request when the project changes', async () => {
+    const aborted = vi.fn()
+    getTestGenerationWorkflow.mockImplementationOnce((_projectId, { signal }) => (
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          aborted()
+          reject({ cause: { name: 'AbortError' } })
+        })
+      })
+    )).mockResolvedValueOnce({ data: workflow('AGP-005') })
+    const { result, rerender } = renderHook(
+      ({ projectId }) => useTestingValidationWorkflow(projectId),
+      { initialProps: { projectId: 'AGP-004' } },
+    )
+
+    await waitFor(() => expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(1))
+    rerender({ projectId: 'AGP-005' })
+    await waitFor(() => expect(result.current.workflowState?.agent_project_id).toBe('AGP-005'))
+    expect(aborted).toHaveBeenCalledTimes(1)
   })
 
   it('prevents a stale project response from replacing newer state', async () => {
@@ -299,6 +367,7 @@ describe('useTestingValidationWorkflow', () => {
     confirmTestGenerationSetup.mockResolvedValueOnce({ data: confirmed })
     const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
     await waitFor(() => expect(result.current.loadStatus).toBe('success'))
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: confirmed })
 
     let returned
     await act(async () => { returned = await result.current.confirmN1() })
@@ -326,12 +395,13 @@ describe('useTestingValidationWorkflow', () => {
     )
   })
 
-  it('polls while N2 is active and stops after completion', async () => {
+  it('polls through the N2 completion handoff into queued N3', async () => {
     vi.useFakeTimers()
     getTestGenerationWorkflow
       .mockResolvedValueOnce({ data: n2Workflow('QUEUED') })
       .mockResolvedValueOnce({ data: n2Workflow('RUNNING') })
       .mockResolvedValueOnce({ data: n2Workflow('COMPLETED') })
+      .mockResolvedValueOnce({ data: n3Workflow('QUEUED') })
     try {
       const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
       await act(async () => { await Promise.resolve(); await Promise.resolve() })
@@ -341,7 +411,10 @@ describe('useTestingValidationWorkflow', () => {
       expect(result.current.workflowState.n2_execution.status).toBe('RUNNING')
       await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
       expect(result.current.workflowState.n2_execution.status).toBe('COMPLETED')
-      expect(vi.getTimerCount()).toBe(0)
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n3_execution.status).toBe('QUEUED')
+      expect(vi.getTimerCount()).toBe(1)
     } finally {
       vi.useRealTimers()
     }
@@ -360,6 +433,7 @@ describe('useTestingValidationWorkflow', () => {
       })),
     }
     getTestGenerationWorkflow.mockResolvedValueOnce({ data: legacy })
+      .mockResolvedValueOnce({ data: n2Workflow('QUEUED') })
     startTestGenerationPreparation.mockResolvedValueOnce({ data: n2Workflow('QUEUED') })
     const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
     await waitFor(() => expect(result.current.workflowState?.n2_execution?.status).toBe('QUEUED'))
@@ -375,6 +449,7 @@ describe('useTestingValidationWorkflow', () => {
     retryTestGenerationPreparationSource.mockResolvedValueOnce({ data: queued })
     const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
     await waitFor(() => expect(result.current.loadStatus).toBe('success'))
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: queued })
     await act(() => result.current.retryPreparationSource('A4SRC-one'))
     expect(retryTestGenerationPreparationSource).toHaveBeenCalledWith('AGP-004', 'A4SRC-one')
     expect(result.current.workflowState.n2_execution.attempt_number).toBe(2)
@@ -384,6 +459,7 @@ describe('useTestingValidationWorkflow', () => {
     const legacy = { ...n2Workflow('COMPLETED'), n3_execution: null }
     const queued = n3Workflow('QUEUED')
     getTestGenerationWorkflow.mockResolvedValueOnce({ data: legacy })
+      .mockResolvedValueOnce({ data: queued })
     startTestGenerationIntelligence.mockResolvedValueOnce({ data: queued })
     const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
     await waitFor(() => expect(result.current.workflowState?.n3_execution?.status).toBe('QUEUED'))
@@ -451,6 +527,7 @@ describe('useTestingValidationWorkflow', () => {
     const waiting = n3Workflow('WAITING_FOR_HUMAN')
     const queued = n3Workflow('QUEUED')
     getTestGenerationWorkflow.mockResolvedValueOnce({ data: waiting })
+      .mockResolvedValueOnce({ data: queued })
     submitTestGenerationIntelligenceReview.mockResolvedValueOnce({ data: queued })
     try {
       const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
@@ -464,6 +541,81 @@ describe('useTestingValidationWorkflow', () => {
       expect(result.current.workflowState.n3_execution.status).toBe('QUEUED')
       expect(result.current.intelligenceReview).toBeNull()
       expect(vi.getTimerCount()).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reloads trusted review evidence and shows a safe message for a stale snapshot', async () => {
+    const waiting = n3Workflow('WAITING_FOR_HUMAN')
+    const refreshedReview = { review_snapshot_fingerprint: 'b'.repeat(64), items: [] }
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: waiting })
+    getTestGenerationIntelligenceReview
+      .mockResolvedValueOnce({ data: { review_snapshot_fingerprint: 'a'.repeat(64), items: [] } })
+      .mockResolvedValueOnce({ data: refreshedReview })
+    submitTestGenerationIntelligenceReview.mockRejectedValueOnce({
+      status: 409, errors: [{ message: 'The review snapshot is stale.' }],
+    })
+    const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+    await waitFor(() => expect(result.current.intelligenceReview?.review_snapshot_fingerprint).toBe('a'.repeat(64)))
+
+    await act(() => result.current.submitIntelligenceReview([]))
+
+    expect(result.current.intelligenceError).toMatch(/review information changed/i)
+    expect(result.current.intelligenceReview).toEqual(refreshedReview)
+  })
+
+  it('keeps one polling chain across the complete N2 to N4 UAT flow without remount', async () => {
+    vi.useFakeTimers()
+    const waiting = n3Workflow('WAITING_FOR_HUMAN')
+    const resumedQueued = n3Workflow('QUEUED')
+    const resumedRunning = n3Workflow('RUNNING')
+    const n4Queued = n4Workflow('QUEUED')
+    const n4Running = n4Workflow('RUNNING')
+    getTestGenerationWorkflow
+      .mockResolvedValueOnce({ data: n2Workflow('QUEUED') })
+      .mockResolvedValueOnce({ data: n2Workflow('RUNNING') })
+      .mockResolvedValueOnce({ data: n3Workflow('QUEUED') })
+      .mockResolvedValueOnce({ data: n3Workflow('RUNNING') })
+      .mockResolvedValueOnce({ data: waiting })
+      .mockResolvedValueOnce({ data: resumedRunning })
+      .mockResolvedValueOnce({ data: n4Queued })
+      .mockResolvedValueOnce({ data: n4Running })
+    submitTestGenerationIntelligenceReview.mockResolvedValueOnce({ data: resumedQueued })
+    try {
+      const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(result.current.workflowState.n2_execution.status).toBe('QUEUED')
+      expect(vi.getTimerCount()).toBe(1)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n2_execution.status).toBe('RUNNING')
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n3_execution.status).toBe('QUEUED')
+      expect(result.current.workflowState.current_node_id).toBe('TESTING_INTELLIGENCE')
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n3_execution.status).toBe('RUNNING')
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n3_execution.status).toBe('WAITING_FOR_HUMAN')
+      expect(vi.getTimerCount()).toBe(0)
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+
+      await act(() => result.current.submitIntelligenceReview([
+        { chunk_id: 'A4CHK-one', label: 'AUTHORIZATION', decision: 'ACCEPT' },
+      ]))
+      expect(result.current.workflowState.n3_execution.status).toBe('RUNNING')
+      expect(result.current.intelligenceReview).toBeNull()
+      expect(vi.getTimerCount()).toBe(1)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n4_execution.status).toBe('QUEUED')
+      expect(result.current.workflowState.current_node_id).toBe('CONTEXT_TESTABILITY')
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n4_execution.status).toBe('RUNNING')
+      expect(vi.getTimerCount()).toBe(1)
+      expect(getTestGenerationWorkflow).toHaveBeenCalledTimes(8)
     } finally {
       vi.useRealTimers()
     }
@@ -484,7 +636,7 @@ describe('useTestingValidationWorkflow', () => {
     expect(result.current.retryingIntelligenceSourceId).toBeNull()
   })
 
-  it('starts an exact legacy N4 NOT_STARTED workflow once', async () => {
+  it('leaves N4 NOT_STARTED after N3 completes', async () => {
     const legacy = {
       ...n3Workflow('COMPLETED'), current_node_id: 'CONTEXT_TESTABILITY', n4_execution: null,
       nodes: nodeIds.map((nodeId, index) => ({
@@ -492,10 +644,10 @@ describe('useTestingValidationWorkflow', () => {
       })),
     }
     getTestGenerationWorkflow.mockResolvedValueOnce({ data: legacy })
-    startTestGenerationContextAnalysis.mockResolvedValueOnce({ data: n4Workflow('QUEUED') })
     const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
-    await waitFor(() => expect(result.current.workflowState?.n4_execution?.status).toBe('QUEUED'))
-    expect(startTestGenerationContextAnalysis).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(result.current.loadStatus).toBe('success'))
+    expect(result.current.workflowState.n4_execution).toBeNull()
+    expect(startTestGenerationContextAnalysis).not.toHaveBeenCalled()
   })
 
   it('polls N4 while active and stops after warning review is reached', async () => {
@@ -591,6 +743,7 @@ describe('useTestingValidationWorkflow', () => {
     acknowledgeTestGenerationContextWarnings.mockResolvedValueOnce({ data: completed })
     const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
     await waitFor(() => expect(result.current.contextResult).toEqual(decision))
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: completed })
     await act(() => result.current.acknowledgeContextWarnings(' Reviewed '))
     expect(acknowledgeTestGenerationContextWarnings).toHaveBeenCalledWith('AGP-004', {
       warning_snapshot_fingerprint: 'b'.repeat(64), optional_note: 'Reviewed',
@@ -607,6 +760,7 @@ describe('useTestingValidationWorkflow', () => {
     retryTestGenerationContextAnalysis.mockResolvedValueOnce({ data: queued })
     const { result } = renderHook(() => useTestingValidationWorkflow('AGP-004'))
     await waitFor(() => expect(result.current.loadStatus).toBe('success'))
+    getTestGenerationWorkflow.mockResolvedValueOnce({ data: queued })
     await act(() => result.current.retryContextAnalysis())
     expect(retryTestGenerationContextAnalysis).toHaveBeenCalledWith('AGP-004')
     expect(result.current.workflowState.n4_execution.attempt_number).toBe(2)

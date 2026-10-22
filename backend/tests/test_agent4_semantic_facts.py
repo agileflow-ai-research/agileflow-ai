@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.modules.agents.testing_validation.intelligence.hybrid.service import manifest_fingerprint
 from app.modules.agents.testing_validation.intelligence.hybrid.storage import Agent4HybridStorage
 from app.modules.agents.testing_validation.intelligence.rules.storage import Agent4RuleStorage
 from app.modules.agents.testing_validation.intelligence.semantic import constants
@@ -385,6 +386,44 @@ def test_force_rebuild_only_reruns_semantic_and_preserves_ids(n2_context):
     assert len(runtime.prompts) == 2
     assert first.results[0].semantic_result_id == second.results[0].semantic_result_id
     assert first.results[0].facts[0].fact_id == second.results[0].facts[0].fact_id
+
+
+def test_partial_manifest_checkpoint_reuses_completed_chunks_after_failure(n2_context):
+    text = " ".join(["The system shall create a booking."] * 120)
+    _, project_id, source = prepared(n2_context, text=text)
+    chunks = Agent4ChunkStorage(n2_context[3]).load(
+        agent_project_id=project_id,
+        owner_user_id=user().user_id,
+        source_id=source["source_id"],
+    )
+    assert len(chunks.chunks) > 1
+    runtime = FakeSemanticRuntime(['{"facts":[]}', RuntimeError("worker stopped")])
+    service = semantic_service(n2_context, runtime)
+
+    with pytest.raises(RuntimeError, match="worker stopped"):
+        service.build(project_id, source["source_id"], user())
+    storage = Agent4SemanticStorage(n2_context[3])
+    hybrid = Agent4HybridStorage(n2_context[3]).load(
+        agent_project_id=project_id,
+        owner_user_id=user().user_id,
+        source_id=source["source_id"],
+    )
+    partial = storage.load_checkpoint(
+        agent_project_id=project_id,
+        owner_user_id=user().user_id,
+        source_id=source["source_id"],
+        chunk_set_fingerprint=chunks.chunk_set_fingerprint,
+        hybrid_manifest_fingerprint=manifest_fingerprint(hybrid),
+        effective_manifest_fingerprint=None,
+    )
+    assert len(partial) == 1
+    first_result_id = partial[0].semantic_result_id
+
+    runtime.outputs.append('{"facts":[]}')
+    completed = service.build(project_id, source["source_id"], user())
+    assert len(completed.results) == len(chunks.chunks)
+    assert completed.results[0].semantic_result_id == first_result_id
+    assert len(runtime.prompts) == len(chunks.chunks) + 1
 
 
 def test_missing_hybrid_rejected_and_failed_extraction_writes_no_manifest(n2_context):

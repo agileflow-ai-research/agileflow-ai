@@ -49,6 +49,13 @@ describe('WorkflowNode status presentation', () => {
     })
   })
 
+  it('uses a truthful supplied reason for an implemented locked node', () => {
+    render(<WorkflowNode data={{ title: 'Context & Testability', status: 'LOCKED', locked: true, lockedNote: 'Available after Testing Intelligence.' }} />)
+    const node = screen.getByRole('button', { name: 'Open Context & Testability' })
+    expect(node).toHaveTextContent('Available after Testing Intelligence.')
+    expect(node).not.toHaveTextContent('Not implemented yet')
+  })
+
   it('keeps the full card available to React Flow dragging', () => {
     renderNode('WAITING_FOR_HUMAN')
     const card = screen.getByRole('button', { name: 'Open Input Analysis' })

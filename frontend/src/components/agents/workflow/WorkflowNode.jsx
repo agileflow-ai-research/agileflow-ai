@@ -31,7 +31,7 @@ function WorkflowNode({ data, selected }) {
         </div>
         <div className="mt-3"><StatusBadge label={data.statusLabel ?? status.label} tone={status.tone} /></div>
         {summary ? <p className="mt-3 text-xs leading-5 text-content-secondary">{summary}</p> : null}
-        {data.locked ? <p className="mt-2 text-xs font-semibold text-content-muted">Not implemented yet</p> : null}
+        {data.locked ? <p className="mt-2 text-xs font-semibold text-content-muted">{data.lockedNote ?? 'Not implemented yet'}</p> : null}
       </button>
       <Handle type="source" position={Position.Right} isConnectable={false} className="pointer-events-none !h-px !min-h-0 !w-px !min-w-0 !border-0 !bg-transparent opacity-0" />
     </div>

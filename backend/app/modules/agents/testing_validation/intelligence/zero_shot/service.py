@@ -10,9 +10,7 @@ from app.modules.agents.testing_validation.preparation.chunking.storage import A
 from app.modules.agents.testing_validation.workflow.schemas import (
     Agent4N2ExecutionStatus, Agent4TestGenerationNodeId, Agent4WorkflowNodeStatus,
 )
-from app.modules.agents.testing_validation.workflow.storage import (
-    AGENT4_WORKFLOW_STATE_LOCK, Agent4WorkflowStorage,
-)
+from app.modules.agents.testing_validation.workflow.storage import Agent4WorkflowStorage
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.standalone.service import StandaloneService
 
@@ -48,7 +46,9 @@ class Agent4ZeroShotService:
 
     def build(self, agent_project_id: str, source_id: str,
               current_user: UserPublicResponse, *, force=False):
-        with AGENT4_WORKFLOW_STATE_LOCK, ZERO_SHOT_LOCK:
+        # Model inference must not monopolize the workflow state lock; callers
+        # still need to observe RUNNING progress while classification executes.
+        with ZERO_SHOT_LOCK:
             project = self._standalone.require_active_project(
                 current_user.user_id, agent_project_id
             )

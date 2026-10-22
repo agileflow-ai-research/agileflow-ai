@@ -177,7 +177,14 @@ def extract_semantic_result(*, chunk, chunk_reference, hybrid_result,
         feedback = "ALL_CANDIDATES_INVALID:" + ";".join(
             warning.message for warning in warnings[:3]
         )
-    raise SemanticExtractionFailedError("SEMANTIC_MODEL_OUTPUT_INVALID")
+    if feedback in {"SEMANTIC_INVALID_JSON", "SEMANTIC_SCHEMA_VALIDATION_FAILED"}:
+        raise SemanticExtractionFailedError("SEMANTIC_INVALID_JSON")
+    if feedback and (
+        "SEMANTIC_GROUNDING_FAILED" in feedback
+        or "UNSUPPORTED_" in feedback
+    ):
+        raise SemanticExtractionFailedError("SEMANTIC_GROUNDING_FAILED")
+    raise SemanticExtractionFailedError("SEMANTIC_OUTPUT_INVALID")
 
 
 def disposition_result(*, chunk_reference, hybrid_result, accepted_labels,

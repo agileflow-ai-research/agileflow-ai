@@ -124,7 +124,7 @@ class Agent4N4OrchestrationService:
                 raise Agent4WorkflowGateError("Context & Testability cannot be started from its current state.")
             execution = self._new_execution(record, n3.execution_id, "LEGACY_START", self._clock())
             self._queue(record, execution)
-            self._workflow.save(record)
+            self._reserve_and_save(record, execution)
         self._submit(project_id, execution, user)
         return build_agent4_workflow_response(self._require_record(project_id, user.user_id))
 
@@ -138,7 +138,7 @@ class Agent4N4OrchestrationService:
                 return
             execution = self._new_execution(record, n3_execution_id, "N3_COMPLETION", self._clock())
             self._queue(record, execution)
-            self._workflow.save(record)
+            self._reserve_and_save(record, execution)
         self._submit(project_id, execution, user)
 
     def retry(self, project_id, user):
@@ -154,7 +154,7 @@ class Agent4N4OrchestrationService:
                 record, previous.n3_execution_id, "RETRY", self._clock()
             )
             self._queue(record, execution)
-            self._workflow.save(record)
+            self._reserve_and_save(record, execution)
         self._submit(project_id, execution, user)
         return build_agent4_workflow_response(self._require_record(project_id, user.user_id))
 
@@ -257,11 +257,25 @@ class Agent4N4OrchestrationService:
             self._workflow.save(record)
             return build_agent4_workflow_response(record)
 
-    def _submit(self, project_id, execution, user):
+    def _reserve_and_save(self, record, execution):
+        """Publish QUEUED only after stale recovery can see scheduled work."""
         with self._active_lock:
             if execution.execution_id in self._active_execution_ids:
-                return
+                raise Agent4WorkflowGateError(
+                    "Context analysis execution is already scheduled"
+                )
             self._active_execution_ids.add(execution.execution_id)
+        try:
+            self._workflow.save(record)
+        except Exception:
+            with self._active_lock:
+                self._active_execution_ids.discard(execution.execution_id)
+            raise
+
+    def _submit(self, project_id, execution, user):
+        with self._active_lock:
+            if execution.execution_id not in self._active_execution_ids:
+                return
         try:
             self._executor.submit(self._run, project_id, execution.execution_id, user)
         except Exception:

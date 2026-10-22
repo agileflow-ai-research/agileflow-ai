@@ -7,8 +7,12 @@ AGENT4_N2_EXECUTOR = ThreadPoolExecutor(
 )
 
 
+# Keep one orchestration lane available while another execution is inside the
+# serialized model stages. ZERO_SHOT_LOCK and SEMANTIC_FACT_LOCK still prevent
+# duplicate concurrent inference within each model stage.
+AGENT4_N3_MAX_WORKERS = 2
 AGENT4_N3_EXECUTOR = ThreadPoolExecutor(
-    max_workers=1,
+    max_workers=AGENT4_N3_MAX_WORKERS,
     thread_name_prefix="agent4-n3",
 )
 

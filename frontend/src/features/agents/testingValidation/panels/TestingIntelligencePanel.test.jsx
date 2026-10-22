@@ -2,17 +2,19 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
+import { INTELLIGENCE_REVIEW_LABELS } from '../intelligenceReviewPresentation.js'
 import TestingIntelligencePanel from './TestingIntelligencePanel.jsx'
 
 const definition = { title: 'Testing Intelligence', purpose: 'Classify evidence and extract testing facts.', futureStages: [] }
 const execution = {
-  attempt_number: 1, status: 'WAITING_FOR_HUMAN',
-  sources: [{ source_id: 'A4SRC-one', artifact_type: 'SRS', source_type: 'DOCUMENT', label: 'booking_requirements.md', chunk_count: 2, status: 'WAITING_FOR_HUMAN', rules_complete: true, zero_shot_complete: true, hybrid_complete: true, semantic_complete: false, pending_review_items: 4, semantic_fact_count: 0 }],
+  attempt_number: 1,
+  status: 'WAITING_FOR_HUMAN',
+  sources: [{ source_id: 'A4SRC-one', artifact_type: 'SRS', source_type: 'DOCUMENT', label: '04_quickbook_ui_flow_and_acceptance.md', chunk_count: 2, status: 'WAITING_FOR_HUMAN', rules_complete: true, zero_shot_complete: true, hybrid_complete: true, semantic_complete: false, pending_review_items: 4, semantic_fact_count: 0 }],
 }
 
 function item(overrides = {}) {
   return {
-    source_id: 'A4SRC-one', source_label: 'booking_requirements.md', artifact_type: 'SRS',
+    source_id: 'A4SRC-one', source_label: '04_quickbook_ui_flow_and_acceptance.md', artifact_type: 'SRS',
     chunk_id: 'A4CHK-one', chunk_context: 'Only administrators may delete a booking.',
     label: 'AUTHORIZATION', label_description: 'Permission and role restrictions.',
     relationship: 'CONFLICT', reason_codes: ['RULE_MODEL_CONFLICT'],
@@ -37,133 +39,227 @@ const review = {
 }
 
 function renderPanel(overrides = {}) {
-  const props = { definition, intelligenceError: '', intelligenceReview: review, n3Execution: execution, onRetryIntelligenceSource: vi.fn(), onSubmitIntelligenceReview: vi.fn(), retryingIntelligenceSourceId: null, reviewSubmitting: false, statusLabel: 'Needs Review', workflowNodeStatus: 'WAITING_FOR_HUMAN', ...overrides }
-  render(<TestingIntelligencePanel {...props} />)
-  return props
+  const props = { definition, intelligenceError: '', intelligenceReview: review, n3Execution: execution, onRetryIntelligenceSource: vi.fn(), onSubmitIntelligenceReview: vi.fn(), retryingIntelligenceSourceId: null, reviewSubmitting: false, statusLabel: 'Needs review', workflowNodeStatus: 'WAITING_FOR_HUMAN', ...overrides }
+  return { ...props, ...render(<TestingIntelligencePanel {...props} />) }
+}
+
+function accordion(name) {
+  return screen.getByRole('button', { name: new RegExp(`^${name}`) })
 }
 
 describe('TestingIntelligencePanel', () => {
-  it('shows a simple review header, truthful automation summary, progress, and clean stage wording', () => {
-    renderPanel()
-    expect(screen.getByRole('heading', { name: 'Testing Intelligence Review' })).toBeInTheDocument()
-    expect(screen.getByText(/handled clear classifications automatically/i)).toBeInTheDocument()
-    expect(screen.getByText('20')).toBeInTheDocument()
-    expect(screen.getByLabelText('Review progress: 0 of 4 reviewed')).toBeInTheDocument()
-    expect(screen.getByText('Document · 2 analyzed sections')).toBeInTheDocument()
-    expect(screen.getByText(/✓ AI classification/)).toBeInTheDocument()
-    expect(document.body.textContent).not.toMatch(/Â|âœ|â€¢|Ã/)
-    expect(screen.queryByText('Current availability')).not.toBeInTheDocument()
+  it('defines friendly presentation metadata for all 15 T1 labels', () => {
+    expect(Object.keys(INTELLIGENCE_REVIEW_LABELS)).toHaveLength(15)
+    for (const presentation of Object.values(INTELLIGENCE_REVIEW_LABELS)) {
+      expect(presentation.title).toBeTruthy()
+      expect(presentation.question).toMatch(/\?$/)
+      expect(presentation.description).toBeTruthy()
+    }
   })
 
-  it('groups labels under one trusted evidence block and uses friendly questions', () => {
+  it('shows one compact summary with Human Review open and optional sections closed', () => {
     renderPanel()
-    expect(screen.getAllByText((content) => content.includes('Only administrators may delete a booking.'))).toHaveLength(1)
+    expect(screen.queryByText('Testing Intelligence Review')).not.toBeInTheDocument()
+    expect(screen.queryByText('Current availability')).not.toBeInTheDocument()
+    expect(screen.queryByText('Review summary')).not.toBeInTheDocument()
+    expect(screen.getByText(/Agent 4 automatically analyzed your inputs/i)).toBeInTheDocument()
+    expect(screen.getByText((_, element) => element.tagName === 'SPAN' && element.textContent === '20 handled automatically')).toBeInTheDocument()
+    expect(screen.getByText((_, element) => element.tagName === 'SPAN' && element.textContent === '4 need your review')).toBeInTheDocument()
+    expect(accordion('Human Review')).toHaveAttribute('aria-expanded', 'true')
+    expect(accordion('Automatically Extracted Information')).toHaveAttribute('aria-expanded', 'false')
+    expect(accordion('Extracted Testing Facts')).toHaveAttribute('aria-expanded', 'false')
+    expect(accordion('Analysis Progress')).toHaveAttribute('aria-expanded', 'false')
+    expect(accordion('Technical Details')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('groups same-chunk questions under one highlighted evidence block with a friendly source name', () => {
+    renderPanel()
+    expect(screen.getAllByText('QuickBook UI Flow And Acceptance')).toHaveLength(2)
+    expect(screen.getAllByText('04_quickbook_ui_flow_and_acceptance.md')).toHaveLength(2)
+    const visibleEvidence = [...document.querySelectorAll('blockquote')].filter((element) => !element.closest('[hidden]'))
+    expect(visibleEvidence).toHaveLength(1)
+    expect(visibleEvidence[0]).toHaveTextContent('Only administrators may delete a booking.')
+    expect(within(visibleEvidence[0]).getByText('Only administrators').tagName).toBe('MARK')
     expect(screen.getByText('Does this text describe a user permission or authorization rule?')).toBeInTheDocument()
     expect(screen.getByText('Does this text describe an acceptance condition?')).toBeInTheDocument()
     expect(screen.getByText('Does this text describe an input validation rule?')).toBeInTheDocument()
-    const authorization = screen.getByText('Does this text describe a user permission or authorization rule?').closest('[data-review-item]')
-    expect(authorization).toHaveTextContent('AI interpretation: Permission / authorization')
   })
 
-  it('explains every H1 relationship in plain language and prioritizes conflict first', async () => {
-    const user = userEvent.setup()
+  it('uses friendly relationship copy and gives conflicts a careful-review callout', () => {
     renderPanel()
-    expect(screen.getByText(/automated methods disagreed/i)).toBeInTheDocument()
-    expect(screen.getByText(/AI model identified this category/i)).toBeInTheDocument()
+    expect(screen.getByText('Needs careful review')).toBeInTheDocument()
+    expect(screen.getByText('The automated methods disagreed about this item.')).toBeInTheDocument()
+    expect(screen.getByText(/AI classification suggested this/i)).toBeInTheDocument()
     expect(screen.getByText(/deterministic rule identified this category/i)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /Source · booking_requirements.md/i, expanded: false }))
-    expect(screen.getByText(/available evidence is not clear enough/i)).toBeInTheDocument()
   })
 
-  it('keeps raw taxonomy and DeBERTa evidence in collapsed technical details without calling it confidence', async () => {
+  it('keeps raw taxonomy, H1, and DeBERTa evidence in the bottom technical accordion', async () => {
     const user = userEvent.setup()
     renderPanel()
-    const details = screen.getAllByText('Technical details')[0].closest('details')
-    expect(details).not.toHaveAttribute('open')
-    await user.click(within(details).getByText('Technical details'))
-    expect(within(details).getByText('AUTHORIZATION')).toBeInTheDocument()
-    expect(within(details).getByText('CONFLICT')).toBeInTheDocument()
-    expect(within(details).getByText('0.8521')).toBeInTheDocument()
-    expect(within(details).getByText('Only administrators')).toBeInTheDocument()
-    expect(details).not.toHaveTextContent(/confidence/i)
+    const trigger = accordion('Technical Details')
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(document.getElementById(trigger.getAttribute('aria-controls'))).not.toBeVisible()
+    await user.click(trigger)
+    const panel = document.getElementById(trigger.getAttribute('aria-controls'))
+    expect(panel).toBeVisible()
+    expect(within(panel).getAllByText('DeBERTa').length).toBeGreaterThan(0)
+    expect(within(panel).getAllByText('H1').length).toBeGreaterThan(0)
+    expect(within(panel).getByText('AUTHORIZATION')).toBeInTheDocument()
+    expect(within(panel).getByText('CONFLICT')).toBeInTheDocument()
+    expect(within(panel).getByText('0.8521')).toBeInTheDocument()
+    expect(panel).not.toHaveTextContent(/confidence/i)
   })
 
-  it('maps friendly Yes and No actions to ACCEPT and REJECT and allows editing', async () => {
+  it('maps Correct and Incorrect to ACCEPT and REJECT and allows changes', async () => {
     const user = userEvent.setup()
     renderPanel()
     const authorization = screen.getByText('Does this text describe a user permission or authorization rule?').closest('[data-review-item]')
-    await user.click(within(authorization).getByRole('button', { name: 'Yes, this is correct' }))
-    expect(within(authorization).getByText('✓ Marked correct')).toBeInTheDocument()
-    await user.click(within(authorization).getByRole('button', { name: 'Change decision' }))
-    await user.click(within(authorization).getByRole('button', { name: 'No, this is not correct' }))
-    expect(within(authorization).getByText('✕ Marked incorrect')).toBeInTheDocument()
-    expect(screen.getByText(/Reviewed: 1 · Accepted: 0 · Rejected: 1 · Remaining: 3/)).toBeInTheDocument()
+    await user.click(within(authorization).getByRole('button', { name: 'Correct' }))
+    expect(within(authorization).getByText('✓ Correct')).toBeInTheDocument()
+    await user.click(within(authorization).getByRole('button', { name: 'Change' }))
+    await user.click(within(authorization).getByRole('button', { name: 'Incorrect' }))
+    expect(within(authorization).getByText('✕ Incorrect')).toBeInTheDocument()
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('1 of 4 reviewed · 0 correct · 1 incorrect')
   })
 
-  it('supports explicit non-conflict batch decisions but never offers Accept All', async () => {
+  it('shows secondary batch actions only after explicit compatible selection and excludes conflicts', async () => {
     const user = userEvent.setup()
     renderPanel()
     expect(screen.queryByRole('button', { name: /accept all/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mark correct' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Select Permission / authorization for batch review')).toBeDisabled()
     await user.click(screen.getByLabelText('Select Acceptance condition for batch review'))
+    expect(screen.queryByRole('button', { name: 'Mark correct' })).not.toBeInTheDocument()
     await user.click(screen.getByLabelText('Select Input validation for batch review'))
-    await user.click(screen.getByRole('button', { name: 'Mark selected as correct' }))
-    expect(screen.getAllByText('✓ Marked correct')).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: 'Mark correct' }))
+    expect(screen.getAllByText('✓ Correct')).toHaveLength(2)
   })
 
-  it('filters reviewed and conflict groups and collapses reviewed evidence groups', async () => {
+  it('auto-collapses a reviewed group, advances, and permits reopening from Reviewed', async () => {
     const user = userEvent.setup()
     renderPanel()
-    await user.click(screen.getByRole('button', { name: 'Conflicts' }))
-    expect(screen.getByText(/automated methods disagreed/i)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Reviewed' }))
-    expect(screen.queryByText('Source evidence')).not.toBeInTheDocument()
+    for (let index = 0; index < 3; index += 1) await user.click(screen.getAllByRole('button', { name: 'Correct' })[0])
+    expect(document.querySelector('blockquote')).toHaveTextContent('Customers may cancel before 24 hours.')
+    await user.click(screen.getByRole('button', { name: 'Reviewed 3' }))
+    const reviewedGroup = screen.getByRole('button', { name: /QuickBook UI Flow And Acceptance.*3 decisions completed/ })
+    expect(reviewedGroup).toHaveAttribute('aria-expanded', 'false')
+    await user.click(reviewedGroup)
+    expect(reviewedGroup).toHaveAttribute('aria-expanded', 'true')
   })
 
-  it('keeps atomic submission disabled until every item is resolved and blocks duplicates', async () => {
+  it('expands automatic information without mixing it into Human Review', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(accordion('Automatically Extracted Information'))
+    const panel = document.getElementById('automatic-information-panel')
+    expect(within(panel).getByText(/automatically handled 20 clear classifications/i)).toBeInTheDocument()
+    expect(within(panel).getByText('Functional behavior')).toBeInTheDocument()
+    expect(within(panel).getByText('Input validation')).toBeInTheDocument()
+  })
+
+  it('does not invent semantic facts before extraction and reports only trusted counts when present', async () => {
+    const user = userEvent.setup()
+    const { unmount } = renderPanel()
+    await user.click(accordion('Extracted Testing Facts'))
+    expect(screen.getByText('Testing facts will be extracted after this review is confirmed.')).toBeInTheDocument()
+    unmount()
+    renderPanel({ n3Execution: { ...execution, sources: [{ ...execution.sources[0], semantic_fact_count: 2 }] } })
+    await user.click(accordion('Extracted Testing Facts'))
+    expect(screen.getByText(/2 grounded testing facts have already been extracted/)).toBeInTheDocument()
+    expect(screen.getByText(/Fact text is not included/)).toBeInTheDocument()
+  })
+
+  it('uses friendly collapsed analysis progress and keeps technical model names out of it', async () => {
+    const user = userEvent.setup()
+    renderPanel()
+    await user.click(accordion('Analysis Progress'))
+    const panel = document.getElementById('analysis-progress-panel')
+    expect(panel).toHaveTextContent('✓ Rule analysis')
+    expect(panel).toHaveTextContent('✓ AI classification')
+    expect(panel).toHaveTextContent('✓ Combined decision')
+    expect(panel).toHaveTextContent('○ Testing fact extraction')
+    expect(panel).not.toHaveTextContent(/DeBERTa|H1/)
+  })
+
+  it('keeps a compact footer, disables confirmation until complete, then shows completion truthfully', async () => {
     const user = userEvent.setup()
     const props = renderPanel()
-    const submit = screen.getByRole('button', { name: 'Confirm Review & Continue' })
+    const footer = screen.getByRole('contentinfo')
+    const submit = within(footer).getByRole('button', { name: 'Confirm & Continue' })
+    expect(footer).not.toHaveTextContent('Automatically Extracted Information')
     expect(submit).toBeDisabled()
-    for (const button of screen.getAllByRole('button', { name: 'Yes, this is correct' })) await user.click(button)
-    await user.click(screen.getByRole('button', { name: 'Yes, this is correct' }))
+    while (screen.queryAllByRole('button', { name: 'Correct' }).length) await user.click(screen.getAllByRole('button', { name: 'Correct' })[0])
+    expect(screen.getByText('✓ Review complete')).toBeInTheDocument()
+    expect(screen.getByText('4 items reviewed · 4 marked correct · 0 marked incorrect')).toBeInTheDocument()
     expect(submit).toBeEnabled()
     await user.click(submit)
-    expect(props.onSubmitIntelligenceReview).toHaveBeenCalledTimes(1)
-    expect(props.onSubmitIntelligenceReview.mock.calls[0][0]).toEqual(expect.arrayContaining([
+    expect(props.onSubmitIntelligenceReview).toHaveBeenCalledWith(expect.arrayContaining([
       expect.objectContaining({ chunk_id: 'A4CHK-one', label: 'AUTHORIZATION', decision: 'ACCEPT' }),
       expect.objectContaining({ chunk_id: 'A4CHK-two', label: 'UI_WORKFLOW', decision: 'ACCEPT' }),
     ]))
-
-    renderPanel({ reviewSubmitting: true })
-    expect(screen.getByRole('button', { name: 'Continuing Testing Intelligence…' })).toBeDisabled()
   })
 
-  it('shows failed sources with a targeted retry action', async () => {
+  it('shows a simple continuing state while confirmation is in flight', () => {
+    renderPanel({ reviewSubmitting: true })
+    expect(screen.getAllByRole('status')[0]).toHaveTextContent('Continuing analysis…')
+    expect(screen.queryByText('Source evidence')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Continuing analysis…' })).toBeDisabled()
+  })
+
+  it('expands long evidence without changing the review payload', async () => {
+    const user = userEvent.setup()
+    const longEvidence = `Only administrators ${'may review booking evidence '.repeat(30)}`
+    renderPanel({ intelligenceReview: { ...review, items: review.items.map((entry) => ({ ...entry, chunk_context: longEvidence })) } })
+    expect(screen.getByRole('button', { name: 'Show full evidence' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show full evidence' }))
+    expect(document.querySelector('blockquote')).toHaveTextContent(longEvidence)
+  })
+
+  it('shows failed-source recovery and the simple completed state', async () => {
     const user = userEvent.setup()
     const retry = vi.fn()
-    renderPanel({ intelligenceReview: null, n3Execution: { ...execution, status: 'FAILED', sources: [{ ...execution.sources[0], status: 'FAILED', error: { code: 'N3_SOURCE_FAILED', message: 'Safe source failure.' } }] }, onRetryIntelligenceSource: retry })
-    expect(screen.getByText(/Safe source failure/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Retry Source' }))
+    const subStages = [
+      ['TI_RULE_ANALYSIS', 'COMPLETED'],
+      ['TI_AI_CLASSIFICATION', 'COMPLETED'],
+      ['TI_HYBRID_DECISION', 'COMPLETED'],
+      ['TI_HUMAN_REVIEW', 'COMPLETED'],
+      ['TI_EFFECTIVE_CLASSIFICATION', 'COMPLETED'],
+      ['TI_FACT_EXTRACTION', 'FAILED'],
+    ].map(([stage, status]) => ({ stage, status, safe_error: stage === 'TI_FACT_EXTRACTION' ? { code: 'SEMANTIC_GROUNDING_FAILED', message: 'Generated semantic facts could not be grounded in the source evidence.' } : null }))
+    const { unmount } = renderPanel({ intelligenceReview: null, n3Execution: { ...execution, status: 'FAILED', sub_stages: subStages, sources: [{ ...execution.sources[0], status: 'FAILED', failed_stage: 'TI_FACT_EXTRACTION', sub_stages: subStages, error: { message: 'Safe source failure.' } }] }, onRetryIntelligenceSource: retry })
+    expect(screen.getByText('Failed — retry available')).toBeInTheDocument()
+    expect(screen.getByText(/completed steps are preserved/i)).toBeInTheDocument()
+    expect(screen.getByText('Testing fact extraction failed')).toBeInTheDocument()
+    expect(screen.getByText('Generated semantic facts could not be grounded in the source evidence.')).toBeInTheDocument()
+    expect(screen.getByText(/Approved classifications/)).toHaveClass('text-state-success')
+    await user.click(screen.getByRole('button', { name: 'Retry testing fact extraction' }))
     expect(retry).toHaveBeenCalledWith('A4SRC-one')
+    unmount()
+    renderPanel({ intelligenceReview: null, n3Execution: { ...execution, status: 'COMPLETED' }, workflowNodeStatus: 'COMPLETED' })
+    expect(screen.getByRole('status')).toHaveTextContent('Testing Intelligence complete')
+    expect(screen.getByRole('status')).toHaveTextContent('Ready for Context & Testability')
   })
 
-  it('retains successful siblings and pending-image source truthfully', () => {
-    renderPanel({ intelligenceReview: null, n3Execution: { ...execution, status: 'FAILED', sources: [
-      { ...execution.sources[0], source_id: 'A4SRC-complete', label: 'Completed SRS', status: 'COMPLETE', semantic_complete: true, semantic_fact_count: 2, pending_review_items: 0 },
-      { ...execution.sources[0], source_id: 'A4SRC-image', label: 'Wireframe', source_type: 'IMAGE', status: 'PENDING_ANALYSIS', rules_complete: false, zero_shot_complete: false, hybrid_complete: false, pending_review_items: 0 },
-    ] } })
-    expect(screen.getByText('Completed SRS')).toBeInTheDocument()
-    expect(screen.getByText('Visual semantic analysis is not implemented.')).toBeInTheDocument()
+  it.each([
+    ['QUEUED', 'LEGACY_START', 'Analysis queued'],
+    ['RUNNING', 'LEGACY_START', 'Analysis in progress'],
+    ['QUEUED', 'HUMAN_REVIEW_RESUME', 'Resume queued'],
+    ['RUNNING', 'HUMAN_REVIEW_RESUME', 'Resuming after review'],
+    ['INTERRUPTED', 'RESTART_RECOVERY', 'Interrupted — retry available'],
+  ])('renders %s state from authoritative execution progress', (status, trigger, label) => {
+    const subStages = [['TI_RULE_ANALYSIS', 'COMPLETED'], ['TI_FACT_EXTRACTION', status === 'INTERRUPTED' ? 'INTERRUPTED' : 'RUNNING']]
+      .map(([stage, stageStatus]) => ({ stage, status: stageStatus, safe_error: stageStatus === 'INTERRUPTED' ? { code: 'N3_EXECUTION_INTERRUPTED', message: 'Saved processing was interrupted.' } : null }))
+    renderPanel({ intelligenceReview: null, n3Execution: { ...execution, status, trigger, sub_stages: subStages, sources: [{ ...execution.sources[0], status: status === 'INTERRUPTED' ? 'FAILED' : status, sub_stages: subStages, error: status === 'INTERRUPTED' ? { message: 'Saved processing was interrupted.' } : null }] }, workflowNodeStatus: status })
+    expect(screen.getByText(label)).toBeInTheDocument()
   })
 
-  it('auto-advances by bringing the next unresolved evidence group into view', async () => {
+  it('auto-advances to the next unresolved evidence group', async () => {
     vi.useFakeTimers()
     const scrollIntoView = vi.fn()
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
     try {
       renderPanel()
-      fireEvent.click(screen.getAllByRole('button', { name: 'Yes, this is correct' })[0])
+      fireEvent.click(screen.getAllByRole('button', { name: 'Correct' })[0])
       await vi.runAllTimersAsync()
       expect(scrollIntoView).toHaveBeenCalled()
     } finally {

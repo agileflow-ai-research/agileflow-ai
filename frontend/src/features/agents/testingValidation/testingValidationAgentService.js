@@ -1,9 +1,9 @@
 import { apiClient } from '../../../services/apiClient.js'
 
-export function getTestGenerationWorkflow(agentProjectId) {
+export function getTestGenerationWorkflow(agentProjectId, options = {}) {
   return apiClient.get(
     `/agents/testing-validation/${encodeURIComponent(agentProjectId)}/test-generation/workflow`,
-    { authenticated: true },
+    { ...options, authenticated: true },
   )
 }
 
