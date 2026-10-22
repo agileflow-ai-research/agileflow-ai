@@ -1,3 +1,11 @@
+"""
+Versioned N4.3 feasibility policy (FP1).
+
+Each output names the automation surface it needs to be EXECUTABLE_POSSIBLE.
+TEST_TRACEABILITY is marked structured_artifact_only: it is a traceability
+document, not executable code, so its feasibility is always SPECIFICATION_ONLY.
+"""
+
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -6,6 +14,8 @@ from app.modules.agents.testing_validation.schemas import TestGenerationOutputCo
 
 @dataclass(frozen=True, slots=True)
 class FeasibilityPolicy:
+    """Per-output feasibility requirements: the executable surface and structured-artifact flag."""
+
     output_code: O
     description: str
     executable_surface: str

@@ -1,3 +1,12 @@
+"""
+LEGACY standalone Agent 4 service: the /run endpoint's business logic.
+
+Checks the project type and the active state, runs Agent4Engine, and records the
+run through the standalone service. It is separate from the N1-N4 Test Generation
+workflow, which is handled by workflow/, sources/, preparation/, intelligence/,
+and context_testability/.
+"""
+
 from typing import Any
 
 from app.common.model_provider import ModelProviderError
@@ -15,6 +24,8 @@ class WrongAgentProjectTypeError(ValueError):
 
 
 class Agent4Service:
+    """Legacy /run orchestration: project check, engine call, and run persistence."""
+
     def __init__(self, standalone_service: StandaloneService, engine: Agent4Engine) -> None:
         self._standalone = standalone_service
         self._engine = engine

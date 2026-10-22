@@ -1,3 +1,12 @@
+"""
+Pydantic contracts for the N4.4 context decision (CD1).
+
+Holds the per-output profiles (decision, planning_allowed, references to the TB1 and FB1
+assessments), the planning profiles N5 will read, the consolidated findings with their
+origins, and the overall decision. CD1 reads persisted TR1, TB1, and FB1 only, so its
+fingerprints show which upstream results it consumed.
+"""
+
 from datetime import datetime
 from typing import Literal
 

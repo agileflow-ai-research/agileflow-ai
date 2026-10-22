@@ -1,3 +1,11 @@
+"""
+Public contracts for the Testing / Validation agent.
+
+Two groups of schemas live here. The first covers the legacy standalone run
+(Agent4RunRequest, Agent4RunResult). The second is the shared TestGenerationOutputCode
+enum, which the N1-N4 pipeline also uses for its selected outputs.
+"""
+
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal

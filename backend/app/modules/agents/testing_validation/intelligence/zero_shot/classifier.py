@@ -1,3 +1,16 @@
+"""
+N3 DeBERTa zero-shot classifier (Z1 stage).
+
+Converts the T1 chunks into 15-label raw score vectors by calling the runtime
+in fixed-size batches. This module
+  - builds the candidate label mapping (label -> model description),
+  - fingerprints the inference configuration so cached results can be validated,
+  - validates each returned score vector (complete, finite, in [0, 1]),
+  - retries failed batches by splitting them (isolation), and
+  - persists nothing; storage is handled by service.py.
+It does not apply any threshold. H1 decides how the scores are used.
+"""
+
 import hashlib
 import json
 import math
@@ -38,6 +51,13 @@ class Agent4ZeroShotInvalidResponseError(RuntimeError):
 
 
 def candidate_mapping():
+    """
+    Map each of the 15 T1 labels to its natural-language candidate description.
+
+    The descriptions are what DeBERTa scores, so the mapping must be complete,
+    non-empty, and unique. Any violation raises a configuration error instead
+    of silently scoring a broken label set.
+    """
     mapping = {
         label: TESTING_INTELLIGENCE_TAXONOMY[label].model_description
         for label in TESTING_INTELLIGENCE_LABEL_ORDER
@@ -52,6 +72,14 @@ def candidate_mapping():
 
 
 def inference_configuration_fingerprint():
+    """
+    SHA-256 over everything that affects Z1 output: stage/taxonomy/description
+    versions, candidate descriptions, hypothesis template, model ID, revision,
+    task, batch size, and truncation policy.
+
+    The zero-shot cache is valid only while this value is unchanged
+    (see service.py _cache_is_current).
+    """
     mapping = candidate_mapping()
     payload = {
         "stage": constants.ZERO_SHOT_STAGE_VERSION,
@@ -75,6 +103,10 @@ class Agent4ZeroShotClassifier:
         self._runtime = runtime
 
     def classify(self, chunk_set, *, confirmed_source_ids, processed_at):
+        """
+        Score every chunk in the set in batches of INFERENCE_BATCH_SIZE.
+        Returns (device, results). Results keep the same order as the chunks.
+        """
         mapping = candidate_mapping()
         descriptions = list(mapping.values())
         reverse = {description: label for label, description in mapping.items()}
@@ -93,6 +125,15 @@ class Agent4ZeroShotClassifier:
 
     def _infer_with_isolation(self, chunks, descriptions, reverse, chunk_set,
                               confirmed_source_ids, processed_at):
+        """
+        Run one batch. If the runtime fails with an unexpected error, split the
+        batch in half and retry each half, so one bad chunk fails alone and its
+        siblings still succeed. A single failing chunk raises
+        Agent4ZeroShotInferenceError with its chunk_id.
+
+        Known contract errors (invalid response, configuration, load, tokenization)
+        are re-raised immediately and are not retried by splitting.
+        """
         started = perf_counter()
         try:
             raw = self._runtime.infer(
@@ -140,6 +181,16 @@ class Agent4ZeroShotClassifier:
     @staticmethod
     def _result(chunk, chunk_set, confirmed_source_ids, response, reverse,
                 token_count, model_max_length, inference_ms, processed_at):
+        """
+        Grounding and validation boundary for raw model output.
+
+        Checks that the response contains exactly the 15 T1 candidates, each with
+        a finite score in [0, 1]. It then builds the result with chunk provenance
+        and truncation metadata. Scores are stored as returned; no label is
+        accepted or rejected here.
+        """
+        # Trust boundary: the model's label set must match the T1 candidate
+        # descriptions exactly. A partial or altered response is rejected whole.
         labels = response.get("labels")
         scores = response.get("scores")
         if not isinstance(labels, list) or not isinstance(scores, list) \

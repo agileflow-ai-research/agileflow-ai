@@ -1,3 +1,12 @@
+"""
+N4.3 Feasibility service (FB1) for the selected outputs.
+
+Orchestration layer. It loads the TR1 graph and the TB1 result, extracts
+technical evidence from the graph, evaluates executable feasibility per output,
+and persists feasibility.json. It does not execute any generated or existing
+test, and it does not probe the host environment.
+"""
+
 from datetime import datetime, timezone
 from threading import RLock
 
@@ -43,6 +52,13 @@ def testability_result_fingerprint(result):
 
 
 class Agent4FeasibilityService:
+    """
+    Produces the N4.3 FB1 result for the current selection.
+
+    Depends on the TR1 build and the TB1 evaluate. It requires TB1 to match the
+    current confirmation and TR1 fingerprint before FB1 runs.
+    """
+
     def __init__(self, workflow_service, workflow_storage, traceability_service,
                  testability_service, feasibility_storage, *, clock=utc_now):
         self._workflow_service = workflow_service
@@ -53,6 +69,12 @@ class Agent4FeasibilityService:
         self._clock = clock
 
     def evaluate(self, project_id, user, *, force=False):
+        """
+        Build or reuse FB1. The input fingerprint covers the selection, the TR1
+        fingerprint, the TB1 result, the technology catalog version, and the
+        technical evidence fingerprint. A cache hit requires an identical fingerprint
+        and content (ignoring evaluated_at).
+        """
         self._workflow_service.get(project_id, user)
         with FEASIBILITY_LOCK:
             record = self._workflows.load(

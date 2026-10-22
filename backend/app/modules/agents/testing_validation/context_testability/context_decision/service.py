@@ -1,3 +1,15 @@
+"""
+N4.4 Context Decision service (CD1): consolidates persisted TR1, TB1, and FB1.
+
+N4.4 does NOT reassess requirements. It reads the three persisted N4 manifests,
+checks that they belong to the current confirmed selection and workflow boundary,
+and writes one consolidated context-decision.json.
+
+Pipeline position: N3 completed -> N4.1 TR1 -> N4.2 TB1 -> N4.3 FB1 -> N4.4 CD1.
+The service has no dependency on the TR1, TB1, or FB1 build/evaluate services,
+so it cannot silently rerun or reinterpret earlier N4 decisions.
+"""
+
 from datetime import datetime, timezone
 from threading import RLock
 
@@ -61,6 +73,12 @@ def _traceability_fingerprint(result):
 
 
 class Agent4ContextDecisionService:
+    """
+    Produces the N4.4 CD1 context decision for the current selection.
+
+    Only persisted artifacts are read. TR1, TB1, and FB1 are never recomputed here.
+    """
+
     def __init__(self, workflow_service, workflow_storage, traceability_storage,
                  testability_storage, feasibility_storage, decision_storage,
                  *, clock=utc_now):
@@ -73,6 +91,21 @@ class Agent4ContextDecisionService:
         self._clock = clock
 
     def evaluate(self, project_id, user, *, force=False):
+        """
+        Build or reuse the CD1 context decision.
+
+        Gates (all before any consolidation):
+          - the confirmed selected outputs are current (digest and revision match);
+          - the workflow is at the N4 boundary (N4 NOT_STARTED, CONTEXT_TESTABILITY current);
+          - TR1, TB1, and FB1 are persisted, and each one's schema, engine, and
+            policy versions match, and each one references the current confirmation,
+            selection, and upstream fingerprints.
+        Stale or missing evidence raises Agent4ContextDecisionGateError. That is a
+        precondition failure, not a BLOCKED context decision, so no decision is saved.
+
+        Cache: reused when the input fingerprint and the upstream result fingerprints
+        match. The evaluation timestamp is excluded from every identity.
+        """
         # This ownership/type/archive check is read-only. N4.4 deliberately has
         # no dependency on any TR1/TB1/FB1 build or evaluate service.
         self._workflow_service.get(project_id, user)
@@ -82,6 +115,9 @@ class Agent4ContextDecisionService:
             )
             self._validate_workflow(record)
             confirmation = record.n1_confirmation
+            # N4.4 intentionally reads persisted upstream manifests instead of invoking
+            # TR1/TB1/FB1 evaluators. This guarantees consolidation cannot silently rerun or
+            # reinterpret earlier N4 decisions.
             graph = self._traceability.load(
                 agent_project_id=project_id, owner_user_id=user.user_id
             )
@@ -101,6 +137,8 @@ class Agent4ContextDecisionService:
                 project_id, record, confirmation, graph, graph_fp,
                 testability, testability_fp, feasibility,
             )
+            # The input fingerprint binds the decision to the exact selection and
+            # to the TR1/TB1/FB1 fingerprints it consumed.
             input_fp = fingerprint({
                 "schema": CONTEXT_DECISION_SCHEMA_VERSION,
                 "engine": CONTEXT_DECISION_ENGINE_VERSION,
@@ -125,6 +163,9 @@ class Agent4ContextDecisionService:
             ):
                 return cached
 
+            # Deterministic consolidation only. CD1 is pure over the persisted inputs.
+            # The engine's ContextDecisionInputError is an input contradiction (for
+            # example, FB1 NOT_READY without TB1 NOT_READY), so it is raised as a gate error.
             try:
                 profiles, planning, findings, overall = consolidate_context_decision(
                     confirmation.selected_outputs, testability, feasibility
@@ -178,6 +219,11 @@ class Agent4ContextDecisionService:
 
     @staticmethod
     def _validate_workflow(record):
+        """
+        Confirm the N4 boundary. N1-N3 must be COMPLETED, N4 must be NOT_STARTED
+        and current, and N5/N6 must still be LOCKED. This keeps CD1 from running
+        after N4 has already advanced or after the selection changed.
+        """
         if record is None or record.n1_confirmation is None:
             raise Agent4ContextDecisionGateError("Confirmed selected outputs are required")
         confirmation = record.n1_confirmation
@@ -204,6 +250,12 @@ class Agent4ContextDecisionService:
     @staticmethod
     def _validate_upstream(project_id, record, confirmation, graph, graph_fp,
                            testability, testability_fp, feasibility):
+        """
+        Provenance check. Each upstream manifest must reference the same project,
+        confirmation, selection revision and digest, and fingerprints. It also
+        requires one TB1 and one FB1 assessment per selected output, and every
+        finding reference must resolve to a persisted finding.
+        """
         outputs = confirmation.selected_outputs
         if (
             graph.schema_version != TRACEABILITY_SCHEMA_VERSION
@@ -260,6 +312,11 @@ class Agent4ContextDecisionService:
     @staticmethod
     def _cache_matches(cached, input_fp, graph_fp, testability_fp, feasibility_fp,
                        testability, feasibility):
+        """
+        Reuse check for a stored CD1 result. Verifies the input fingerprint,
+        the upstream fingerprints, and that every stored origin/assessment reference
+        still points at a persisted TB1/FB1 item. The check does not rebuild anything.
+        """
         if (
             cached is None
             or cached.input_fingerprint != input_fp

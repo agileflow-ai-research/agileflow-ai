@@ -1,3 +1,15 @@
+"""
+LEGACY standalone validation executor: runs project validation commands in a Docker sandbox.
+
+Not part of the N1-N4 Test Generation pipeline. The N4.3 feasibility stage never
+runs tests and never calls this module. This module does two things:
+  - resolves the requested project files inside a workspace, rejecting path escapes
+    and reparse points, and
+  - runs the fixed validation profile in a Docker runtime with CPU, memory, process-count,
+    temporary-storage, and timeout limits (SandboxLimits). Command logs are redacted
+    before they are returned.
+"""
+
 import ntpath
 import os
 import re
@@ -305,7 +317,13 @@ class SubprocessDockerRuntime:
 
 
 class SandboxedValidationExecutor:
-    """Runs fixed validation profiles only inside a resource-bounded Docker container."""
+    """
+    Runs fixed validation profiles only inside a resource-bounded Docker container.
+
+    The project is first staged into a temporary workspace. A failed build marks
+    the tests as skipped. A timeout raises ToolExecutionError. The DockerRuntime is
+    injected, so tests can replace the real docker subprocess.
+    """
 
     def __init__(
         self,

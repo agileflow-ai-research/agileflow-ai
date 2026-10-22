@@ -1,3 +1,11 @@
+"""
+Pydantic contracts for the N3 semantic-fact (S1) manifest.
+
+A SemanticFact is a structured fact that Qwen extracted and the grounding validator
+accepted. It keeps the exact evidence quote and offsets, and every structured value must
+appear in that quote. There is no confidence field, so no score is invented here.
+"""
+
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal

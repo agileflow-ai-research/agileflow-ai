@@ -1,3 +1,24 @@
+"""
+Pure N4.3 feasibility engine (FB1). No I/O, no model call, and no execution.
+
+Question answered: "What representation can responsibly be generated?"
+Outcomes per output:
+  NOT_READY             N4.2 TB1 is NOT_READY. Feasibility mirrors the block, and
+                        TB1 remains the authoritative blocker.
+  SPECIFICATION_ONLY    a specification is possible, but executable code is not
+                        responsibly possible from explicit target evidence.
+  EXECUTABLE_POSSIBLE   explicit language, framework, and automation surface
+                        exist and are compatible. This means generation is
+                        possible, not executed. execution_status is always NOT_EXECUTED.
+
+Rules:
+  - Only target-system evidence counts (see extractor.py).
+  - Nothing is invented. Ambiguous or missing language, framework, or runtime
+    evidence yields a finding and does not select a default toolchain.
+  - TEST_TRACEABILITY is a structured artifact. It is always SPECIFICATION_ONLY,
+    and it never produces an executable-framework finding.
+"""
+
 from app.modules.agents.testing_validation.context_testability.traceability.canonicalization import (
     deterministic_id,
 )
@@ -83,6 +104,11 @@ def _eligible_frameworks(output, inventory):
 
 
 def _select_toolchain(output, inventory, findings, input_fingerprint):
+    """
+    Choose one (language, framework) pair from explicit evidence, or return None.
+    Each ambiguity or missing piece adds a finding. Nothing is defaulted, so the
+    stack is never invented. The pair must be listed in FRAMEWORK_LANGUAGES to count.
+    """
     languages = set(inventory.values(C.PROGRAMMING_LANGUAGE))
     frameworks = _eligible_frameworks(output, inventory)
     versions = inventory.values(C.RUNTIME_VERSION)
@@ -138,6 +164,11 @@ def _select_toolchain(output, inventory, findings, input_fingerprint):
 
 
 def _surface(output, inventory, findings, input_fingerprint):
+    """
+    Check that a concrete automation surface exists for this output (unit component,
+    API operation, UI route or workflow, and so on). Returns the surface name, or None
+    when a required surface is missing and a finding was recorded.
+    """
     def require(category, reason, message):
         if inventory.present(category):
             return True
@@ -239,6 +270,14 @@ def _surface(output, inventory, findings, input_fingerprint):
 
 
 def evaluate_output_feasibility(output, testability, inventory, *, input_fingerprint):
+    """
+    Decide one output's representation. Order of checks:
+      1. TB1 NOT_READY -> NOT_READY, mirrored so FB1 cannot unblock the output.
+      2. Structured artifact policy (TEST_TRACEABILITY) -> SPECIFICATION_ONLY.
+      3. Toolchain and automation surface both present -> EXECUTABLE_POSSIBLE with a
+         GenerationProfile. Otherwise -> SPECIFICATION_ONLY with findings explaining
+         what was missing.
+    """
     policy = FEASIBILITY_POLICY_BY_OUTPUT[output]
     if testability.status is TestabilityStatus.NOT_READY:
         finding = _finding(

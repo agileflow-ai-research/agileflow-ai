@@ -1,3 +1,25 @@
+"""
+HTTP API for the Agent 4 Testing / Validation agent.
+
+Route groups under /agents/testing-validation:
+  /{id}/test-generation/sources[...]   N1 source collection: create, list, delete.
+                                       Blocked after N1 confirmation.
+  /{id}/test-generation/workflow[...]  N1 output selection and confirmation, N2
+                                       (Input Preparation) start and retry, and N3
+                                       (Testing Intelligence) start, review, and retry.
+  /{id}/run                            LEGACY standalone agent run (Agent4Engine).
+                                       Not part of the N1-N4 Test Generation pipeline.
+
+Trust boundary: every route resolves the current user and project first. The
+workflow stays server-authoritative. Clients submit intent (outputs, confirm,
+review decisions) and never supply evidence, chunks, or classification results.
+Review submissions must carry the review snapshot fingerprint the server showed.
+The N4 context services (TR1, TB1, FB1, CD1) have no routes in this module.
+
+Mutating routes are marked in their docstrings. Read routes can repair an
+execution that was left RUNNING after a restart (see the orchestration services).
+"""
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
@@ -112,6 +134,8 @@ router = APIRouter(prefix="/agents/testing-validation", tags=["testing-validatio
 
 
 def get_agent4_engine() -> Agent4Engine:
+    # Legacy /run path only. It uses the configured structured model provider.
+    # The N3 DeBERTa and Qwen runtimes are not created here.
     return Agent4Engine(build_model_provider(settings))
 
 
@@ -197,6 +221,10 @@ def get_agent4_n3_orchestration_service(
     workflow_storage: Annotated[Agent4WorkflowStorage, Depends(get_agent4_workflow_storage)],
     n4_service: Annotated[Agent4N4OrchestrationService, Depends(get_agent4_n4_orchestration_service)],
 ) -> Agent4N3OrchestrationService:
+    # N3 wiring. Each stage gets its own storage and service. Models are only
+    # referenced here. DeBERTa is constructed with local_files_only=True, and the
+    # runtime loads the model on the first inference call (not at construction).
+    # Qwen is created inside Agent4SemanticFactService with the same local-only default.
     root = settings.agent4_storage_root
     chunks = Agent4ChunkStorage(root)
     rules_storage = Agent4RuleStorage(root)
@@ -251,6 +279,8 @@ def get_agent4_n2_orchestration_service(
         extraction, Agent4NormalizationStorage(root)
     )
     chunking = Agent4ChunkingService(normalization, Agent4ChunkStorage(root))
+    # Handoff wiring: when N2 completes, N2 calls N3's start_after_n2. This is the only
+    # automatic transition from N2 into N3.
     return Agent4N2OrchestrationService(
         workflow_service,
         workflow_storage,
@@ -287,6 +317,11 @@ def get_test_generation_workflow(
     ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
+    """
+    Read-only workflow projection for the UI (N1-N4 node states, N2 and N3 executions).
+    The read can repair stale RUNNING or QUEUED executions to INTERRUPTED. It never
+    starts work.
+    """
     try:
         service.get(agent_project_id, current_user)
         n3_service.get(agent_project_id, current_user)
@@ -357,6 +392,9 @@ def update_test_generation_outputs(
     ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
+    """
+    MUTATING. Save the desired test-output selection (N1). Refused after N1 confirmation (409).
+    """
     try:
         workflow = service.update_outputs(
             agent_project_id, current_user, request.selected_outputs
@@ -434,6 +472,10 @@ def confirm_test_generation_n1(
     ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
+    """
+    MUTATING. Confirm N1 and freeze the source set and outputs, then start N2
+    (Input Preparation) in the background. The request returns once N2 is queued.
+    """
     try:
         workflow = service.confirm_n1_and_start(agent_project_id, current_user)
     except AgentProjectNotFoundError:
@@ -506,6 +548,10 @@ def start_test_generation_n3(
     service: Annotated[Agent4N3OrchestrationService, Depends(get_agent4_n3_orchestration_service)],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ):
+    """
+    MUTATING. Legacy N3 start (trigger LEGACY_START). Normal N3 starts automatically
+    when N2 completes. Refused unless N2 is COMPLETED and N3 has not started.
+    """
     try:
         workflow = service.start(agent_project_id, current_user)
     except AgentProjectNotFoundError:
@@ -530,6 +576,11 @@ def get_test_generation_n3_review(
     service: Annotated[Agent4N3OrchestrationService, Depends(get_agent4_n3_orchestration_service)],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ):
+    """
+    Read-only. Returns the pending H1 REVIEW_REQUIRED items and their snapshot fingerprint.
+    Available only while N3 is WAITING_FOR_HUMAN. The client must echo the fingerprint
+    when it submits.
+    """
     try:
         review = service.review_projection(agent_project_id, current_user)
     except AgentProjectNotFoundError:
@@ -555,6 +606,11 @@ def submit_test_generation_n3_review(
     service: Annotated[Agent4N3OrchestrationService, Depends(get_agent4_n3_orchestration_service)],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ):
+    """
+    MUTATING. Human ACCEPT/REJECT decisions for classification review. Each pending
+    item needs exactly one resolution, and the snapshot fingerprint must be current.
+    The review is recorded as an append-only event, and N3 resumes for the waiting sources.
+    """
     try:
         workflow = service.submit_review(agent_project_id, request, current_user)
     except AgentProjectNotFoundError:
@@ -582,6 +638,9 @@ def retry_test_generation_n3_source(
     service: Annotated[Agent4N3OrchestrationService, Depends(get_agent4_n3_orchestration_service)],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ):
+    """
+    MUTATING. Retry one FAILED source in the N3 execution. Other sources are not reprocessed.
+    """
     try:
         workflow = service.retry_source(agent_project_id, source_id, current_user)
     except AgentProjectNotFoundError:
@@ -706,6 +765,10 @@ def start_test_generation_n2(
     ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
+    """
+    MUTATING. Legacy N2 start (trigger LEGACY_START). Idempotent: an existing
+    execution is returned unchanged. The normal start is confirm_test_generation_n1.
+    """
     try:
         workflow = service.start(agent_project_id, current_user)
     except AgentProjectNotFoundError:
@@ -766,6 +829,10 @@ def retry_test_generation_n2_source(
     ],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[Agent4TestGenerationWorkflowResponse] | JSONResponse:
+    """
+    MUTATING. Targeted N2 retry for one FAILED source. Refused when the confirmed
+    setup no longer matches the execution or the persisted source set has changed.
+    """
     try:
         workflow = service.retry_source(agent_project_id, source_id, current_user)
     except AgentProjectNotFoundError:
@@ -859,6 +926,7 @@ def list_test_generation_sources(
     service: Annotated[Agent4SourceService, Depends(get_agent4_source_service)],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[list[TestGenerationSourceRecord]] | JSONResponse:
+    """Read-only list of N1 sources for the project."""
     try:
         sources = service.list(agent_project_id, current_user)
     except (
@@ -900,6 +968,7 @@ def create_test_generation_text_source(
     service: Annotated[Agent4SourceService, Depends(get_agent4_source_service)],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[TestGenerationSourceRecord] | JSONResponse:
+    """MUTATING. Add an inline TEXT source (N1). Refused after N1 confirmation (409)."""
     try:
         source = service.create_text(agent_project_id, request, current_user)
     except (
@@ -953,6 +1022,11 @@ async def upload_test_generation_file_source(
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
     label: Annotated[str | None, Form(max_length=200)] = None,
 ) -> SuccessResponse[TestGenerationSourceRecord] | JSONResponse:
+    """
+    MUTATING. Upload a DOCUMENT or IMAGE source (N1). Validation failures return 422.
+    Refused after N1 confirmation. The upload is closed in finally, even when the
+    request fails.
+    """
     try:
         source = await service.create_file(
             agent_project_id,
@@ -1018,6 +1092,7 @@ def delete_test_generation_source(
     service: Annotated[Agent4SourceService, Depends(get_agent4_source_service)],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[dict[str, str]] | JSONResponse:
+    """MUTATING. Remove one N1 source. Refused after N1 confirmation (409)."""
     try:
         service.delete(agent_project_id, source_id, current_user)
     except (
@@ -1065,6 +1140,11 @@ def run_testing_validation_agent(
     service: Annotated[Agent4Service, Depends(get_agent4_service)],
     current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
 ) -> SuccessResponse[Agent4RunResult] | JSONResponse:
+    """
+    LEGACY standalone run. It calls Agent4Engine, which uses the configured
+    structured model provider, and it is separate from the N1-N4 pipeline above.
+    The run is persisted through the standalone run service.
+    """
     try:
         result = service.run(agent_project_id, request, current_user)
     except AgentProjectNotFoundError:

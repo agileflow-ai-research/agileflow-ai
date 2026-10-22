@@ -1,3 +1,13 @@
+"""
+Pydantic contracts for the N4.3 feasibility result (FB1).
+
+Holds the feasibility vocabulary (NOT_READY, SPECIFICATION_ONLY, EXECUTABLE_POSSIBLE),
+the recommended representation, the technical evidence inventory, and the optional
+GenerationProfile. The profile is set only when a language, framework, and automation
+surface were all found in the target system's evidence. execution_status is always
+NOT_EXECUTED, because nothing runs in this stage.
+"""
+
 from datetime import datetime
 from enum import StrEnum
 from typing import Literal

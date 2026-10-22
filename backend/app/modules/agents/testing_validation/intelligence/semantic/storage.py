@@ -1,3 +1,12 @@
+"""
+Disk persistence for the N3 semantic-fact manifest.
+
+Path: <root>/<agent_project_id>/intelligence/<source_id>.semantic-facts.json
+Same contract as the other intelligence stores: owner_user_id is checked on
+load, writes go through a .part file and an atomic replace, and path IDs are
+validated before use.
+"""
+
 import json
 import re
 from pathlib import Path
@@ -13,10 +22,13 @@ SOURCE_ID_PATTERN = re.compile(r"^A4SRC-[0-9a-f]{32}$")
 
 
 class Agent4SemanticStorageError(RuntimeError):
+    """Raised for owner mismatch, unsafe paths, or failed persistence."""
     pass
 
 
 class Agent4SemanticStorage:
+    """Reads and writes semantic-fact manifests under the Agent 4 storage root."""
+
     def __init__(self, root: Path):
         self._root = Path(root).resolve()
 
