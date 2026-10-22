@@ -243,7 +243,7 @@ describe('TestingValidationProjectPage', () => {
     await screen.findByText('✓ Primary functional artifact present')
     getTestGenerationWorkflow.mockResolvedValue({ data: confirmed })
 
-    await user.click(screen.getByRole('button', { name: 'Confirm Inputs & Outputs' }))
+    await user.click(screen.getByRole('button', { name: 'Next' }))
 
     expect(confirmTestGenerationSetup).toHaveBeenCalledWith('AGP-404')
     expect(await screen.findByRole('dialog', { name: 'Input Preparation' })).toHaveTextContent(
