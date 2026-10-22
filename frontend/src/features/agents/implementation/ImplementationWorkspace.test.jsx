@@ -1651,7 +1651,26 @@ describe('ImplementationWorkspace', () => {
     expect(screen.getByText('Personal')).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Repository Setup' })).toBeInTheDocument()
     expect(screen.queryByText(/existing repositor/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/Repository Name/)).toHaveValue('BookEase-Builder')
     expect(screen.getByRole('button', { name: 'Create Repository' })).toBeEnabled()
+  })
+
+  it('creates a repository with the project name default when it is unchanged', async () => {
+    const user = userEvent.setup()
+    getGitHubConnection.mockResolvedValue({ data: connectedGitHub() })
+    createGitHubRepository.mockResolvedValue({
+      data: repositoryMetadata({
+        name: 'BookEase-Builder',
+        full_name: 'octocat/BookEase-Builder',
+        html_url: 'https://github.com/octocat/BookEase-Builder',
+      }),
+    })
+    render(<ImplementationWorkspace project={project} />)
+    await screen.findByRole('heading', { name: 'Repository Setup' })
+    await user.click(screen.getByRole('button', { name: 'Create Repository' }))
+    expect(createGitHubRepository).toHaveBeenCalledWith('AGP-003', {
+      name: 'BookEase-Builder', description: null, visibility: 'PRIVATE',
+    })
   })
 
   it('trusts backend status, not the connected callback query alone', async () => {
@@ -1679,6 +1698,7 @@ describe('ImplementationWorkspace', () => {
     getGitHubConnection.mockResolvedValue({ data: connectedGitHub() })
     render(<ImplementationWorkspace project={project} />)
     await screen.findByRole('heading', { name: 'Repository Setup' })
+    await user.clear(screen.getByLabelText(/Repository Name/))
     await user.type(screen.getByLabelText(/Repository Name/), 'owner/repo')
     await user.click(screen.getByRole('button', { name: 'Create Repository' }))
     expect(screen.getByRole('alert')).toHaveTextContent(/repository name/i)
@@ -1692,6 +1712,7 @@ describe('ImplementationWorkspace', () => {
     getGitHubConnection.mockResolvedValue({ data: connectedGitHub() })
     render(<ImplementationWorkspace project={project} />)
     await screen.findByRole('heading', { name: 'Repository Setup' })
+    await user.clear(screen.getByLabelText(/Repository Name/))
     await user.type(screen.getByLabelText(/Repository Name/), 'quickbook')
     await user.type(screen.getByLabelText('Description'), 'Booking system')
     await user.selectOptions(screen.getByLabelText(/Visibility/), 'PUBLIC')
@@ -1726,6 +1747,7 @@ describe('ImplementationWorkspace', () => {
     })
     render(<ImplementationWorkspace project={project} />)
     await screen.findByRole('heading', { name: 'Repository Setup' })
+    await user.clear(screen.getByLabelText(/Repository Name/))
     await user.type(screen.getByLabelText(/Repository Name/), 'quickbook')
     await user.click(screen.getByRole('button', { name: 'Create Repository' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('already exists')

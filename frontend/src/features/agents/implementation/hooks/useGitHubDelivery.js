@@ -7,9 +7,13 @@ import {
   getGitHubRepository,
 } from '../services/implementationAgentService.js'
 import { navigateToGitHub } from '../utils/githubNavigation.js'
-import { repositoryNameError } from '../utils/workspace.js'
+import {
+  repositoryNameError,
+  repositoryNameFromProjectName,
+} from '../utils/workspace.js'
 
-export function useGitHubDelivery(agentProjectId) {
+export function useGitHubDelivery(agentProjectId, projectName) {
+  const defaultRepositoryName = repositoryNameFromProjectName(projectName, agentProjectId)
   const [githubState, setGitHubState] = useState({
     status: 'loading', connection: null, notice: '', error: '',
   })
@@ -17,8 +21,16 @@ export function useGitHubDelivery(agentProjectId) {
     status: 'idle', repository: null, error: '',
   })
   const [repositoryForm, setRepositoryForm] = useState({
-    name: '', description: '', visibility: 'PRIVATE',
+    name: defaultRepositoryName, description: '', visibility: 'PRIVATE',
   })
+
+  useEffect(() => {
+    setRepositoryForm({
+      name: defaultRepositoryName,
+      description: '',
+      visibility: 'PRIVATE',
+    })
+  }, [agentProjectId, defaultRepositoryName])
 
   useEffect(() => {
     let active = true

@@ -85,7 +85,7 @@ function ImplementationWorkspace({
     setRepositoryForm,
     handleGitHubConnect,
     handleRepositoryCreate,
-  } = useGitHubDelivery(project.agent_project_id)
+  } = useGitHubDelivery(project.agent_project_id, project.name)
   const [extractionReview, setExtractionReview] = useState({
     uploadId: null, status: 'idle', result: null, error: '',
   })
