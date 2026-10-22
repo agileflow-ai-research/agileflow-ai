@@ -202,8 +202,9 @@ describe('ImplementationProjectPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Select locked stage' }))
     expect(screen.getByRole('heading', { name: 'Build & Execute' })).toBeInTheDocument()
-    expect(screen.getAllByText('Locked').length).toBeGreaterThan(0)
-    expect(screen.getByText('Not implemented yet')).toBeInTheDocument()
+    expect(screen.getAllByText('Reserved — future development').length).toBeGreaterThan(0)
+    expect(screen.getByText('Reserved — build and execution')).toBeInTheDocument()
+    expect(screen.queryByText('Not implemented yet')).not.toBeInTheDocument()
     expect(screen.getByTestId('implementation-workspace').parentElement).toHaveClass('hidden')
   })
 

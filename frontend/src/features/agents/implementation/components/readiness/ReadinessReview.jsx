@@ -2,6 +2,7 @@ import Button from '../../../../../components/ui/Button.jsx'
 import Card from '../../../../../components/ui/Card.jsx'
 import ResearchDetails from '../common/ResearchDetails.jsx'
 import HumanDecisionCallout from '../common/HumanDecisionCallout.jsx'
+import { ResultBanner } from '../../../../../components/agents/presentation/NodePresentation.jsx'
 
 const labels = { READY: 'READY', READY_WITH_WARNINGS: 'READY WITH WARNINGS', NOT_READY: 'NOT READY' }
 const outputStatusLabels = { READY: 'Ready', READY_WITH_WARNINGS: 'Ready with warnings', NOT_READY: 'Blocked' }
@@ -23,9 +24,18 @@ export default function ReadinessReview({ state, onAdapt, onBack, onContinueWith
   return (
     <Card aria-labelledby="implementation-readiness-title" className="space-y-5">
       <div>
-        <h3 id="implementation-readiness-title" className="text-card-heading font-semibold text-content-primary">Implementation Readiness</h3>
-        <p className="mt-2 font-semibold text-content-primary">{labels[result.status]}</p>
-        <p className="mt-1 text-sm text-content-secondary">{grouped.ERROR.length} blocking · {grouped.WARNING.length} warnings</p>
+        <h3 id="implementation-readiness-title" className="sr-only">Implementation Readiness</h3>
+        <ResultBanner
+          title={labels[result.status]}
+          description={result.status === 'READY' ? 'The current trusted specification supports the selected implementation outputs.' : result.status === 'READY_WITH_WARNINGS' ? 'Implementation can continue after the current warnings are reviewed.' : 'Blocking information must be resolved before implementation can continue.'}
+          tone={result.status === 'READY' ? 'success' : result.status === 'READY_WITH_WARNINGS' ? 'warning' : 'danger'}
+          metrics={[
+            { label: 'Selected outputs', value: result.output_readiness?.length ?? 0 },
+            { label: 'Ready outputs', value: result.output_readiness?.filter((item) => item.ready).length ?? 0 },
+            { label: 'Blocking issues', value: grouped.ERROR.length },
+            { label: 'Warnings', value: grouped.WARNING.length },
+          ]}
+        />
       </div>
       {state.stale && <p role="alert" className="text-sm text-state-warning">The trusted specification or selected outputs changed. This result is no longer current.</p>}
 

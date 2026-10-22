@@ -180,8 +180,8 @@ describe('Agent 3 workflow panels', () => {
       />,
     )
 
-    expect(screen.getByText('✓ Analysis complete')).toBeInTheDocument()
-    expect(screen.getByText('3 sources analyzed.')).toBeInTheDocument()
+    expect(screen.getByText('Analysis complete')).toBeInTheDocument()
+    expect(screen.getByText('Analyzed').nextSibling).toHaveTextContent('3')
   })
 
   it('groups loaded specification layers by artifact and preserves source identity and advanced access', () => {
@@ -533,7 +533,7 @@ describe('Agent 3 workflow panels', () => {
       />,
     )
 
-    expect(screen.getByText('✓ Delivery setup complete')).toBeInTheDocument()
+    expect(screen.getByText('Delivery setup complete')).toBeInTheDocument()
     expect(screen.getByText('The implementation plan is ready for final approval.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Continue Without Repository Delivery' })).not.toBeInTheDocument()
   })

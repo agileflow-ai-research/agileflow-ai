@@ -3,6 +3,7 @@ import { useState } from 'react'
 import Button from '../../../../components/ui/Button.jsx'
 import { outputOptions } from '../constants/workspace.js'
 import HumanDecisionCallout from '../components/common/HumanDecisionCallout.jsx'
+import { PresentationSection, ResultBanner } from '../../../../components/agents/presentation/NodePresentation.jsx'
 
 const outputLabels = Object.fromEntries(outputOptions.map((item) => [item.value, item.label]))
 
@@ -52,10 +53,19 @@ export default function GenerateImplementationPanel({
 
   return (
     <div className="space-y-5">
-      <header>
-        <h3 className="font-semibold text-content-primary">Ready to Implement</h3>
-        <p className="mt-1 text-sm text-content-secondary">Review the exact implementation context before creating an immutable AgentRun.</p>
-      </header>
+      <PresentationSection label="Result" title="Ready to Implement" description="Review the exact implementation context before creating an immutable AgentRun.">
+        <ResultBanner
+          title={currentApprovedRun ? 'Implementation plan approved' : canApprove ? 'Implementation plan ready for approval' : 'Implementation plan needs attention'}
+          description={currentApprovedRun ? 'An immutable AgentRun exists for the current readiness result.' : 'Final approval remains a separate human decision. Code generation does not start in this PP1 stage.'}
+          tone={currentApprovedRun ? 'success' : canApprove ? 'info' : 'warning'}
+          metrics={[
+            { label: 'Selected outputs', value: selectedOutputs.length },
+            { label: 'Readiness', value: formatStatus(readiness?.status) },
+            { label: 'Warnings', value: warnings.length },
+            { label: 'Delivery', value: repositoryState.repository ? 'Repository configured' : 'Optional' },
+          ]}
+        />
+      </PresentationSection>
 
       <HumanDecisionCallout
         eyebrow="Final human approval"

@@ -13,6 +13,7 @@ import {
   CrossSourceReview,
   FinalProjectSpecification,
 } from '../components/review/ProjectSpecificationReview.jsx'
+import { PresentationSection, ResultBanner } from '../../../../components/agents/presentation/NodePresentation.jsx'
 
 function aggregateArtifacts(inputs) {
   const groups = new Map()
@@ -210,6 +211,19 @@ export default function SpecificationVerificationPanel({
 
   return (
     <div className="space-y-6">
+      <PresentationSection label="Result" title="Specification verification" description="Review classification, semantic interpretation, and cross-source decisions before Agent 3 creates the final trusted specification.">
+        <ResultBanner
+          title={consolidation?.status === 'READY' ? 'Trusted project specification ready' : artifactReviewPending || semanticReviewPending || conflictReviewPending ? 'Human review required' : consolidation?.status === 'CONSOLIDATING' || specification?.status === 'PREPARING_SPECIFICATION' ? 'Preparing trusted specification…' : 'Specification verification in progress'}
+          description={consolidation?.status === 'READY' ? 'Verified source information has been consolidated into the current trusted project specification.' : 'Agent 3 preserves source evidence and pauses when a human decision is required.'}
+          tone={consolidation?.status === 'READY' ? 'success' : artifactReviewPending || semanticReviewPending || conflictReviewPending ? 'warning' : 'info'}
+          metrics={[
+            { label: 'Sources', value: preparationState?.result?.source_count ?? inputs.length },
+            { label: 'Machine suggested', value: machineSuggestions },
+            { label: 'Human verified', value: verifiedReferences },
+            { label: 'Decisions required', value: artifactReviewSources.length + (specification?.pending_semantic_decision_count ?? 0) + (consolidation?.pending_conflict_count ?? 0) },
+          ]}
+        />
+      </PresentationSection>
       {artifactReviewPending ? (
         <HumanDecisionCallout
           title={`${artifactReviewSources.length} ${artifactReviewSources.length === 1 ? 'decision' : 'decisions'} required`}

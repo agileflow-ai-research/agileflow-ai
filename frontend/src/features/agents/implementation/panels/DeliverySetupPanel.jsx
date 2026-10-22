@@ -1,18 +1,26 @@
 import GitHubIntegration from '../components/github/GitHubIntegration.jsx'
 import Button from '../../../../components/ui/Button.jsx'
 import HumanDecisionCallout from '../components/common/HumanDecisionCallout.jsx'
+import { PresentationSection, ResultBanner } from '../../../../components/agents/presentation/NodePresentation.jsx'
 
 export default function DeliverySetupPanel({ githubState, repositoryState, deliveryDecision, integrationProps, onContinue }) {
   const repository = repositoryState.repository
   const deliveryComplete = Boolean(repository) || deliveryDecision === 'SKIPPED'
   return (
     <div className="space-y-5">
-      {deliveryComplete ? (
-        <section className="rounded-control border border-state-success/40 bg-state-success/10 p-4" role="status">
-          <h3 className="font-semibold text-content-primary">✓ Delivery setup complete</h3>
-          <p className="mt-2 text-sm text-content-secondary">The implementation plan is ready for final approval.</p>
-        </section>
-      ) : <HumanDecisionCallout
+      <PresentationSection label="Result" title="Delivery setup" description="Choose where a future generated implementation should be delivered. No Git operation is performed in this stage.">
+        <ResultBanner
+          title={deliveryComplete ? 'Delivery setup complete' : 'Delivery choice required'}
+          description={deliveryComplete ? 'The implementation plan is ready for final approval.' : 'Repository delivery is optional for implementation approval.'}
+          tone={deliveryComplete ? 'success' : 'warning'}
+          metrics={[
+            { label: 'GitHub account', value: githubState.connection?.connected ? `@${githubState.connection.github_login}` : 'Not connected' },
+            { label: 'Repository', value: repository?.full_name ?? 'Not selected' },
+            { label: 'Delivery choice', value: repository ? 'Repository' : deliveryDecision === 'SKIPPED' ? 'Continue without repository' : 'Pending' },
+          ]}
+        />
+      </PresentationSection>
+      {deliveryComplete ? null : <HumanDecisionCallout
         eyebrow="Delivery choice"
         title="How should the generated implementation be delivered?"
         description="Choose the configured GitHub repository or continue without repository delivery. No Git operation is performed at this stage."

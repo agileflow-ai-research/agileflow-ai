@@ -37,6 +37,12 @@ describe('implementation workflow registry', () => {
     expect(nodes.every((node) => node.draggable === true && node.parentId === undefined)).toBe(true)
     expect(nodes[5].data).toMatchObject({ status: 'BLOCKED', locked: false })
     expect(nodes.slice(6).every((node) => node.data.status === 'LOCKED' && node.data.locked)).toBe(true)
+    expect(nodes.slice(6).every((node) => node.data.statusLabel === 'Reserved — future development')).toBe(true)
+    expect(nodes.slice(6).map((node) => node.data.summary)).toEqual([
+      'Reserved for future development.',
+      'Reserved for future development.',
+      'Reserved for future development.',
+    ])
   })
 
   it('derives only conservative summaries from existing workspace state', () => {

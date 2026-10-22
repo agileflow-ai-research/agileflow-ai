@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import WorkflowControls from '../../../../components/agents/workflow/WorkflowControls.jsx'
 import WorkflowNodeModal from '../../../../components/agents/workflow/WorkflowNodeModal.jsx'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
+import { NextStep, ResultBanner } from '../../../../components/agents/presentation/NodePresentation.jsx'
 import { WORKFLOW_MODAL_ORIGINS, WORKFLOW_NODE_IDS } from '../constants/workflow.js'
 import ImplementationCanvas from '../canvas/ImplementationCanvas.jsx'
 import ImplementationWorkspace from '../ImplementationWorkspace.jsx'
@@ -48,6 +49,9 @@ function ImplementationProjectPage({ project, projectStatus, projectActions, ent
         status: selectedDefinition.active
           ? presentation[selectedDefinition.id]?.status ?? 'NOT_STARTED'
           : 'LOCKED',
+        statusLabel: selectedDefinition.active
+          ? presentation[selectedDefinition.id]?.statusLabel
+          : selectedDefinition.reservedStatus,
       }
     : null
   const handlePresentationChange = useCallback((snapshot) => {
@@ -144,12 +148,18 @@ function ImplementationProjectPage({ project, projectStatus, projectActions, ent
             {nextStepNotice ? (
               <WorkflowNextStepNotice {...nextStepNotice} onNavigate={handleManualNavigation} />
             ) : null}
-            {selectedDefinition?.active ? null : (
-              <div className="rounded-control border border-default bg-elevated p-4">
-                <p className="font-semibold text-content-primary">Not implemented yet</p>
-                <p className="mt-2 text-sm text-content-secondary">This required workflow stage is reserved for a future milestone. No execution or delivery behavior is available in this slice.</p>
+            {selectedDefinition && !selectedDefinition.active ? (
+              <div className="space-y-4" role="status">
+                <ResultBanner
+                  title={selectedDefinition.reservedHeadline}
+                  description={selectedDefinition.reservedDescription}
+                  tone="neutral"
+                />
+                <NextStep title={selectedDefinition.reservedStatus}>
+                  This stage has no operational controls in the current PP1 prototype.
+                </NextStep>
               </div>
-            )}
+            ) : null}
             <div className={selectedDefinition?.active ? '' : 'hidden'}>
               <ImplementationWorkspace
                 project={project}

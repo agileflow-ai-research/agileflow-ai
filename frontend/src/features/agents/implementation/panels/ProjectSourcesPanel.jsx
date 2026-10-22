@@ -4,6 +4,7 @@ import ImplementationInputsStep from '../components/inputs/ImplementationInputsS
 import SourceSummary from '../components/common/SourceSummary.jsx'
 import { outputOptions } from '../constants/workspace.js'
 import { hasSource } from '../utils/sourcePresentation.js'
+import { PresentationSection, ResultBanner } from '../../../../components/agents/presentation/NodePresentation.jsx'
 
 export default function ProjectSourcesPanel({
   project,
@@ -17,16 +18,21 @@ export default function ProjectSourcesPanel({
   onAnalyze,
 }) {
   const sourceCount = inputs.filter(hasSource).length
+  const inputTypes = new Set(inputs.filter(hasSource).map((input) => input.source_type)).size
   return (
     <div className="space-y-6">
-      <section aria-labelledby="project-information-title">
-        <h3 id="project-information-title" className="font-semibold text-content-primary">Project information</h3>
-        <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-          <div><dt className="text-content-muted">Project</dt><dd className="font-medium text-content-primary">{project.name}</dd></div>
-          <div><dt className="text-content-muted">Domain</dt><dd className="font-medium text-content-primary">{project.domain}</dd></div>
-        </dl>
-        {project.description?.trim() ? <p className="mt-3 text-sm text-content-secondary">{project.description}</p> : null}
-      </section>
+      <PresentationSection label="Input" title="Project information" description="Confirm the project context, selected outputs, and trusted sources before analysis.">
+        <ResultBanner
+          title={project.name}
+          description={project.description?.trim() || `Implementation planning for ${project.domain || 'the selected project domain'}.`}
+          metrics={[
+            { label: 'Sources', value: sourceCount },
+            { label: 'Selected outputs', value: selectedOutputs.length },
+            { label: 'Input types', value: inputTypes },
+            { label: 'Domain', value: project.domain || 'Not specified' },
+          ]}
+        />
+      </PresentationSection>
 
       <section aria-label="Selected Outputs">
         <OutputSelector label="Selected Outputs" options={outputOptions} selectedValues={selectedOutputs} onChange={onOutputsChange} />

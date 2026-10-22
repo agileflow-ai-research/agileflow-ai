@@ -39,9 +39,10 @@ export function createWorkflowNodes(presentation) {
         title: definition.title,
         summary: current?.summary ?? definition.summary,
         status: definition.active ? current?.status ?? WORKFLOW_NODE_STATES.NOT_STARTED : WORKFLOW_NODE_STATES.LOCKED,
-        statusLabel: current?.statusLabel,
+        statusLabel: definition.active ? current?.statusLabel : definition.reservedStatus,
         attentionCount: current?.attentionCount,
         locked: !definition.active,
+        lockedNote: definition.active ? undefined : definition.summary,
       },
     }
   })
