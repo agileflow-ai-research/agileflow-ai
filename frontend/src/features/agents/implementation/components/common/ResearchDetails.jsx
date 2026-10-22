@@ -1,10 +1,10 @@
 import { DisclosureSection } from '../../../../../components/agents/presentation/NodePresentation.jsx'
 
-export default function ResearchDetails({ children, description }) {
+export default function ResearchDetails({ children, description, summary, title = 'Research Details' }) {
   return (
     <DisclosureSection
-      title="Research Details"
-      summary={description ?? 'Inspect the supporting extraction, classification, review, semantic evidence, and traceability.'}
+      title={title}
+      summary={description ?? summary ?? 'Inspect the supporting extraction, classification, review, semantic evidence, and traceability.'}
     >
       {children}
     </DisclosureSection>
