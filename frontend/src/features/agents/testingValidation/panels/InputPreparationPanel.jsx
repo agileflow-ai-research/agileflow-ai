@@ -1,110 +1,56 @@
 import Button from '../../../../components/ui/Button.jsx'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
 import NodeShellPanel from './NodeShellPanel.jsx'
+import { AttentionPanel, DetailLoadState, DisclosureSection, LoadMoreButton, PresentationSection, ResultBanner } from './NodePresentation.jsx'
 
-const statusLabels = Object.freeze({
-  QUEUED: 'Queued',
-  RUNNING: 'Running',
-  COMPLETED: 'Completed',
-  EXTRACTING: 'Extracting',
-  NORMALIZING: 'Normalizing',
-  CHUNKING: 'Chunking',
-  COMPLETE: 'Complete',
-  PENDING_ANALYSIS: 'Pending Analysis',
-  FAILED: 'Failed',
-  INTERRUPTED: 'Interrupted',
+const statusPresentation = Object.freeze({
+  QUEUED: ['Preparing to start', 'neutral'], RUNNING: ['In progress', 'info'], COMPLETED: ['Complete', 'success'],
+  EXTRACTING: ['Reading document', 'info'], NORMALIZING: ['Preparing content', 'info'], CHUNKING: ['Organizing information for analysis', 'info'],
+  COMPLETE: ['Ready', 'success'], PENDING_ANALYSIS: ['Awaiting image analysis', 'warning'], FAILED: ['Could not be prepared', 'danger'],
+  INTERRUPTED: ['Interrupted — retry available', 'danger'],
 })
 
-function toneFor(status) {
-  if (['COMPLETE', 'COMPLETED'].includes(status)) return 'success'
-  if (['FAILED', 'INTERRUPTED'].includes(status)) return 'danger'
-  if (status === 'PENDING_ANALYSIS') return 'warning'
-  return 'info'
+function sourceMessage(source) {
+  if (source.status === 'COMPLETE') return 'Ready for Testing Intelligence.'
+  if (source.status === 'PENDING_ANALYSIS') return 'Image understanding is not implemented in PP1, so this image produced no text for analysis.'
+  if (source.status === 'FAILED') return source.error?.message || 'This source could not be prepared.'
+  return statusPresentation[source.status]?.[0] || 'Waiting for preparation'
 }
 
-function stageText(source) {
-  if (source.status === 'COMPLETE') return `${source.chunk_count} chunks prepared`
-  if (source.status === 'PENDING_ANALYSIS') {
-    return 'Image understanding is not implemented; no textual chunks were created.'
-  }
-  if (source.status === 'FAILED') {
-    return source.error?.message || 'This source could not be prepared.'
-  }
-  if (source.status === 'EXTRACTING') return 'Extracting document text'
-  if (source.status === 'NORMALIZING') return 'Creating normalized evidence'
-  if (source.status === 'CHUNKING') return 'Creating deterministic chunks'
-  return 'Waiting for preparation'
-}
+function InputPreparationPanel({ definition, detailData, detailError, detailStatus, n2Execution, onLoadMoreDetails, onRetryDetails, onRetryPreparationSource, preparationError, retryingSourceId, statusLabel, workflowNodeStatus }) {
+  const sources = n2Execution?.sources || []
+  const ready = sources.filter((source) => source.status === 'COMPLETE').length
+  const images = sources.filter((source) => source.status === 'PENDING_ANALYSIS').length
+  const failed = sources.filter((source) => ['FAILED', 'INTERRUPTED'].includes(source.status)).length
+  const preparing = Math.max(0, sources.length - ready - images - failed)
+  const complete = workflowNodeStatus === 'COMPLETED'
+  const next = complete ? 'Testing Intelligence will analyze the prepared evidence next.' : workflowNodeStatus === 'LOCKED' ? 'Confirm Input & Output Setup to begin preparation.' : 'Preparation runs automatically; this view refreshes as each source becomes ready.'
 
-function InputPreparationPanel({
-  definition,
-  n2Execution,
-  onRetryPreparationSource,
-  preparationError,
-  retryingSourceId,
-  statusLabel,
-  workflowNodeStatus,
-}) {
-  const terminal = n2Execution?.sources?.filter((source) => (
-    ['COMPLETE', 'PENDING_ANALYSIS', 'FAILED'].includes(source.status)
-  )).length ?? 0
-  const total = n2Execution?.sources?.length ?? 0
-  const note = workflowNodeStatus === 'NOT_STARTED'
-    ? 'Input Preparation is the next workflow node. Existing confirmed projects start through the compatibility workflow command.'
-    : workflowNodeStatus === 'LOCKED'
-      ? 'No extraction, normalization, or chunking can run until Input & Output Setup is confirmed.'
-    : workflowNodeStatus === 'COMPLETED'
-      ? 'Input Preparation is complete. Testing Intelligence is now the next workflow node.'
-      : 'Preparation runs automatically and preserves successful work when another source fails.'
-
-  return (
-    <NodeShellPanel definition={definition} availability={statusLabel} note={note}>
-      {n2Execution ? (
-        <section className="space-y-3" aria-label="Input preparation progress">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h4 className="font-semibold text-content-primary">Preparation attempt {n2Execution.attempt_number}</h4>
-              <p className="text-sm text-content-secondary">{terminal} / {total} sources terminal · {n2Execution.total_chunks} chunks</p>
-            </div>
-            <StatusBadge label={statusLabels[n2Execution.status] || n2Execution.status} tone={toneFor(n2Execution.status)} />
-          </div>
-          {preparationError ? <p role="alert" className="text-sm text-state-danger">{preparationError}</p> : null}
-          <ul className="space-y-2">
-            {n2Execution.sources.map((source) => (
-              <li key={source.source_id} className="rounded-control border border-default bg-surface p-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-content-primary">{source.label || source.original_filename || source.artifact_type.replaceAll('_', ' ')}</p>
-                    <p className="text-xs text-content-muted">{source.source_type} · {source.artifact_type.replaceAll('_', ' ')}</p>
-                  </div>
-                  <StatusBadge label={statusLabels[source.status] || source.status} tone={toneFor(source.status)} />
-                </div>
-                <p className="mt-2 text-sm text-content-secondary">{stageText(source)}</p>
-                {source.warnings?.map((warning) => (
-                  <p key={warning.code} className="mt-1 text-xs text-state-warning">{warning.message}</p>
-                ))}
-                {source.status === 'FAILED' ? (
-                  <Button
-                    className="mt-3"
-                    variant="outline"
-                    size="small"
-                    loading={retryingSourceId === source.source_id}
-                    loadingLabel="Retrying source"
-                    disabled={Boolean(retryingSourceId)}
-                    onClick={() => { void onRetryPreparationSource(source.source_id) }}
-                  >
-                    Retry Source
-                  </Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : (
-        <p className="text-sm text-content-secondary">Preparation execution details will appear here when N2 is queued.</p>
-      )}
-    </NodeShellPanel>
-  )
+  return <NodeShellPanel definition={definition} availability={statusLabel} note={next}>
+    {preparationError ? <p role="alert" className="text-sm text-state-danger">{preparationError}</p> : null}
+    {n2Execution ? <>
+      <PresentationSection label="Result" title="Source readiness"><ResultBanner tone={failed ? 'danger' : images ? 'warning' : complete ? 'success' : 'info'} title={complete ? 'Inputs are ready for analysis' : failed ? 'Some inputs need attention' : 'Preparing your inputs'} description="Agent 4 reads each source and prepares consistent evidence for later analysis." metrics={[{ label: 'Ready', value: ready }, { label: 'Preparing', value: preparing }, { label: 'Images awaiting analysis', value: images }, { label: 'Could not prepare', value: failed }]} /></PresentationSection>
+      {images ? <AttentionPanel title="Image analysis limitation"><p>{images} image source{images === 1 ? ' is' : 's are'} preserved, but image understanding is not implemented in PP1.</p></AttentionPanel> : null}
+      <PresentationSection label="What Agent 4 received" title={`${sources.length} confirmed source${sources.length === 1 ? '' : 's'}`}>
+        <ul className="space-y-2">{sources.map((source) => {
+          const [label, tone] = statusPresentation[source.status] || [source.status, 'neutral']
+          const sourceFailed = ['FAILED', 'INTERRUPTED'].includes(source.status)
+          return <li key={source.source_id} className="rounded-control border border-default bg-surface p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="font-medium text-content-primary">{source.label || source.original_filename || source.artifact_type.replaceAll('_', ' ')}</p><p className="mt-1 text-sm text-content-secondary">{sourceMessage(source)}</p></div><StatusBadge label={label} tone={tone} /></div>
+            {source.warnings?.map((warning) => <p key={warning.code} className="mt-2 text-sm text-state-warning">{warning.message}</p>)}
+            {sourceFailed && source.retryable !== false ? <Button className="mt-3" variant="outline" size="small" loading={retryingSourceId === source.source_id} loadingLabel="Retrying source" disabled={Boolean(retryingSourceId)} onClick={() => { void onRetryPreparationSource(source.source_id) }}>Retry source</Button> : null}
+            <div className="mt-3"><DisclosureSection title="Technical details" summary="Extraction status, chunks, and source identifier"><dl className="grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-content-muted">Artifact type</dt><dd className="text-content-secondary">{source.artifact_type.replaceAll('_', ' ')}</dd></div><div><dt className="text-content-muted">Prepared chunks</dt><dd className="text-content-secondary">{source.chunk_count || 0}</dd></div><div><dt className="text-content-muted">Internal status</dt><dd className="text-content-secondary">{source.status}</dd></div><div><dt className="text-content-muted">Source ID</dt><dd className="break-all text-content-secondary">{source.source_id}</dd></div></dl></DisclosureSection></div>
+          </li>
+        })}</ul>
+      </PresentationSection>
+      <PresentationSection label="View prepared output" title={`Prepared Sections${detailData ? ` (${detailData.total})` : ''}`} description="These are the real persisted sections Agent 4 created for analysis.">
+        <DetailLoadState error={detailError} onRetry={onRetryDetails} status={detailStatus} />
+        {detailData?.items?.length ? <div className="space-y-2">{detailData.items.map((section) => <DisclosureSection key={section.chunk_id} title={`${section.source_label} â€” Section ${section.sequence} of ${section.section_count}`} summary={section.heading_path.length ? section.heading_path.join(' / ') : section.artifact_type.replaceAll('_', ' ')}><blockquote className="whitespace-pre-wrap rounded-control bg-elevated p-3 text-sm leading-6 text-content-primary">{section.text}</blockquote><dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-content-muted">Structure</dt><dd>{section.structure_type}</dd></div><div><dt className="text-content-muted">Tokens</dt><dd>{section.token_count}</dd></div><div className="sm:col-span-2"><dt className="text-content-muted">Chunk ID</dt><dd className="break-all">{section.chunk_id}</dd></div></dl></DisclosureSection>)}</div> : detailStatus === 'success' ? <p className="text-sm text-content-secondary">No persisted text sections are available. Image-only sources do not create sections in PP1.</p> : null}
+        {detailData?.has_more ? <LoadMoreButton disabled={detailStatus === 'loading-more'} onClick={onLoadMoreDetails}>{detailStatus === 'loading-more' ? 'Loadingâ€¦' : `Show more (${detailData.total - detailData.items.length} remaining)`}</LoadMoreButton> : null}
+      </PresentationSection>
+      <DisclosureSection title="Technical details" summary="Execution attempt and prepared chunk total"><dl className="grid gap-2 text-sm sm:grid-cols-3"><div><dt className="text-content-muted">Attempt</dt><dd className="text-content-secondary">{n2Execution.attempt_number}</dd></div><div><dt className="text-content-muted">Internal status</dt><dd className="text-content-secondary">{n2Execution.status}</dd></div><div><dt className="text-content-muted">Total chunks</dt><dd className="text-content-secondary">{n2Execution.total_chunks}</dd></div></dl></DisclosureSection>
+    </> : <ResultBanner title="Waiting for preparation to start" description="Confirmed inputs are ready. Execution details will appear when preparation is queued." />}
+  </NodeShellPanel>
 }
 
 export default InputPreparationPanel

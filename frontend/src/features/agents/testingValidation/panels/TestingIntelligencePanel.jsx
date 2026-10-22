@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 
 import Button from '../../../../components/ui/Button.jsx'
 import { INTELLIGENCE_TECHNICAL_LABELS as technical, relationshipPresentation, reviewLabelPresentation } from '../intelligenceReviewPresentation.js'
+import { DetailLoadState, DisclosureSection, LoadMoreButton, NextStep, PresentationSection, ResultBanner } from './NodePresentation.jsx'
 
 const EVIDENCE_PREVIEW_LENGTH = 360
 
@@ -82,9 +83,9 @@ function TechnicalReviewDetails({ items }) {
 function analysisProgressPresentation({ execution, onRetry, retryingSourceId, sources }) {
   const processable = sources.filter((source) => source.status !== 'PENDING_ANALYSIS')
   const definitions = [
-    ['TI_RULE_ANALYSIS', 'Rule analysis', 'rules_complete'],
+    ['TI_RULE_ANALYSIS', 'Pattern-based analysis', 'rules_complete'],
     ['TI_AI_CLASSIFICATION', 'AI classification', 'zero_shot_complete'],
-    ['TI_HYBRID_DECISION', 'Combined decision', 'hybrid_complete'],
+    ['TI_HYBRID_DECISION', 'Combined analysis', 'hybrid_complete'],
   ]
   const aggregate = new Map((execution?.sub_stages || []).map((stage) => [stage.stage, stage]))
   const stages = definitions.map(([stage, label, legacyField]) => {
@@ -102,7 +103,7 @@ function analysisProgressPresentation({ execution, onRetry, retryingSourceId, so
   const content = <div><ul className="space-y-2">{stages.map((stage) => {
     const failedStage = ['FAILED', 'INTERRUPTED'].includes(stage.status)
     const active = ['QUEUED', 'RUNNING', 'WAITING_FOR_HUMAN'].includes(stage.status)
-    return <li key={stage.stage} className={failedStage ? 'text-state-danger' : stage.complete ? 'text-state-success' : active ? 'text-content-primary' : 'text-content-muted'}>{stage.complete ? '✓' : failedStage ? '✕' : active ? '●' : '○'} {stage.label}{stage.status === 'NOT_APPLICABLE' ? <span className="ml-2 text-xs text-content-muted">Not required</span> : null}</li>
+    return <li key={stage.stage} className={failedStage ? 'text-state-danger' : stage.complete ? 'text-state-success' : active ? 'font-semibold text-content-primary' : 'text-content-muted'}>{stage.complete ? '✓' : failedStage ? '✕' : active ? '●' : '○'} {stage.label}{stage.status === 'RUNNING' ? <span className="ml-2 text-xs">In progress</span> : stage.status === 'QUEUED' ? <span className="ml-2 text-xs">Preparing to start</span> : stage.status === 'NOT_APPLICABLE' ? <span className="ml-2 text-xs text-content-muted">Not required</span> : null}</li>
   })}</ul>{failed.map((source) => {
     const failedSubStage = source.sub_stages?.find((stage) => ['FAILED', 'INTERRUPTED'].includes(stage.status))
     const factFailure = failedSubStage?.stage === 'TI_FACT_EXTRACTION' || ['TI_FACT_EXTRACTION', 'SEMANTIC_EXTRACTION'].includes(source.failed_stage)
@@ -174,10 +175,10 @@ export function ReviewExperience({ execution, onRetry, onSubmit, retryingSourceI
     void onSubmit(review.items.map((item) => ({ chunk_id: item.chunk_id, label: item.label, decision: choices[itemKey(item)], ...(notes[itemKey(item)]?.trim() ? { note: notes[itemKey(item)].trim() } : {}) })))
   }
 
-  return <section className="space-y-3 pb-20" aria-label="Testing Intelligence review workspace">
+  return <section className="space-y-3" aria-label="Testing Intelligence review workspace">
     <div className="space-y-2"><p className="text-sm text-content-secondary">Agent 4 automatically analyzed your inputs. Review only the uncertain items.</p><div className="flex flex-wrap gap-x-5 gap-y-1 text-sm"><span><strong className="text-content-primary">{automatic}</strong> handled automatically</span><span><strong className="text-content-primary">{review.items.length}</strong> need your review</span><span><strong className="text-content-primary">{reviewed}/{review.items.length}</strong> reviewed</span></div></div>
 
-    <AccordionSection id="human-review" title="Human Review" summary={complete ? 'Review complete' : reviewed ? `${reviewed} of ${review.items.length} reviewed` : `${review.items.length} items need your confirmation`} open={humanOpen} onToggle={() => setHumanOpen((value) => !value)}>
+    <AccordionSection id="human-review" title="Review uncertain interpretations" summary={complete ? 'Review complete' : reviewed ? `${reviewed} of ${review.items.length} reviewed` : `${review.items.length} items need your confirmation`} open={humanOpen} onToggle={() => setHumanOpen((value) => !value)}>
       {submitting ? <div role="status" className="py-4"><p className="font-semibold text-content-primary">Continuing analysis…</p><p className="mt-1 text-sm text-content-secondary">Agent 4 is extracting grounded testing information from the approved classifications.</p></div> : review.items.length === 0 ? <div><p className="font-semibold text-state-success">✓ No human review required</p><p className="mt-1 text-sm text-content-secondary">Agent 4 handled all classifications automatically.</p></div> : <div className="space-y-3">
         {complete ? <div aria-live="polite" className="rounded-control bg-state-success/10 p-3"><p className="font-semibold text-state-success">✓ Review complete</p><p className="mt-1 text-sm text-content-secondary">{reviewed} items reviewed · {accepted} marked correct · {rejected} marked incorrect</p></div> : <p className="text-sm font-medium text-content-primary">Review item {activeItemIndex + 1} of {review.items.length}</p>}
         {review.items.length > 3 ? <div className="flex flex-wrap gap-2" aria-label="Review filters">{[['NEEDS_REVIEW', `Needs review ${remaining}`], ['REVIEWED', `Reviewed ${reviewed}`], ['CONFLICTS', `Conflicts ${conflicts}`]].map(([value, label]) => <Button key={value} size="small" variant={filter === value ? 'primary' : 'outline'} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</Button>)}</div> : null}
@@ -188,21 +189,21 @@ export function ReviewExperience({ execution, onRetry, onSubmit, retryingSourceI
           const quotes = [...new Set(group.items.flatMap((item) => item.rule_evidence_quotes || []))]
           return <article key={group.key} ref={(element) => { if (element) groupRefs.current.set(group.key, element) }} className="rounded-control border border-default bg-surface">
             <button type="button" aria-controls={`${group.key}-content`} aria-expanded={expanded} className="flex w-full items-start justify-between gap-3 p-3 text-left" onClick={() => setExpandedGroup(expanded ? '' : group.key)}><span><span className="block font-semibold text-content-primary">{groupReviewed ? '✓ ' : ''}{friendlySourceName(group.sourceLabel)}</span><span className="mt-0.5 block text-xs text-content-muted">{group.sourceLabel}</span></span><span className="text-sm text-content-secondary">{groupReviewed ? `${group.items.length} decisions completed` : `${group.items.length} to confirm`}</span></button>
-            <div id={`${group.key}-content`} hidden={!expanded} className="space-y-3 border-t border-default p-3"><div><p className="mb-2 text-sm font-semibold text-content-primary">Source evidence</p><HighlightedEvidence evidence={group.evidence} quotes={quotes} /></div><p className="text-sm font-semibold text-content-primary">Agent 4 needs your confirmation:</p>{group.items.map((item) => { const key = itemKey(item); return <ReviewDecisionRow key={key} choice={choices[key]} item={item} note={notes[key]} selected={Boolean(selected[key])} onChange={(decision) => decide(item, decision)} onNote={(value) => setNotes((current) => ({ ...current, [key]: value }))} onSelect={(checked) => setSelected((current) => ({ ...current, [key]: checked }))} /> })}</div>
+            <div id={`${group.key}-content`} hidden={!expanded} className="space-y-3 border-t border-default p-3"><div><p className="mb-2 text-sm font-semibold text-content-primary">Evidence from your source</p><HighlightedEvidence evidence={group.evidence} quotes={quotes} /></div><p className="text-sm font-semibold text-content-primary">Agent 4’s interpretation</p><p className="text-sm text-content-secondary">Is Agent 4’s interpretation correct? Your answer becomes part of the persisted effective classification.</p>{group.items.map((item) => { const key = itemKey(item); return <ReviewDecisionRow key={key} choice={choices[key]} item={item} note={notes[key]} selected={Boolean(selected[key])} onChange={(decision) => decide(item, decision)} onNote={(value) => setNotes((current) => ({ ...current, [key]: value }))} onSelect={(checked) => setSelected((current) => ({ ...current, [key]: checked }))} /> })}</div>
           </article>
         })}
       </div>}
     </AccordionSection>
 
     <AccordionSection id="automatic-information" title="Automatically Extracted Information" summary={`${automatic} classifications handled automatically`} open={automaticOpen} onToggle={() => setAutomaticOpen((value) => !value)}><p className="mb-3 text-sm text-content-secondary">Agent 4 automatically handled {automatic} clear classifications.</p><div className="space-y-2 text-sm">{Object.entries(review.auto_accepted_label_counts || {}).map(([code, count]) => <p key={code} className="flex justify-between gap-3"><span className="text-content-secondary">{reviewLabelPresentation(code).title}</span><strong className="text-content-primary">{count}</strong></p>)}<p className="flex justify-between gap-3"><span className="text-content-secondary">Rejected low-evidence classifications</span><strong className="text-content-primary">{review.auto_rejected_count}</strong></p></div></AccordionSection>
-    <AccordionSection id="analysis-progress" title="Analysis Progress" summary={`${progress.completed} of 3 intelligence steps complete`} open={progressOpen} onToggle={() => setProgressOpen((value) => !value)}>{progress.content}</AccordionSection>
-    <AccordionSection id="technical-details" title="Technical Details" summary="Developer and research evidence" open={technicalOpen} onToggle={() => setTechnicalOpen((value) => !value)}><TechnicalReviewDetails items={review.items} /></AccordionSection>
+    <AccordionSection id="analysis-progress" title="How Agent 4 reached this result" summary={`${progress.completed} of 3 intelligence steps complete`} open={progressOpen} onToggle={() => setProgressOpen((value) => !value)}>{progress.content}</AccordionSection>
+    <AccordionSection id="technical-details" title="Technical details" summary="Models, policy, scores, taxonomy codes, and identifiers" open={technicalOpen} onToggle={() => setTechnicalOpen((value) => !value)}><TechnicalReviewDetails items={review.items} /></AccordionSection>
 
-    <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-default bg-sidebar px-2 py-2"><div><p className="text-sm font-medium text-content-primary">{reviewed} of {review.items.length} reviewed{reviewed ? ` · ${accepted} correct · ${rejected} incorrect` : ''}</p>{remaining ? <p className="text-xs text-content-muted">Review the remaining {remaining} {remaining === 1 ? 'item' : 'items'} first.</p> : null}</div><Button disabled={!complete || submitting} loading={submitting} loadingLabel="Continuing analysis…" onClick={submit}>Confirm &amp; Continue</Button></footer>
+    <footer className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-default bg-elevated p-3"><div><p className="text-sm font-medium text-content-primary">{reviewed} of {review.items.length} reviewed{reviewed ? ` · ${accepted} correct · ${rejected} incorrect` : ''}</p>{remaining ? <p className="text-xs text-content-muted">Review the remaining {remaining} {remaining === 1 ? 'item' : 'items'} first.</p> : null}</div><Button disabled={!complete || submitting} loading={submitting} loadingLabel="Continuing analysis…" onClick={submit}>Confirm review &amp; continue</Button></footer>
   </section>
 }
 
-function TestingIntelligencePanel({ definition, intelligenceError, n3Execution, onRetryIntelligenceSource, retryingIntelligenceSourceId, workflowNodeStatus }) {
+function TestingIntelligencePanel({ definition, detailData, detailError, detailStatus, intelligenceError, n3Execution, onLoadMoreDetails, onRetryDetails, onRetryIntelligenceSource, retryingIntelligenceSourceId, workflowNodeStatus }) {
   const status = n3Execution?.status
   const complete = workflowNodeStatus === 'COMPLETED'
   const resuming = ['HUMAN_REVIEW_RESUME', 'RESTART_RECOVERY'].includes(n3Execution?.trigger)
@@ -213,9 +214,25 @@ function TestingIntelligencePanel({ definition, intelligenceError, n3Execution, 
     ? 'Interrupted — retry available'
     : 'Failed — retry available'
   const progress = n3Execution ? analysisProgressPresentation({ execution: n3Execution, onRetry: onRetryIntelligenceSource, retryingSourceId: retryingIntelligenceSourceId, sources: n3Execution.sources }) : null
+  const sources = n3Execution?.sources || []
+  const accepted = sources.reduce((count, source) => count + (source.accepted_label_count || 0), 0)
+  const needsReview = sources.reduce((count, source) => count + (source.pending_review_items || 0), 0)
+  const analyzed = sources.filter((source) => source.hybrid_complete || ['COMPLETED', 'WAITING_FOR_HUMAN'].includes(source.status)).length
   return <section className="space-y-4" aria-label={`${definition.title} details`}>
     {intelligenceError ? <p role="alert" className="text-sm text-state-danger">{intelligenceError}</p> : null}
-    {complete ? <div role="status" className="space-y-3 rounded-control border border-state-success/40 bg-state-success/10 p-4"><p className="font-semibold text-state-success">✓ Testing Intelligence complete</p>{progress?.content}<p className="text-sm text-content-secondary">Human Approval is the next workflow checkpoint and is skipped automatically when no review is required.</p></div> : status === 'QUEUED' || status === 'RUNNING' ? <div role="status" className="space-y-3 rounded-control border border-default bg-surface p-4"><div><p className="font-semibold text-content-primary">{activeTitle}</p><p className="mt-1 text-sm text-content-secondary">Agent 4 is analyzing classifications and identifying uncertain decisions.</p></div>{progress?.content}</div> : ['FAILED', 'INTERRUPTED'].includes(status) ? <div className="space-y-3"><p className="font-semibold text-state-danger">{failureTitle}</p><p className="text-sm text-content-secondary">Completed steps are preserved. Retry only the failed step or source.</p>{progress.content}</div> : n3Execution ? <div className="space-y-3"><p className="text-sm text-content-secondary">Agent 4 analyzed the available inputs.</p>{progress.content}</div> : <p className="text-sm text-content-secondary">Testing Intelligence will automatically analyze prepared inputs when this stage begins.</p>}
+    {n3Execution ? <PresentationSection label="Result" title="What Agent 4 understood"><ResultBanner tone={complete ? 'success' : ['FAILED', 'INTERRUPTED'].includes(status) ? 'danger' : needsReview ? 'warning' : 'info'} title={complete ? 'Testing Intelligence complete' : ['FAILED', 'INTERRUPTED'].includes(status) ? failureTitle : activeTitle} description={needsReview ? 'Clear interpretations can continue automatically; uncertain items are held for human confirmation.' : 'Agent 4 is identifying testing concerns in the prepared evidence.'} metrics={[{ label: 'Sources analyzed', value: analyzed }, { label: 'Classifications accepted', value: accepted }, { label: 'Need review', value: needsReview }]} /></PresentationSection> : <ResultBanner title="Waiting for prepared inputs" description="Testing Intelligence starts automatically after Input Preparation." />}
+    <PresentationSection label="View analyzed output" title={`Identified Testing Concerns${detailData ? ` (${detailData.total})` : ''}`} description="Each decision below comes from the persisted combined rule and AI analysis.">
+      <DetailLoadState error={detailError} onRetry={onRetryDetails} status={detailStatus} />
+      {detailData?.items?.length ? <div className="space-y-2">{detailData.items.map((item) => {
+        const label = reviewLabelPresentation(item.label).title
+        const decision = item.effective_decision || item.hybrid_decision
+        return <DisclosureSection key={`${item.chunk_id}:${item.label}`} title={label} summary={`${item.source_label} Â· ${decision === 'ACCEPTED' ? 'Accepted' : decision === 'REVIEW_REQUIRED' ? 'Needs human review' : 'Not accepted'}`}><p className="text-xs font-semibold uppercase tracking-wide text-content-muted">Source evidence</p><blockquote className="mt-2 whitespace-pre-wrap rounded-control border-l-2 border-accent-border bg-elevated p-3 text-sm text-content-primary">â€œ{item.evidence_quote}â€</blockquote><dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2"><div><dt className="text-content-muted">Pattern-based analysis</dt><dd>{item.rule_detected ? 'Detected' : 'Not detected'}</dd></div><div><dt className="text-content-muted">AI support</dt><dd>{item.model_score == null ? 'Not available' : `${Math.round(item.model_score * 100)}%`}</dd></div><div><dt className="text-content-muted">Combined decision</dt><dd>{item.hybrid_decision.replaceAll('_', ' ')}</dd></div><div><dt className="text-content-muted">Approved decision</dt><dd>{item.effective_decision?.replaceAll('_', ' ') || 'Pending'}</dd></div><div className="sm:col-span-2"><dt className="text-content-muted">Technical details</dt><dd className="break-all">{item.label} Â· {item.hybrid_relationship} Â· {item.chunk_id}</dd></div></dl></DisclosureSection>
+      })}</div> : detailStatus === 'success' ? <p className="text-sm text-content-secondary">No persisted classification decisions are available yet.</p> : null}
+      {detailData?.has_more ? <LoadMoreButton disabled={detailStatus === 'loading-more'} onClick={onLoadMoreDetails}>{detailStatus === 'loading-more' ? 'Loadingâ€¦' : `Show more (${detailData.total - detailData.items.length} remaining)`}</LoadMoreButton> : null}
+    </PresentationSection>
+    {n3Execution ? <DisclosureSection title="How Agent 4 reached this result" summary="Pattern-based analysis, AI classification, and combined analysis">{progress?.content}</DisclosureSection> : null}
+    {['FAILED', 'INTERRUPTED'].includes(status) ? <p className="text-sm text-content-secondary">Completed steps are preserved. Retry only the failed step or source.</p> : null}
+    <NextStep>{complete ? 'Open Human Approval if a review is required; otherwise Agent 4 continues automatically to Testing Fact Extraction.' : 'This view refreshes automatically while analysis runs.'}</NextStep>
   </section>
 }
 

@@ -52,12 +52,15 @@ describe('Agent 4 Test Generation workflow graph', () => {
     )
     expect(nodes[0].data).toMatchObject({
       status: WORKFLOW_NODE_STATES.WAITING_FOR_HUMAN,
-      statusLabel: 'Available - Waiting for Setup',
+      statusLabel: 'Ready for setup',
       locked: false,
     })
-    expect(nodes.slice(1).every((node) => (
+    expect(nodes.slice(1, 6).every((node) => (
       node.data.status === WORKFLOW_NODE_STATES.LOCKED && node.data.locked
     ))).toBe(true)
+    expect(nodes.slice(1, 6).every((node) => node.data.statusLabel === 'Available after previous step')).toBe(true)
+    expect(nodes[6].data.statusLabel).toBe('Reserved — not implemented in PP1')
+    expect(nodes[7].data.statusLabel).toBe('Reserved — future development')
     expect(nodes[3].data.lockedNote).toBe('Available when Testing Intelligence requires review.')
     expect(nodes[3].data.lockedNote).not.toMatch(/not implemented/i)
     expect(presentation.INPUT_OUTPUT_SETUP.current).toBe(true)
@@ -73,6 +76,63 @@ describe('Agent 4 Test Generation workflow graph', () => {
     expect(presentation.INPUT_OUTPUT_SETUP.current).toBe(false)
     expect(presentation.CONTEXT_TESTABILITY.current).toBe(true)
   })
+
+  it.each([
+    ['TI_RULE_ANALYSIS', 'TESTING_INTELLIGENCE'],
+    ['TI_AI_CLASSIFICATION', 'TESTING_INTELLIGENCE'],
+    ['TI_HYBRID_DECISION', 'TESTING_INTELLIGENCE'],
+    ['TI_EFFECTIVE_CLASSIFICATION', 'HUMAN_APPROVAL'],
+    ['TI_FACT_EXTRACTION', 'TESTING_FACT_EXTRACTION'],
+  ])('maps active N3 substage %s to visible node %s', (stage, expectedNode) => {
+    const presentation = createTestingValidationWorkflowPresentation({
+      ...initialWorkflow,
+      pipeline_status: 'RUNNING',
+      current_node_id: 'TESTING_INTELLIGENCE',
+      n3_execution: {
+        status: 'RUNNING',
+        sub_stages: [{ stage, status: 'RUNNING' }],
+      },
+    })
+    expect(presentation[expectedNode]).toMatchObject({ active: true, status: 'RUNNING', statusLabel: 'Processing' })
+    expect(Object.values(presentation).filter((node) => node.active)).toHaveLength(1)
+  })
+
+  it('highlights Human Approval when N3 is waiting for review', () => {
+    const presentation = createTestingValidationWorkflowPresentation({
+      ...initialWorkflow,
+      pipeline_status: 'WAITING_FOR_HUMAN',
+      current_node_id: 'HUMAN_APPROVAL',
+      n3_execution: { status: 'WAITING_FOR_HUMAN', sub_stages: [] },
+    })
+    expect(presentation.HUMAN_APPROVAL).toMatchObject({
+      active: true, status: 'WAITING_FOR_HUMAN', statusLabel: 'Needs your review',
+    })
+  })
+
+  it.each([
+    ['INPUT_PREPARATION', { n2_execution: { status: 'RUNNING' } }],
+    ['CONTEXT_TESTABILITY', { n4_execution: { status: 'RUNNING' } }],
+  ])('highlights authoritative active node %s', (expectedNode, execution) => {
+    const presentation = createTestingValidationWorkflowPresentation({
+      ...initialWorkflow, current_node_id: expectedNode, ...execution,
+    })
+    expect(presentation[expectedNode]).toMatchObject({ active: true, status: 'RUNNING' })
+    expect(Object.values(presentation).filter((node) => node.active)).toHaveLength(1)
+  })
+
+  it.each(['FAILED', 'INTERRUPTED', 'COMPLETED'])(
+    'preserves the authoritative %s node state when no execution is active',
+    (status) => {
+      const nodes = initialWorkflow.nodes.map((node) => (
+        node.node_id === 'TESTING_INTELLIGENCE' ? { ...node, status } : node
+      ))
+      const presentation = createTestingValidationWorkflowPresentation({
+        ...initialWorkflow, current_node_id: 'TESTING_INTELLIGENCE', nodes,
+      })
+      expect(presentation.TESTING_INTELLIGENCE.status).toBe(status === 'COMPLETED' ? 'COMPLETE' : status)
+      expect(presentation.TESTING_INTELLIGENCE.active).toBe(false)
+    },
+  )
 
   it('keeps all modal and canvas metadata in the central registry', () => {
     expect(TESTING_VALIDATION_NODE_REGISTRY.every((node) => (

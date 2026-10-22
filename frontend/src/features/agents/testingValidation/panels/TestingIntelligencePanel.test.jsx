@@ -54,6 +54,39 @@ function accordion(name) {
 }
 
 describe('TestingIntelligencePanel', () => {
+  it('renders persisted classification evidence and decision with technical detail collapsed', () => {
+    renderIntelligencePanel({
+      detailStatus: 'success',
+      detailData: { total: 1, has_more: false, items: [{
+        source_id: 'A4SRC-one', source_label: 'Requirements', chunk_id: 'A4CHK-one',
+        sequence: 1, label: 'AUTHORIZATION',
+        evidence_quote: 'Only administrators may delete bookings.', rule_detected: true,
+        model_score: 0.82, hybrid_relationship: 'AGREEMENT', hybrid_decision: 'ACCEPTED',
+        effective_decision: 'ACCEPTED', effective_origin: 'H1_AUTO_ACCEPTED',
+      }] },
+    })
+    expect(screen.getByText('Permission / authorization')).toBeInTheDocument()
+    expect(screen.getByText(/Only administrators may delete bookings\./)).toBeInTheDocument()
+    expect(screen.getByText('82%')).toBeInTheDocument()
+    const technical = screen.getAllByText('Technical details').find((element) => element.closest('details'))
+    expect(technical.closest('details')).not.toHaveAttribute('open')
+  })
+
+  it('renders the completed persisted human review audit', () => {
+    renderPanel({
+      workflowNodeStatus: 'COMPLETED', reviewedItemCount: 1,
+      detailStatus: 'success', detailData: { total: 1, has_more: false, items: [{
+        review_id: 'A4N3R-one', source_id: 'A4SRC-one', source_label: 'Requirements',
+        chunk_id: 'A4CHK-one', evidence_quote: 'Only administrators may delete bookings.',
+        label: 'AUTHORIZATION', human_decision: 'ACCEPT', note: 'Confirmed.',
+        effective_decision: 'ACCEPTED', reviewed_at: '2026-10-22T10:00:00Z',
+      }] },
+    })
+    expect(screen.getByText('Human Review Decisions (1)')).toBeInTheDocument()
+    expect(screen.getByText(/Only administrators may delete bookings\./)).toBeInTheDocument()
+    expect(screen.getByText('Confirmed.')).toBeInTheDocument()
+  })
+
   it('defines friendly presentation metadata for all 15 T1 labels', () => {
     expect(Object.keys(INTELLIGENCE_REVIEW_LABELS)).toHaveLength(15)
     for (const presentation of Object.values(INTELLIGENCE_REVIEW_LABELS)) {
@@ -71,11 +104,11 @@ describe('TestingIntelligencePanel', () => {
     expect(screen.getByText(/Agent 4 automatically analyzed your inputs/i)).toBeInTheDocument()
     expect(screen.getByText((_, element) => element.tagName === 'SPAN' && element.textContent === '20 handled automatically')).toBeInTheDocument()
     expect(screen.getByText((_, element) => element.tagName === 'SPAN' && element.textContent === '4 need your review')).toBeInTheDocument()
-    expect(accordion('Human Review')).toHaveAttribute('aria-expanded', 'true')
+    expect(accordion('Review uncertain interpretations')).toHaveAttribute('aria-expanded', 'true')
     expect(accordion('Automatically Extracted Information')).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('button', { name: /^Extracted Testing Facts/ })).not.toBeInTheDocument()
-    expect(accordion('Analysis Progress')).toHaveAttribute('aria-expanded', 'false')
-    expect(accordion('Technical Details')).toHaveAttribute('aria-expanded', 'false')
+    expect(accordion('How Agent 4 reached this result')).toHaveAttribute('aria-expanded', 'false')
+    expect(accordion('Technical details')).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('groups same-chunk questions under one highlighted evidence block with a friendly source name', () => {
@@ -102,7 +135,7 @@ describe('TestingIntelligencePanel', () => {
   it('keeps raw taxonomy, H1, and DeBERTa evidence in the bottom technical accordion', async () => {
     const user = userEvent.setup()
     renderPanel()
-    const trigger = accordion('Technical Details')
+    const trigger = accordion('Technical details')
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
     expect(document.getElementById(trigger.getAttribute('aria-controls'))).not.toBeVisible()
     await user.click(trigger)
@@ -172,11 +205,11 @@ describe('TestingIntelligencePanel', () => {
   it('uses friendly collapsed analysis progress and keeps technical model names out of it', async () => {
     const user = userEvent.setup()
     renderPanel()
-    await user.click(accordion('Analysis Progress'))
+    await user.click(accordion('How Agent 4 reached this result'))
     const panel = document.getElementById('analysis-progress-panel')
-    expect(panel).toHaveTextContent('✓ Rule analysis')
+    expect(panel).toHaveTextContent('✓ Pattern-based analysis')
     expect(panel).toHaveTextContent('✓ AI classification')
-    expect(panel).toHaveTextContent('✓ Combined decision')
+    expect(panel).toHaveTextContent('✓ Combined analysis')
     expect(panel).not.toHaveTextContent('Human review')
     expect(panel).not.toHaveTextContent('Testing fact extraction')
     expect(panel).not.toHaveTextContent(/DeBERTa|H1/)
@@ -186,7 +219,8 @@ describe('TestingIntelligencePanel', () => {
     const user = userEvent.setup()
     const props = renderPanel()
     const footer = screen.getByRole('contentinfo')
-    const submit = within(footer).getByRole('button', { name: 'Confirm & Continue' })
+    expect(footer).not.toHaveClass('sticky')
+    const submit = within(footer).getByRole('button', { name: 'Confirm review & continue' })
     expect(footer).not.toHaveTextContent('Automatically Extracted Information')
     expect(submit).toBeDisabled()
     while (screen.queryAllByRole('button', { name: 'Correct' }).length) await user.click(screen.getAllByRole('button', { name: 'Correct' })[0])
@@ -203,7 +237,7 @@ describe('TestingIntelligencePanel', () => {
   it('shows a simple continuing state while confirmation is in flight', () => {
     renderPanel({ reviewSubmitting: true })
     expect(screen.getAllByRole('status')[0]).toHaveTextContent('Continuing analysis…')
-    expect(screen.queryByText('Source evidence')).not.toBeInTheDocument()
+    expect(screen.queryByText('Evidence from your source')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continuing analysis…' })).toBeDisabled()
   })
 
@@ -237,7 +271,7 @@ describe('TestingIntelligencePanel', () => {
     unmount()
     renderIntelligencePanel({ n3Execution: { ...execution, status: 'COMPLETED' }, workflowNodeStatus: 'COMPLETED' })
     expect(screen.getByRole('status')).toHaveTextContent('Testing Intelligence complete')
-    expect(screen.getByRole('status')).toHaveTextContent('Human Approval is the next workflow checkpoint')
+    expect(screen.getByText(/Open Human Approval if a review is required/)).toBeInTheDocument()
   })
 
   it.each([
