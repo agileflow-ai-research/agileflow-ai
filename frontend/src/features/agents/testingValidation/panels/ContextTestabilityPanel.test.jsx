@@ -41,7 +41,7 @@ describe('ContextTestabilityPanel', () => {
       result: { overall_decision: 'PROCEED_WITH_WARNINGS', outputs: [baseOutput] },
       details: {
         traceability_total: 1, traceability_has_more: false,
-        connections: [{ link_id: 'A4TRL-real', source_value: 'FR-001', source_kind: 'FUNCTIONAL_REQUIREMENT', relation: 'USES_ENDPOINT', target_value: 'POST /bookings', target_kind: 'API_ENDPOINT', explanation: 'Explicit endpoint evidence.', strength: 'EXACT' }],
+        connections: [{ link_id: 'A4TRL-real', source_value: 'FR-001 Â· requirement', source_kind: 'FUNCTIONAL_REQUIREMENT', relation: 'USES_ENDPOINT', target_value: 'POST /bookings', target_kind: 'API_ENDPOINT', explanation: 'â€œExplicit endpoint evidence.â€', strength: 'EXACT' }],
         outputs: [{
           output_code: 'FUNCTIONAL_TEST_CASES', testability_status: 'READY_WITH_WARNINGS',
           mandatory_requirements: [{ requirement_id: 'BEHAVIOR', description: 'Expected behavior is present', satisfied: true, observed_count: 2 }], supporting_requirements: [],
@@ -52,11 +52,13 @@ describe('ContextTestabilityPanel', () => {
         }],
       },
     })
-    expect(screen.getByText('FR-001')).toBeInTheDocument()
+    expect(screen.getByText('FR-001 | requirement')).toBeInTheDocument()
     expect(screen.getByText('POST /bookings')).toBeInTheDocument()
     expect(screen.getByText(/Expected behavior is present/)).toBeInTheDocument()
     expect(screen.getByText('Authentication failure evidence is incomplete.')).toBeInTheDocument()
     expect(screen.getByText(/Planning is allowed/)).toBeInTheDocument()
+    expect(screen.getByText('Uses Endpoint')).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/Â|â€œ|â€|â†’/)
   })
 
   it('shows active stage progress without claiming execution', () => {
