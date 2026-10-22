@@ -1021,6 +1021,7 @@ class Agent4N3OrchestrationService:
         execution.sub_stages = aggregate
 
     def _finish(self, project_id, owner_id, execution_id, user):
+        completed = False
         with AGENT4_WORKFLOW_STATE_LOCK:
             record = self._require_record(project_id, owner_id)
             execution = self._execution(record, execution_id)
@@ -1054,6 +1055,7 @@ class Agent4N3OrchestrationService:
                 record.pipeline_status = Agent4PipelineStatus.WAITING_FOR_HUMAN
                 record.current_node_id = Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
             elif derived is Agent4N3ExecutionStatus.COMPLETED:
+                completed = True
                 execution.status = Agent4N3ExecutionStatus.COMPLETED
                 execution.completed_at = now
                 execution.retryable = False
@@ -1076,6 +1078,26 @@ class Agent4N3OrchestrationService:
             self._refresh_execution_sub_stages(execution)
             record.updated_at = now
             self._workflow.save(record)
+        if completed and self._n4_handoff is not None and user is not None:
+            try:
+                self._n4_handoff(project_id, owner_id, execution_id, user)
+            except Exception:
+                # N3 evidence is already durably complete. N4 start failures must
+                # never roll it back or fabricate an N3 processing failure.
+                with AGENT4_WORKFLOW_STATE_LOCK:
+                    record = self._require_record(project_id, owner_id)
+                    now = self._clock()
+                    n4 = self._node(
+                        record, Agent4TestGenerationNodeId.CONTEXT_TESTABILITY
+                    )
+                    n4.status = Agent4WorkflowNodeStatus.FAILED
+                    n4.updated_at = now
+                    record.current_node_id = (
+                        Agent4TestGenerationNodeId.CONTEXT_TESTABILITY
+                    )
+                    record.pipeline_status = Agent4PipelineStatus.FAILED
+                    record.updated_at = now
+                    self._workflow.save(record)
 
     def _recover_orphaned_execution(self, record, execution):
         """Create one append-only continuation for process-local worker loss."""

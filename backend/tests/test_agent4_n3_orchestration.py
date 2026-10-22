@@ -782,7 +782,7 @@ def test_n3_runs_stages_in_order_once_and_hands_off_to_unstarted_n4(n2_context, 
     )
 
 
-def test_new_successful_n3_completion_leaves_n4_not_started(n2_context):
+def test_new_successful_n3_completion_hands_off_to_n4(n2_context):
     calls = []
 
     def handoff(project_id, owner_id, execution_id, current_user):
@@ -802,12 +802,39 @@ def test_new_successful_n3_completion_leaves_n4_not_started(n2_context):
     executor.drain()
 
     result = service.get(project_id, user())
-    assert calls == []
+    assert calls == [(
+        project_id,
+        user().user_id,
+        result.n3_execution.execution_id,
+        user().user_id,
+    )]
     assert result.current_node_id == "CONTEXT_TESTABILITY"
     assert result.n4_execution is None
     assert next(
         node for node in result.nodes if node.node_id == "CONTEXT_TESTABILITY"
     ).status == "NOT_STARTED"
+
+
+def test_n4_handoff_failure_does_not_roll_back_completed_n3(n2_context):
+    def failing_handoff(*_args):
+        raise RuntimeError("N4 startup failed")
+
+    client, _, n2_executor, *_ = n2_context
+    project_id = create_project(client)
+    add_text(client, project_id, "A neutral source statement.")
+    confirm(client, project_id)
+    n2_executor.drain()
+    service, executor = n3_service(n2_context, n4_handoff=failing_handoff)
+    service.start(project_id, user())
+    executor.drain()
+
+    result = service.get(project_id, user())
+    assert result.n3_execution.status == "COMPLETED"
+    assert result.current_node_id == "CONTEXT_TESTABILITY"
+    assert result.pipeline_status == "FAILED"
+    assert next(
+        node for node in result.nodes if node.node_id == "CONTEXT_TESTABILITY"
+    ).status == "FAILED"
 
 
 def test_n3_executor_submission_failure_preserves_completed_n2_and_is_retryable(n2_context):
