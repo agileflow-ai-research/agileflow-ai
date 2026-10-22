@@ -43,7 +43,10 @@ def generation_configuration_fingerprint():
 
 
 def parse_one_object(raw):
-    candidate = raw.strip()
+    candidate = raw.strip().removeprefix("\ufeff")
+    fenced = re.fullmatch(r"```(?:json)?\s*(\{.*\})\s*```", candidate, re.DOTALL)
+    if fenced:
+        candidate = fenced.group(1).strip()
     if not candidate.startswith("{") or not candidate.endswith("}"):
         raise ValueError("SEMANTIC_INVALID_JSON")
     try:
@@ -53,6 +56,24 @@ def parse_one_object(raw):
     if not isinstance(value, dict) or set(value) != {"facts"} or not isinstance(value["facts"], list):
         raise ValueError("SEMANTIC_SCHEMA_VALIDATION_FAILED")
     return value["facts"]
+
+
+def _candidate_error_code(exc):
+    """Return model-safe correction feedback without echoing generated values."""
+    if isinstance(exc, ValidationError):
+        details = []
+        for error in exc.errors(include_url=False, include_context=False):
+            location = "_".join(str(item) for item in error.get("loc", ()))
+            location = re.sub(r"[^A-Za-z0-9_]", "_", location)[:80] or "FACT"
+            error_type = re.sub(
+                r"[^A-Za-z0-9_]", "_", str(error.get("type", "INVALID"))
+            )[:80]
+            details.append(f"{location.upper()}_{error_type.upper()}")
+        return "SEMANTIC_SCHEMA_VALIDATION_FAILED:" + ",".join(details[:5])
+    code = str(exc)
+    if re.fullmatch(r"[A-Z][A-Z0-9_]{1,119}", code):
+        return code
+    return "SEMANTIC_CANDIDATE_INVALID"
 
 
 def _ground(candidate, chunk_text, accepted_labels):
@@ -153,9 +174,10 @@ def extract_semantic_result(*, chunk, chunk_reference, hybrid_result,
                     fact_id=_fact_id(chunk.chunk_id, grounded), **grounded
                 ))
             except (ValidationError, ValueError) as exc:
+                safe_error = _candidate_error_code(exc)
                 warnings.append(SemanticWarning(
                     code="SEMANTIC_CANDIDATE_REJECTED",
-                    message=str(exc).splitlines()[0][:500],
+                    message=safe_error,
                     candidate_index=index,
                 ))
         unique = {fact.fact_id: fact for fact in facts}
@@ -184,6 +206,8 @@ def extract_semantic_result(*, chunk, chunk_reference, hybrid_result,
         or "UNSUPPORTED_" in feedback
     ):
         raise SemanticExtractionFailedError("SEMANTIC_GROUNDING_FAILED")
+    if feedback and "SEMANTIC_SCHEMA_VALIDATION_FAILED" in feedback:
+        raise SemanticExtractionFailedError("SEMANTIC_SCHEMA_VALIDATION_FAILED")
     raise SemanticExtractionFailedError("SEMANTIC_OUTPUT_INVALID")
 
 

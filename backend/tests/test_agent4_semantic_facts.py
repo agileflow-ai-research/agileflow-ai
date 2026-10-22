@@ -106,7 +106,8 @@ def test_pinned_qwen_and_generation_configuration_are_exact_and_deterministic():
     assert constants.MAX_SEMANTIC_NEW_TOKENS == 2048
     assert constants.MAX_SEMANTIC_ATTEMPTS == 2
     assert (constants.SEMANTIC_SCHEMA_VERSION, constants.SEMANTIC_STAGE_VERSION,
-            constants.SEMANTIC_PROMPT_VERSION) == ("1", "S1", "SP1")
+            constants.SEMANTIC_PROMPT_VERSION) == ("1", "S1", "SP2")
+    assert constants.SEMANTIC_GENERATION_POLICY_VERSION == "GP2"
     assert generation_configuration_fingerprint() == generation_configuration_fingerprint()
 
 
@@ -129,13 +130,15 @@ def test_runtime_generation_is_deterministic_token_bounded_and_not_truncated():
         eos_token_id = 9
         def apply_chat_template(self, messages, **kwargs):
             assert kwargs["enable_thinking"] is False
+            assert kwargs["continue_final_message"] is True
+            assert messages[-1] == {"role": "assistant", "content": '{"facts":'}
             return "rendered"
         def __call__(self, text, **kwargs):
             assert kwargs["truncation"] is False
             return {"input_ids": torch.tensor([[1, 2]]),
                     "attention_mask": torch.tensor([[1, 1]])}
         def decode(self, tokens, **kwargs):
-            return '{"facts":[]}'
+            return '[]}'
 
     class Model:
         def generate(self, **kwargs):
@@ -152,6 +155,32 @@ def test_runtime_generation_is_deterministic_token_bounded_and_not_truncated():
     output = Agent4QwenRuntime(loader=Loader).generate("prompt")
     assert output.text == '{"facts":[]}'
     assert (output.input_token_count, output.output_token_count) == (2, 1)
+
+
+def test_runtime_falls_back_safely_when_assistant_prefill_is_unsupported():
+    import torch
+
+    class Tokenizer:
+        pad_token_id = eos_token_id = 9
+        def apply_chat_template(self, *args, **kwargs):
+            raise TypeError("continuation unsupported")
+        def __call__(self, text, **kwargs):
+            assert text == "prompt"
+            return {"input_ids": torch.tensor([[1]])}
+        def decode(self, tokens, **kwargs):
+            return '{"facts":[]}'
+
+    class Model:
+        def generate(self, **kwargs):
+            return torch.tensor([[1, 2]])
+
+    class Loader:
+        @staticmethod
+        def load(**kwargs):
+            return SimpleNamespace(model=Model(), tokenizer=Tokenizer(), device="cpu")
+
+    output = Agent4QwenRuntime(loader=Loader).generate("prompt")
+    assert output.text == '{"facts":[]}'
 
 
 def test_runtime_rejects_oversized_prompt_without_generation():
@@ -202,14 +231,26 @@ def test_prompt_is_deterministic_grounded_json_only_and_excludes_scores_and_reje
     assert first == second
     assert text in first and "AUTHORIZATION" in first
     assert "JSON object" in first and "exact verbatim evidence_quote" in first
+    assert "VALID_EXAMPLE_OUTPUT" in first
+    assert '"related_labels":["AUTHORIZATION"]' in first
+    assert '{"facts":[]}' in first
     assert "Do not generate tests" in first
     assert "model_score" not in first and "REJECTED" not in first
 
 
-@pytest.mark.parametrize("raw", ["```json\n{}\n```", "prose {}", "{} trailing", "{}{}", "[]"])
+@pytest.mark.parametrize("raw", ["prose {}", "{} trailing", "{}{}", "[]"])
 def test_parser_requires_one_plain_json_object(raw):
     with pytest.raises(ValueError):
         parse_one_object(raw)
+
+
+@pytest.mark.parametrize("raw", [
+    '```json\n{"facts":[]}\n```',
+    '```\n{"facts":[]}\n```',
+    '\ufeff{"facts":[]}',
+])
+def test_parser_normalizes_only_harmless_json_wrapping(raw):
+    assert parse_one_object(raw) == []
 
 
 def test_valid_grounded_fact_and_exact_offsets_are_server_owned():
@@ -226,7 +267,15 @@ def test_invalid_json_and_schema_retry_once_then_succeed():
     runtime, result = extract(["not-json", fact_output()])
     assert result.status == "SUCCESS"
     assert result.generation.attempt_count == 2
-    assert "CORRECTION_REQUIRED=SEMANTIC_INVALID_JSON" in runtime.prompts[1]
+    assert "PREVIOUS_OUTPUT_REJECTED=SEMANTIC_INVALID_JSON" in runtime.prompts[1]
+
+
+def test_schema_retry_feedback_identifies_field_without_echoing_bad_value():
+    invalid = fact_output(fact_type="FUNCTIONAL_BEHAVIOR")
+    runtime, result = extract([invalid, fact_output()])
+    assert result.status == "SUCCESS"
+    assert "SEMANTIC_SCHEMA_VALIDATION_FAILED:FACT_TYPE_ENUM" in runtime.prompts[1]
+    assert 'fact_type must be one value from FACT_TYPES' in runtime.prompts[1]
 
 
 def test_two_invalid_attempts_raise_typed_failure():

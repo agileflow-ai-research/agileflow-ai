@@ -99,6 +99,11 @@ def _safe_stage_error(stage, exc):
                 message = "Generated semantic facts could not be grounded in the source evidence."
             elif code == "SEMANTIC_INVALID_JSON":
                 message = "The semantic model returned invalid structured output."
+            elif code == "SEMANTIC_SCHEMA_VALIDATION_FAILED":
+                message = (
+                    "The semantic model returned unsupported or missing fact fields "
+                    "after a corrective retry."
+                )
             else:
                 code = "SEMANTIC_OUTPUT_INVALID"
                 message = "Generated testing facts did not match the required validated format."

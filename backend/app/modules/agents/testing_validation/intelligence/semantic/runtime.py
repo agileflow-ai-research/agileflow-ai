@@ -108,14 +108,17 @@ class Agent4QwenRuntime:
             messages = [
                 {"role": "system", "content": "Return grounded JSON only. Never provide reasoning."},
                 {"role": "user", "content": prompt},
+                {"role": "assistant", "content": '{"facts":'},
             ]
+            response_prefix = '{"facts":'
             try:
                 rendered = loaded.tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True,
+                    messages, tokenize=False, continue_final_message=True,
                     enable_thinking=False,
                 )
             except (AttributeError, TypeError, ValueError):
                 rendered = prompt
+                response_prefix = ""
             inputs = loaded.tokenizer(rendered, return_tensors="pt", truncation=False)
             input_count = int(inputs["input_ids"].shape[-1])
             if input_count > constants.MAX_SEMANTIC_INPUT_TOKENS:
@@ -127,10 +130,11 @@ class Agent4QwenRuntime:
                     suffix = loaded.tokenizer.decode(
                         input_ids[0][input_count:], skip_special_tokens=True
                     ).strip()
-                    if not suffix.startswith("{") or not suffix.endswith("}"):
+                    candidate = response_prefix + suffix
+                    if not candidate.startswith("{") or not candidate.endswith("}"):
                         return False
                     try:
-                        parsed = json.loads(suffix)
+                        parsed = json.loads(candidate)
                     except ValueError:
                         return False
                     return isinstance(parsed, dict) and set(parsed) == {"facts"}
@@ -149,8 +153,11 @@ class Agent4QwenRuntime:
                     eos_token_id=loaded.tokenizer.eos_token_id,
                 )
             new_tokens = generated[0][input_count:]
+            decoded = loaded.tokenizer.decode(
+                new_tokens, skip_special_tokens=True
+            ).strip()
             return SemanticRuntimeOutput(
-                text=loaded.tokenizer.decode(new_tokens, skip_special_tokens=True).strip(),
+                text=response_prefix + decoded,
                 input_token_count=input_count,
                 output_token_count=int(new_tokens.shape[-1]),
                 generation_duration_ms=round((perf_counter() - started) * 1000),

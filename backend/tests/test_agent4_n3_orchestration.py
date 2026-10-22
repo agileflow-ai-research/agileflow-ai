@@ -23,6 +23,10 @@ from app.modules.agents.testing_validation.preparation.chunking.storage import A
 from app.modules.agents.testing_validation.workflow.orchestration.n3_service import (
     Agent4N3ReviewError,
     Agent4N3OrchestrationService,
+    _safe_stage_error,
+)
+from app.modules.agents.testing_validation.intelligence.semantic.extractor import (
+    SemanticExtractionFailedError,
 )
 from app.modules.agents.testing_validation.workflow.orchestration.n3_progression import (
     derive_n3_execution_status,
@@ -80,6 +84,16 @@ def n3_service(context, scores=None, *, n4_handoff=None):
         n4_handoff=n4_handoff,
     )
     return service, executor
+
+
+def test_semantic_schema_failure_has_a_specific_safe_retry_message():
+    error, retryable = _safe_stage_error(
+        Agent4N3SubStageName.FACT_EXTRACTION,
+        SemanticExtractionFailedError("SEMANTIC_SCHEMA_VALIDATION_FAILED"),
+    )
+    assert error.code == "SEMANTIC_SCHEMA_VALIDATION_FAILED"
+    assert "unsupported or missing fact fields" in error.message
+    assert retryable is True
 
 
 def prepare_n3(context, *contents):
