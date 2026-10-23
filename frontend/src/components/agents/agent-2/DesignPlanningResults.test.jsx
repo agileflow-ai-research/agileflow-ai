@@ -1,0 +1,2206 @@
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { getAgentProjectRun } from '../../../services/agentProjectService.js'
+import DesignPlanningResults from './DesignPlanningResults.jsx'
+import { deriveCorrectionAttempts } from './results/correctionAttempts.js'
+import RunDetail from '../RunDetail.jsx'
+
+vi.mock('../../../services/agentProjectService.js', () => ({ getAgentProjectRun: vi.fn() }))
+
+const jiraPlan = {
+  epics: [{ id: 'EPIC-001', title: 'Booking', outcome: 'Guests can book', priority: 'HIGH', source_refs: ['SPEC-001'] }],
+  stories: [
+    {
+      id: 'STORY-001',
+      epic_id: 'EPIC-001',
+      feature_id: 'FEATURE-001',
+      actor: 'guest',
+      goal: 'book',
+      benefit: 'reserve',
+      acceptance_criteria: ['Confirmed'],
+      priority: 'HIGH',
+      estimate_points: 5,
+      source_refs: ['SPEC-001'],
+    },
+  ],
+  tasks: [
+    {
+      id: 'TASK-001',
+      epic_id: 'EPIC-001',
+      feature_id: 'FEATURE-001',
+      story_id: 'STORY-001',
+      title: 'Build API',
+      description: 'Implement booking API',
+      required_skills: ['API'],
+      estimate_points: 3,
+      depends_on: [],
+      source_refs: ['SPEC-001'],
+    },
+  ],
+  sprints: [
+    {
+      id: 'SPRINT-001',
+      name: 'Sprint 1',
+      duration_days: 10,
+      capacity_points: 20,
+      planned_points: 3,
+      utilization_percent: 15,
+      item_refs: ['TASK-001'],
+      dependency_notes: [],
+      planning_warnings: ['Estimate only'],
+      estimate_basis: 'Estimated capacity formula',
+    },
+  ],
+  assignments: [
+    {
+      task_id: 'TASK-001',
+      team_slot: 'Alice',
+      role: 'Backend Developer',
+      rationale: 'API skill match',
+      sprint_id: 'SPRINT-001',
+      matching_reasons: ['Matched API'],
+      role_match: true,
+      skill_matches: ['API'],
+      workload_points_before: 0,
+      confidence_score: 100,
+    },
+  ],
+  priorities: [{ item_id: 'STORY-001', priority: 'HIGH' }],
+  synchronization: 'NOT_PERFORMED',
+}
+
+describe('DesignPlanningResults · S2-06 Results Overview', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    URL.createObjectURL = vi.fn(() => 'blob:test-plan')
+    URL.revokeObjectURL = vi.fn()
+  })
+
+  it('renders S2-06 Results Overview with title, subtitle, and green COMPLETED status badge matching PNG', () => {
+    render(
+      <DesignPlanningResults
+        title="Agent 2 Results"
+        subtitle="Generated design and planning artifacts"
+        status="COMPLETED"
+        outputs={{
+          SYSTEM_ARCHITECTURE: { components: [{ id: 'CMP-001', name: 'Core' }] },
+          EPICS: [{ id: 'EPIC-001', title: 'Booking' }],
+        }}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+    expect(screen.getByText('Generated design and planning artifacts')).toBeInTheDocument()
+    expect(screen.getByText('COMPLETED')).toBeInTheDocument()
+    expect(screen.getByText('BookEase')).toBeInTheDocument()
+    expect(screen.getByText('Standalone Agent 2')).toBeInTheDocument()
+    expect(screen.getByText('Human reviewer')).toBeInTheDocument()
+  })
+
+  it('derives summary metrics dynamically from the real response without fabricated correction count', () => {
+    const outputs = {
+      SYSTEM_ARCHITECTURE: { components: [{ id: 'CMP-001', name: 'Core', source_refs: ['SPEC-001'] }] },
+      DATABASE_SCHEMA: { entities: [{ id: 'ENT-001', name: 'User', source_refs: ['SPEC-001'] }] },
+      EPICS: [{ id: 'EPIC-001', title: 'Booking', source_refs: ['SPEC-001'] }],
+    }
+
+    render(
+      <DesignPlanningResults
+        status="COMPLETED"
+        result={{ run_id: 'RUN-101', status: 'COMPLETED', outputs, warnings: [], errors: [] }}
+        outputs={outputs}
+      />,
+    )
+
+    const metrics = screen.getByLabelText('Summary metrics')
+    // Outputs generated dynamically counts 3
+    expect(metrics).toHaveTextContent('Outputs generated')
+    expect(metrics).toHaveTextContent('3')
+
+    // Validation passed
+    expect(metrics).toHaveTextContent('Validation')
+    expect(metrics).toHaveTextContent('Passed')
+
+    // Correction attempts is neutral "Not available" because the legacy mock does not provide it
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('Not available')
+
+    // Traceability is Available because source_refs exist
+    expect(metrics).toHaveTextContent('Traceability')
+    expect(metrics).toHaveTextContent('Available')
+  })
+
+  it('displays "0" correction attempts for a newly completed clean run with correction_attempts = 0', () => {
+    const outputs = {
+      SYSTEM_ARCHITECTURE: { components: [{ id: 'CMP-001', name: 'Core', source_refs: ['SPEC-001'] }] },
+    }
+
+    render(
+      <DesignPlanningResults
+        status="COMPLETED"
+        result={{
+          run_id: 'RUN-102',
+          status: 'COMPLETED',
+          outputs,
+          correction_attempts: 0,
+          warnings: [],
+          errors: [],
+        }}
+        outputs={outputs}
+      />,
+    )
+
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('0')
+    expect(metrics).not.toHaveTextContent('Not available')
+  })
+
+  it('displays actual correction count for newly completed corrected run with correction_attempts = 1 and 2', () => {
+    const outputs = {
+      SYSTEM_ARCHITECTURE: { components: [{ id: 'CMP-001', name: 'Core', source_refs: ['SPEC-001'] }] },
+    }
+
+    const { rerender } = render(
+      <DesignPlanningResults
+        status="COMPLETED"
+        result={{
+          run_id: 'RUN-103',
+          status: 'COMPLETED',
+          outputs,
+          correction_attempts: 1,
+          warnings: [
+            {
+              code: 'OUTPUT_CORRECTED',
+              message: 'Generated output passed validation after a bounded correction attempt',
+              details: { correction_attempts: 1 },
+            },
+          ],
+          errors: [],
+        }}
+        outputs={outputs}
+      />,
+    )
+
+    let metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('1')
+
+    rerender(
+      <DesignPlanningResults
+        status="COMPLETED"
+        result={{
+          run_id: 'RUN-103B',
+          status: 'COMPLETED',
+          outputs,
+          correction_attempts: 2,
+          warnings: [
+            {
+              code: 'OUTPUT_CORRECTED',
+              message: 'Generated output passed validation after a bounded correction attempt',
+              details: { correction_attempts: 2 },
+            },
+          ],
+          errors: [],
+        }}
+        outputs={outputs}
+      />,
+    )
+
+    metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('2')
+  })
+
+  it('derives correction count from OUTPUT_CORRECTED warning for historical runs without direct correction_attempts', () => {
+    const outputs = {
+      SYSTEM_ARCHITECTURE: { components: [{ id: 'CMP-001', name: 'Core', source_refs: ['SPEC-001'] }] },
+    }
+
+    render(
+      <DesignPlanningResults
+        title="Persisted design and planning outputs"
+        status="COMPLETED"
+        isHistorical
+        outputs={outputs}
+        warnings={[
+          {
+            code: 'OUTPUT_CORRECTED',
+            message: 'Generated output passed validation after a bounded correction attempt',
+            details: { correction_attempts: 1 },
+          },
+        ]}
+        errors={[]}
+      />,
+    )
+
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('1')
+  })
+
+  it('displays 0 correction attempts for historical clean completed run without warnings', () => {
+    const outputs = {
+      SYSTEM_ARCHITECTURE: { components: [{ id: 'CMP-001', name: 'Core', source_refs: ['SPEC-001'] }] },
+    }
+
+    render(
+      <DesignPlanningResults
+        title="Persisted design and planning outputs"
+        status="COMPLETED"
+        isHistorical
+        outputs={outputs}
+        warnings={[]}
+        errors={[]}
+      />,
+    )
+
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('0')
+  })
+
+  it('summarizes only returned outputs in Result Package Cards and does not show unreturned artifacts', () => {
+    const outputs = {
+      SYSTEM_ARCHITECTURE: {
+        components: [
+          { id: 'CMP-001', name: 'Auth' },
+          { id: 'CMP-002', name: 'Booking' },
+          { id: 'CMP-003', name: 'Payment' },
+          { id: 'CMP-004', name: 'Notification' },
+        ],
+      },
+      EPICS: [
+        { id: 'EPIC-001', title: 'Identity' },
+        { id: 'EPIC-002', title: 'Reservations' },
+        { id: 'EPIC-003', title: 'Billing' },
+      ],
+      FEATURES: new Array(6).fill({ id: 'FEAT' }),
+      USER_STORIES: new Array(11).fill({ id: 'STORY' }),
+    }
+
+    render(
+      <DesignPlanningResults
+        status="COMPLETED"
+        outputs={outputs}
+      />,
+    )
+
+    // Design package card
+    expect(screen.getByRole('heading', { name: 'Design package' })).toBeInTheDocument()
+    expect(screen.getByText('Architecture and technical specifications')).toBeInTheDocument()
+    expect(screen.getByText(/System architecture · 4 components/)).toBeInTheDocument()
+
+    // Unselected design outputs are NOT shown
+    expect(screen.queryByText(/UML diagrams/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Database schema/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Wireframes/)).not.toBeInTheDocument()
+
+    // Planning package card
+    expect(screen.getByRole('heading', { name: 'Planning package' })).toBeInTheDocument()
+    expect(screen.getByText('Agile hierarchy and delivery plan')).toBeInTheDocument()
+    expect(screen.getByText(/3 epics · 6 features · 11 stories/)).toBeInTheDocument()
+
+    // Unselected planning outputs are NOT shown
+    expect(screen.queryByText(/Sprint plan/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Task assignments/)).not.toBeInTheDocument()
+  })
+
+  it('renders validation evidence and dynamically derived traceability chain without fabrication', () => {
+    const outputs = {
+      API_SPECIFICATION: {
+        operations: [
+          {
+            id: 'API-POST-BOOKING',
+            source_refs: ['SPEC-002'],
+            component_refs: ['CMP-BOOKING'],
+            entity_refs: ['ENTITY-BOOKING'],
+          },
+        ],
+      },
+      EPICS: [{ id: 'EPIC-02', source_refs: ['SPEC-002'] }],
+      USER_STORIES: [{ id: 'STORY-06', epic_id: 'EPIC-02' }],
+      TASKS: [{ id: 'TASK-14', story_id: 'STORY-06', epic_id: 'EPIC-02' }],
+    }
+
+    render(
+      <DesignPlanningResults
+        status="COMPLETED"
+        outputs={outputs}
+        warnings={[]}
+        errors={[]}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Validation & traceability evidence' })).toBeInTheDocument()
+    expect(screen.getByText('Structural validation passed')).toBeInTheDocument()
+    expect(screen.getByText('Cross-artifact references valid')).toBeInTheDocument()
+
+    // Dynamic chain derived from real objects
+    expect(
+      screen.getByText('Example trace: SPEC-002 → CMP-BOOKING → ENTITY-BOOKING → API-POST-BOOKING → EPIC-02 → STORY-06 → TASK-14'),
+    ).toBeInTheDocument()
+  })
+
+  it('renders neutral traceability message when references exist but a full chain cannot be formed', () => {
+    const outputs = {
+      SYSTEM_ARCHITECTURE: {
+        components: [{ id: 'CMP-001', name: 'Gateway', source_refs: ['SPEC-001'] }],
+      },
+    }
+
+    render(
+      <DesignPlanningResults
+        status="COMPLETED"
+        outputs={outputs}
+      />,
+    )
+
+    expect(
+      screen.getByText('Traceability references are available within generated artifacts.'),
+    ).toBeInTheDocument()
+  })
+
+  it('renders warnings and errors truthfully', () => {
+    render(
+      <DesignPlanningResults
+        status="FAILED"
+        outputs={{}}
+        warnings={['Planning warning: over-allocated capacity']}
+        errors={['VALIDATION_ERROR: Missing required entity relationship']}
+      />,
+    )
+
+    expect(screen.getByText('FAILED')).toBeInTheDocument()
+    expect(screen.getByText('Validation')).toBeInTheDocument()
+    expect(screen.getByText('Failed')).toBeInTheDocument()
+    expect(screen.getByText(/Planning warning: over-allocated capacity/)).toBeInTheDocument()
+    expect(screen.getByText(/VALIDATION_ERROR: Missing required entity relationship/)).toBeInTheDocument()
+  })
+
+  it('renders actions, handles Start another run, Open run history, and marks deferred actions disabled', async () => {
+    const user = userEvent.setup()
+    const onStartAnotherRun = vi.fn()
+    const onOpenRunHistory = vi.fn()
+
+    render(
+      <DesignPlanningResults
+        status="COMPLETED"
+        outputs={{ JIRA_PLAN: jiraPlan }}
+        onStartAnotherRun={onStartAnotherRun}
+        onOpenRunHistory={onOpenRunHistory}
+      />,
+    )
+
+    // S2-07 and S2-08 actions are now enabled
+    const viewDesignBtn = screen.getByRole('button', { name: 'View design artifacts' })
+    expect(viewDesignBtn).toBeEnabled()
+
+    const viewPlanningBtn = screen.getByRole('button', { name: 'View planning hierarchy' })
+    expect(viewPlanningBtn).toBeEnabled()
+
+    // Open run history is enabled and callable
+    const openHistoryBtn = screen.getByRole('button', { name: 'Open run history' })
+    await user.click(openHistoryBtn)
+    expect(onOpenRunHistory).toHaveBeenCalledOnce()
+
+    // Start another run is enabled and callable
+    const startAnotherBtn = screen.getByRole('button', { name: 'Start another run' })
+    await user.click(startAnotherBtn)
+    expect(onStartAnotherRun).toHaveBeenCalledOnce()
+
+    // Download Jira plan is present and functional
+    const downloadBtn = screen.getByRole('button', { name: 'Download Jira-compatible JSON' })
+    expect(downloadBtn).toBeInTheDocument()
+  })
+
+  it('renders structured design and planning fields in detail mode', () => {
+    render(
+      <DesignPlanningResults
+        mode="detail"
+        outputs={{
+          API_SPECIFICATION: {
+            base_path: '/api/v1',
+            operations: [
+              {
+                id: 'API-001',
+                method: 'POST',
+                path: '/bookings',
+                summary: 'Create booking',
+                request: 'Booking payload',
+                response: 'Created booking',
+                errors: ['409 conflict'],
+                authentication: 'Bearer',
+                source_refs: ['SPEC-001'],
+                component_refs: ['COMP-001'],
+                entity_refs: ['ENTITY-001'],
+              },
+            ],
+            assumptions: [],
+          },
+          SPRINT_PLAN: jiraPlan.sprints,
+          TASK_ASSIGNMENT: jiraPlan.assignments,
+        }}
+      />,
+    )
+    expect(screen.getByText('POST /bookings')).toBeInTheDocument()
+    expect(screen.getByText('COMP-001')).toBeInTheDocument()
+    expect(screen.getByText('Estimated capacity')).toBeInTheDocument()
+    expect(screen.getByText('15%')).toBeInTheDocument()
+    expect(screen.getByText('Alice')).toBeInTheDocument()
+    expect(screen.getByText('100/100')).toBeInTheDocument()
+  })
+
+  it('downloads the already-generated Jira plan as JSON without synchronization in detail mode', async () => {
+    const user = userEvent.setup()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<DesignPlanningResults mode="detail" outputs={{ JIRA_PLAN: jiraPlan }} />)
+    await user.click(screen.getByRole('button', { name: 'Download Jira-compatible JSON' }))
+    expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+    expect(click).toHaveBeenCalledOnce()
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-plan')
+    expect(screen.getByText(/Synchronization:/)).toHaveTextContent('Not performed')
+    click.mockRestore()
+  })
+
+  it('renders persisted Agent 2 results with 0 corrections for clean historical runs and does not make extra API requests', async () => {
+    getAgentProjectRun.mockResolvedValueOnce({
+      data: {
+        run_id: 'RUN-020',
+        agent_type: 'DESIGN_PLANNING',
+        run_mode: 'DEFAULT',
+        status: 'COMPLETED',
+        selected_outputs: ['JIRA_PLAN'],
+        created_at: '2026-10-14T10:00:00Z',
+        started_at: '2026-10-14T10:00:01Z',
+        completed_at: '2026-10-14T10:00:02Z',
+        warnings: [],
+        errors: [],
+        output_manifest: { JIRA_PLAN: jiraPlan },
+      },
+    })
+    render(<RunDetail agentProjectId="AGP-002" runId="RUN-020" />)
+    expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Download Jira-compatible JSON' })).toBeInTheDocument()
+    expect(screen.getAllByText('Booking').length).toBeGreaterThan(0)
+
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('0')
+    // Verification: getAgentProjectRun called once only (no extra API calls)
+    expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders persisted Agent 2 results with derived count for corrected historical runs', async () => {
+    getAgentProjectRun.mockResolvedValueOnce({
+      data: {
+        run_id: 'RUN-021',
+        agent_type: 'DESIGN_PLANNING',
+        run_mode: 'DEFAULT',
+        status: 'COMPLETED',
+        selected_outputs: ['JIRA_PLAN'],
+        created_at: '2026-10-14T10:00:00Z',
+        started_at: '2026-10-14T10:00:01Z',
+        completed_at: '2026-10-14T10:00:02Z',
+        warnings: [
+          {
+            code: 'OUTPUT_CORRECTED',
+            message: 'Generated output passed validation after a bounded correction attempt',
+            details: { correction_attempts: 1 },
+          },
+        ],
+        errors: [],
+        output_manifest: { JIRA_PLAN: jiraPlan },
+      },
+    })
+    render(<RunDetail agentProjectId="AGP-002" runId="RUN-021" />)
+    expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+
+    const metrics = screen.getByLabelText('Summary metrics')
+    expect(metrics).toHaveTextContent('Correction attempts')
+    expect(metrics).toHaveTextContent('1')
+    expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+  })
+
+  describe('deriveCorrectionAttempts helper', () => {
+    it('uses explicit null/undefined check so 0 is preserved and not treated as falsy', () => {
+      expect(deriveCorrectionAttempts({ result: { correction_attempts: 0 } })).toBe('0')
+      expect(deriveCorrectionAttempts({ result: { correction_attempts: 1 } })).toBe('1')
+      expect(deriveCorrectionAttempts({ result: { correction_attempts: 2 } })).toBe('2')
+      expect(deriveCorrectionAttempts({ run: { correction_attempts: 0 } })).toBe('0')
+      expect(deriveCorrectionAttempts({ correction_attempts: 0 })).toBe('0')
+    })
+
+    it('falls back to OUTPUT_CORRECTED warning details when top-level field is absent', () => {
+      expect(
+        deriveCorrectionAttempts({
+          warnings: [
+            { code: 'OUTPUT_CORRECTED', details: { correction_attempts: 1 } },
+          ],
+        }),
+      ).toBe('1')
+    })
+
+    it('falls back to "0" for historical clean completed runs without warnings', () => {
+      expect(
+        deriveCorrectionAttempts({
+          isHistorical: true,
+          status: 'COMPLETED',
+          warnings: [],
+          errors: [],
+        }),
+      ).toBe('0')
+    })
+
+    it('returns "Not available" when run has errors or is not completed and no correction count exists', () => {
+      expect(
+        deriveCorrectionAttempts({
+          isHistorical: true,
+          status: 'FAILED',
+          errors: ['Some error'],
+        }),
+      ).toBe('Not available')
+    })
+  })
+
+  describe('S2-07 Design Artifacts View', () => {
+    const designOutputs = {
+      SYSTEM_ARCHITECTURE: {
+        style: 'Modular web application',
+        components: [
+          {
+            id: 'CMP-WEB',
+            name: 'React Web Application',
+            responsibility: 'Provides client-facing UI and state',
+            dependencies: ['API Gateway'],
+            source_refs: ['SPEC-001'],
+          },
+        ],
+        boundaries: ['Browser sandbox', 'DMZ'],
+        interactions: ['HTTPS/JSON over REST'],
+        constraints: ['Node 20+ runtime'],
+        assumptions: ['Modern evergreen browsers'],
+      },
+      DATABASE_SCHEMA: {
+        technology: 'PostgreSQL',
+        entities: [
+          {
+            id: 'ENTITY-USER',
+            name: 'User',
+            fields: [
+              { name: 'id', data_type: 'UUID', required: true, constraints: ['PRIMARY KEY'] },
+              { name: 'email', data_type: 'VARCHAR(255)', required: true, constraints: ['UNIQUE'] },
+            ],
+            relationships: [
+              { target_entity_id: 'ENTITY-002', relationship_type: 'ONE_TO_MANY', description: 'User bookings' },
+            ],
+            source_refs: ['SPEC-001'],
+          },
+        ],
+        assumptions: ['ACID compliance required'],
+      },
+      API_SPECIFICATION: {
+        base_path: '/api',
+        operations: [
+          {
+            id: 'API-001',
+            method: 'POST',
+            path: '/api/auth/register',
+            summary: 'Register new user account',
+            request: '{"email": "string"}',
+            response: '{"id": "string"}',
+            errors: ['400 Bad Request'],
+            authentication: 'None',
+            source_refs: ['SPEC-001'],
+            component_refs: ['CMP-AUTH'],
+            entity_refs: ['ENTITY-USER'],
+          },
+          {
+            id: 'API-002',
+            method: 'GET',
+            path: '/api/services',
+            summary: 'List available services',
+            request: null,
+            response: '[{"id": "string"}]',
+            errors: [],
+            authentication: 'None',
+            source_refs: ['SPEC-002'],
+            component_refs: ['CMP-API'],
+            entity_refs: ['ENTITY-SERVICE'],
+          },
+          {
+            id: 'API-003',
+            method: 'POST',
+            path: '/api/bookings',
+            summary: 'Create booking',
+            request: '{"serviceId": "string"}',
+            response: '{"bookingId": "string"}',
+            errors: ['409 Conflict'],
+            authentication: 'Bearer',
+            source_refs: ['SPEC-003'],
+            component_refs: ['CMP-BOOKING'],
+            entity_refs: ['ENTITY-BOOKING'],
+          },
+        ],
+        assumptions: ['RESTful semantics'],
+      },
+      UML_DIAGRAMS: {
+        diagrams: [
+          {
+            id: 'UML-001',
+            title: 'System Component Flow',
+            diagram_type: 'COMPONENT_DIAGRAM',
+            notation: 'MERMAID',
+            source: 'flowchart LR  WEB[React Web App] --> API[FastAPI]  API --> AUTH[Auth Module]  API --> BOOK[Booking Module]  BOOK --> DB[(MongoDB)]',
+            source_refs: ['SPEC-001'],
+          },
+        ],
+        assumptions: ['Mermaid syntax'],
+      },
+      WIREFRAMES: {
+        fidelity: 'STRUCTURED_LOW_FIDELITY',
+        screens: [
+          {
+            id: 'WF-001',
+            name: 'Dashboard Screen',
+            purpose: 'Displays overview metrics and navigation shortcuts',
+            regions: ['Sidebar', 'Header', 'Main Content'],
+            interactions: ['Click to expand card'],
+            components: ['MetricCard', 'NavMenu'],
+            source_refs: ['SPEC-001'],
+          },
+        ],
+        assumptions: ['Responsive layout'],
+      },
+      UI_FLOW: {
+        flows: [
+          {
+            id: 'FLOW-001',
+            actor: 'Registered User',
+            goal: 'Complete reservation checkout',
+            steps: ['Select item', 'Review booking', 'Submit payment', 'View confirmation'],
+            alternate_paths: ['Cancel checkout', 'Payment failure retry'],
+            source_refs: ['SPEC-001'],
+            screen_refs: ['WF-001', 'WF-002'],
+          },
+        ],
+      },
+    }
+
+    it('navigates from S2-06 to S2-07 via "View design artifacts" without extra API requests', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={designOutputs}
+        />,
+      )
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+      const viewDesignBtn = screen.getByRole('button', { name: 'View design artifacts' })
+      await user.click(viewDesignBtn)
+
+      // S2-07 rendered
+      expect(screen.getByRole('heading', { level: 2, name: 'Generated Design Artifacts' })).toBeInTheDocument()
+      expect(screen.getByText('Structured architecture, UML, database and API specifications')).toBeInTheDocument()
+      expect(screen.getByText('Validated')).toBeInTheDocument()
+      expect(screen.getByText('BookEase')).toBeInTheDocument()
+      expect(screen.getByText('Standalone Agent 2')).toBeInTheDocument()
+      expect(screen.getByText('Human reviewer')).toBeInTheDocument()
+
+      // Verification: 0 API requests
+      expect(getAgentProjectRun).not.toHaveBeenCalled()
+    })
+
+    it('navigates back to S2-06 from S2-07 and preserves the run result state', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={designOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View design artifacts' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Generated Design Artifacts' })).toBeInTheDocument()
+
+      // Click Back to Results Overview
+      const backButtons = screen.getAllByRole('button', { name: 'Back to Results Overview' })
+      await user.click(backButtons[0])
+
+      // Returns to S2-06
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+      expect(screen.getByText('Generated design and planning artifacts')).toBeInTheDocument()
+    })
+
+    it('renders real architecture, database, API, UML, wireframes, and UI flows with authentic traceability refs matching PNG', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={designOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View design artifacts' }))
+
+      // System Architecture
+      expect(screen.getByRole('heading', { level: 3, name: 'System architecture' })).toBeInTheDocument()
+      expect(screen.getByText(/ARCH-001 · Modular web application/)).toBeInTheDocument()
+      expect(screen.getByText(/CMP-WEB · React Web Application/)).toBeInTheDocument()
+      expect(screen.getByText('Provides client-facing UI and state')).toBeInTheDocument()
+      expect(screen.getByText('API Gateway')).toBeInTheDocument()
+      expect(screen.getAllByText('SPEC-001').length).toBeGreaterThan(0)
+      expect(screen.getByText(/Browser sandbox, DMZ/)).toBeInTheDocument()
+      expect(screen.getByText(/Node 20\+ runtime/)).toBeInTheDocument()
+
+      // Database schema
+      expect(screen.getByRole('heading', { level: 3, name: 'Database schema' })).toBeInTheDocument()
+      expect(screen.getByText(/1 traceable entity/)).toBeInTheDocument()
+      expect(screen.getByText('ENTITY-USER')).toBeInTheDocument()
+      expect(screen.getByText('(User)')).toBeInTheDocument()
+      expect(screen.getByText(/UUID/)).toBeInTheDocument()
+      expect(screen.getByText(/PRIMARY KEY/)).toBeInTheDocument()
+      expect(screen.getByText(/ONE_TO_MANY → ENTITY-002/)).toBeInTheDocument()
+
+      // API specification table
+      expect(screen.getByRole('heading', { level: 3, name: 'API specification' })).toBeInTheDocument()
+      expect(screen.getByText(/Operations reference architecture components and database entities/)).toBeInTheDocument()
+      expect(screen.getByText('/api/auth/register')).toBeInTheDocument()
+      expect(screen.getByText('Register new user account')).toBeInTheDocument()
+      expect(screen.getByText('CMP-AUTH / ENTITY-USER')).toBeInTheDocument()
+      expect(screen.getByText('/api/services')).toBeInTheDocument()
+      expect(screen.getByText('CMP-API / ENTITY-SERVICE')).toBeInTheDocument()
+      expect(screen.getByText('SPEC-002')).toBeInTheDocument()
+      expect(screen.getByText('/api/bookings')).toBeInTheDocument()
+      expect(screen.getByText('CMP-BOOKING / ENTITY-BOOKING')).toBeInTheDocument()
+      expect(screen.getByText('SPEC-003')).toBeInTheDocument()
+
+      // UML diagram source
+      expect(screen.getByRole('heading', { level: 3, name: 'UML diagram source' })).toBeInTheDocument()
+      expect(screen.getByText(/Authoritative structured source — no fake rendered image/)).toBeInTheDocument()
+      expect(screen.getByText(/flowchart LR WEB\[React Web App\] --> API\[FastAPI\]/)).toBeInTheDocument()
+
+      // Wireframes
+      expect(screen.getByRole('heading', { level: 3, name: 'Wireframes' })).toBeInTheDocument()
+      expect(screen.getByText('Dashboard Screen')).toBeInTheDocument()
+      expect(screen.getByText('WF-001')).toBeInTheDocument()
+      expect(screen.getByText(/Displays overview metrics/)).toBeInTheDocument()
+      expect(screen.getByText(/Sidebar, Header, Main Content/)).toBeInTheDocument()
+      expect(screen.getByText(/MetricCard, NavMenu/)).toBeInTheDocument()
+
+      // UI Flow
+      expect(screen.getByRole('heading', { level: 3, name: 'UI flow' })).toBeInTheDocument()
+      expect(screen.getByText(/Registered User/)).toBeInTheDocument()
+      expect(screen.getByText(/Complete reservation checkout/)).toBeInTheDocument()
+      expect(screen.getByText('FLOW-001')).toBeInTheDocument()
+      expect(screen.getByText('Select item')).toBeInTheDocument()
+      expect(screen.getByText(/WF-001, WF-002/)).toBeInTheDocument()
+      expect(screen.getByText(/Cancel checkout, Payment failure retry/)).toBeInTheDocument()
+    })
+
+    it('renders only selected design outputs and omits unreturned sections for partial design packages', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            DATABASE_SCHEMA: designOutputs.DATABASE_SCHEMA,
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View design artifacts' }))
+
+      // Only Database schema is shown
+      expect(screen.getByRole('heading', { level: 3, name: 'Database schema' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'System architecture' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'API specification' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'UML diagram source' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'Wireframes' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'UI flow' })).not.toBeInTheDocument()
+    })
+
+    it('displays truthful empty state when no design artifacts were returned', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            EPICS: [{ id: 'EPIC-001', title: 'Agile Epic' }],
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View design artifacts' }))
+
+      expect(screen.getByText('No design artifacts were generated for this run.')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'System architecture' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'Database schema' })).not.toBeInTheDocument()
+    })
+
+    it('opens S2-07 and navigates back in historical RunDetail view without extra API calls', async () => {
+      const user = userEvent.setup()
+      getAgentProjectRun.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-HIST-007',
+          agent_type: 'DESIGN_PLANNING',
+          run_mode: 'DEFAULT',
+          status: 'COMPLETED',
+          selected_outputs: ['SYSTEM_ARCHITECTURE', 'DATABASE_SCHEMA'],
+          created_at: '2026-10-14T10:00:00Z',
+          started_at: '2026-10-14T10:00:01Z',
+          completed_at: '2026-10-14T10:00:02Z',
+          warnings: [],
+          errors: [],
+          output_manifest: designOutputs,
+        },
+      })
+
+      render(<RunDetail agentProjectId="AGP-002" runId="RUN-HIST-007" />)
+      expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+
+      // Initial call to getAgentProjectRun
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Open S2-07
+      const viewDesignBtn = screen.getByRole('button', { name: 'View design artifacts' })
+      await user.click(viewDesignBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Generated Design Artifacts' })).toBeInTheDocument()
+      expect(screen.getByText(/ARCH-001 · Modular web application/)).toBeInTheDocument()
+
+      // Still only 1 call to getAgentProjectRun
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Back to Overview
+      const backButtons = screen.getAllByRole('button', { name: 'Back to Results Overview' })
+      await user.click(backButtons[0])
+
+      expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  const planningOutputs = {
+    EPICS: [
+      {
+        id: 'EPIC-02',
+        title: 'Booking Management',
+        outcome: 'Customers can book, modify, and view reservations.',
+        priority: 'HIGH',
+        source_refs: ['SPEC-003'],
+      },
+    ],
+    FEATURES: [
+      {
+        id: 'FEATURE-04',
+        epic_id: 'EPIC-02',
+        title: 'Create Booking',
+        description: 'Capture booking details and confirm reservations',
+        source_refs: ['SPEC-003'],
+      },
+    ],
+    USER_STORIES: [
+      {
+        id: 'STORY-06',
+        epic_id: 'EPIC-02',
+        feature_id: 'FEATURE-04',
+        actor: 'Customer',
+        goal: 'books an available slot',
+        benefit: 'reserves an appointment',
+        acceptance_criteria: [
+          'Booking slot is locked during checkout',
+          'Confirmation email is dispatched upon payment',
+        ],
+        priority: 'HIGH',
+        estimate_points: 5,
+        source_refs: ['SPEC-003'],
+      },
+    ],
+    TASKS: [
+      {
+        id: 'TASK-13',
+        epic_id: 'EPIC-02',
+        feature_id: 'FEATURE-04',
+        story_id: 'STORY-06',
+        title: 'Create booking persistence model',
+        description: 'Define schema and migrations',
+        required_skills: ['Database', 'Python'],
+        estimate_points: 3,
+        depends_on: [],
+        source_refs: ['SPEC-003'],
+      },
+      {
+        id: 'TASK-14',
+        epic_id: 'EPIC-02',
+        feature_id: 'FEATURE-04',
+        story_id: 'STORY-06',
+        title: 'Implement POST /api/bookings',
+        description: 'FastAPI route with validation',
+        required_skills: ['FastAPI'],
+        estimate_points: 5,
+        depends_on: ['TASK-13'],
+        source_refs: ['SPEC-003'],
+      },
+      {
+        id: 'TASK-15',
+        epic_id: 'EPIC-02',
+        feature_id: 'FEATURE-04',
+        story_id: 'STORY-06',
+        title: 'Connect booking form to API',
+        description: 'Frontend integration and error handling',
+        required_skills: ['React'],
+        estimate_points: 3,
+        depends_on: ['TASK-14'],
+        source_refs: ['SPEC-003'],
+      },
+    ],
+    PRODUCT_BACKLOG: [
+      {
+        item_id: 'EPIC-02',
+        item_type: 'EPIC',
+        title: 'Booking Management',
+        priority: 'HIGH',
+        parent_id: null,
+        source_refs: ['SPEC-003'],
+      },
+      {
+        item_id: 'FEATURE-04',
+        item_type: 'FEATURE',
+        title: 'Create Booking',
+        priority: 'HIGH',
+        parent_id: 'EPIC-02',
+        source_refs: ['SPEC-003'],
+      },
+      {
+        item_id: 'STORY-06',
+        item_type: 'STORY',
+        title: 'Customer books an available slot',
+        priority: 'HIGH',
+        parent_id: 'FEATURE-04',
+        source_refs: ['SPEC-003'],
+      },
+    ],
+  }
+
+  describe('S2-08 Planning Hierarchy View', () => {
+
+    it('navigates from S2-06 to S2-08 via "View planning hierarchy" without extra API requests', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={planningOutputs}
+        />,
+      )
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+      const viewPlanningBtn = screen.getByRole('button', { name: 'View planning hierarchy' })
+      await user.click(viewPlanningBtn)
+
+      // S2-08 rendered
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+      expect(
+        screen.getByText('Epic → Feature → User Story → Task with stable IDs and source references'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('Hierarchy valid')).toBeInTheDocument()
+      expect(screen.getByText('BookEase')).toBeInTheDocument()
+      expect(screen.getByText('Standalone Agent 2')).toBeInTheDocument()
+      expect(screen.getByText('Human reviewer')).toBeInTheDocument()
+
+      // Verification: 0 extra API requests
+      expect(getAgentProjectRun).not.toHaveBeenCalled()
+    })
+
+    it('navigates back to S2-06 from S2-08 and preserves the run result state', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={planningOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View planning hierarchy' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+
+      // Click Back to Results Overview
+      const backButtons = screen.getAllByRole('button', { name: 'Back to Results Overview' })
+      await user.click(backButtons[0])
+
+      // Returns to S2-06
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+      expect(screen.getByText('Generated design and planning artifacts')).toBeInTheDocument()
+    })
+
+    it('renders Epic → Feature → User Story → Task tree with real IDs, acceptance criteria, dependencies, and deterministic checks', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={planningOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View planning hierarchy' }))
+
+      // Main hierarchy card
+      expect(screen.getByRole('heading', { level: 3, name: 'Product backlog hierarchy' })).toBeInTheDocument()
+
+      // Epic
+      expect(screen.getByText('EPIC-02 · Booking Management')).toBeInTheDocument()
+      expect(screen.getAllByText('SPEC-003').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('High').length).toBeGreaterThan(0)
+      expect(screen.getByText('Customers can book, modify, and view reservations.')).toBeInTheDocument()
+
+      // Feature
+      expect(screen.getByText('FEATURE-04 · Create Booking')).toBeInTheDocument()
+      expect(screen.getByText('Capture booking details and confirm reservations')).toBeInTheDocument()
+
+      // Story
+      expect(screen.getByText(/STORY-06 · Customer · books an available slot/)).toBeInTheDocument()
+      expect(screen.getByText(/5 workload units/)).toBeInTheDocument()
+      expect(screen.getByText('Booking slot is locked during checkout')).toBeInTheDocument()
+      expect(screen.getByText('Confirmation email is dispatched upon payment')).toBeInTheDocument()
+
+      // Tasks and dependencies
+      expect(screen.getAllByText('TASK-13').length).toBe(2) // 1 in task title, 1 in TASK-14 dependency
+      expect(screen.getByText(/Create booking persistence model/)).toBeInTheDocument()
+      expect(screen.getAllByText('TASK-14').length).toBe(2) // 1 in task title, 1 in TASK-15 dependency
+      expect(screen.getByText(/Implement POST \/api\/bookings/)).toBeInTheDocument()
+      expect(screen.getByText('TASK-15')).toBeInTheDocument()
+
+      // Product backlog table
+      expect(screen.getByRole('heading', { level: 3, name: 'Product backlog' })).toBeInTheDocument()
+      expect(screen.getByText('3 prioritized backlog items')).toBeInTheDocument()
+
+      // Deterministic planning checks
+      expect(screen.getByRole('heading', { level: 3, name: 'Deterministic planning checks' })).toBeInTheDocument()
+      expect(screen.getByText('Features reference valid epics')).toBeInTheDocument()
+      expect(screen.getByText('Stories reference valid features')).toBeInTheDocument()
+      expect(screen.getByText('Tasks reference valid stories')).toBeInTheDocument()
+      expect(screen.getByText('Task dependencies reference valid tasks')).toBeInTheDocument()
+      expect(screen.getByText('Duplicate planning IDs rejected')).toBeInTheDocument()
+    })
+
+    it('renders partial planning package (e.g., USER_STORIES + TASKS only) without requiring Epics/Features', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            USER_STORIES: planningOutputs.USER_STORIES,
+            TASKS: planningOutputs.TASKS,
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View planning hierarchy' }))
+
+      // Renders stories as roots
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+      expect(screen.getByText(/STORY-06 · Customer · books an available slot/)).toBeInTheDocument()
+      expect(screen.getAllByText('TASK-13').length).toBe(2)
+      expect(screen.getAllByText('TASK-14').length).toBe(2)
+
+      // Epics and features are omitted
+      expect(screen.queryByText('EPIC-02 · Booking Management')).not.toBeInTheDocument()
+      expect(screen.queryByText('FEATURE-04 · Create Booking')).not.toBeInTheDocument()
+    })
+
+    it('places unlinked items in unlinked items section without fabricating parent relationships', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            EPICS: planningOutputs.EPICS,
+            FEATURES: [
+              {
+                id: 'FEATURE-ORPHAN',
+                epic_id: 'EPIC-NONEXISTENT',
+                title: 'Orphan Feature',
+                description: 'No matching epic parent',
+                source_refs: ['SPEC-003'],
+              },
+            ],
+            USER_STORIES: [
+              {
+                id: 'STORY-ORPHAN',
+                epic_id: 'EPIC-NONEXISTENT',
+                feature_id: 'FEATURE-NONEXISTENT',
+                actor: 'User',
+                goal: 'orphan goal',
+                benefit: 'orphan benefit',
+                acceptance_criteria: ['Criterion'],
+                priority: 'LOW',
+                estimate_points: 1,
+                source_refs: ['SPEC-003'],
+              },
+            ],
+            TASKS: [
+              {
+                id: 'TASK-ORPHAN',
+                epic_id: 'EPIC-NONEXISTENT',
+                feature_id: 'FEATURE-NONEXISTENT',
+                story_id: 'STORY-NONEXISTENT',
+                title: 'Orphan Task',
+                description: 'No matching story parent',
+                required_skills: [],
+                estimate_points: 1,
+                depends_on: [],
+                source_refs: ['SPEC-003'],
+              },
+            ],
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View planning hierarchy' }))
+
+      expect(screen.getByRole('heading', { level: 3, name: 'Unlinked items' })).toBeInTheDocument()
+      expect(screen.getByText(/FEATURE-ORPHAN/)).toBeInTheDocument()
+      expect(screen.getByText(/STORY-ORPHAN/)).toBeInTheDocument()
+      expect(screen.getByText(/TASK-ORPHAN/)).toBeInTheDocument()
+    })
+
+    it('displays truthful empty state when no planning hierarchy outputs were returned', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            SYSTEM_ARCHITECTURE: { components: [] },
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View planning hierarchy' }))
+
+      expect(screen.getByText('No planning hierarchy artifacts were generated for this run.')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'Product backlog hierarchy' })).not.toBeInTheDocument()
+    })
+
+    it('navigates to S2-08 and back in historical RunDetail view without extra API requests', async () => {
+      const user = userEvent.setup()
+      getAgentProjectRun.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-HIST-008',
+          agent_type: 'DESIGN_PLANNING',
+          run_mode: 'DEFAULT',
+          status: 'COMPLETED',
+          selected_outputs: ['EPICS', 'FEATURES', 'USER_STORIES', 'TASKS'],
+          created_at: '2026-10-14T10:00:00Z',
+          started_at: '2026-10-14T10:00:01Z',
+          completed_at: '2026-10-14T10:00:02Z',
+          warnings: [],
+          errors: [],
+          output_manifest: planningOutputs,
+        },
+      })
+
+      render(<RunDetail agentProjectId="AGP-002" runId="RUN-HIST-008" />)
+      expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Open S2-08
+      const viewPlanningBtn = screen.getByRole('button', { name: 'View planning hierarchy' })
+      await user.click(viewPlanningBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+      expect(screen.getByText('EPIC-02 · Booking Management')).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Back to Overview
+      const backButtons = screen.getAllByRole('button', { name: 'Back to Results Overview' })
+      await user.click(backButtons[0])
+
+      expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('S2-09 Sprint Plan View', () => {
+    const sampleSprintPlan = [
+      {
+        id: 'SPRINT-001',
+        name: 'Sprint 1 · Foundation',
+        duration_days: 14,
+        capacity_points: 56,
+        planned_points: 40,
+        utilization_percent: 71.4,
+        item_refs: ['TASK-13', 'TASK-14'],
+        dependency_notes: ['TASK-14 depends on TASK-13.'],
+        planning_warnings: [],
+        estimate_basis: 'Estimated capacity uses team count × sprint duration in days.',
+      },
+      {
+        id: 'SPRINT-002',
+        name: 'Sprint 2 · Booking',
+        duration_days: 14,
+        capacity_points: 56,
+        planned_points: 70,
+        utilization_percent: 125.0,
+        item_refs: ['TASK-15', 'TASK-UNLINKED-99'],
+        dependency_notes: ['TASK-15 depends on TASK-14.'],
+        planning_warnings: ['Estimated workload exceeds capacity by 14 points.'],
+        estimate_basis: 'Estimated capacity uses team count × sprint duration in days.',
+      },
+    ]
+
+    const sprintOutputs = {
+      ...planningOutputs,
+      SPRINT_PLAN: sampleSprintPlan,
+    }
+
+    it('renders View sprint plan action on S2-06 only when SPRINT_PLAN exists in outputs', () => {
+      const { rerender } = render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={planningOutputs}
+        />,
+      )
+
+      expect(screen.queryByRole('button', { name: 'View sprint plan' })).not.toBeInTheDocument()
+
+      rerender(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={sprintOutputs}
+        />,
+      )
+
+      expect(screen.getByRole('button', { name: 'View sprint plan' })).toBeInTheDocument()
+    })
+
+    it('navigates to S2-09 locally and renders header, estimate badge, and real sprint metrics', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={sprintOutputs}
+          inputs={{ development_team_count: 4, expected_project_duration: '3 months' }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View sprint plan' }))
+
+      // Header and badge
+      expect(screen.getByRole('heading', { level: 2, name: 'Sprint Plan' })).toBeInTheDocument()
+      expect(
+        screen.getByText('Heuristic recommendation using team count, duration, dependencies and estimated workload'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('Estimate only')).toBeInTheDocument()
+
+      // Sprint 1 card
+      expect(screen.getByRole('heading', { level: 3, name: 'Sprint 1 · Foundation' })).toBeInTheDocument()
+      expect(screen.getAllByText('14 days · 4 developers').length).toBe(2)
+      expect(screen.getAllByText('Capacity estimate: 56 units').length).toBe(2)
+      expect(screen.getByText('Planned workload: 40 units')).toBeInTheDocument()
+      expect(screen.getByText('71.4%')).toBeInTheDocument()
+
+      // Sprint 2 card (>100% utilization)
+      expect(screen.getByRole('heading', { level: 3, name: 'Sprint 2 · Booking' })).toBeInTheDocument()
+      expect(screen.getByText('Planned workload: 70 units')).toBeInTheDocument()
+      expect(screen.getByText('125%')).toBeInTheDocument()
+
+      // Progress bars: Sprint 1 is 71.4%, Sprint 2 visual width is capped at 100%
+      const progressbars = screen.getAllByRole('progressbar')
+      expect(progressbars[0]).toHaveAttribute('aria-valuenow', '71.4')
+      expect(progressbars[0]).toHaveStyle({ width: '71.4%' })
+      expect(progressbars[1]).toHaveAttribute('aria-valuenow', '125')
+      expect(progressbars[1]).toHaveStyle({ width: '100%' })
+    })
+
+    it('enriches item IDs only when corresponding artifact outputs exist and preserves raw ID otherwise', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={sprintOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View sprint plan' }))
+
+      // Enriched from TASKS in outputs
+      expect(screen.getByText('Create booking persistence model')).toBeInTheDocument()
+
+      // Raw unlinked ID is rendered without fabricated title
+      expect(screen.getByText('TASK-UNLINKED-99')).toBeInTheDocument()
+    })
+
+    it('renders transparent heuristic wording, dependencies notes, warnings, and capacity basis', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={sprintOutputs}
+          inputs={{ expected_project_duration: '3 months' }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View sprint plan' }))
+
+      // Dependency notes
+      expect(screen.getByText('TASK-14 depends on TASK-13.')).toBeInTheDocument()
+      expect(screen.getByText('TASK-15 depends on TASK-14.')).toBeInTheDocument()
+
+      // Planning rationale heading and transparent wording
+      expect(screen.getByRole('heading', { level: 3, name: 'Planning rationale & warnings' })).toBeInTheDocument()
+      expect(screen.getByText('Transparent heuristic — not mathematical optimization.')).toBeInTheDocument()
+      expect(screen.queryByText(/mathematically optimized/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/guaranteed delivery/i)).not.toBeInTheDocument()
+
+      // Heuristic chips
+      expect(screen.getByText('Dependencies scheduled in order')).toBeInTheDocument()
+      expect(screen.getByText('Sprint capacity overflow detected')).toBeInTheDocument()
+      expect(screen.getByText('Expected 3 months duration appears feasible for this estimate')).toBeInTheDocument()
+
+      // Warning callout
+      expect(screen.getAllByText(/Estimated workload exceeds capacity by 14 points\./).length).toBeGreaterThanOrEqual(1)
+
+      // Basis disclaimer
+      expect(
+        screen.getByText(/Values are neutral planning units, not guaranteed Scrum story points or delivery commitments\./),
+      ).toBeInTheDocument()
+    })
+
+    it('displays truthful empty state when SPRINT_PLAN was not generated', () => {
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          view="sprint-plan"
+          outputs={{
+            SYSTEM_ARCHITECTURE: { components: [] },
+          }}
+        />,
+      )
+
+      expect(screen.getByText('No sprint plan was generated for this run.')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'Sprint 1 · Foundation' })).not.toBeInTheDocument()
+    })
+
+    it('supports two-way navigation between Overview, Planning Hierarchy, and Sprint Plan', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={sprintOutputs}
+        />,
+      )
+
+      // 1. Overview -> Planning Hierarchy
+      await user.click(screen.getByRole('button', { name: 'View planning hierarchy' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+
+      // 2. Planning Hierarchy -> Sprint Plan
+      const sprintPlanButtons = screen.getAllByRole('button', { name: /Sprint Plan/i })
+      await user.click(sprintPlanButtons[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Sprint Plan' })).toBeInTheDocument()
+
+      // 3. Sprint Plan -> Planning Hierarchy
+      await user.click(screen.getByRole('button', { name: 'Planning Hierarchy' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+
+      // 4. Planning Hierarchy -> Results Overview
+      await user.click(screen.getAllByRole('button', { name: 'Back to Results Overview' })[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+
+      // 5. Overview -> Sprint Plan -> Results Overview
+      await user.click(screen.getByRole('button', { name: 'View sprint plan' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Sprint Plan' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: '← Back to Results Overview' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+    })
+
+    it('navigates to S2-09 and back in historical RunDetail view without extra API requests', async () => {
+      const user = userEvent.setup()
+      getAgentProjectRun.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-HIST-009',
+          agent_type: 'DESIGN_PLANNING',
+          run_mode: 'DEFAULT',
+          status: 'COMPLETED',
+          selected_outputs: ['EPICS', 'FEATURES', 'USER_STORIES', 'TASKS', 'SPRINT_PLAN'],
+          created_at: '2026-10-14T10:00:00Z',
+          started_at: '2026-10-14T10:00:01Z',
+          completed_at: '2026-10-14T10:00:02Z',
+          warnings: [],
+          errors: [],
+          output_manifest: sprintOutputs,
+        },
+      })
+
+      render(<RunDetail agentProjectId="AGP-002" runId="RUN-HIST-009" />)
+      expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Open S2-09
+      const viewSprintBtn = screen.getByRole('button', { name: 'View sprint plan' })
+      await user.click(viewSprintBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Sprint Plan' })).toBeInTheDocument()
+      expect(screen.getByText('Sprint 1 · Foundation')).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Back to Overview
+      const backButtons = screen.getAllByRole('button', { name: /Back to Results Overview/ })
+      await user.click(backButtons[0])
+
+      expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('S2-10 Task Assignment View', () => {
+    const sampleAssignments = [
+      {
+        task_id: 'TASK-13',
+        team_slot: 'Ravi',
+        role: 'Backend',
+        matching_reasons: ['Backend role', 'FastAPI', 'MongoDB'],
+        role_match: true,
+        skill_matches: ['FastAPI', 'MongoDB'],
+        workload_points_before: 0,
+        confidence_score: 91,
+        confidence: 0.91,
+        rationale: 'Lowest-current-workload consideration: 0 points before assignment. Role matches backend. Matched supplied skills: FastAPI, MongoDB.',
+        sprint_id: 'SPRINT-001',
+      },
+      {
+        task_id: 'TASK-14',
+        team_slot: 'Maya',
+        role: 'Frontend',
+        matching_reasons: ['Frontend role', 'React', 'UI'],
+        role_match: true,
+        skill_matches: ['React', 'UI'],
+        workload_points_before: 0,
+        confidence_score: 88,
+        confidence: 0.88,
+        rationale: 'Role matches frontend. Matched supplied skills: React, UI.',
+        sprint_id: 'SPRINT-001',
+      },
+      {
+        task_id: 'TASK-UNLINKED-99',
+        team_slot: 'Team member 1',
+        role: 'Developer',
+        matching_reasons: ['No named developer details were supplied; this is a team-slot recommendation.'],
+        role_match: false,
+        skill_matches: [],
+        workload_points_before: 5,
+        confidence_score: 50,
+        rationale: 'Generic planning slot recommendation.',
+        sprint_id: 'SPRINT-002',
+      },
+    ]
+
+    const assignmentOutputs = {
+      ...planningOutputs,
+      TASK_ASSIGNMENT: sampleAssignments,
+    }
+
+    it('renders View task assignments action on S2-06 only when TASK_ASSIGNMENT exists in outputs', () => {
+      const { rerender } = render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={planningOutputs}
+        />,
+      )
+
+      expect(screen.queryByRole('button', { name: 'View task assignments' })).not.toBeInTheDocument()
+
+      rerender(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={assignmentOutputs}
+        />,
+      )
+
+      expect(screen.getByRole('button', { name: 'View task assignments' })).toBeInTheDocument()
+    })
+
+    it('navigates to S2-10 locally without extra API requests and renders header, Explainable badge, and table', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={assignmentOutputs}
+          inputs={{ team_composition: 'Ravi: Backend | FastAPI; Maya: Frontend | React' }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View task assignments' }))
+
+      // Header and badge
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+      expect(
+        screen.getByText('Skill-aware heuristic using supplied roles, skills, dependencies and current workload'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('Explainable')).toBeInTheDocument()
+
+      // Card heading and named developer notice
+      expect(screen.getByRole('heading', { level: 3, name: 'Recommended assignments' })).toBeInTheDocument()
+      expect(screen.getByText('Named developers are used only because team_composition was supplied.')).toBeInTheDocument()
+
+      // Table columns
+      expect(screen.getByText('Task')).toBeInTheDocument()
+      expect(screen.getByText('Recommendation')).toBeInTheDocument()
+      expect(screen.getByText('Match reasons')).toBeInTheDocument()
+      expect(screen.getByText('Confidence')).toBeInTheDocument()
+
+      // Real assigned developer rows
+      expect(screen.getByText(/Ravi/)).toBeInTheDocument()
+      expect(screen.getByText(/Maya/)).toBeInTheDocument()
+      expect(screen.getByText('0.91')).toBeInTheDocument()
+      expect(screen.getByText('0.88')).toBeInTheDocument()
+
+      // Safe explainability callouts
+      expect(screen.getByRole('heading', { level: 3, name: 'When names are not supplied' })).toBeInTheDocument()
+      expect(screen.getByText('Agent 2 never fabricates real employees.')).toBeInTheDocument()
+      expect(
+        screen.getByText('These are explainable recommendations, not optimal resource-allocation claims.'),
+      ).toBeInTheDocument()
+
+      // No API requests
+      expect(getAgentProjectRun).not.toHaveBeenCalled()
+    })
+
+    it('enriches task title only when corresponding TASKS output exists, displaying raw ID otherwise', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={assignmentOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View task assignments' }))
+
+      // TASK-13 is in outputs.TASKS -> enriched with title
+      expect(screen.getByText(/TASK-13 · Create booking persistence model/)).toBeInTheDocument()
+
+      // TASK-UNLINKED-99 is not in outputs.TASKS -> raw ID only
+      expect(screen.getByText('TASK-UNLINKED-99')).toBeInTheDocument()
+      expect(screen.queryByText(/TASK-UNLINKED-99 ·/)).not.toBeInTheDocument()
+    })
+
+    it('preserves generic team slots when no named developers were supplied and does not fabricate employee names', async () => {
+      const user = userEvent.setup()
+      const genericAssignments = [
+        {
+          task_id: 'TASK-13',
+          team_slot: 'Team member 1',
+          role: 'Developer',
+          matching_reasons: ['No named developer details were supplied; this is a team-slot recommendation.'],
+          workload_points_before: 0,
+          confidence_score: 50,
+        },
+      ]
+
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={{
+            ...planningOutputs,
+            TASK_ASSIGNMENT: genericAssignments,
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View task assignments' }))
+
+      // Subtitle explains generic planning slots
+      expect(screen.getByText('Generic planning slots are used because team_composition was not supplied.')).toBeInTheDocument()
+
+      // Generic team slot displayed truthfully
+      expect(screen.getAllByText(/Team member 1/).length).toBe(2)
+      expect(screen.getByText('50')).toBeInTheDocument()
+    })
+
+    it('renders match reasons, workload info, and dependencies truthfully without claiming optimal allocation', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={assignmentOutputs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View task assignments' }))
+
+      // Match reasons
+      expect(screen.getByText('Backend role · FastAPI · MongoDB')).toBeInTheDocument()
+      expect(screen.getByText('Frontend role · React · UI')).toBeInTheDocument()
+
+      // Workload info
+      expect(screen.getAllByText('Workload before: 0 pts').length).toBe(2)
+      expect(screen.getByText('Workload before: 5 pts')).toBeInTheDocument()
+
+      // Dependencies (TASK-14 depends on TASK-13 in planningOutputs.TASKS)
+      expect(screen.getByText(/Depends on/)).toBeInTheDocument()
+      expect(screen.getByText('TASK-13')).toBeInTheDocument()
+
+      // Research wording check: no optimal resource-allocation claims
+      expect(screen.queryByText(/optimal employee allocation/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/mathematically optimal/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/guaranteed productivity/i)).not.toBeInTheDocument()
+    })
+
+    it('renders truthful empty state when TASK_ASSIGNMENT was not generated', () => {
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          view="task-assignment"
+          outputs={{
+            SYSTEM_ARCHITECTURE: { components: [] },
+          }}
+        />,
+      )
+
+      expect(screen.getByText('No task assignment recommendations were generated for this run.')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { level: 3, name: 'Recommended assignments' })).not.toBeInTheDocument()
+    })
+
+    it('supports multi-view navigation between Overview, Planning Hierarchy, Sprint Plan, and Task Assignment', async () => {
+      const user = userEvent.setup()
+      const multiOutputs = {
+        ...assignmentOutputs,
+        SPRINT_PLAN: [
+          {
+            id: 'SPRINT-001',
+            name: 'Sprint 1 · Foundation',
+            duration_days: 14,
+            capacity_points: 56,
+            planned_points: 40,
+            utilization_percent: 71.4,
+            item_refs: ['TASK-13'],
+            dependency_notes: [],
+            planning_warnings: [],
+            estimate_basis: 'Capacity basis.',
+          },
+        ],
+      }
+
+      render(
+        <DesignPlanningResults
+          status="COMPLETED"
+          outputs={multiOutputs}
+        />,
+      )
+
+      // 1. Overview -> Task Assignment
+      await user.click(screen.getByRole('button', { name: 'View task assignments' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+
+      // 2. Task Assignment -> Sprint Plan
+      const sprintPlanButtons = screen.getAllByRole('button', { name: /Sprint Plan/i })
+      await user.click(sprintPlanButtons[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Sprint Plan' })).toBeInTheDocument()
+
+      // 3. Sprint Plan -> Task Assignment
+      const taskAssignButtons = screen.getAllByRole('button', { name: /Task Assignment/i })
+      await user.click(taskAssignButtons[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+
+      // 4. Task Assignment -> Planning Hierarchy
+      await user.click(screen.getByRole('button', { name: 'Planning Hierarchy' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+
+      // 5. Planning Hierarchy -> Task Assignment
+      const taskAssignFromHierarchy = screen.getAllByRole('button', { name: /Task Assignment/i })
+      await user.click(taskAssignFromHierarchy[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+
+      // 6. Task Assignment -> Overview
+      const backToOverviewButtons = screen.getAllByRole('button', { name: /Back to Results Overview/i })
+      await user.click(backToOverviewButtons[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+    })
+
+    it('navigates to S2-10 and back in historical RunDetail view without extra API requests', async () => {
+      const user = userEvent.setup()
+      getAgentProjectRun.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-HIST-010',
+          agent_type: 'DESIGN_PLANNING',
+          run_mode: 'DEFAULT',
+          status: 'COMPLETED',
+          selected_outputs: ['EPICS', 'FEATURES', 'USER_STORIES', 'TASKS', 'TASK_ASSIGNMENT'],
+          created_at: '2026-10-14T10:00:00Z',
+          started_at: '2026-10-14T10:00:01Z',
+          completed_at: '2026-10-14T10:00:02Z',
+          warnings: [],
+          errors: [],
+          output_manifest: assignmentOutputs,
+        },
+      })
+
+      render(<RunDetail agentProjectId="AGP-002" runId="RUN-HIST-010" />)
+      expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Open S2-10
+      const viewAssignBtn = screen.getByRole('button', { name: 'View task assignments' })
+      await user.click(viewAssignBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+      expect(screen.getByText(/Ravi/)).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Back to Overview
+      const backButtons = screen.getAllByRole('button', { name: /Back to Results Overview/ })
+      await user.click(backButtons[0])
+
+      expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('S2-11 Jira-compatible Plan View', () => {
+    it('renders S2-11 with title, subtitle, NOT SYNCHRONIZED badge, and synchronization banner matching PNG', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{ JIRA_PLAN: jiraPlan }}
+        />,
+      )
+
+      expect(screen.getByRole('button', { name: 'View Jira plan' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'View Jira plan' }))
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+      expect(
+        screen.getByText('Structured export for Progress Presentation 1 — no Jira Cloud dependency'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('NOT SYNCHRONIZED')).toBeInTheDocument()
+      expect(screen.getByText(/Synchronization:\s*NOT_PERFORMED/)).toBeInTheDocument()
+      expect(
+        screen.getByText('No Jira credentials or remote API calls are used in the standalone MVP.'),
+      ).toBeInTheDocument()
+      expect(screen.queryByText(/Jira Cloud synchronization/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/connected to Jira/i)).not.toBeInTheDocument()
+    })
+
+    it('renders truthful summary metrics for epics, stories, tasks, sprints, and assignments', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{ JIRA_PLAN: jiraPlan }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View Jira plan' }))
+
+      const metricsGroup = screen.getByLabelText('Jira plan metrics')
+      expect(metricsGroup).toBeInTheDocument()
+      expect(within(metricsGroup).getByText('Epics')).toBeInTheDocument()
+      expect(within(metricsGroup).getByText('Stories')).toBeInTheDocument()
+      expect(within(metricsGroup).getByText('Tasks')).toBeInTheDocument()
+      expect(within(metricsGroup).getByText('Sprints')).toBeInTheDocument()
+      expect(within(metricsGroup).getByText('Assignments')).toBeInTheDocument()
+    })
+
+    it('renders the Jira-ready structure table with real issue hierarchy, priorities, and sprint refs', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{ JIRA_PLAN: jiraPlan }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View Jira plan' }))
+
+      const table = screen.getByLabelText('Jira-ready structure table')
+      expect(table).toBeInTheDocument()
+
+      // Headers
+      expect(within(table).getByText('Type')).toBeInTheDocument()
+      expect(within(table).getByText('Key')).toBeInTheDocument()
+      expect(within(table).getByText('Summary')).toBeInTheDocument()
+      expect(within(table).getByText('Priority / Sprint')).toBeInTheDocument()
+
+      // Rows
+      expect(within(table).getByText('Epic')).toBeInTheDocument()
+      expect(within(table).getByText('EPIC-001')).toBeInTheDocument()
+      expect(within(table).getByText('Booking')).toBeInTheDocument()
+
+      expect(within(table).getByText('Story')).toBeInTheDocument()
+      expect(within(table).getByText('STORY-001')).toBeInTheDocument()
+      expect(within(table).getByText('guest · book')).toBeInTheDocument()
+
+      expect(within(table).getByText('Task')).toBeInTheDocument()
+      expect(within(table).getByText('TASK-001')).toBeInTheDocument()
+      expect(within(table).getByText('Build API')).toBeInTheDocument()
+      expect(within(table).getAllByText(/High · Sprint 1/).length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('downloads the exact returned JIRA_PLAN as JSON without Jira sync or network calls', async () => {
+      const user = userEvent.setup()
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{ JIRA_PLAN: jiraPlan }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'View Jira plan' }))
+
+      const downloadBtn = screen.getByRole('button', { name: 'Download Jira-compatible JSON' })
+      expect(downloadBtn).toBeInTheDocument()
+
+      await user.click(downloadBtn)
+      expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+      expect(clickSpy).toHaveBeenCalled()
+      expect(URL.revokeObjectURL).toHaveBeenCalled()
+
+      clickSpy.mockRestore()
+    })
+
+    it('shows truthful empty state when JIRA_PLAN is not generated and does not display Jira navigation', async () => {
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{
+            EPICS: [{ id: 'EPIC-001', title: 'Epic One' }],
+          }}
+        />,
+      )
+
+      // Button to view Jira plan must NOT exist on Results Overview when JIRA_PLAN was not generated
+      expect(screen.queryByRole('button', { name: 'View Jira plan' })).not.toBeInTheDocument()
+    })
+
+    it('supports multi-view navigation across Overview, Planning Hierarchy, Sprint Plan, Task Assignment, and Jira Plan', async () => {
+      const user = userEvent.setup()
+      const fullOutputs = {
+        EPICS: [{ id: 'EPIC-001', title: 'Epic One' }],
+        FEATURES: [{ id: 'FEATURE-001', epic_id: 'EPIC-001', title: 'Feature One' }],
+        USER_STORIES: [{ id: 'STORY-001', epic_id: 'EPIC-001', feature_id: 'FEATURE-001', title: 'Story One' }],
+        TASKS: [{ id: 'TASK-001', story_id: 'STORY-001', title: 'Task One' }],
+        SPRINT_PLAN: [
+          {
+            id: 'SPRINT-001',
+            name: 'Sprint 1',
+            duration_days: 14,
+            capacity_points: 30,
+            planned_points: 5,
+            utilization_percent: 16.7,
+            item_refs: ['TASK-001'],
+          },
+        ],
+        TASK_ASSIGNMENT: [
+          {
+            task_id: 'TASK-001',
+            team_slot: 'Developer 1',
+            role: 'Backend Developer',
+            rationale: 'Skill fit',
+            matching_reasons: ['Skill match'],
+            confidence_score: 85,
+          },
+        ],
+        JIRA_PLAN: jiraPlan,
+      }
+
+      render(<DesignPlanningResults project={{ name: 'BookEase' }} outputs={fullOutputs} />)
+
+      // 1. Overview -> Jira Plan
+      await user.click(screen.getByRole('button', { name: 'View Jira plan' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+
+      // 2. Jira Plan -> Task Assignment
+      const taskAssignButtons = screen.getAllByRole('button', { name: /Task Assignment/i })
+      await user.click(taskAssignButtons[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Task Assignment Recommendations' })).toBeInTheDocument()
+
+      // 3. Task Assignment -> Jira Plan
+      const jiraPlanFromAssign = screen.getAllByRole('button', { name: /Jira Plan/i })
+      await user.click(jiraPlanFromAssign[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+
+      // 4. Jira Plan -> Sprint Plan
+      const sprintPlanButtons = screen.getAllByRole('button', { name: /Sprint Plan/i })
+      await user.click(sprintPlanButtons[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Sprint Plan' })).toBeInTheDocument()
+
+      // 5. Sprint Plan -> Jira Plan
+      const jiraFromSprint = screen.getAllByRole('button', { name: /Jira Plan/i })
+      await user.click(jiraFromSprint[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+
+      // 6. Jira Plan -> Planning Hierarchy
+      await user.click(screen.getByRole('button', { name: 'Planning Hierarchy' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Agile Planning Hierarchy' })).toBeInTheDocument()
+
+      // 7. Planning Hierarchy -> Jira Plan
+      const jiraFromHierarchy = screen.getAllByRole('button', { name: /Jira Plan/i })
+      await user.click(jiraFromHierarchy[0])
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+
+      // 8. Jira Plan -> Overview via "View persisted run"
+      await user.click(screen.getByRole('button', { name: 'View persisted run' }))
+      expect(screen.getByRole('heading', { level: 2, name: 'Agent 2 Results' })).toBeInTheDocument()
+    })
+
+    it('navigates to S2-11 and exports JSON in historical RunDetail view without extra API requests', async () => {
+      const user = userEvent.setup()
+      const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+      getAgentProjectRun.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-HIST-011',
+          agent_type: 'DESIGN_PLANNING',
+          run_mode: 'DEFAULT',
+          status: 'COMPLETED',
+          selected_outputs: ['JIRA_PLAN'],
+          created_at: '2026-10-14T10:00:00Z',
+          started_at: '2026-10-14T10:00:01Z',
+          completed_at: '2026-10-14T10:00:02Z',
+          warnings: [],
+          errors: [],
+          output_manifest: { JIRA_PLAN: jiraPlan },
+        },
+      })
+
+      render(<RunDetail agentProjectId="AGP-002" runId="RUN-HIST-011" />)
+      expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Open S2-11
+      const viewJiraBtn = screen.getByRole('button', { name: 'View Jira plan' })
+      await user.click(viewJiraBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Jira-compatible Plan' })).toBeInTheDocument()
+      expect(screen.getByText('NOT SYNCHRONIZED')).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Test JSON export in historical view
+      await user.click(screen.getByRole('button', { name: 'Download Jira-compatible JSON' }))
+      expect(clickSpy).toHaveBeenCalled()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Back to Overview
+      const backButtons = screen.getAllByRole('button', { name: /Back to Results Overview|View persisted run/ })
+      await user.click(backButtons[0])
+
+      expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      clickSpy.mockRestore()
+    })
+  })
+
+  describe('S2-12 Validation, Traceability & Run History View', () => {
+    it('renders S2-12 with title, subtitle, Evidence available badge, and scope disclaimer matching PNG', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={{
+            EPICS: [{ id: 'EPIC-001', title: 'Booking', source_refs: ['SPEC-003'] }],
+          }}
+        />,
+      )
+
+      const validationBtn = screen.getByRole('button', { name: 'Validation & history' })
+      expect(validationBtn).toBeInTheDocument()
+      await user.click(validationBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Validation, Traceability & Run History' })).toBeInTheDocument()
+      expect(
+        screen.getByText('Evidence for human review and research evaluation'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('Evidence available')).toBeInTheDocument()
+      expect(
+        screen.getByText(
+          'Standalone scope: no Agent 1/3/4 execution · no Orchestrator · no H2 · no integrated SKB write · no Jira Cloud sync · no RAG.',
+        ),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText('Human reviewer can inspect validation and traceability evidence.'),
+      ).toBeInTheDocument()
+    })
+
+    it('renders clean completed run with 0 corrections and no findings without claiming fake checks', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          status="COMPLETED"
+          correction_attempts={0}
+          warnings={[]}
+          errors={[]}
+          outputs={{
+            EPICS: [{ id: 'EPIC-001', title: 'Booking', source_refs: ['SPEC-003'] }],
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Validation & history' }))
+
+      expect(screen.getByText('Run completed after Agent 2 validation')).toBeInTheDocument()
+      expect(screen.getByText(/Correction attempts:\s*0/)).toBeInTheDocument()
+      expect(screen.getByText('No validation findings recorded. Clean execution passed.')).toBeInTheDocument()
+      expect(screen.queryByText(/H2 approved/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/Signed off/i)).not.toBeInTheDocument()
+    })
+
+    it('renders corrected run with real correction attempt count and OUTPUT_CORRECTED warning details', async () => {
+      const user = userEvent.setup()
+      const warningObj = {
+        code: 'OUTPUT_CORRECTED',
+        message: 'Schema auto-corrected by engine repair logic',
+        details: { correction_attempts: 2 },
+      }
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          status="COMPLETED"
+          correction_attempts={2}
+          warnings={[warningObj]}
+          outputs={{
+            EPICS: [{ id: 'EPIC-001', title: 'Booking', source_refs: ['SPEC-003'] }],
+          }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Validation & history' }))
+
+      expect(screen.getByText('Initial validation: findings detected')).toBeInTheDocument()
+      expect(screen.getByText(/Correction attempts:\s*2/)).toBeInTheDocument()
+      expect(screen.getByText(/Automatic correction applied bounded repair/)).toBeInTheDocument()
+      expect(screen.getByText(/OUTPUT_CORRECTED:\s*Schema auto-corrected/)).toBeInTheDocument()
+    })
+
+    it('renders failed run with errors and does not claim validation passed', async () => {
+      const user = userEvent.setup()
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          status="FAILED"
+          errors={[{ code: 'INVALID_TASK_PARENT', message: 'Task references non-existent story' }]}
+          outputs={{}}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Validation & history' }))
+
+      expect(
+        screen.getByText('Run failed validation/execution. Review persisted findings.'),
+      ).toBeInTheDocument()
+      expect(screen.queryByText('Run completed after Agent 2 validation')).not.toBeInTheDocument()
+      expect(screen.getByText(/INVALID_TASK_PARENT:\s*Task references non-existent story/)).toBeInTheDocument()
+    })
+
+    it('renders real traceability references and groups incomplete references safely without fabricating a chain', async () => {
+      const user = userEvent.setup()
+      const outputsWithRefs = {
+        EPICS: [{ id: 'EPIC-001', title: 'Booking', source_refs: ['SPEC-003'] }],
+        TASKS: [{ id: 'TASK-001', title: 'Unlinked Task', source_refs: ['SPEC-004'] }],
+      }
+
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          outputs={outputsWithRefs}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Validation & history' }))
+
+      // Displays real source refs
+      expect(screen.getAllByText(/SPEC-003/).length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText(/SPEC-004/).length).toBeGreaterThanOrEqual(1)
+      // Displays real planning refs
+      expect(screen.getAllByText(/EPIC-001/).length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText(/TASK-001/).length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('renders historical Agent 2 runs table from real AgentRun data without regeneration', async () => {
+      const user = userEvent.setup()
+      const onViewRunMock = vi.fn()
+      const mockRuns = [
+        {
+          run_id: 'RUN-A2-003',
+          created_at: '2026-10-15T18:24:00Z',
+          status: 'COMPLETED',
+          selected_outputs: ['EPICS', 'FEATURES', 'USER_STORIES', 'TASKS', 'SPRINT_PLAN'],
+        },
+        {
+          run_id: 'RUN-A2-002',
+          created_at: '2026-10-15T17:51:00Z',
+          status: 'FAILED',
+          errors: [{ message: 'Structured output invalid' }],
+        },
+      ]
+
+      render(
+        <DesignPlanningResults
+          project={{ name: 'BookEase' }}
+          runs={mockRuns}
+          onViewRun={onViewRunMock}
+          outputs={{ EPICS: [{ id: 'EPIC-001', title: 'Booking' }] }}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Validation & history' }))
+
+      const table = screen.getByLabelText('Historical Agent 2 runs table')
+      expect(table).toBeInTheDocument()
+      expect(within(table).getByText('RUN-A2-003')).toBeInTheDocument()
+      expect(within(table).getByText('RUN-A2-002')).toBeInTheDocument()
+      expect(within(table).getByText('Structured output invalid')).toBeInTheDocument()
+
+      const openButtons = within(table).getAllByRole('button', { name: /Open/i })
+      await user.click(openButtons[0])
+      expect(onViewRunMock).toHaveBeenCalledWith('RUN-A2-003')
+    })
+
+    it('navigates to S2-12 and back to Results Overview in historical RunDetail view without extra API requests', async () => {
+      const user = userEvent.setup()
+      getAgentProjectRun.mockResolvedValueOnce({
+        data: {
+          run_id: 'RUN-HIST-012',
+          agent_type: 'DESIGN_PLANNING',
+          run_mode: 'DEFAULT',
+          status: 'COMPLETED',
+          selected_outputs: ['EPICS', 'TASKS'],
+          created_at: '2026-10-14T10:00:00Z',
+          started_at: '2026-10-14T10:00:01Z',
+          completed_at: '2026-10-14T10:00:02Z',
+          warnings: [{ code: 'OUTPUT_CORRECTED', details: { correction_attempts: 1 } }],
+          errors: [],
+          output_manifest: {
+            EPICS: [{ id: 'EPIC-001', title: 'Historical Booking', source_refs: ['SPEC-003'] }],
+          },
+        },
+      })
+
+      render(<RunDetail agentProjectId="AGP-002" runId="RUN-HIST-012" />)
+      expect(await screen.findByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Open S2-12
+      const validationBtn = screen.getByRole('button', { name: 'Validation & history' })
+      await user.click(validationBtn)
+
+      expect(screen.getByRole('heading', { level: 2, name: 'Validation, Traceability & Run History' })).toBeInTheDocument()
+      expect(screen.getByText('Evidence available')).toBeInTheDocument()
+      expect(screen.getByText(/Correction attempts:\s*1/)).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+
+      // Back to Overview
+      const backButtons = screen.getAllByRole('button', { name: /Back to Results Overview/ })
+      await user.click(backButtons[0])
+
+      expect(screen.getByRole('heading', { name: 'Persisted design and planning outputs' })).toBeInTheDocument()
+      expect(getAgentProjectRun).toHaveBeenCalledTimes(1)
+    })
+  })
+})

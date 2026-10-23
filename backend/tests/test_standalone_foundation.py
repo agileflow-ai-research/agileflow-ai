@@ -487,9 +487,13 @@ def test_persisted_agent4_stage_is_accepted_without_weakening_extras() -> None:
     assert unstaged_project.agent_stage is None
     with pytest.raises(ValidationError, match="extra_forbidden"):
         AgentProject.model_validate({**document, "unknown_field": True})
-    with pytest.raises(ValidationError, match="extra_forbidden"):
+    with pytest.raises(ValidationError, match="agent_stage is only valid for TESTING_VALIDATION projects"):
         AgentProjectCreateRequest.model_validate(
             {**CREATE_PAYLOAD, "agent_stage": "TEST_GENERATION"}
+        )
+    with pytest.raises(ValidationError, match="extra_forbidden"):
+        AgentProjectCreateRequest.model_validate(
+            {**CREATE_PAYLOAD, "unknown_field": True}
         )
     with pytest.raises(ValidationError, match="extra_forbidden"):
         AgentProjectUpdateRequest.model_validate(

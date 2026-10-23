@@ -100,12 +100,12 @@ function RegisterPage() {
 
   return (
     <AuthLayout illustrationSrc={signupIllustration} illustrationAlt="">
-      <main className="w-full max-w-lg rounded-panel border border-default bg-surface p-6 shadow-card sm:p-8 lg:p-10">
+      <main className="auth-form-card">
         <div className="mb-8">
           <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
             Get started
           </p>
-          <h1 className="text-3xl font-bold tracking-tight text-content-primary sm:text-4xl">
+          <h1 className="text-3xl font-bold tracking-tight text-content-primary">
             Create your account
           </h1>
           <p className="mt-3 text-content-secondary">

@@ -223,6 +223,24 @@ describe('AgentProjectOverviewPage', () => {
     expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
   })
 
+  it('mounts the Agent 2 canvas without starting a run', async () => {
+    getAgentProjectById.mockResolvedValue({
+      data: {
+        ...project,
+        agent_type: 'DESIGN_PLANNING',
+        name: 'BookEase Architecture',
+        domain: 'Hospitality',
+      },
+    })
+    getAgentProjectRuns.mockResolvedValue({ data: [] })
+    renderOverview()
+    await screen.findByRole('heading', { level: 1, name: 'BookEase Architecture' })
+    expect(await screen.findByLabelText('Agent 2 design and planning project')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Agent 2 design and planning workflow canvas/i)).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Run History' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Run Agent' })).not.toBeInTheDocument()
+  })
+
   it('keeps archived Agent 1 projects read-only and outside the active canvas page', async () => {
     getAgentProjectById.mockResolvedValue({ data: {
       ...project,
