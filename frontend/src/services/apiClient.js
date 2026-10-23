@@ -112,7 +112,8 @@ export async function request(
   return {
     success: payload?.success ?? true,
     message: payload?.message ?? response.statusText,
-    data: payload?.data ?? null,
+    data: payload?.data !== undefined ? payload.data : (payload ?? null),
+    payload: payload ?? null,
     errors: Array.isArray(payload?.errors) ? payload.errors : [],
     workflow_stage: payload?.workflow_stage ?? null,
     next_action: payload?.next_action ?? null,

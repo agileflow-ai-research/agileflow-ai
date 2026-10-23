@@ -1,5 +1,6 @@
 import Button from '../../../ui/Button.jsx'
 import { downloadJiraPlan } from '../../../../services/jiraPlanExport.js'
+import JiraIntegrationSection from '../../../../features/agents/designPlanning/components/JiraIntegrationSection.jsx'
 
 function formatPriority(priority) {
   if (!priority) return null
@@ -445,6 +446,9 @@ function JiraPlan({
           </Button>
         )}
       </div>
+
+      {/* Jira Cloud Integration & Resource Selection */}
+      <JiraIntegrationSection project={project} />
     </section>
   )
 }
