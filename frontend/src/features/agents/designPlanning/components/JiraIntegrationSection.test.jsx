@@ -139,7 +139,7 @@ describe('JiraIntegrationSection', () => {
   })
 
   // 3. Connect Jira action
-  it('3. Connect Jira action initiates OAuth redirect', async () => {
+  it('3. Connect Jira action opens Jira authorization in a new tab', async () => {
     const user = userEvent.setup()
     jiraService.getJiraContext.mockResolvedValueOnce({ connected: false })
     jiraService.getJiraStatus.mockResolvedValueOnce({ connected: false })
@@ -147,9 +147,7 @@ describe('JiraIntegrationSection', () => {
       authorization_url: 'https://auth.atlassian.com/oauth/authorize?state=abc',
     })
 
-    const assignSpy = vi.fn()
-    delete window.location
-    window.location = { assign: assignSpy, href: '' }
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
 
     render(<JiraIntegrationSection project={project} />)
 
@@ -158,10 +156,13 @@ describe('JiraIntegrationSection', () => {
 
     await waitFor(() => {
       expect(jiraService.startJiraConnection).toHaveBeenCalledOnce()
-      expect(assignSpy).toHaveBeenCalledWith(
+      expect(openSpy).toHaveBeenCalledWith(
         'https://auth.atlassian.com/oauth/authorize?state=abc',
+        '_blank',
+        'noopener,noreferrer',
       )
     })
+    openSpy.mockRestore()
   })
 
   // 4. Connected state
@@ -682,7 +683,9 @@ describe('JiraIntegrationSection', () => {
     render(<JiraIntegrationSection project={project} />)
 
     expect(await screen.findByRole('heading', { name: /Issue Type Mapping/i })).toBeInTheDocument()
-    expect(jiraService.getJiraIssueTypes).toHaveBeenCalled()
+    await waitFor(() => {
+      expect(jiraService.getJiraIssueTypes).toHaveBeenCalled()
+    })
   })
 
   // 29. Auto-suggests obvious mappings but leaves Feature empty when not in Jira

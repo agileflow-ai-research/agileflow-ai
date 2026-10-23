@@ -268,7 +268,7 @@ class UiFlow(BaseModel):
 
 class Epic(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^EPIC-\d{3,}$")
+    id: str = Field(pattern=r"^EPIC-\d{3,}$", description="Canonical epic identifier, e.g. EPIC-001 (never EPIC-1)")
     title: str
     outcome: str
     priority: Literal["HIGHEST", "HIGH", "MEDIUM", "LOW", "LOWEST"]
@@ -277,8 +277,8 @@ class Epic(BaseModel):
 
 class Feature(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^FEATURE-\d{3,}$")
-    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$")
+    id: str = Field(pattern=r"^FEATURE-\d{3,}$", description="Canonical feature identifier, e.g. FEATURE-001 (never FEAT-001 or FEATURE-1)")
+    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$", description="Parent epic identifier, e.g. EPIC-001")
     title: str
     description: str
     source_refs: list[str] = Field(min_length=1)
@@ -286,9 +286,9 @@ class Feature(BaseModel):
 
 class PlanningStory(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^STORY-\d{3,}$")
-    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$")
-    feature_id: str = Field(pattern=r"^FEATURE-\d{3,}$")
+    id: str = Field(pattern=r"^STORY-\d{3,}$", description="Canonical user story identifier, e.g. STORY-001 (never STORY-1)")
+    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$", description="Parent epic identifier, e.g. EPIC-001")
+    feature_id: str = Field(pattern=r"^FEATURE-\d{3,}$", description="Parent feature identifier, e.g. FEATURE-001")
     actor: str
     goal: str
     benefit: str
@@ -300,10 +300,10 @@ class PlanningStory(BaseModel):
 
 class PlanningTask(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^TASK-\d{3,}$")
-    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$")
-    feature_id: str = Field(pattern=r"^FEATURE-\d{3,}$")
-    story_id: str = Field(pattern=r"^STORY-\d{3,}$")
+    id: str = Field(pattern=r"^TASK-\d{3,}$", description="Canonical task identifier, e.g. TASK-001 (never TASK-1)")
+    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$", description="Parent epic identifier, e.g. EPIC-001")
+    feature_id: str = Field(pattern=r"^FEATURE-\d{3,}$", description="Parent feature identifier, e.g. FEATURE-001")
+    story_id: str = Field(pattern=r"^STORY-\d{3,}$", description="Parent story identifier, e.g. STORY-001")
     title: str
     description: str
     required_skills: list[str]
@@ -314,21 +314,21 @@ class PlanningTask(BaseModel):
 
 class BacklogItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    item_id: str
+    item_id: str = Field(description="Canonical work item identifier matching the epic/feature/story/task ID, e.g. EPIC-001, FEATURE-001 (never PB-001)")
     item_type: Literal["EPIC", "FEATURE", "STORY", "TASK"]
     title: str
     priority: Literal["HIGHEST", "HIGH", "MEDIUM", "LOW", "LOWEST"]
-    parent_id: str | None
+    parent_id: str | None = Field(default=None, description="Parent item identifier (null for EPIC, EPIC-### for FEATURE, FEATURE-### for STORY, STORY-### for TASK)")
     source_refs: list[str] = Field(min_length=1)
 
 
 class Sprint(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^SPRINT-\d{3,}$")
+    id: str = Field(pattern=r"^SPRINT-\d{3,}$", description="Canonical sprint identifier, e.g. SPRINT-001 (never SPRINT-1)")
     name: str
     duration_days: int = Field(gt=0)
     capacity_points: int | None = Field(default=None, gt=0)
-    item_refs: list[str] = Field(min_length=1)
+    item_refs: list[str] = Field(min_length=1, description="List of work item identifiers, e.g. TASK-001, STORY-001")
     dependency_notes: list[str]
     planned_points: int = Field(default=0, ge=0)
     utilization_percent: float | None = Field(default=None, ge=0)

@@ -122,6 +122,35 @@ function JiraIntegrationSection({ project, outputs = null, runId = null }) {
     }
   }, [])
 
+  // Auto-refresh connection status when user returns to this tab after authorizing in a new tab
+  useEffect(() => {
+    if (context?.connected) return
+    let isMounted = true
+
+    async function checkConnectionOnFocus() {
+      try {
+        const [freshContext, freshStatus] = await Promise.all([
+          getJiraContext(),
+          getJiraStatus(),
+        ])
+        if (!isMounted) return
+        if (freshContext?.connected) {
+          setContext(freshContext)
+          setStatusInfo(freshStatus)
+          setSuccessNotice('Jira Cloud authorized successfully!')
+        }
+      } catch {
+        // Silently ignore background refresh errors
+      }
+    }
+
+    window.addEventListener('focus', checkConnectionOnFocus)
+    return () => {
+      isMounted = false
+      window.removeEventListener('focus', checkConnectionOnFocus)
+    }
+  }, [context?.connected])
+
   // Check for any existing synchronization record for this run
   useEffect(() => {
     let isMounted = true
@@ -243,12 +272,13 @@ function JiraIntegrationSection({ project, outputs = null, runId = null }) {
     try {
       const res = await startJiraConnection()
       if (res?.authorization_url) {
-        window.location.assign(res.authorization_url)
+        window.open(res.authorization_url, '_blank', 'noopener,noreferrer')
       } else {
         throw new Error('No authorization URL returned by Jira integration service')
       }
     } catch (err) {
       setErrorMessage(normalizeJiraError(err))
+    } finally {
       setConnecting(false)
     }
   }
@@ -500,9 +530,23 @@ function JiraIntegrationSection({ project, outputs = null, runId = null }) {
               variant="primary"
               onClick={handleConnect}
               loading={connecting}
-              loadingLabel="Redirecting to Jira"
+              loadingLabel="Opening Jira..."
             >
               Connect Jira
+              <svg
+                aria-hidden="true"
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                />
+              </svg>
             </Button>
           </div>
         ) : (
