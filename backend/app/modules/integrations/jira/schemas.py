@@ -1,7 +1,7 @@
 """Schemas for Jira Cloud OAuth 2.0 (3LO) integration and resource discovery."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -216,6 +216,105 @@ class JiraContextResponse(BaseModel):
     site: JiraContextSite | None = None
     project: JiraContextProject | None = None
     board: JiraContextBoard | None = None
+
+
+# ---------------------------------------------------------------------------
+# Issue Types & Sync Preview Schemas
+# ---------------------------------------------------------------------------
+
+
+class JiraIssueTypeResponse(BaseModel):
+    """Normalized safe metadata for a Jira issue type."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    subtask: bool = False
+    hierarchy_level: int = 0
+
+
+class JiraPreviewTarget(BaseModel):
+    """Target Jira environment for synchronization preview."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    site: JiraContextSite
+    project: JiraContextProject
+    board: JiraContextBoard
+
+
+class JiraPreviewSprint(BaseModel):
+    """Sprint details included in the synchronization preview."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    name: str
+    planned_points: int = 0
+    duration_days: int = 14
+    start_date: str | None = None
+    end_date: str | None = None
+    item_count: int = 0
+
+
+class JiraPreviewIssue(BaseModel):
+    """Deterministic preview issue preserving AgileFlow artifact identifiers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_id: str
+    agileflow_type: Literal["EPIC", "FEATURE", "USER_STORY", "TASK"]
+    jira_issue_type: str
+    summary: str
+    parent_id: str | None = None
+    planned_sprint: str | None = None
+    assignee: None = None
+    priority: str | None = None
+    estimate_points: int | None = None
+
+
+class JiraPreviewSummary(BaseModel):
+    """Aggregate metric counts for synchronization preview."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    total_issues: int
+    total_sprints: int
+    epic_count: int
+    feature_count: int
+    story_count: int
+    task_count: int
+    total_points: int = 0
+
+
+class JiraPreviewResponse(BaseModel):
+    """Deterministic Jira synchronization preview response.
+
+    Guarantees synchronization_status is strictly NOT_PERFORMED and zero Jira
+    data has been written or modified.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    target: JiraPreviewTarget
+    mappings: dict[str, str]
+    sprints: list[JiraPreviewSprint]
+    issues: list[JiraPreviewIssue]
+    summary: JiraPreviewSummary
+    warnings: list[str] = Field(default_factory=list)
+    synchronization_status: Literal["NOT_PERFORMED"] = "NOT_PERFORMED"
+
+
+class JiraSyncPreviewRequest(BaseModel):
+    """Request payload to generate a deterministic Jira sync preview."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_project_id: str = Field(min_length=1)
+    run_id: str | None = None
+    mappings: dict[str, str] = Field(min_length=1)
+    outputs: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------

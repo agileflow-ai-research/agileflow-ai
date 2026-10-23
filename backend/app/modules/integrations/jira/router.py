@@ -22,6 +22,8 @@ from app.modules.integrations.jira.schemas import (
     JiraConnectResponse,
     JiraContextResponse,
     JiraDisconnectResponse,
+    JiraIssueTypeResponse,
+    JiraPreviewResponse,
     JiraProjectResponse,
     JiraSelectBoardRequest,
     JiraSelectProjectRequest,
@@ -31,16 +33,21 @@ from app.modules.integrations.jira.schemas import (
     JiraSelectedSite,
     JiraSiteResponse,
     JiraStatusResponse,
+    JiraSyncPreviewRequest,
 )
 from app.modules.integrations.jira.service import (
     JiraApiClientError,
     JiraAuthenticationError,
     JiraBoardNotAccessibleError,
     JiraBoardNotScrumError,
+    JiraBoardNotSelectedError,
     JiraConfiguration,
     JiraConfigurationError,
     JiraCrossUserStateError,
+    JiraHierarchyInvalidError,
+    JiraIssueTypeUnavailableError,
     JiraMalformedResponseError,
+    JiraMappingIncompleteError,
     JiraMissingCodeError,
     JiraNetworkError,
     JiraNetworkTimeoutError,
@@ -49,6 +56,7 @@ from app.modules.integrations.jira.service import (
     JiraOAuthClient,
     JiraOAuthService,
     JiraPermissionError,
+    JiraPlanUnavailableError,
     JiraProjectNotAccessibleError,
     JiraProjectNotSelectedError,
     JiraRateLimitError,
@@ -63,6 +71,8 @@ from app.modules.integrations.jira.service import (
     JiraStateStore,
     JiraUpstreamError,
 )
+from app.modules.standalone.router import get_standalone_service
+from app.modules.standalone.service import StandaloneService
 
 router = APIRouter(prefix="/integrations/jira", tags=["integrations-jira"])
 
@@ -204,6 +214,41 @@ def _handle_jira_exception(exc: Exception) -> JSONResponse:
             message="JIRA_BOARD_NOT_SCRUM",
             field="board_id",
             detail=f"JIRA_BOARD_NOT_SCRUM: {exc}",
+        )
+    if isinstance(exc, JiraBoardNotSelectedError):
+        return _error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="JIRA_BOARD_NOT_SELECTED",
+            field="board",
+            detail=f"JIRA_BOARD_NOT_SELECTED: {exc}",
+        )
+    if isinstance(exc, JiraPlanUnavailableError):
+        return _error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="JIRA_PLAN_UNAVAILABLE",
+            field="jira_plan",
+            detail=f"JIRA_PLAN_UNAVAILABLE: {exc}",
+        )
+    if isinstance(exc, JiraMappingIncompleteError):
+        return _error_response(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            message="JIRA_MAPPING_INCOMPLETE",
+            field="mappings",
+            detail=f"JIRA_MAPPING_INCOMPLETE: {exc}",
+        )
+    if isinstance(exc, JiraIssueTypeUnavailableError):
+        return _error_response(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            message="JIRA_ISSUE_TYPE_UNAVAILABLE",
+            field="mappings",
+            detail=f"JIRA_ISSUE_TYPE_UNAVAILABLE: {exc}",
+        )
+    if isinstance(exc, JiraHierarchyInvalidError):
+        return _error_response(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            message="JIRA_HIERARCHY_INVALID",
+            field="hierarchy",
+            detail=f"JIRA_HIERARCHY_INVALID: {exc}",
         )
     if isinstance(exc, JiraRateLimitError):
         return _error_response(
@@ -597,5 +642,58 @@ def get_jira_context(
     """
     try:
         return service.get_context(user_id=current_user.user_id)
+    except Exception as exc:
+        return _handle_jira_exception(exc)
+
+
+@router.get(
+    "/issue-types",
+    response_model=list[JiraIssueTypeResponse],
+    status_code=status.HTTP_200_OK,
+)
+def get_jira_issue_types(
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+    api_client: Annotated[JiraApiClient, Depends(get_jira_api_client)],
+) -> list[JiraIssueTypeResponse] | JSONResponse:
+    """Retrieve available Jira issue types for the currently selected project."""
+    try:
+        return service.get_project_issue_types(
+            user_id=current_user.user_id,
+            client=api_client,
+        )
+    except Exception as exc:
+        return _handle_jira_exception(exc)
+
+
+@router.post(
+    "/preview",
+    response_model=JiraPreviewResponse,
+    status_code=status.HTTP_200_OK,
+)
+def generate_jira_sync_preview(
+    payload: JiraSyncPreviewRequest,
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+    api_client: Annotated[JiraApiClient, Depends(get_jira_api_client)],
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+) -> JiraPreviewResponse | JSONResponse:
+    """Generate a deterministic synchronization preview for Agent 2 planning results.
+
+    Validates Jira connection, target resources, planning outputs, issue-type mappings,
+    and hierarchy integrity. Makes ZERO Jira write or mutation requests.
+    """
+    try:
+        return service.build_sync_preview(
+            user_id=current_user.user_id,
+            agent_project_id=payload.agent_project_id,
+            mappings=payload.mappings,
+            run_id=payload.run_id,
+            outputs=payload.outputs,
+            client=api_client,
+            standalone_service=standalone_service,
+        )
     except Exception as exc:
         return _handle_jira_exception(exc)

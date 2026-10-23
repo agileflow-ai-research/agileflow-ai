@@ -448,7 +448,11 @@ function JiraPlan({
       </div>
 
       {/* Jira Cloud Integration & Resource Selection */}
-      <JiraIntegrationSection project={project} />
+      <JiraIntegrationSection
+        project={project}
+        outputs={safeOutputs}
+        runId={run?.id || result?.run_id || project?.run_id}
+      />
     </section>
   )
 }

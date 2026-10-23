@@ -135,6 +135,90 @@ export async function getJiraContext() {
 }
 
 /**
+ * Retrieve issue types available for the currently selected Jira project.
+ */
+export async function getJiraIssueTypes() {
+  const response = await apiClient.get(`${JIRA_BASE_PATH}/issue-types`, {
+    authenticated: true,
+  })
+  return response.data ?? response.payload ?? []
+}
+
+/**
+ * Generate deterministic synchronization preview.
+ */
+export async function generateJiraSyncPreview({
+  agent_project_id,
+  run_id = null,
+  mappings,
+  outputs = null,
+}) {
+  const response = await apiClient.post(
+    `${JIRA_BASE_PATH}/preview`,
+    {
+      agent_project_id,
+      run_id,
+      mappings,
+      outputs,
+    },
+    { authenticated: true },
+  )
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Auto-suggest obvious mappings from AgileFlow hierarchy to available Jira issue types.
+ *
+ * Rules:
+ * - Epic -> 'Epic' if unambiguous
+ * - User Story -> 'Story' or 'User Story' if unambiguous
+ * - Task -> 'Task' if unambiguous
+ * - Feature -> 'Feature' if exact match, else empty (human must choose)
+ */
+export function suggestIssueTypeMappings(issueTypes = []) {
+  const suggestions = {
+    EPIC: '',
+    FEATURE: '',
+    USER_STORY: '',
+    TASK: '',
+  }
+
+  if (!Array.isArray(issueTypes)) return suggestions
+
+  const epicMatches = issueTypes.filter(
+    (t) => String(t.name || '').toLowerCase() === 'epic',
+  )
+  if (epicMatches.length === 1) {
+    suggestions.EPIC = epicMatches[0].name
+  }
+
+  const storyMatches = issueTypes.filter(
+    (t) =>
+      ['story', 'user story'].includes(String(t.name || '').toLowerCase()) &&
+      !t.subtask,
+  )
+  if (storyMatches.length === 1) {
+    suggestions.USER_STORY = storyMatches[0].name
+  }
+
+  const taskMatches = issueTypes.filter(
+    (t) => String(t.name || '').toLowerCase() === 'task' && !t.subtask,
+  )
+  if (taskMatches.length === 1) {
+    suggestions.TASK = taskMatches[0].name
+  }
+
+  const featureMatches = issueTypes.filter(
+    (t) => String(t.name || '').toLowerCase() === 'feature' && !t.subtask,
+  )
+  if (featureMatches.length === 1) {
+    suggestions.FEATURE = featureMatches[0].name
+  }
+
+  return suggestions
+}
+
+/**
  * Clean temporary Jira callback query parameters from the browser URL.
  */
 export function cleanJiraCallbackParams() {
@@ -203,11 +287,26 @@ export function normalizeJiraError(error) {
   if (messageText.includes('JIRA_PROJECT_NOT_ACCESSIBLE')) {
     return 'The selected project could not be accessed. Please choose another project.'
   }
+  if (messageText.includes('JIRA_BOARD_NOT_SELECTED')) {
+    return 'Please select a Scrum board before proceeding.'
+  }
   if (messageText.includes('JIRA_BOARD_NOT_ACCESSIBLE')) {
     return 'The selected board could not be accessed for this project.'
   }
   if (messageText.includes('JIRA_BOARD_NOT_SCRUM')) {
     return 'Only Scrum boards are supported for sprint synchronization.'
+  }
+  if (messageText.includes('JIRA_PLAN_UNAVAILABLE')) {
+    return 'A completed Agent 2 run with JIRA_PLAN is required for sync preview.'
+  }
+  if (messageText.includes('JIRA_MAPPING_INCOMPLETE')) {
+    return 'Please select a compatible Jira issue type for all required artifact types.'
+  }
+  if (messageText.includes('JIRA_ISSUE_TYPE_UNAVAILABLE')) {
+    return 'One or more selected Jira issue types are not available in this project.'
+  }
+  if (messageText.includes('JIRA_HIERARCHY_INVALID')) {
+    return 'Planning hierarchy reference is invalid. Your Agent 2 results are unchanged.'
   }
   if (messageText.includes('JIRA_RATE_LIMITED') || error.status === 429) {
     return 'Jira is temporarily limiting requests. Please try again shortly.'

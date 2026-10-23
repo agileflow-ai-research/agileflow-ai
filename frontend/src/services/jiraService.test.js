@@ -3,8 +3,10 @@ import { apiClient } from './apiClient.js'
 import {
   cleanJiraCallbackParams,
   disconnectJira,
+  generateJiraSyncPreview,
   getJiraBoards,
   getJiraContext,
+  getJiraIssueTypes,
   getJiraProjects,
   getJiraSites,
   getJiraStatus,
@@ -13,6 +15,7 @@ import {
   selectJiraProject,
   selectJiraSite,
   startJiraConnection,
+  suggestIssueTypeMappings,
 } from './jiraService.js'
 
 vi.mock('./apiClient.js', () => ({
@@ -20,6 +23,7 @@ vi.mock('./apiClient.js', () => ({
     get: vi.fn(),
     put: vi.fn(),
     delete: vi.fn(),
+    post: vi.fn(),
   },
 }))
 
@@ -159,6 +163,85 @@ describe('jiraService', () => {
     expect(result).toEqual(mockContext)
   })
 
+  it('getJiraIssueTypes calls GET /integrations/jira/issue-types', async () => {
+    const mockTypes = [
+      { id: '10000', name: 'Epic', subtask: false, hierarchy_level: 1 },
+      { id: '10001', name: 'Story', subtask: false, hierarchy_level: 0 },
+      { id: '10002', name: 'Task', subtask: false, hierarchy_level: 0 },
+    ]
+    apiClient.get.mockResolvedValueOnce({ data: mockTypes })
+
+    const result = await getJiraIssueTypes()
+    expect(apiClient.get).toHaveBeenCalledWith('/integrations/jira/issue-types', {
+      authenticated: true,
+    })
+    expect(result).toEqual(mockTypes)
+  })
+
+  it('generateJiraSyncPreview calls POST /integrations/jira/preview', async () => {
+    const mockPreview = {
+      target: { site: {}, project: {}, board: {} },
+      mappings: { EPIC: 'Epic', FEATURE: 'Story', USER_STORY: 'Story', TASK: 'Task' },
+      sprints: [],
+      issues: [],
+      summary: {},
+      warnings: [],
+      synchronization_status: 'NOT_PERFORMED',
+    }
+    apiClient.post.mockResolvedValueOnce({ data: mockPreview })
+
+    const payload = {
+      agent_project_id: 'proj-123',
+      run_id: 'run-456',
+      mappings: { EPIC: 'Epic', FEATURE: 'Story', USER_STORY: 'Story', TASK: 'Task' },
+      outputs: null,
+    }
+    const result = await generateJiraSyncPreview(payload)
+    expect(apiClient.post).toHaveBeenCalledWith(
+      '/integrations/jira/preview',
+      payload,
+      { authenticated: true },
+    )
+    expect(result).toEqual(mockPreview)
+  })
+
+  describe('suggestIssueTypeMappings', () => {
+    it('auto-suggests obvious mappings when present', () => {
+      const issueTypes = [
+        { id: '1', name: 'Epic', subtask: false },
+        { id: '2', name: 'Story', subtask: false },
+        { id: '3', name: 'Task', subtask: false },
+        { id: '4', name: 'Sub-task', subtask: true },
+      ]
+      const mappings = suggestIssueTypeMappings(issueTypes)
+      expect(mappings.EPIC).toBe('Epic')
+      expect(mappings.USER_STORY).toBe('Story')
+      expect(mappings.TASK).toBe('Task')
+      expect(mappings.FEATURE).toBe('') // Feature does not exist, left blank for human
+    })
+
+    it('maps Feature if Jira project explicitly defines Feature', () => {
+      const issueTypes = [
+        { id: '1', name: 'Epic', subtask: false },
+        { id: '2', name: 'Feature', subtask: false },
+        { id: '3', name: 'Story', subtask: false },
+        { id: '4', name: 'Task', subtask: false },
+      ]
+      const mappings = suggestIssueTypeMappings(issueTypes)
+      expect(mappings.FEATURE).toBe('Feature')
+    })
+
+    it('handles empty or non-array issue types safely', () => {
+      const mappings = suggestIssueTypeMappings(null)
+      expect(mappings).toEqual({
+        EPIC: '',
+        FEATURE: '',
+        USER_STORY: '',
+        TASK: '',
+      })
+    })
+  })
+
   describe('cleanJiraCallbackParams', () => {
     it('detects connected param and cleans URL without reload', () => {
       delete window.location
@@ -199,6 +282,31 @@ describe('jiraService', () => {
     it('maps JIRA_BOARD_NOT_SCRUM correctly', () => {
       const msg = normalizeJiraError({ message: 'JIRA_BOARD_NOT_SCRUM' })
       expect(msg).toContain('Only Scrum boards are supported')
+    })
+
+    it('maps JIRA_BOARD_NOT_SELECTED correctly', () => {
+      const msg = normalizeJiraError({ message: 'JIRA_BOARD_NOT_SELECTED' })
+      expect(msg).toContain('Please select a Scrum board')
+    })
+
+    it('maps JIRA_PLAN_UNAVAILABLE correctly', () => {
+      const msg = normalizeJiraError({ message: 'JIRA_PLAN_UNAVAILABLE' })
+      expect(msg).toContain('A completed Agent 2 run with JIRA_PLAN is required')
+    })
+
+    it('maps JIRA_MAPPING_INCOMPLETE correctly', () => {
+      const msg = normalizeJiraError({ message: 'JIRA_MAPPING_INCOMPLETE: Feature is unmapped' })
+      expect(msg).toContain('Please select a compatible Jira issue type')
+    })
+
+    it('maps JIRA_ISSUE_TYPE_UNAVAILABLE correctly', () => {
+      const msg = normalizeJiraError({ message: 'JIRA_ISSUE_TYPE_UNAVAILABLE: Type Foo not found' })
+      expect(msg).toContain('One or more selected Jira issue types are not available')
+    })
+
+    it('maps JIRA_HIERARCHY_INVALID correctly', () => {
+      const msg = normalizeJiraError({ message: 'JIRA_HIERARCHY_INVALID: Parent missing' })
+      expect(msg).toContain('Planning hierarchy reference is invalid')
     })
 
     it('maps JIRA_UPSTREAM_ERROR without leaking raw details', () => {

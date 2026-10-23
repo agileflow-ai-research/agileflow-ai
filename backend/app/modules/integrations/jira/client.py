@@ -182,6 +182,32 @@ class JiraApiClient:
             )
         return data
 
+    def get_project_issue_types(
+        self, user_id: str, cloud_id: str, project_id_or_key: str
+    ) -> list[dict[str, Any]]:
+        """Fetch issue types available for a project on Jira Cloud."""
+        url = build_jira_cloud_url(
+            cloud_id, f"rest/api/3/issue/createmeta/{project_id_or_key}/issuetypes"
+        )
+        try:
+            data = self.request(user_id=user_id, method="GET", url=url)
+            if isinstance(data, dict):
+                if "values" in data and isinstance(data["values"], list):
+                    return data["values"]
+                if "issueTypes" in data and isinstance(data["issueTypes"], list):
+                    return data["issueTypes"]
+            if isinstance(data, list):
+                return data
+        except Exception:
+            pass
+
+        # Fallback to get_project issueTypes
+        project_data = self.get_project(user_id, cloud_id, project_id_or_key)
+        raw_types = project_data.get("issueTypes")
+        if isinstance(raw_types, list):
+            return raw_types
+        return []
+
     def get_scrum_boards(
         self,
         user_id: str,

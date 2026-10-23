@@ -33,12 +33,19 @@ from app.modules.integrations.jira.schemas import (
     JiraContextProject,
     JiraContextResponse,
     JiraContextSite,
+    JiraIssueTypeResponse,
+    JiraPreviewIssue,
+    JiraPreviewResponse,
+    JiraPreviewSprint,
+    JiraPreviewSummary,
+    JiraPreviewTarget,
     JiraProjectResponse,
     JiraSelectedBoard,
     JiraSelectedProject,
     JiraSelectedSite,
     JiraSiteResponse,
     JiraStatusResponse,
+    JiraSyncPreviewRequest,
 )
 
 
@@ -260,6 +267,89 @@ class JiraBoardNotScrumError(JiraIntegrationError):
     """Raised when a selected board is not a Scrum board."""
 
     error_code: str = "JIRA_BOARD_NOT_SCRUM"
+
+
+class JiraBoardNotSelectedError(JiraIntegrationError):
+    """Raised when an operation requires a selected Scrum board."""
+
+    error_code: str = "JIRA_BOARD_NOT_SELECTED"
+
+
+class JiraPlanUnavailableError(JiraIntegrationError):
+    """Raised when JIRA_PLAN is not available in the specified Agent 2 run."""
+
+    error_code: str = "JIRA_PLAN_UNAVAILABLE"
+
+
+class JiraMappingIncompleteError(JiraIntegrationError):
+    """Raised when one or more required artifact types lack a Jira issue type mapping."""
+
+    error_code: str = "JIRA_MAPPING_INCOMPLETE"
+
+
+class JiraIssueTypeUnavailableError(JiraIntegrationError):
+    """Raised when a mapped Jira issue type does not exist in the selected Jira project."""
+
+    error_code: str = "JIRA_ISSUE_TYPE_UNAVAILABLE"
+
+
+class JiraHierarchyInvalidError(JiraIntegrationError):
+    """Raised when a required hierarchy reference is broken or invalid."""
+
+    error_code: str = "JIRA_HIERARCHY_INVALID"
+
+
+def suggest_issue_type_mappings(
+    issue_types: list[JiraIssueTypeResponse],
+) -> dict[str, str | None]:
+    """Auto-suggest unambiguous mappings from AgileFlow to Jira issue types.
+
+    Rules:
+    - Epic -> 'Epic' if unambiguous
+    - User Story -> 'Story' or 'User Story' if unambiguous
+    - Task -> 'Task' if unambiguous
+    - Feature -> 'Feature' if exact match, otherwise None (human selection required)
+    """
+    suggestions: dict[str, str | None] = {
+        "EPIC": None,
+        "FEATURE": None,
+        "USER_STORY": None,
+        "TASK": None,
+    }
+
+    # Match Epic (standard or epic hierarchy)
+    epic_matches = [t.name for t in issue_types if t.name.lower() == "epic"]
+    if len(epic_matches) == 1:
+        suggestions["EPIC"] = epic_matches[0]
+
+    # Match User Story (non-subtask)
+    story_matches = [
+        t.name
+        for t in issue_types
+        if t.name.lower() in ("story", "user story") and not t.subtask
+    ]
+    if len(story_matches) == 1:
+        suggestions["USER_STORY"] = story_matches[0]
+
+    # Match Task (non-subtask)
+    task_matches = [
+        t.name
+        for t in issue_types
+        if t.name.lower() == "task" and not t.subtask
+    ]
+    if len(task_matches) == 1:
+        suggestions["TASK"] = task_matches[0]
+
+    # Match Feature (strictly exact non-subtask match; never invented)
+    feature_matches = [
+        t.name
+        for t in issue_types
+        if t.name.lower() == "feature" and not t.subtask
+    ]
+    if len(feature_matches) == 1:
+        suggestions["FEATURE"] = feature_matches[0]
+
+    return suggestions
 
 
 # ---------------------------------------------------------------------------
@@ -1123,3 +1213,367 @@ class JiraOAuthService:
             separator = "&" if "?" in base_url else "?"
             return f"{base_url}{separator}jira_connected=true"
         return base_url
+
+    def get_project_issue_types(
+        self,
+        user_id: str,
+        client: Any = None,
+    ) -> list[JiraIssueTypeResponse]:
+        """Fetch and normalize available issue types for the currently selected Jira project."""
+        site = self.get_selected_site(user_id)
+        project = self.get_selected_project(user_id)
+        api_client = self.get_api_client(client)
+
+        raw_types = api_client.get_project_issue_types(
+            user_id=user_id,
+            cloud_id=site.cloud_id,
+            project_id_or_key=project.project_key or project.project_id,
+        )
+
+        issue_types: list[JiraIssueTypeResponse] = []
+        for item in raw_types:
+            if not isinstance(item, dict) or "id" not in item or "name" not in item:
+                continue
+            is_subtask = bool(item.get("subtask", False))
+            raw_hlevel = item.get("hierarchyLevel")
+            if raw_hlevel is not None:
+                try:
+                    hierarchy_level = int(raw_hlevel)
+                except (ValueError, TypeError):
+                    hierarchy_level = -1 if is_subtask else (1 if str(item["name"]).lower() == "epic" else 0)
+            else:
+                hierarchy_level = -1 if is_subtask else (1 if str(item["name"]).lower() == "epic" else 0)
+
+            issue_types.append(
+                JiraIssueTypeResponse(
+                    id=str(item["id"]),
+                    name=str(item["name"]),
+                    subtask=is_subtask,
+                    hierarchy_level=hierarchy_level,
+                )
+            )
+
+        return issue_types
+
+    def build_sync_preview(
+        self,
+        user_id: str,
+        agent_project_id: str,
+        mappings: dict[str, str],
+        run_id: str | None = None,
+        outputs: dict[str, Any] | None = None,
+        client: Any = None,
+        standalone_service: Any = None,
+    ) -> JiraPreviewResponse:
+        """Construct a deterministic Jira sync preview for Agent 2 planning results.
+
+        Validates connection, target selections, planning artifacts, and issue-type mappings.
+        Performs ZERO Jira write or mutation requests.
+        """
+        # 1. Connection check
+        doc = self._repository.find_by_owner(user_id)
+        if doc is None or doc.get("status") == "REAUTHORIZATION_REQUIRED":
+            raise JiraNotConnectedError("Jira is not connected")
+
+        # 2. Site check
+        site = self.get_selected_site(user_id)
+
+        # 3. Project check
+        project = self.get_selected_project(user_id)
+
+        # 4. Board check
+        board_data = doc.get("selected_board") if doc else None
+        if not board_data:
+            raise JiraBoardNotSelectedError("A Scrum board has not been selected yet")
+        board = JiraSelectedBoard.model_validate(board_data)
+
+        # 5. Resolve Agent 2 outputs
+        resolved_outputs: dict[str, Any] | None = None
+        if outputs and isinstance(outputs, dict) and "JIRA_PLAN" in outputs:
+            resolved_outputs = outputs
+        elif standalone_service is not None:
+            user_ctx = UserPublicResponse(
+                user_id=user_id,
+                name="User",
+                email="user@example.com",
+                is_active=True,
+                created_at=self._clock(),
+                updated_at=self._clock(),
+            )
+            try:
+                if run_id:
+                    run = standalone_service.get_run(agent_project_id, run_id, user_ctx)
+                    resolved_outputs = run.output_manifest if hasattr(run, "output_manifest") else {}
+                else:
+                    runs = standalone_service.list_runs(agent_project_id, user_ctx)
+                    for r in reversed(runs):
+                        status_val = r.status.value if hasattr(r.status, "value") else str(r.status)
+                        if status_val == "COMPLETED" and "JIRA_PLAN" in (r.output_manifest or {}):
+                            resolved_outputs = r.output_manifest
+                            break
+            except Exception as exc:
+                if isinstance(exc, JiraIntegrationError):
+                    raise
+                raise JiraPlanUnavailableError(
+                    f"Could not load completed Agent 2 run: {exc}"
+                ) from exc
+
+        if not resolved_outputs or "JIRA_PLAN" not in resolved_outputs:
+            raise JiraPlanUnavailableError(
+                "A completed Agent 2 run with JIRA_PLAN is required for sync preview"
+            )
+
+        jira_plan = resolved_outputs["JIRA_PLAN"]
+        if not isinstance(jira_plan, dict):
+            raise JiraPlanUnavailableError("JIRA_PLAN must be a dictionary")
+
+        # 6. Retrieve available project issue types
+        project_issue_types = self.get_project_issue_types(user_id=user_id, client=client)
+        by_name = {t.name.lower(): t for t in project_issue_types}
+        by_id = {t.id: t for t in project_issue_types}
+
+        # 7. Validate issue-type mappings
+        normalized_mappings: dict[str, str] = {}
+        for k, v in mappings.items():
+            if isinstance(k, str) and v is not None and str(v).strip():
+                norm_key = k.strip().upper()
+                if norm_key in ("EPIC", "FEATURE", "USER_STORY", "TASK"):
+                    normalized_mappings[norm_key] = str(v).strip()
+
+        epics_list = jira_plan.get("epics") or []
+        stories_list = jira_plan.get("stories") or []
+        tasks_list = jira_plan.get("tasks") or []
+        features_list = resolved_outputs.get("FEATURES") or []
+
+        has_epics = len(epics_list) > 0
+        has_stories = len(stories_list) > 0
+        has_tasks = len(tasks_list) > 0
+        has_features = len(features_list) > 0 or any(
+            isinstance(s, dict) and bool(s.get("feature_id")) for s in stories_list
+        )
+
+        if has_epics and not normalized_mappings.get("EPIC"):
+            raise JiraMappingIncompleteError("Mapping for artifact type 'EPIC' is required")
+        if has_stories and not normalized_mappings.get("USER_STORY"):
+            raise JiraMappingIncompleteError("Mapping for artifact type 'USER_STORY' is required")
+        if has_tasks and not normalized_mappings.get("TASK"):
+            raise JiraMappingIncompleteError("Mapping for artifact type 'TASK' is required")
+        if has_features and not normalized_mappings.get("FEATURE"):
+            raise JiraMappingIncompleteError(
+                "Mapping for artifact type 'FEATURE' is required because Feature items are present in planning output"
+            )
+
+        resolved_jira_types: dict[str, str] = {}
+        warnings: list[str] = []
+
+        for artifact_type, mapped_val in normalized_mappings.items():
+            val_str = str(mapped_val).strip()
+            matched_type = by_name.get(val_str.lower()) or by_id.get(val_str)
+            if matched_type is None:
+                raise JiraIssueTypeUnavailableError(
+                    f"Jira issue type '{mapped_val}' for '{artifact_type}' is not available in project '{project.project_key}'"
+                )
+            resolved_jira_types[artifact_type] = matched_type.name
+
+            if artifact_type == "FEATURE":
+                if matched_type.name.lower() in ("story", "user story", "task"):
+                    warnings.append(
+                        f"Feature mapped to '{matched_type.name}': Jira project '{project.project_key}' lacks a native Feature issue type; features will be previewed as {matched_type.name} issues."
+                    )
+            if artifact_type == "TASK" and matched_type.subtask:
+                warnings.append(
+                    "Task is mapped to a Jira subtask type. Subtasks will be attached as direct children of standard issues."
+                )
+
+        # 8. Validate hierarchy references
+        epic_ids = {e["id"] for e in epics_list if isinstance(e, dict) and "id" in e}
+        feature_ids = {f["id"] for f in features_list if isinstance(f, dict) and "id" in f}
+        story_ids = {s["id"] for s in stories_list if isinstance(s, dict) and "id" in s}
+
+        for story in stories_list:
+            if isinstance(story, dict):
+                s_epic = story.get("epic_id")
+                if s_epic and s_epic not in epic_ids:
+                    raise JiraHierarchyInvalidError(
+                        f"Story '{story.get('id')}' references non-existent Epic '{s_epic}'"
+                    )
+                s_feat = story.get("feature_id")
+                if s_feat and feature_ids and s_feat not in feature_ids:
+                    raise JiraHierarchyInvalidError(
+                        f"Story '{story.get('id')}' references non-existent Feature '{s_feat}'"
+                    )
+
+        for task in tasks_list:
+            if isinstance(task, dict):
+                t_story = task.get("story_id")
+                if t_story and t_story not in story_ids:
+                    raise JiraHierarchyInvalidError(
+                        f"Task '{task.get('id')}' references non-existent Story '{t_story}'"
+                    )
+
+        # 9. Build Sprints and item mappings
+        raw_sprints = jira_plan.get("sprints") or resolved_outputs.get("SPRINT_PLAN") or []
+        item_sprint_map: dict[str, str] = {}
+        preview_sprints: list[JiraPreviewSprint] = []
+
+        for s in raw_sprints:
+            if not isinstance(s, dict):
+                continue
+            s_id = str(s.get("id", ""))
+            s_name = str(s.get("name", s_id))
+            s_refs = [str(r) for r in s.get("item_refs", [])]
+            for ref in s_refs:
+                item_sprint_map[ref] = s_name
+
+            preview_sprints.append(
+                JiraPreviewSprint(
+                    id=s_id,
+                    name=s_name,
+                    planned_points=int(s.get("planned_points", 0)),
+                    duration_days=int(s.get("duration_days", 14)),
+                    start_date=s.get("start_date"),
+                    end_date=s.get("end_date"),
+                    item_count=len(s_refs),
+                )
+            )
+
+        priorities_list = jira_plan.get("priorities") or []
+        item_priority_map: dict[str, str] = {
+            str(p["item_id"]): str(p["priority"])
+            for p in priorities_list
+            if isinstance(p, dict) and "item_id" in p and "priority" in p
+        }
+
+        # 10. Build Preview Issues
+        issues: list[JiraPreviewIssue] = []
+        total_points = 0
+
+        # Epics
+        for e in epics_list:
+            if not isinstance(e, dict):
+                continue
+            issues.append(
+                JiraPreviewIssue(
+                    artifact_id=str(e["id"]),
+                    agileflow_type="EPIC",
+                    jira_issue_type=resolved_jira_types["EPIC"],
+                    summary=str(e.get("title", "")),
+                    parent_id=None,
+                    planned_sprint=None,
+                    assignee=None,
+                    priority=e.get("priority") or item_priority_map.get(str(e["id"]), "MEDIUM"),
+                    estimate_points=None,
+                )
+            )
+
+        # Features (if present and mapped)
+        if "FEATURE" in resolved_jira_types:
+            for f in features_list:
+                if not isinstance(f, dict):
+                    continue
+                issues.append(
+                    JiraPreviewIssue(
+                        artifact_id=str(f["id"]),
+                        agileflow_type="FEATURE",
+                        jira_issue_type=resolved_jira_types["FEATURE"],
+                        summary=str(f.get("title", "")),
+                        parent_id=f.get("epic_id"),
+                        planned_sprint=item_sprint_map.get(str(f["id"])),
+                        assignee=None,
+                        priority=item_priority_map.get(str(f["id"]), "MEDIUM"),
+                        estimate_points=None,
+                    )
+                )
+
+        # Stories
+        for st in stories_list:
+            if not isinstance(st, dict):
+                continue
+            summary = st.get("title") or (
+                f"{st.get('actor')}: {st.get('goal')}"
+                if st.get("actor") and st.get("goal")
+                else "User Story"
+            )
+            pts = st.get("estimate_points")
+            if pts:
+                try:
+                    total_points += int(pts)
+                except (ValueError, TypeError):
+                    pass
+            issues.append(
+                JiraPreviewIssue(
+                    artifact_id=str(st["id"]),
+                    agileflow_type="USER_STORY",
+                    jira_issue_type=resolved_jira_types["USER_STORY"],
+                    summary=str(summary),
+                    parent_id=st.get("feature_id") or st.get("epic_id"),
+                    planned_sprint=item_sprint_map.get(str(st["id"])),
+                    assignee=None,
+                    priority=st.get("priority") or item_priority_map.get(str(st["id"]), "MEDIUM"),
+                    estimate_points=int(pts) if pts is not None else None,
+                )
+            )
+
+        # Tasks
+        for t in tasks_list:
+            if not isinstance(t, dict):
+                continue
+            pts = t.get("estimate_points")
+            if pts:
+                try:
+                    total_points += int(pts)
+                except (ValueError, TypeError):
+                    pass
+            issues.append(
+                JiraPreviewIssue(
+                    artifact_id=str(t["id"]),
+                    agileflow_type="TASK",
+                    jira_issue_type=resolved_jira_types["TASK"],
+                    summary=str(t.get("title", "")),
+                    parent_id=t.get("story_id") or t.get("feature_id") or t.get("epic_id"),
+                    planned_sprint=item_sprint_map.get(str(t["id"])),
+                    assignee=None,
+                    priority=item_priority_map.get(str(t["id"]), "MEDIUM"),
+                    estimate_points=int(pts) if pts is not None else None,
+                )
+            )
+
+        # 11. Summary
+        summary = JiraPreviewSummary(
+            total_issues=len(issues),
+            total_sprints=len(preview_sprints),
+            epic_count=len(epics_list),
+            feature_count=len([i for i in issues if i.agileflow_type == "FEATURE"]),
+            story_count=len(stories_list),
+            task_count=len(tasks_list),
+            total_points=total_points,
+        )
+
+        # 12. Target
+        target = JiraPreviewTarget(
+            site=JiraContextSite(
+                cloud_id=site.cloud_id,
+                name=site.site_name,
+                url=site.site_url,
+            ),
+            project=JiraContextProject(
+                id=project.project_id,
+                key=project.project_key,
+                name=project.project_name,
+            ),
+            board=JiraContextBoard(
+                id=board.board_id,
+                name=board.board_name,
+                type=board.board_type,
+            ),
+        )
+
+        return JiraPreviewResponse(
+            target=target,
+            mappings=resolved_jira_types,
+            sprints=preview_sprints,
+            issues=issues,
+            summary=summary,
+            warnings=warnings,
+            synchronization_status="NOT_PERFORMED",
+        )
