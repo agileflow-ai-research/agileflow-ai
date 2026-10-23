@@ -170,8 +170,8 @@ function PlanningHierarchy({
           <span
             className={`inline-flex items-center rounded-control border px-3 py-1 text-xs font-medium ${
               isFailed
-                ? 'border-state-danger/40 bg-state-danger/10 text-state-danger'
-                : 'border-[#065f46] bg-[#064e3b]/80 text-[#34d399]'
+                ? 'border-state-danger/40 bg-state-danger-soft text-state-danger'
+                : 'border-state-success/40 bg-state-success-soft text-state-success'
             }`}
           >
             {isFailed ? 'Validation findings' : 'Hierarchy valid'}
@@ -228,7 +228,7 @@ function PlanningHierarchy({
 
       {/* Empty state if no planning hierarchy outputs were returned */}
       {!hasPlanningOutputs && (
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-8 text-center">
+        <div className="rounded-panel border border-default bg-surface p-8 text-center">
           <p className="text-sm text-content-muted">
             No planning hierarchy artifacts were generated for this run.
           </p>
@@ -244,7 +244,7 @@ function PlanningHierarchy({
 
       {/* Product Backlog (only if returned by backend) */}
       {backlog.length > 0 && (
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-3">
+        <div className="rounded-panel border border-default bg-surface p-5 space-y-3">
           <div>
             <h3 className="font-semibold text-content-primary">Product backlog</h3>
             <p className="mt-0.5 text-xs text-content-muted">
@@ -254,7 +254,7 @@ function PlanningHierarchy({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs" aria-label="Product backlog items">
               <thead>
-                <tr className="border-b border-[#2d1b4e] text-content-muted">
+                <tr className="border-b border-default text-content-muted">
                   <th className="pb-2 font-medium">ID</th>
                   <th className="pb-2 font-medium">Type</th>
                   <th className="pb-2 font-medium">Title</th>
@@ -263,9 +263,9 @@ function PlanningHierarchy({
                   <th className="pb-2 font-medium">Source</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#2d1b4e]/50 font-mono">
+              <tbody className="divide-y divide-default font-mono">
                 {backlog.map((item, idx) => (
-                  <tr key={item.item_id || idx} className="hover:bg-[#1f123d]/40 transition-colors">
+                  <tr key={item.item_id || idx} className="hover:bg-elevated/60 transition-colors">
                     <td className="py-2 text-content-primary font-semibold">{item.item_id}</td>
                     <td className="py-2 text-content-muted">{item.item_type}</td>
                     <td className="py-2 font-sans text-content-secondary">{item.title}</td>
@@ -282,7 +282,7 @@ function PlanningHierarchy({
 
       {/* Main Hierarchy Card matching S2-08 PNG */}
       {(epics.length > 0 || features.length > 0 || stories.length > 0 || tasks.length > 0) && (
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-4">
+        <div className="rounded-panel border border-default bg-surface p-5 space-y-4">
           <div>
             <h3 className="font-semibold text-content-primary">Product backlog hierarchy</h3>
             <p className="mt-0.5 text-xs text-content-muted">
@@ -304,7 +304,7 @@ function PlanningHierarchy({
                 return (
                   <div
                     key={epic.id}
-                    className="rounded-control border border-[#7c3aed]/50 bg-[#1f103d]/70 p-4 space-y-3"
+                    className="rounded-control border border-brand/40 bg-brand-soft/30 p-4 space-y-3"
                   >
                     <div>
                       <h4 className="font-semibold text-content-primary text-sm sm:text-base">
@@ -343,7 +343,7 @@ function PlanningHierarchy({
                       return (
                         <div
                           key={feat.id}
-                          className="rounded-control border border-[#4c1d95]/40 bg-[#160b2d]/80 p-3.5 space-y-2.5 mt-3"
+                          className="rounded-control border border-default bg-surface p-3.5 space-y-2.5 mt-3"
                         >
                           <div>
                             <h5 className="font-semibold text-content-primary text-sm">
@@ -378,7 +378,7 @@ function PlanningHierarchy({
                             return (
                               <div
                                 key={story.id}
-                                className="rounded-control border border-[#2d1b4e] bg-[#110722] p-3 space-y-2 mt-2"
+                                className="rounded-control border border-default bg-elevated p-3 space-y-2 mt-2"
                               >
                                 <div>
                                   <h6 className="font-medium text-content-primary text-xs sm:text-sm">
@@ -443,7 +443,7 @@ function PlanningHierarchy({
 
                                 {/* Tasks under Story */}
                                 {storyTasks.length > 0 && (
-                                  <div className="pt-2 border-t border-[#2d1b4e]/50 space-y-1.5 font-mono text-xs">
+                                  <div className="pt-2 border-t border-default space-y-1.5 font-mono text-xs">
                                     {storyTasks.map((task) => (
                                       <div
                                         key={task.id}
@@ -466,7 +466,7 @@ function PlanningHierarchy({
                                             <span>·</span>
                                             <span className="text-content-muted">
                                               Depends on{' '}
-                                              <span className="text-[#a78bfa]">
+                                              <span className="text-brand">
                                                 {task.depends_on.join(', ')}
                                               </span>
                                             </span>
@@ -515,7 +515,7 @@ function PlanningHierarchy({
                       return (
                         <div
                           key={story.id}
-                          className="rounded-control border border-[#2d1b4e] bg-[#110722] p-3 space-y-2 mt-2"
+                          className="rounded-control border border-default bg-elevated p-3 space-y-2 mt-2"
                         >
                           <div>
                             <h6 className="font-medium text-content-primary text-xs sm:text-sm">
@@ -553,7 +553,7 @@ function PlanningHierarchy({
 
                           {/* Tasks under Story */}
                           {storyTasks.length > 0 && (
-                            <div className="pt-2 border-t border-[#2d1b4e]/50 space-y-1.5 font-mono text-xs">
+                            <div className="pt-2 border-t border-default space-y-1.5 font-mono text-xs">
                               {storyTasks.map((task) => (
                                 <div
                                   key={task.id}
@@ -572,7 +572,7 @@ function PlanningHierarchy({
                                       <span>·</span>
                                       <span className="text-content-muted">
                                         Depends on{' '}
-                                        <span className="text-[#a78bfa]">
+                                        <span className="text-brand">
                                           {task.depends_on.join(', ')}
                                         </span>
                                       </span>
@@ -598,7 +598,7 @@ function PlanningHierarchy({
                 return (
                   <div
                     key={feat.id}
-                    className="rounded-control border border-[#4c1d95]/40 bg-[#160b2d]/80 p-4 space-y-3"
+                    className="rounded-control border border-default bg-surface p-4 space-y-3"
                   >
                     <div>
                       <h4 className="font-semibold text-content-primary text-sm sm:text-base">
@@ -621,13 +621,13 @@ function PlanningHierarchy({
                       return (
                         <div
                           key={story.id}
-                          className="rounded-control border border-[#2d1b4e] bg-[#110722] p-3 space-y-2 mt-2"
+                          className="rounded-control border border-default bg-elevated p-3 space-y-2 mt-2"
                         >
                           <h5 className="font-medium text-content-primary text-xs sm:text-sm">
                             {story.id} · {getStoryTitle(story)}
                           </h5>
                           {storyTasks.length > 0 && (
-                            <div className="pt-2 border-t border-[#2d1b4e]/50 space-y-1.5 font-mono text-xs">
+                            <div className="pt-2 border-t border-default space-y-1.5 font-mono text-xs">
                               {storyTasks.map((task) => (
                                 <div
                                   key={task.id}
@@ -657,7 +657,7 @@ function PlanningHierarchy({
                 return (
                   <div
                     key={story.id}
-                    className="rounded-control border border-[#2d1b4e] bg-[#110722] p-4 space-y-3"
+                    className="rounded-control border border-default bg-elevated p-4 space-y-3"
                   >
                     <div>
                       <h4 className="font-medium text-content-primary text-sm sm:text-base">
@@ -711,7 +711,7 @@ function PlanningHierarchy({
                     </div>
 
                     {storyTasks.length > 0 && (
-                      <div className="pt-2 border-t border-[#2d1b4e]/50 space-y-1.5 font-mono text-xs">
+                      <div className="pt-2 border-t border-default space-y-1.5 font-mono text-xs">
                         {storyTasks.map((task) => (
                           <div
                             key={task.id}
@@ -729,7 +729,7 @@ function PlanningHierarchy({
                                 <span>·</span>
                                 <span className="text-content-muted">
                                   Depends on{' '}
-                                  <span className="text-[#a78bfa]">
+                                  <span className="text-brand">
                                     {task.depends_on.join(', ')}
                                   </span>
                                 </span>
@@ -748,7 +748,7 @@ function PlanningHierarchy({
 
       {/* Unlinked items section (only if parent reference cannot be safely linked) */}
       {hasUnlinked && (
-        <div className="rounded-panel border border-[#3b1d54] bg-[#160c2b] p-5 space-y-3">
+        <div className="rounded-panel border border-default bg-surface p-5 space-y-3">
           <div>
             <h3 className="font-semibold text-content-primary">Unlinked items</h3>
             <p className="mt-0.5 text-xs text-content-muted">
@@ -759,7 +759,7 @@ function PlanningHierarchy({
             {unlinkedFeatures.map((f) => (
               <div
                 key={f.id}
-                className="p-3 rounded-control border border-[#4c1d95]/40 bg-[#160b2d]/80"
+                className="p-3 rounded-control border border-default bg-surface"
               >
                 <span className="font-semibold text-content-primary">{f.id}</span>
                 <span className="text-content-secondary ml-1">· {f.title}</span>
@@ -769,7 +769,7 @@ function PlanningHierarchy({
             {unlinkedStories.map((s) => (
               <div
                 key={s.id}
-                className="p-3 rounded-control border border-[#2d1b4e] bg-[#110722]"
+                className="p-3 rounded-control border border-default bg-elevated"
               >
                 <span className="font-semibold text-content-primary">{s.id}</span>
                 <span className="text-content-secondary ml-1">· {getStoryTitle(s)}</span>
@@ -781,13 +781,13 @@ function PlanningHierarchy({
             {unlinkedTasks.map((t) => (
               <div
                 key={t.id}
-                className="p-3 rounded-control border border-[#2d1b4e] bg-[#110722] font-mono"
+                className="p-3 rounded-control border border-default bg-elevated font-mono"
               >
                 <span className="font-semibold text-content-primary">{t.id}</span>
                 <span className="font-sans text-content-secondary ml-1">· {t.title}</span>
                 <span className="text-content-muted ml-2">(Parent: {t.story_id || 'None'})</span>
                 {Array.isArray(t.depends_on) && t.depends_on.length > 0 && (
-                  <span className="text-[#a78bfa] ml-2">
+                  <span className="text-brand ml-2">
                     Depends on: {t.depends_on.join(', ')}
                   </span>
                 )}
@@ -798,7 +798,7 @@ function PlanningHierarchy({
       )}
 
       {/* Deterministic Planning Checks card matching PNG */}
-      <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-3">
+      <div className="rounded-panel border border-default bg-surface p-5 space-y-3">
         <div>
           <h3 className="font-semibold text-content-primary">Deterministic planning checks</h3>
           <p className="mt-0.5 text-xs text-content-muted">
@@ -810,31 +810,31 @@ function PlanningHierarchy({
           aria-label="Deterministic planning checks"
         >
           <li className="flex items-center gap-2">
-            <span className="text-[#34d399] font-bold" aria-hidden="true">
+            <span className="text-state-success font-bold" aria-hidden="true">
               •
             </span>
             <span>Features reference valid epics</span>
           </li>
           <li className="flex items-center gap-2">
-            <span className="text-[#34d399] font-bold" aria-hidden="true">
+            <span className="text-state-success font-bold" aria-hidden="true">
               •
             </span>
             <span>Stories reference valid features</span>
           </li>
           <li className="flex items-center gap-2">
-            <span className="text-[#34d399] font-bold" aria-hidden="true">
+            <span className="text-state-success font-bold" aria-hidden="true">
               •
             </span>
             <span>Tasks reference valid stories</span>
           </li>
           <li className="flex items-center gap-2">
-            <span className="text-[#34d399] font-bold" aria-hidden="true">
+            <span className="text-state-success font-bold" aria-hidden="true">
               •
             </span>
             <span>Task dependencies reference valid tasks</span>
           </li>
           <li className="flex items-center gap-2">
-            <span className="text-[#34d399] font-bold" aria-hidden="true">
+            <span className="text-state-success font-bold" aria-hidden="true">
               •
             </span>
             <span>Duplicate planning IDs rejected</span>

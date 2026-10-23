@@ -83,7 +83,7 @@ export default function InputAnalysisPanel({ inputs, preparationState, onAnalyze
       ) : <SourceSummary inputs={inputs} mode="analysis" />}
       {result?.status === 'RUNNING' ? <p role="status" className="text-sm text-content-secondary">Analyzing project inputs... {result.processed_source_count} / {result.eligible_source_count} eligible sources processed</p> : null}
       {result?.status === 'WAITING_FOR_HUMAN' ? (
-        <div className="space-y-3 rounded-control border border-state-success/40 bg-state-success/10 p-4">
+        <div className="space-y-3 rounded-control border border-state-success/40 bg-state-success-soft p-4">
           <p className="font-medium text-content-primary">
             Analysis complete. {needsReview} {needsReview === 1 ? 'source needs' : 'sources need'} confirmation.
           </p>
@@ -94,7 +94,7 @@ export default function InputAnalysisPanel({ inputs, preparationState, onAnalyze
         </div>
       ) : null}
       {result?.status === 'ANALYSIS_READY' ? (
-        <div className="rounded-control border border-state-success/40 bg-state-success/10 p-4" role="status">
+        <div className="rounded-control border border-state-success/40 bg-state-success-soft p-4" role="status">
           <p className="font-medium text-content-primary">✓ Analysis complete</p>
           <p className="mt-2 text-sm text-content-secondary">{prepared} {prepared === 1 ? 'source' : 'sources'} analyzed.</p>
         </div>

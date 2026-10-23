@@ -25,13 +25,40 @@ function execution(status, error = null) {
 }
 
 describe('TestingFactExtractionPanel', () => {
+  it('renders the persisted grounded fact and exact source evidence', () => {
+    render(<TestingFactExtractionPanel
+      definition={definition}
+      n3Execution={execution('COMPLETED')}
+      workflowNodeStatus="COMPLETED"
+      detailStatus="success"
+      detailData={{ total: 1, has_more: false, items: [{
+        fact_id: 'A4FACT-real', source_id: 'A4SRC-one', source_label: 'Requirements Â· Ready',
+        chunk_id: 'A4CHK-one', sequence: 1, fact_type: 'AUTHORIZATION_RULE',
+        related_labels: ['AUTHORIZATION'],
+        evidence_quote: 'â€œOnly administrators may delete bookings.â€',
+        structured_values: { actor: 'administrators', action: 'delete', target: 'bookingâ€™s records' },
+      }] }}
+    />)
+    expect(screen.getByText('Authorization Rule')).toBeInTheDocument()
+    expect(screen.getByText(/Only administrators may delete bookings\./)).toBeInTheDocument()
+    expect(screen.getByText('Requirements | Ready')).toBeInTheDocument()
+    expect(screen.getByText("booking's records")).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/Â|â€œ|â€|â€™/)
+    expect(screen.getByText('Grounded')).toBeInTheDocument()
+  })
+
+  it('shows a truthful empty persisted-fact state', () => {
+    render(<TestingFactExtractionPanel definition={definition} n3Execution={execution('COMPLETED')} workflowNodeStatus="COMPLETED" detailStatus="success" detailData={{ total: 0, has_more: false, items: [] }} />)
+    expect(screen.getByText(/No grounded testing facts were produced/)).toBeInTheDocument()
+  })
+
   it.each([
     ['QUEUED', 'Waiting for extraction capacity'],
-    ['RUNNING', 'Testing fact extraction in progress'],
+    ['RUNNING', 'Extracting testing facts'],
   ])('renders %s distinctly', (status, label) => {
     render(<TestingFactExtractionPanel definition={definition} n3Execution={execution(status)} workflowNodeStatus={status} />)
     expect(screen.getByRole('status')).toHaveTextContent(label)
-    expect(screen.getByText(/1 chunks checkpointed/)).toBeInTheDocument()
+    expect(screen.getByText(/1 prepared section/)).toBeInTheDocument()
   })
 
   it('shows a safe failure reason and targeted retry', async () => {
@@ -46,7 +73,7 @@ describe('TestingFactExtractionPanel', () => {
 
   it('renders completed facts separately from Testing Intelligence', () => {
     render(<TestingFactExtractionPanel definition={definition} n3Execution={execution('COMPLETED')} workflowNodeStatus="COMPLETED" />)
-    expect(screen.getByRole('status')).toHaveTextContent('Testing Fact Extraction complete')
-    expect(screen.getByRole('status')).toHaveTextContent('2 grounded facts')
+    expect(screen.getByRole('status')).toHaveTextContent('Testing facts are ready')
+    expect(screen.getByRole('status')).toHaveTextContent('Testing facts2')
   })
 })

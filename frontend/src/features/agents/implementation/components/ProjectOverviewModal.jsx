@@ -47,7 +47,7 @@ export default function ProjectOverviewModal({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 p-2 sm:p-5">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-overlay p-2 backdrop-blur-[2px] sm:p-5">
       <section
         role="dialog"
         aria-modal="true"
@@ -65,7 +65,7 @@ export default function ProjectOverviewModal({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+        <div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
           <dl className="grid gap-3 sm:grid-cols-2">
             <OverviewItem label="Project ID">{project.agent_project_id}</OverviewItem>
             <OverviewItem label="Agent type">Agent 3 — Implementation</OverviewItem>

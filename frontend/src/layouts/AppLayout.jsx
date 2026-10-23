@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom'
 
 import Brand from '../components/layout/Brand.jsx'
 import Sidebar from '../components/layout/Sidebar.jsx'
+import NavigationIcon from '../components/layout/sidebar/NavigationIcon.jsx'
 import { useAuth } from '../features/auth/useAuth.js'
 import { getAgentProjects } from '../services/agentProjectService.js'
 
@@ -70,17 +71,17 @@ function AppLayout() {
         onLogout={logout}
       />
       <div className="min-w-0 flex-1">
-        <header className="flex items-center justify-between border-b border-default bg-sidebar px-page py-4 lg:hidden">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-default/80 bg-sidebar/95 px-page backdrop-blur lg:hidden">
           <Brand mode="wordmark" size="small" />
           <button
             ref={navigationTriggerRef}
             type="button"
-            className="rounded-button border border-default bg-elevated px-3 py-2 text-sm font-semibold text-content-primary"
+            className="flex h-9 w-9 items-center justify-center rounded-button border border-default bg-elevated text-content-primary"
             aria-label="Open navigation"
             aria-expanded={isNavigationOpen}
             onClick={() => setIsNavigationOpen(true)}
           >
-            Menu
+            <NavigationIcon name="menu" />
           </button>
         </header>
         <Outlet context={{ refreshAgentProjects }} />

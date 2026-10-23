@@ -88,7 +88,7 @@ function TaskAssignment({
             <p className="mt-1 text-sm text-content-muted">{subtitle}</p>
           </div>
           <div className="flex items-center gap-3 pt-1">
-            <span className="inline-flex items-center rounded-control border border-[#0e7490] bg-[#155e75]/40 px-3 py-1 text-xs font-semibold text-[#38bdf8]">
+            <span className="inline-flex items-center rounded-control border border-state-info/40 bg-state-info-soft px-3 py-1 text-xs font-semibold text-state-info">
               Explainable
             </span>
             {onBackToOverview && (
@@ -100,7 +100,7 @@ function TaskAssignment({
         </div>
 
         {/* Empty state card */}
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-8 text-center space-y-3">
+        <div className="rounded-panel border border-default bg-surface p-8 text-center space-y-3">
           <h3 className="font-semibold text-content-primary">No task assignments generated</h3>
           <p className="text-sm text-content-muted">No task assignment recommendations were generated for this run.</p>
           <div className="pt-2 flex justify-center gap-3">
@@ -173,7 +173,7 @@ function TaskAssignment({
           <p className="mt-1 text-sm text-content-muted">{subtitle}</p>
         </div>
         <div className="flex items-center gap-3 pt-1">
-          <span className="inline-flex items-center rounded-control border border-[#0e7490] bg-[#155e75]/40 px-3 py-1 text-xs font-semibold text-[#38bdf8]">
+          <span className="inline-flex items-center rounded-control border border-state-info/40 bg-state-info-soft px-3 py-1 text-xs font-semibold text-state-info">
             Explainable
           </span>
           {onBackToOverview && (
@@ -205,7 +205,7 @@ function TaskAssignment({
       </div>
 
       {/* Recommended assignments Card matching S2-10 PNG */}
-      <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-4">
+      <div className="rounded-panel border border-default bg-surface p-5 space-y-4">
         <div>
           <h3 className="font-semibold text-content-primary text-base">Recommended assignments</h3>
           <p className="mt-0.5 text-xs text-content-muted">
@@ -219,14 +219,14 @@ function TaskAssignment({
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs" aria-label="Task assignments">
             <thead>
-              <tr className="border-b border-[#2d1b4e] text-content-muted">
+              <tr className="border-b border-default text-content-muted">
                 <th className="pb-3 font-semibold">Task</th>
                 <th className="pb-3 font-semibold">Recommendation</th>
                 <th className="pb-3 font-semibold">Match reasons</th>
                 <th className="pb-3 font-semibold text-right">Confidence</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#2d1b4e]/40">
+            <tbody className="divide-y divide-default/60">
               {assignments.map((assignment, idx) => {
                 const task = tasksMap[assignment.task_id]
                 const taskTitle = task?.title ? `${assignment.task_id} · ${task.title}` : assignment.task_id
@@ -240,7 +240,7 @@ function TaskAssignment({
                 const matchReasonsText = getMatchReasonsText(assignment)
 
                 return (
-                  <tr key={assignment.task_id || idx} className="hover:bg-[#110722]/40 transition-colors">
+                  <tr key={assignment.task_id || idx} className="hover:bg-elevated/40 transition-colors">
                     {/* Task Column */}
                     <td className="py-3.5 pr-4 align-top">
                       <div className="space-y-0.5">
@@ -255,7 +255,7 @@ function TaskAssignment({
                         {taskDependencies.length > 0 && (
                           <div className="text-[11px] text-content-muted">
                             Depends on{' '}
-                            <span className="text-[#a78bfa] font-mono">
+                            <span className="text-brand font-mono">
                               {taskDependencies.join(', ')}
                             </span>
                           </div>
@@ -291,7 +291,7 @@ function TaskAssignment({
                     </td>
 
                     {/* Confidence Column */}
-                    <td className="py-3.5 align-top text-right font-mono font-semibold text-[#34d399]">
+                    <td className="py-3.5 align-top text-right font-mono font-semibold text-state-success">
                       {confidenceValue !== null ? confidenceValue : '—'}
                     </td>
                   </tr>
@@ -303,7 +303,7 @@ function TaskAssignment({
       </div>
 
       {/* When names are not supplied Card matching S2-10 PNG */}
-      <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-2">
+      <div className="rounded-panel border border-default bg-surface p-5 space-y-2">
         <h3 className="font-semibold text-content-primary text-base">When names are not supplied</h3>
         <p className="text-xs text-content-secondary">
           Agent 2 never fabricates real employees.
@@ -314,7 +314,7 @@ function TaskAssignment({
       </div>
 
       {/* Cyan research disclaimer banner matching S2-10 PNG */}
-      <div className="rounded-panel border border-[#0369a1]/60 bg-[#0c4a6e]/30 p-4 text-xs text-[#7dd3fc] font-medium">
+      <div className="rounded-panel border border-state-info/40 bg-state-info-soft p-4 text-xs text-state-info font-medium">
         These are explainable recommendations, not optimal resource-allocation claims.
       </div>
 

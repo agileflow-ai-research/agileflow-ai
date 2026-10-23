@@ -75,7 +75,7 @@ export default function GenerateDesignPlanningPanel({
       )}
 
       {/* Execution Pipeline Card (Matches S2-05) */}
-      <Card className="border-default bg-[#150c2a] p-5 space-y-3">
+      <Card className="border-default bg-surface p-5 space-y-3">
         <div>
           <h3 className="text-card-heading font-semibold text-content-primary">
             Execution pipeline
@@ -91,7 +91,7 @@ export default function GenerateDesignPlanningPanel({
           {pipelineStages.map((stage) => (
             <span
               key={stage}
-              className="inline-flex items-center gap-1.5 rounded-control border border-[#3c2463] bg-[#211438] px-3 py-1.5 text-xs font-medium text-content-primary"
+              className="inline-flex items-center gap-1.5 rounded-control border border-default bg-elevated px-3 py-1.5 text-xs font-medium text-content-primary"
             >
               <span className="h-1.5 w-1.5 rounded-full bg-brand" aria-hidden="true" />
               {stage}
@@ -102,7 +102,7 @@ export default function GenerateDesignPlanningPanel({
 
       {/* State: IDLE & Ready to Run */}
       {runState === 'idle' && canRun && (
-        <Card className="border border-default bg-[#150c2a] p-6 space-y-4">
+        <Card className="border border-default bg-surface p-6 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-default/40 pb-4">
             <div>
               <h3 className="text-card-heading font-semibold text-content-primary">
@@ -116,15 +116,15 @@ export default function GenerateDesignPlanningPanel({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 text-sm">
-            <div className="rounded-control border border-default bg-[#0b0517] p-3.5 space-y-1">
+            <div className="rounded-control border border-default bg-elevated p-3.5 space-y-1">
               <span className="block text-xs font-medium text-content-muted">Model Provider</span>
               <span className="block font-medium text-content-primary">
                 Qwen (Local llama.cpp inference via 127.0.0.1:8080)
               </span>
             </div>
-            <div className="rounded-control border border-default bg-[#0b0517] p-3.5 space-y-1">
+            <div className="rounded-control border border-default bg-elevated p-3.5 space-y-1">
               <span className="block text-xs font-medium text-content-muted">Selected Outputs ({selectedOutputs.length})</span>
-              <span className="block font-mono text-xs text-[#a78bfa] truncate" title={selectedOutputs.join(', ')}>
+              <span className="block font-mono text-xs text-brand truncate" title={selectedOutputs.join(', ')}>
                 {selectedOutputs.join(', ')}
               </span>
             </div>
@@ -147,7 +147,7 @@ export default function GenerateDesignPlanningPanel({
       {/* State: RUNNING */}
       {runState === 'running' && (
         <div className="space-y-6">
-          <Card className="border border-brand/50 bg-[#241344]/80 p-6 space-y-4">
+          <Card className="border border-brand/50 bg-brand-soft p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-default/40 pb-4">
               <div className="flex items-center gap-3">
                 <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-purple border-t-transparent" />
@@ -165,7 +165,7 @@ export default function GenerateDesignPlanningPanel({
 
             <div className="grid gap-4 md:grid-cols-2">
               {/* Current activity card */}
-              <div className="rounded-control border border-default bg-[#0b0517] p-4 space-y-2">
+              <div className="rounded-control border border-default bg-elevated p-4 space-y-2">
                 <h4 className="text-sm font-semibold text-content-primary">Current activity</h4>
                 <p className="text-xs text-content-secondary">
                   Generating and validating the selected Agent 2 outputs.
@@ -177,14 +177,14 @@ export default function GenerateDesignPlanningPanel({
               </div>
 
               {/* Run evidence card */}
-              <div className="rounded-control border border-default bg-[#0b0517] p-4 space-y-2">
+              <div className="rounded-control border border-default bg-elevated p-4 space-y-2">
                 <h4 className="text-sm font-semibold text-content-primary">Run evidence</h4>
                 <p className="text-xs text-content-secondary">
                   Safe machine-readable state only.
                 </p>
                 <ul className="mt-2 space-y-1 text-xs text-content-muted" aria-label="Run evidence details">
                   <li>
-                    • Run status: <span className="font-semibold text-[#fbbf24]">RUNNING</span>
+                    • Run status: <span className="font-semibold text-state-warning">RUNNING</span>
                   </li>
                   <li>
                     • Project: {project?.name || 'Project'}
@@ -221,11 +221,11 @@ export default function GenerateDesignPlanningPanel({
 
       {/* State: COMPLETED */}
       {runState === 'completed' && runResult && (
-        <Card className="border border-[#065f46] bg-[#064e3b]/20 p-6 space-y-5">
+        <Card className="border border-state-success/40 bg-state-success-soft p-6 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-default/40 pb-4">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[#34d399] font-bold text-lg">✓</span>
+                <span className="text-state-success font-bold text-lg">✓</span>
                 <h3 className="text-card-heading font-semibold text-content-primary">
                   Agent 2 Execution Completed
                 </h3>
@@ -238,19 +238,19 @@ export default function GenerateDesignPlanningPanel({
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3 text-xs">
-            <div className="rounded-control border border-default bg-[#0b0517] p-3 space-y-1">
+            <div className="rounded-control border border-default bg-elevated p-3 space-y-1">
               <span className="text-content-muted">Outputs Generated</span>
               <p className="text-base font-semibold text-content-primary">
                 {Object.keys(runResult.outputs || {}).length} of {runResult.selected_outputs?.length ?? selectedOutputs.length}
               </p>
             </div>
-            <div className="rounded-control border border-default bg-[#0b0517] p-3 space-y-1">
+            <div className="rounded-control border border-default bg-elevated p-3 space-y-1">
               <span className="text-content-muted">Correction Attempts</span>
               <p className="text-base font-semibold text-content-primary">
                 {runResult.correction_attempts ?? 0}
               </p>
             </div>
-            <div className="rounded-control border border-default bg-[#0b0517] p-3 space-y-1">
+            <div className="rounded-control border border-default bg-elevated p-3 space-y-1">
               <span className="text-content-muted">Execution Mode</span>
               <p className="text-base font-semibold text-content-primary">
                 {runResult.run_mode || 'STANDALONE'}
@@ -259,7 +259,7 @@ export default function GenerateDesignPlanningPanel({
           </div>
 
           {runResult.warnings?.length > 0 && (
-            <div className="rounded-control border border-[#b45309]/50 bg-[#78350f]/20 p-3 text-xs text-[#fbbf24] space-y-1">
+            <div className="rounded-control border border-state-warning/40 bg-state-warning-soft p-3 text-xs text-state-warning space-y-1">
               <strong className="block font-semibold">Warnings ({runResult.warnings.length}):</strong>
               <ul className="list-disc pl-4 space-y-0.5">
                 {runResult.warnings.map((w, i) => (
@@ -281,7 +281,7 @@ export default function GenerateDesignPlanningPanel({
               type="button"
               variant="outline"
               onClick={() => onNavigate?.(DESIGN_PLANNING_NODE_IDS.PLANNING_RESULTS)}
-              className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
+              className="border-default bg-surface text-content-primary hover:bg-elevated"
             >
               View Planning Results (Node 7)
             </Button>
@@ -333,7 +333,7 @@ export default function GenerateDesignPlanningPanel({
               type="button"
               variant="outline"
               onClick={() => onNavigate?.(DESIGN_PLANNING_NODE_IDS.HUMAN_REVIEW)}
-              className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
+              className="border-default bg-surface text-content-primary hover:bg-elevated"
             >
               Back to Human Review
             </Button>
@@ -342,11 +342,11 @@ export default function GenerateDesignPlanningPanel({
       )}
 
       {/* Safety note card (Matches S2-05) */}
-      <Card className="border border-[#1e3a8a]/60 bg-[#0c1836]/70 p-4 space-y-1">
-        <p className="text-sm font-medium text-[#93c5fd]">
+      <Card className="border border-state-info/40 bg-state-info-soft p-4 space-y-1">
+        <p className="text-sm font-medium text-state-info">
           Deterministic user-input errors are rejected before model execution and do not consume correction attempts.
         </p>
-        <p className="text-xs text-[#60a5fa]/80">
+        <p className="text-xs text-content-secondary">
           Generated-output correction is bounded by the existing engine policy. No internal prompts, chain-of-thought, or provider secrets are exposed.
         </p>
       </Card>
@@ -358,7 +358,7 @@ export default function GenerateDesignPlanningPanel({
           variant="outline"
           onClick={() => onNavigate?.(DESIGN_PLANNING_NODE_IDS.HUMAN_REVIEW)}
           disabled={isRunning}
-          className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
+          className="border-default bg-surface text-content-primary hover:bg-elevated"
         >
           Back — Human Review
         </Button>

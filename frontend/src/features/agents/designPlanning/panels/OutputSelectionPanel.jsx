@@ -41,7 +41,7 @@ export default function OutputSelectionPanel({
           <span className="text-sm font-semibold text-content-primary">
             Output Deliverables
           </span>
-          <span className="inline-flex items-center rounded-control border border-[#3c2463] bg-[#211438] px-2.5 py-0.5 text-xs font-medium text-content-secondary">
+          <span className="inline-flex items-center rounded-control border border-default bg-elevated px-2.5 py-0.5 text-xs font-medium text-content-secondary">
             {selectedOutputs.length} of 14 selected
           </span>
         </div>
@@ -70,7 +70,7 @@ export default function OutputSelectionPanel({
       {/* 3 Group Cards */}
       <div className="grid gap-6 md:grid-cols-3">
         {outputGroups.map((group) => (
-          <Card key={group.id} className="border-default bg-[#150c2a] p-6 space-y-4">
+          <Card key={group.id} className="border-default bg-surface p-6 space-y-4">
             <div>
               <h3 className="text-card-heading font-semibold text-content-primary">
                 {group.title}
@@ -89,8 +89,8 @@ export default function OutputSelectionPanel({
                     className={cn(
                       'flex cursor-pointer items-start gap-3 rounded-control border p-3.5 transition-colors',
                       isSelected
-                        ? 'border-[#7c3aed] bg-[#2a144f] text-content-primary'
-                        : 'border-default bg-[#0b0517] text-content-secondary hover:border-accent-border/60 hover:text-content-primary',
+                        ? 'border-brand bg-brand-soft text-content-primary'
+                        : 'border-default bg-elevated text-content-secondary hover:border-brand/40 hover:text-content-primary',
                     )}
                   >
                     <input
@@ -103,7 +103,7 @@ export default function OutputSelectionPanel({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         {isSelected && (
-                          <span className="text-[#a78bfa] font-bold text-xs" aria-hidden="true">
+                          <span className="text-brand font-bold text-xs" aria-hidden="true">
                             ✓
                           </span>
                         )}
@@ -115,7 +115,7 @@ export default function OutputSelectionPanel({
                         {output.value}
                       </span>
                       {output.dependencyHint && (
-                        <span className="mt-1.5 block text-xs text-[#a78bfa]">
+                        <span className="mt-1.5 block text-xs text-brand">
                           Requires: {output.dependencyHint}
                         </span>
                       )}
@@ -129,14 +129,14 @@ export default function OutputSelectionPanel({
       </div>
 
       {/* Selection behavior callout card */}
-      <Card className="border-default bg-[#150c2a] p-6 space-y-2">
+      <Card className="border-default bg-surface p-6 space-y-2">
         <h3 className="text-card-heading font-semibold text-content-primary">
           Selection behavior
         </h3>
         <p className="text-sm text-content-secondary">
           Only selected outputs are generated, validated, persisted, and displayed.
         </p>
-        <p className="text-sm text-[#c084fc]">
+        <p className="text-sm text-brand">
           Cross-artifact checks are selection-aware: Agent 2 never requires an artifact that the user did not request.
         </p>
       </Card>
@@ -146,7 +146,7 @@ export default function OutputSelectionPanel({
         <div
           role="note"
           aria-label="Planning requirements warning"
-          className="rounded-card border border-[#b45309]/60 bg-[#78350f]/20 p-4 text-sm text-[#fbbf24]"
+          className="rounded-card border border-state-warning/40 bg-state-warning-soft p-4 text-sm text-state-warning"
         >
           <strong className="font-semibold">Planning parameters required:</strong> Selected outputs include sprint or assignment deliverables. You will configure team count and sprint duration in Node 3 (Technical & Planning).
         </div>
@@ -168,7 +168,7 @@ export default function OutputSelectionPanel({
           type="button"
           variant="outline"
           onClick={handleBack}
-          className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
+          className="border-default bg-surface text-content-primary hover:bg-elevated"
         >
           Back — Project & Specifications
         </Button>

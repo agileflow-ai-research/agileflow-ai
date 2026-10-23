@@ -48,15 +48,15 @@ function WorkflowNodeModal({
   const titleId = `workflow-modal-${node?.id ?? 'details'}-title`
 
   return (
-    <div hidden={!open} aria-hidden={!open || undefined} className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-2 sm:p-5" data-testid="workflow-modal-backdrop">
+    <div hidden={!open} aria-hidden={!open || undefined} className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-2 backdrop-blur-[2px] sm:p-5" data-testid="workflow-modal-backdrop">
       <section
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-panel border border-default bg-sidebar shadow-surface sm:max-h-[85vh]"
+        className="flex max-h-[calc(100dvh-1rem)] w-full max-w-5xl flex-col overflow-hidden rounded-panel border border-default bg-sidebar shadow-surface sm:max-h-[calc(100dvh-2rem)]"
       >
-        <header className="sticky top-0 z-10 shrink-0 border-b border-default bg-sidebar px-4 py-4 sm:px-6" data-testid="workflow-modal-header">
+        <header className="sticky top-0 z-10 shrink-0 border-b border-default bg-sidebar px-4 py-3 sm:px-6 sm:py-4" data-testid="workflow-modal-header">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider text-content-muted">{eyebrow}</p>
@@ -67,7 +67,7 @@ function WorkflowNodeModal({
             <button ref={closeRef} type="button" className="rounded-control px-3 py-2 text-sm font-semibold text-content-secondary hover:bg-elevated hover:text-content-primary" aria-label="Close workflow modal" onClick={onClose}>Close</button>
           </div>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6" data-testid="workflow-modal-body">
+        <div className="scrollbar-hidden min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6" data-testid="workflow-modal-body">
           {children}
         </div>
         <footer className="sticky bottom-0 z-10 shrink-0 border-t border-default bg-sidebar px-4 py-3 sm:px-6" data-testid="workflow-modal-footer">

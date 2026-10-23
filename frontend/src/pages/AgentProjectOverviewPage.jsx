@@ -8,8 +8,6 @@ import ImplementationProjectPage from '../features/agents/implementation/pages/I
 import RequirementsProjectPage from '../features/agents/requirements/pages/RequirementsProjectPage.jsx'
 import TestingValidationProjectPage from '../features/agents/testingValidation/pages/TestingValidationProjectPage.jsx'
 import TestingValidationWorkspace from '../features/agents/testingValidation/TestingValidationWorkspace.jsx'
-import RunDetail from '../components/agents/RunDetail.jsx'
-import RunHistory from '../components/agents/RunHistory.jsx'
 import ErrorState from '../components/feedback/ErrorState.jsx'
 import LoadingState from '../components/feedback/LoadingState.jsx'
 import PageHeader from '../components/layout/PageHeader.jsx'
@@ -50,7 +48,7 @@ function AgentProjectOverviewPage() {
   const [loadStatus, setLoadStatus] = useState('loading')
   const [project, setProject] = useState(null)
   const [runs, setRuns] = useState([])
-  const [selectedRunId, setSelectedRunId] = useState(null)
+  const [, setSelectedRunId] = useState(null)
   const [statusUpdate, setStatusUpdate] = useState('idle')
   const [statusError, setStatusError] = useState('')
 
@@ -125,7 +123,7 @@ function AgentProjectOverviewPage() {
     )
 
     return (
-      <main className="mx-auto w-full max-w-content space-y-6 px-page py-8 sm:py-10">
+      <main className="mx-auto w-full max-w-content space-y-5 px-page py-5 sm:py-6">
         <Button variant="ghost" size="small" onClick={() => navigate('/agents')}>Back to AI Agents</Button>
         {content}
       </main>
@@ -138,6 +136,7 @@ function AgentProjectOverviewPage() {
   const statusAction = (
     <Button
       variant={project.status === 'ARCHIVED' ? 'primary' : 'outline'}
+      size="small"
       loading={statusUpdate === 'updating'}
       loadingLabel={project.status === 'ARCHIVED' ? 'Reactivating project' : 'Archiving project'}
       onClick={handleStatusChange}
@@ -163,7 +162,7 @@ function AgentProjectOverviewPage() {
           ? DesignPlanningProjectPage
           : TestingValidationProjectPage
     return (
-      <main className="mx-auto w-full max-w-[96rem] space-y-8 px-page py-8 sm:py-10">
+      <main className="mx-auto w-full max-w-[96rem] space-y-3 px-page py-4 sm:py-5">
         <Button variant="ghost" size="small" onClick={() => navigate(agentListPath)}>Back to projects</Button>
         {statusError && <ErrorState title="Status update failed" message={statusError} onRetry={handleStatusChange} />}
         <ProjectPage
@@ -176,35 +175,25 @@ function AgentProjectOverviewPage() {
           runs={runs}
           onViewRun={setSelectedRunId}
         />
-        <section aria-label="Run History" className="space-y-4">
-          <SectionHeader title="Run History" description="Persisted runs returned by the standalone project API." />
-          <RunHistory runs={runs} onViewRun={setSelectedRunId} />
-        </section>
-        {selectedRunId && (
-          <RunDetail
-            key={selectedRunId}
-            agentProjectId={agentProjectId}
-            runId={selectedRunId}
-            onClose={() => setSelectedRunId(null)}
-          />
-        )}
       </main>
     )
   }
 
   return (
-    <main className="mx-auto w-full max-w-content space-y-8 px-page py-8 sm:py-10">
-      <PageHeader
-        metadata={<Button variant="ghost" size="small" onClick={() => navigate(agentListPath)}>Back to projects</Button>}
-        title={project.name}
-        description={agent?.label ?? 'Standalone agent project'}
-        actions={(
-          <>
-            <StatusBadge label={status.label} tone={status.tone} />
-            {statusAction}
-          </>
-        )}
-      />
+    <main className="mx-auto w-full max-w-content space-y-5 px-page py-5 sm:py-6">
+      <div className="rounded-panel border border-default/80 bg-surface p-5 shadow-surface">
+        <PageHeader
+          metadata={<Button variant="ghost" size="small" onClick={() => navigate(agentListPath)}>Back to projects</Button>}
+          title={project.name}
+          description={agent?.label ?? 'Standalone agent project'}
+          actions={(
+            <>
+              <StatusBadge label={status.label} tone={status.tone} />
+              {statusAction}
+            </>
+          )}
+        />
+      </div>
 
       {statusError && <ErrorState title="Status update failed" message={statusError} onRetry={handleStatusChange} />}
 
@@ -234,19 +223,6 @@ function AgentProjectOverviewPage() {
         )}
       </AgentWorkspaceShell>
 
-      <section aria-label="Run History" className="space-y-4">
-        <SectionHeader title="Run History" description="Persisted runs returned by the standalone project API." />
-        <RunHistory runs={runs} onViewRun={setSelectedRunId} />
-      </section>
-
-      {selectedRunId && (
-        <RunDetail
-          key={selectedRunId}
-          agentProjectId={agentProjectId}
-          runId={selectedRunId}
-          onClose={() => setSelectedRunId(null)}
-        />
-      )}
     </main>
   )
 }

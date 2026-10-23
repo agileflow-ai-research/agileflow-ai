@@ -453,27 +453,27 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
         </div>
         <div className="pt-1">
           {step === 0 && (
-            <span className="inline-flex items-center rounded-control border border-[#3c2463] bg-[#211438] px-3 py-1 text-xs font-medium text-content-secondary">
+            <span className="inline-flex items-center rounded-control border border-default bg-elevated px-3 py-1 text-xs font-medium text-content-secondary">
               Draft input
             </span>
           )}
           {step === 1 && (
-            <span className="inline-flex items-center rounded-control border border-[#065f46] bg-[#064e3b] px-3 py-1 text-xs font-medium text-[#34d399]">
+            <span className="inline-flex items-center rounded-control border border-state-success/40 bg-state-success-soft px-3 py-1 text-xs font-medium text-state-success">
               Inputs valid
             </span>
           )}
           {step === 2 && (
-            <span className="inline-flex items-center rounded-control border border-[#3c2463] bg-[#211438] px-3 py-1 text-xs font-medium text-content-secondary">
+            <span className="inline-flex items-center rounded-control border border-default bg-elevated px-3 py-1 text-xs font-medium text-content-secondary">
               {selectedOutputs.length} selected
             </span>
           )}
           {step === 3 && (
-            <span className="inline-flex items-center rounded-control border border-[#065f46] bg-[#064e3b] px-3 py-1 text-xs font-medium text-[#34d399]">
+            <span className="inline-flex items-center rounded-control border border-state-success/40 bg-state-success-soft px-3 py-1 text-xs font-medium text-state-success">
               Ready to run
             </span>
           )}
           {step === 4 && (
-            <span className="inline-flex items-center rounded-control border border-[#b45309] bg-[#78350f]/60 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#fbbf24]">
+            <span className="inline-flex items-center rounded-control border border-state-warning/40 bg-state-warning-soft px-3 py-1 text-xs font-semibold uppercase tracking-wider text-state-warning">
               RUNNING
             </span>
           )}
@@ -505,7 +505,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                 variant="outline"
                 type="button"
                 disabled
-                className="border-[#342058] bg-[#170c2c] text-content-secondary opacity-75 cursor-not-allowed"
+                className="border-default bg-elevated text-content-muted opacity-75 cursor-not-allowed"
                 title="Draft persistence is not supported in standalone mode"
               >
                 Save draft
@@ -520,7 +520,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                 variant="outline"
                 type="button"
                 onClick={() => setStep(0)}
-                className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
+                className="border-default bg-surface text-content-primary hover:bg-elevated"
               >
                 Back
               </Button>
@@ -534,7 +534,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                 variant="outline"
                 type="button"
                 onClick={() => setStep(1)}
-                className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
+                className="border-default bg-surface text-content-primary hover:bg-elevated"
               >
                 Back
               </Button>
@@ -549,7 +549,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                 type="button"
                 onClick={() => setStep(2)}
                 disabled={runState === 'running'}
-                className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
+                className="border-default bg-surface text-content-primary hover:bg-elevated"
               >
                 Edit inputs
               </Button>
@@ -570,7 +570,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
         {step === 0 && (
           <div className="space-y-6">
             <div className="grid gap-4 md:grid-cols-2">
-              <Card className="border-default bg-[#150c2a] p-5">
+              <Card className="border-default bg-surface p-5">
                 <h3 className="text-card-heading font-semibold text-content-primary">
                   Specification sources
                 </h3>
@@ -595,10 +595,10 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                         className={cn(
                           'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer',
                           isSelected
-                            ? 'border border-[#065f46] bg-[#064e3b] text-[#34d399]'
+                            ? 'border border-state-success/40 bg-state-success-soft text-state-success font-semibold'
                             : hasContent
-                              ? 'border border-[#065f46]/60 bg-[#064e3b]/30 text-[#34d399] hover:bg-[#064e3b]/50'
-                              : 'border border-default bg-[#1f1338] text-content-secondary hover:border-accent-border hover:text-content-primary',
+                              ? 'border border-state-success/40 bg-state-success-soft/50 text-state-success hover:bg-state-success-soft'
+                              : 'border border-default bg-elevated text-content-secondary hover:border-accent-border hover:text-content-primary',
                         )}
                       >
                         {isSelected
@@ -612,7 +612,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                 </div>
               </Card>
 
-              <Card className="border-default bg-[#150c2a] p-5">
+              <Card className="border-default bg-surface p-5">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-card-heading font-semibold text-content-primary">
                     Project context
@@ -645,7 +645,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
               const currentError = uploadErrors[activeSourceConfig.id] || ''
 
               return (
-                <Card className="border-default bg-[#150c2a] p-6">
+                <Card className="border-default bg-surface p-6">
                   <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border-default/40 pb-4">
                     <div>
                       <h3 className="text-card-heading font-semibold text-content-primary">
@@ -657,7 +657,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                           : 'Document upload — extracted text will populate this specification source.'}
                       </p>
                     </div>
-                    <div className="inline-flex rounded-lg border border-default bg-[#0b0517] p-1 text-xs font-medium">
+                    <div className="inline-flex rounded-lg border border-default bg-elevated p-1 text-xs font-medium">
                       <button
                         type="button"
                         onClick={() =>
@@ -669,7 +669,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                         className={cn(
                           'rounded-md px-3 py-1.5 transition-colors cursor-pointer',
                           currentMode === 'manual'
-                            ? 'bg-[#1f1338] text-white shadow-sm font-semibold'
+                            ? 'bg-brand text-content-on-primary shadow-sm font-semibold'
                             : 'text-content-muted hover:text-content-primary',
                         )}
                       >
@@ -686,7 +686,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                         className={cn(
                           'rounded-md px-3 py-1.5 transition-colors cursor-pointer',
                           currentMode === 'upload'
-                            ? 'bg-[#1f1338] text-white shadow-sm font-semibold'
+                            ? 'bg-brand text-content-on-primary shadow-sm font-semibold'
                             : 'text-content-muted hover:text-content-primary',
                         )}
                       >
@@ -707,7 +707,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                           updateField(activeSourceConfig.stateKey, event.target.value)
                         }
                         placeholder={activeSourceConfig.placeholder}
-                        textareaClassName="font-sans text-sm bg-[#0b0517] border-default leading-relaxed"
+                        textareaClassName="font-sans text-sm bg-elevated border-default leading-relaxed"
                       />
                     </div>
                   ) : (
@@ -726,7 +726,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                       />
 
                       {!currentProvenance && (
-                        <div className="rounded-lg border-2 border-dashed border-[#2a2046] bg-[#0b0517] p-8 text-center">
+                        <div className="rounded-lg border-2 border-dashed border-default bg-elevated p-8 text-center">
                           <div className="mx-auto flex max-w-md flex-col items-center">
                             <div className="text-2xl mb-2">📄</div>
                             <h4 className="text-sm font-semibold text-content-primary">
@@ -774,7 +774,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
 
                       {currentProvenance && (
                         <div className="space-y-4">
-                          <div className="rounded-card border border-default bg-[#0b0517] p-4">
+                          <div className="rounded-card border border-default bg-elevated p-4">
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <div className="flex items-center gap-3 min-w-0">
                                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-purple/10 text-brand-purple text-xl">
@@ -785,7 +785,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                                     <span className="font-semibold text-content-primary truncate text-sm">
                                       {currentProvenance.original_filename}
                                     </span>
-                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#064e3b] px-2 py-0.5 text-[11px] font-medium text-[#34d399]">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-state-success-soft px-2 py-0.5 text-[11px] font-medium text-state-success">
                                       ✓ Extraction completed
                                     </span>
                                   </div>
@@ -863,11 +863,11 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                                 updateField(activeSourceConfig.stateKey, event.target.value)
                               }
                               placeholder={activeSourceConfig.placeholder}
-                              textareaClassName="font-sans text-sm bg-[#0b0517] border-default leading-relaxed"
+                              textareaClassName="font-sans text-sm bg-elevated border-default leading-relaxed"
                             />
                           </div>
 
-                          <div className="rounded-card border border-[#2a2046] bg-[#120824] p-3 text-xs text-content-muted">
+                          <div className="rounded-card border border-default bg-surface p-3 text-xs text-content-muted">
                             <strong className="text-content-primary">Human review:</strong> Review extracted content before continuing. You may edit the text directly.
                           </div>
                         </div>
@@ -881,7 +881,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
             <div
               role="note"
               aria-label="Validation information"
-              className="rounded-card border border-[#1a3d60] bg-[#0d1e38] p-4 text-sm text-[#7dd3fc]"
+              className="rounded-card border border-state-info/40 bg-state-info-soft p-4 text-sm text-state-info"
             >
               At least one usable source is required: requirements, SRS, user stories, or acceptance criteria.
             </div>
@@ -900,7 +900,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
           <div className="space-y-6">
             <div className="grid gap-6 lg:grid-cols-2">
               {/* Technical preferences card */}
-              <Card className="border-default bg-[#150c2a] p-6 space-y-4">
+              <Card className="border-default bg-surface p-6 space-y-4">
                 <div>
                   <h3 className="text-card-heading font-semibold text-content-primary">
                     Technical preferences
@@ -915,7 +915,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                     value={input.preferred_technology_stack}
                     onChange={(event) => updateField('preferred_technology_stack', event.target.value)}
                     placeholder="e.g. React 19, FastAPI, PostgreSQL"
-                    inputClassName="bg-[#0b0517] border-default"
+                    inputClassName="bg-elevated border-default"
                   />
                   <Textarea
                     label="Technical Constraints"
@@ -923,7 +923,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                     value={input.technical_constraints}
                     onChange={(event) => updateField('technical_constraints', event.target.value)}
                     placeholder="e.g. Must run on Linux ARM64, response time < 200ms"
-                    textareaClassName="bg-[#0b0517] border-default"
+                    textareaClassName="bg-elevated border-default"
                   />
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Input
@@ -931,14 +931,14 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                       value={input.deployment_preference}
                       onChange={(event) => updateField('deployment_preference', event.target.value)}
                       placeholder="e.g. Docker, AWS ECS"
-                      inputClassName="bg-[#0b0517] border-default"
+                      inputClassName="bg-elevated border-default"
                     />
                     <Input
                       label="Database Preference"
                       value={input.database_preference}
                       onChange={(event) => updateField('database_preference', event.target.value)}
                       placeholder="e.g. PostgreSQL 16"
-                      inputClassName="bg-[#0b0517] border-default"
+                      inputClassName="bg-elevated border-default"
                     />
                   </div>
                   <Textarea
@@ -947,7 +947,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                     value={input.ui_ux_constraints}
                     onChange={(event) => updateField('ui_ux_constraints', event.target.value)}
                     placeholder="e.g. Responsive dark theme, WCAG 2.1 AA compliant"
-                    textareaClassName="bg-[#0b0517] border-default"
+                    textareaClassName="bg-elevated border-default"
                   />
                   <Textarea
                     label="Architecture Notes"
@@ -955,13 +955,13 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                     value={input.architecture_notes}
                     onChange={(event) => updateField('architecture_notes', event.target.value)}
                     placeholder="e.g. Clean architecture, modular monolith"
-                    textareaClassName="bg-[#0b0517] border-default"
+                    textareaClassName="bg-elevated border-default"
                   />
                 </div>
               </Card>
 
               {/* Planning inputs card */}
-              <Card className="border-default bg-[#150c2a] p-6 space-y-4">
+              <Card className="border-default bg-surface p-6 space-y-4">
                 <div>
                   <h3 className="text-card-heading font-semibold text-content-primary">
                     Planning inputs
@@ -980,7 +980,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                       error={errors.development_team_count}
                       onChange={(event) => updateField('development_team_count', event.target.value)}
                       placeholder="Team count"
-                      inputClassName="bg-[#0b0517] border-default"
+                      inputClassName="bg-elevated border-default"
                     />
                     <Input
                       label="Sprint duration (days)"
@@ -990,14 +990,14 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                       error={errors.sprint_duration}
                       onChange={(event) => updateField('sprint_duration', event.target.value)}
                       placeholder="Sprint duration"
-                      inputClassName="bg-[#0b0517] border-default"
+                      inputClassName="bg-elevated border-default"
                     />
                     <Input
                       label="Expected project duration"
                       value={input.expected_project_duration}
                       onChange={(event) => updateField('expected_project_duration', event.target.value)}
                       placeholder="Expected duration"
-                      inputClassName="bg-[#0b0517] border-default"
+                      inputClassName="bg-elevated border-default"
                     />
                   </div>
                   <Textarea
@@ -1006,7 +1006,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                     value={input.developer_roles}
                     onChange={(event) => updateField('developer_roles', event.target.value)}
                     placeholder="e.g. 2 Frontend, 2 Backend, 1 QA"
-                    textareaClassName="bg-[#0b0517] border-default"
+                    textareaClassName="bg-elevated border-default"
                   />
                   <Textarea
                     label="Developer Skills"
@@ -1014,7 +1014,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                     value={input.developer_skills}
                     onChange={(event) => updateField('developer_skills', event.target.value)}
                     placeholder="e.g. React, Python, FastAPI, Docker"
-                    textareaClassName="bg-[#0b0517] border-default"
+                    textareaClassName="bg-elevated border-default"
                   />
                   <Textarea
                     label="Team Composition"
@@ -1022,14 +1022,14 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                     value={input.team_composition}
                     onChange={(event) => updateField('team_composition', event.target.value)}
                     placeholder="e.g. Cross-functional agile team"
-                    textareaClassName="bg-[#0b0517] border-default"
+                    textareaClassName="bg-elevated border-default"
                   />
                 </div>
               </Card>
             </div>
 
             {/* Conditional validation callout card */}
-            <Card className="border-default bg-[#150c2a] p-6">
+            <Card className="border-default bg-surface p-6">
               <h3 className="text-card-heading font-semibold text-content-primary">
                 Conditional validation
               </h3>
@@ -1063,7 +1063,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
           <div className="space-y-6">
             <div className="grid gap-6 md:grid-cols-3">
               {outputGroups.map((group) => (
-                <Card key={group.id} className="border-default bg-[#150c2a] p-6 space-y-4">
+                <Card key={group.id} className="border-default bg-surface p-6 space-y-4">
                   <div>
                     <h3 className="text-card-heading font-semibold text-content-primary">
                       {group.title}
@@ -1082,8 +1082,8 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                           className={cn(
                             'flex cursor-pointer items-start gap-3 rounded-control border p-3.5 transition-colors',
                             isSelected
-                              ? 'border-[#7c3aed] bg-[#2a144f] text-content-primary'
-                              : 'border-default bg-[#0b0517] text-content-secondary hover:border-accent-border/60 hover:text-content-primary',
+                              ? 'border-brand bg-brand-soft text-content-primary'
+                              : 'border-default bg-elevated text-content-secondary hover:border-accent-border/60 hover:text-content-primary',
                           )}
                         >
                           <input
@@ -1096,7 +1096,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
                               {isSelected && (
-                                <span className="text-[#a78bfa] font-bold text-xs" aria-hidden="true">
+                                <span className="text-brand font-bold text-xs" aria-hidden="true">
                                   ✓
                                 </span>
                               )}
@@ -1108,7 +1108,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                               {output.value}
                             </span>
                             {output.dependencyHint && (
-                              <span className="mt-1.5 block text-xs text-[#a78bfa]">
+                              <span className="mt-1.5 block text-xs text-brand">
                                 Requires: {output.dependencyHint}
                               </span>
                             )}
@@ -1122,14 +1122,14 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
             </div>
 
             {/* Selection behavior callout card */}
-            <Card className="border-default bg-[#150c2a] p-6 space-y-2">
+            <Card className="border-default bg-surface p-6 space-y-2">
               <h3 className="text-card-heading font-semibold text-content-primary">
                 Selection behavior
               </h3>
               <p className="text-sm text-content-secondary">
                 Only selected outputs are generated, validated, persisted, and displayed.
               </p>
-              <p className="text-sm text-[#c084fc]">
+              <p className="text-sm text-brand">
                 Cross-artifact checks are selection-aware: Agent 2 never requires an artifact that the user did not request.
               </p>
             </Card>
@@ -1148,23 +1148,23 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
           <div className="space-y-6">
             {/* Metric Cards Row */}
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4" aria-label="Summary metrics">
-              <Card className="border-default bg-[#150c2a] p-4">
+              <Card className="border-default bg-surface p-4">
                 <span className="text-xs font-medium text-content-muted">Specification sources</span>
                 <p className="mt-2 text-2xl font-bold text-content-primary">{specSourceCount}</p>
               </Card>
-              <Card className="border-default bg-[#150c2a] p-4">
+              <Card className="border-default bg-surface p-4">
                 <span className="text-xs font-medium text-content-muted">Developers</span>
                 <p className="mt-2 text-2xl font-bold text-content-primary">
                   {Number(input.development_team_count) > 0 ? input.development_team_count : 'Not provided'}
                 </p>
               </Card>
-              <Card className="border-default bg-[#150c2a] p-4">
+              <Card className="border-default bg-surface p-4">
                 <span className="text-xs font-medium text-content-muted">Sprint duration</span>
                 <p className="mt-2 text-2xl font-bold text-content-primary">
                   {Number(input.sprint_duration) > 0 ? `${input.sprint_duration} days` : 'Not provided'}
                 </p>
               </Card>
-              <Card className="border-default bg-[#150c2a] p-4">
+              <Card className="border-default bg-surface p-4">
                 <span className="text-xs font-medium text-content-muted">Selected outputs</span>
                 <p className="mt-2 text-2xl font-bold text-content-primary">{selectedOutputs.length}</p>
               </Card>
@@ -1173,7 +1173,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
             {/* Summaries Row */}
             <div className="grid gap-4 md:grid-cols-2">
               {/* Input summary card */}
-              <Card className="border-default bg-[#150c2a] p-5 space-y-3">
+              <Card className="border-default bg-surface p-5 space-y-3">
                 <h3 className="text-card-heading font-semibold text-content-primary">Input summary</h3>
                 <div className="text-sm">
                   <p className="font-medium text-content-primary">
@@ -1198,7 +1198,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
               </Card>
 
               {/* Selected outputs card */}
-              <Card className="border-default bg-[#150c2a] p-5 space-y-3">
+              <Card className="border-default bg-surface p-5 space-y-3">
                 <h3 className="text-card-heading font-semibold text-content-primary">Selected outputs</h3>
                 <div className="text-sm">
                   {selectedGroups.length > 0 ? (
@@ -1216,10 +1216,10 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                               {group.selected.map((output) => (
                                 <span
                                   key={output.value}
-                                  className="inline-flex items-center gap-1.5 rounded-control border border-[#3c2463] bg-[#211438] px-2.5 py-1 text-xs text-content-primary"
+                                  className="inline-flex items-center gap-1.5 rounded-control border border-default bg-elevated px-2.5 py-1 text-xs text-content-primary"
                                 >
                                   <span>{output.label}</span>
-                                  <span className="font-mono text-[10px] text-[#a78bfa]">{output.value}</span>
+                                  <span className="font-mono text-[10px] text-brand">{output.value}</span>
                                 </span>
                               ))}
                             </div>
@@ -1235,7 +1235,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
             </div>
 
             {/* Human review callout card */}
-            <Card className="border border-[#7c3aed]/50 bg-[#241344]/80 p-5 space-y-1.5">
+            <Card className="border border-brand/40 bg-brand-soft p-5 space-y-1.5">
               <h3 className="text-base font-semibold text-content-primary">
                 Human review required before starting this standalone run
               </h3>
@@ -1248,7 +1248,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
         {step === 4 && (
           <div className="space-y-6">
             {/* Execution pipeline card */}
-            <Card className="border-default bg-[#150c2a] p-5 space-y-3">
+            <Card className="border-default bg-surface p-5 space-y-3">
               <div>
                 <h3 className="text-card-heading font-semibold text-content-primary">
                   Execution pipeline
@@ -1264,7 +1264,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                 {pipelineStages.map((stage) => (
                   <span
                     key={stage}
-                    className="inline-flex items-center gap-1.5 rounded-control border border-[#3c2463] bg-[#211438] px-3 py-1.5 text-xs font-medium text-content-primary"
+                    className="inline-flex items-center gap-1.5 rounded-control border border-default bg-elevated px-3 py-1.5 text-xs font-medium text-content-primary"
                   >
                     <span className="h-1.5 w-1.5 rounded-full bg-brand" aria-hidden="true" />
                     {stage}
@@ -1275,7 +1275,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
 
             {/* Current activity and Run evidence cards */}
             <div className="grid gap-4 md:grid-cols-2">
-              <Card className="border-default bg-[#150c2a] p-5 space-y-2">
+              <Card className="border-default bg-surface p-5 space-y-2">
                 <h3 className="text-card-heading font-semibold text-content-primary">
                   Current activity
                 </h3>
@@ -1288,7 +1288,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                 </ul>
               </Card>
 
-              <Card className="border-default bg-[#150c2a] p-5 space-y-2">
+              <Card className="border-default bg-surface p-5 space-y-2">
                 <h3 className="text-card-heading font-semibold text-content-primary">
                   Run evidence
                 </h3>
@@ -1297,7 +1297,7 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
                 </p>
                 <ul className="mt-2 space-y-1 text-xs text-content-muted" aria-label="Run evidence details">
                   <li>
-                    • Run status: <span className="font-semibold text-[#fbbf24]">RUNNING</span>
+                    • Run status: <span className="font-semibold text-state-warning">RUNNING</span>
                   </li>
                   <li>
                     • Project: {project?.name || 'Project'}
@@ -1317,11 +1317,11 @@ function DesignPlanningWorkspace({ project, onRunCompleted }) {
             </div>
 
             {/* Safety note card */}
-            <Card className="border border-[#1e3a8a]/60 bg-[#0c1836]/70 p-4 space-y-1">
-              <p className="text-sm font-medium text-[#93c5fd]">
+            <Card className="border border-state-info/40 bg-state-info-soft p-4 space-y-1">
+              <p className="text-sm font-medium text-state-info">
                 Deterministic user-input errors are rejected before model execution and do not consume correction attempts.
               </p>
-              <p className="text-xs text-[#60a5fa]/80">
+              <p className="text-xs text-state-info/80">
                 Generated-output correction is bounded by the existing engine policy. No internal prompts, chain-of-thought, or provider secrets are exposed.
               </p>
             </Card>

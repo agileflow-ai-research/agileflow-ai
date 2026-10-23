@@ -57,13 +57,13 @@ export default function TechnicalPlanningPanel({
 
   /* Sprint Planning Method Card (shown when SPRINT_PLAN is selected) */
   const sprintPlanningMethodCard = isSprintPlanSelected ? (
-    <Card className="border border-[#7c3aed]/50 bg-[#150c2a] p-6 space-y-4">
+    <Card className="border border-brand/50 bg-surface p-6 space-y-4">
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-card-heading font-semibold text-content-primary">
             Sprint Planning Method
           </h3>
-          <span className="inline-flex items-center rounded-full bg-brand/20 px-2.5 py-0.5 text-xs font-semibold text-[#c084fc]">
+          <span className="inline-flex items-center rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand">
             SPRINT_PLAN
           </span>
         </div>
@@ -77,8 +77,8 @@ export default function TechnicalPlanningPanel({
           className={cn(
             'flex cursor-pointer items-start gap-3 rounded-control border p-4 transition-all',
             planningMode === PLANNING_MODES.TIMELINE_BASED
-              ? 'border-[#7c3aed] bg-[#2a144f]/80 ring-1 ring-[#7c3aed]'
-              : 'border-default bg-[#0b0517] hover:border-[#7c3aed]/50 hover:bg-[#1a0f30]',
+              ? 'border-brand bg-brand-soft ring-1 ring-brand'
+              : 'border-default bg-elevated hover:border-brand/50 hover:bg-surface',
           )}
         >
           <input
@@ -103,8 +103,8 @@ export default function TechnicalPlanningPanel({
           className={cn(
             'flex cursor-pointer items-start gap-3 rounded-control border p-4 transition-all',
             planningMode === PLANNING_MODES.CAPACITY_AWARE
-              ? 'border-[#7c3aed] bg-[#2a144f]/80 ring-1 ring-[#7c3aed]'
-              : 'border-default bg-[#0b0517] hover:border-[#7c3aed]/50 hover:bg-[#1a0f30]',
+              ? 'border-brand bg-brand-soft ring-1 ring-brand'
+              : 'border-default bg-elevated hover:border-brand/50 hover:bg-surface',
           )}
         >
           <input
@@ -130,18 +130,18 @@ export default function TechnicalPlanningPanel({
 
   /* 1. Required inputs card */
   const requiredInputsCard = (
-    <Card className="border border-[#7c3aed]/50 bg-[#150c2a] p-6 space-y-4">
+    <Card className="border border-brand/50 bg-surface p-6 space-y-4">
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-card-heading font-semibold text-content-primary">
             Required inputs
           </h3>
           {hasContractRequiredInputs ? (
-            <span className="inline-flex items-center rounded-full bg-state-warning/15 px-2.5 py-0.5 text-xs font-semibold text-state-warning">
+            <span className="inline-flex items-center rounded-full bg-state-warning-soft px-2.5 py-0.5 text-xs font-semibold text-state-warning">
               Contract required
             </span>
           ) : (
-            <span className="inline-flex items-center rounded-full bg-[#064e3b] px-2.5 py-0.5 text-xs font-semibold text-[#34d399]">
+            <span className="inline-flex items-center rounded-full bg-state-success-soft px-2.5 py-0.5 text-xs font-semibold text-state-success">
               ✓ None required
             </span>
           )}
@@ -162,11 +162,11 @@ export default function TechnicalPlanningPanel({
                 error={errors.project_start_date}
                 onChange={(e) => onUpdateField?.('project_start_date', e.target.value)}
                 placeholder="YYYY-MM-DD"
-                inputClassName="bg-[#0b0517] border-default"
+                inputClassName="bg-elevated border-default"
                 required
               />
               {!errors.project_start_date && (
-                <span className="block text-xs text-[#a78bfa]">
+                <span className="block text-xs text-brand">
                   {requiredPlanning.project_start_date.reason}
                 </span>
               )}
@@ -182,11 +182,11 @@ export default function TechnicalPlanningPanel({
                 error={errors.expected_project_duration}
                 onChange={(e) => onUpdateField?.('expected_project_duration', e.target.value)}
                 placeholder="e.g. 3 months or 2026-12-31"
-                inputClassName="bg-[#0b0517] border-default"
+                inputClassName="bg-elevated border-default"
                 required
               />
               {!errors.expected_project_duration && (
-                <span className="block text-xs text-[#a78bfa]">
+                <span className="block text-xs text-brand">
                   {requiredPlanning.expected_project_duration.reason}
                 </span>
               )}
@@ -203,11 +203,11 @@ export default function TechnicalPlanningPanel({
                 error={errors.sprint_duration}
                 onChange={(e) => onUpdateField?.('sprint_duration', e.target.value)}
                 placeholder="Sprint duration in days (e.g. 14)"
-                inputClassName="bg-[#0b0517] border-default"
+                inputClassName="bg-elevated border-default"
                 required
               />
               {!errors.sprint_duration && (
-                <span className="block text-xs text-[#a78bfa]">
+                <span className="block text-xs text-brand">
                   {requiredPlanning.sprint_duration.reason}
                 </span>
               )}
@@ -224,11 +224,11 @@ export default function TechnicalPlanningPanel({
                 error={errors.development_team_count}
                 onChange={(e) => onUpdateField?.('development_team_count', e.target.value)}
                 placeholder="Team count (e.g. 4)"
-                inputClassName="bg-[#0b0517] border-default"
+                inputClassName="bg-elevated border-default"
                 required
               />
               {!errors.development_team_count && (
-                <span className="block text-xs text-[#a78bfa]">
+                <span className="block text-xs text-brand">
                   {requiredPlanning.development_team_count.reason}
                 </span>
               )}
@@ -236,7 +236,7 @@ export default function TechnicalPlanningPanel({
           )}
         </div>
       ) : (
-        <div className="rounded-control border border-[#065f46]/40 bg-[#064e3b]/15 p-4 text-xs text-[#34d399]">
+        <div className="rounded-control border border-state-success/40 bg-state-success-soft p-4 text-xs text-state-success">
           {selectedOutputs.length === 0
             ? 'Select outputs in Node 2 to determine if technical planning inputs are contract-required.'
             : 'Your selected outputs do not require team count or sprint duration. All planning parameters are optional.'}
@@ -247,13 +247,13 @@ export default function TechnicalPlanningPanel({
 
   /* 2. Recommended inputs card */
   const recommendedInputsCard = (
-    <Card className="border-default bg-[#150c2a] p-6 space-y-4">
+    <Card className="border-default bg-surface p-6 space-y-4">
       <div>
         <div className="flex items-center gap-2">
           <h3 className="text-card-heading font-semibold text-content-primary">
             Recommended inputs
           </h3>
-          <span className="inline-flex items-center rounded-full bg-[#1e1438] px-2 py-0.5 text-xs text-content-muted">
+          <span className="inline-flex items-center rounded-full bg-elevated px-2 py-0.5 text-xs text-content-muted">
             Recommended
           </span>
         </div>
@@ -274,7 +274,7 @@ export default function TechnicalPlanningPanel({
                 helperText="Recommended"
                 onChange={(e) => onUpdateField?.('project_start_date', e.target.value)}
                 placeholder="YYYY-MM-DD"
-                inputClassName="bg-[#0b0517] border-default"
+                inputClassName="bg-elevated border-default"
               />
             )}
             {!isDurationRequired && (
@@ -284,7 +284,7 @@ export default function TechnicalPlanningPanel({
                 helperText="Recommended"
                 onChange={(e) => onUpdateField?.('expected_project_duration', e.target.value)}
                 placeholder="e.g. 3 months"
-                inputClassName="bg-[#0b0517] border-default"
+                inputClassName="bg-elevated border-default"
               />
             )}
             {!isSprintDurationRequired && (
@@ -297,7 +297,7 @@ export default function TechnicalPlanningPanel({
                 helperText="Recommended"
                 onChange={(e) => onUpdateField?.('sprint_duration', e.target.value)}
                 placeholder="Optional sprint duration"
-                inputClassName="bg-[#0b0517] border-default"
+                inputClassName="bg-elevated border-default"
               />
             )}
             {!isTeamCountRequired && (
@@ -310,7 +310,7 @@ export default function TechnicalPlanningPanel({
                 helperText="Recommended"
                 onChange={(e) => onUpdateField?.('development_team_count', e.target.value)}
                 placeholder="Optional team count"
-                inputClassName="bg-[#0b0517] border-default"
+                inputClassName="bg-elevated border-default"
               />
             )}
           </div>
@@ -323,7 +323,7 @@ export default function TechnicalPlanningPanel({
           helperText="Recommended"
           onChange={(e) => onUpdateField?.('developer_roles', e.target.value)}
           placeholder="e.g. 2 Frontend, 2 Backend, 1 QA"
-          textareaClassName="bg-[#0b0517] border-default"
+          textareaClassName="bg-elevated border-default"
         />
         <Textarea
           label="Developer Skills"
@@ -332,7 +332,7 @@ export default function TechnicalPlanningPanel({
           helperText="Recommended"
           onChange={(e) => onUpdateField?.('developer_skills', e.target.value)}
           placeholder="e.g. React, Python, FastAPI, Docker"
-          textareaClassName="bg-[#0b0517] border-default"
+          textareaClassName="bg-elevated border-default"
         />
         <Textarea
           label="Team Composition"
@@ -341,7 +341,7 @@ export default function TechnicalPlanningPanel({
           helperText="Recommended"
           onChange={(e) => onUpdateField?.('team_composition', e.target.value)}
           placeholder="e.g. Cross-functional agile team"
-          textareaClassName="bg-[#0b0517] border-default"
+          textareaClassName="bg-elevated border-default"
         />
       </div>
     </Card>
@@ -351,8 +351,8 @@ export default function TechnicalPlanningPanel({
   const technicalPreferencesCard = (
     <Card
       className={cn(
-        'border bg-[#150c2a] p-6 space-y-4',
-        isArchitectureOnly ? 'border-[#7c3aed]/50' : 'border-default',
+        'border bg-surface p-6 space-y-4',
+        isArchitectureOnly ? 'border-brand/50' : 'border-default',
       )}
     >
       <div>
@@ -361,7 +361,7 @@ export default function TechnicalPlanningPanel({
             Optional technical preferences
           </h3>
           {isArchitectureOnly && (
-            <span className="inline-flex items-center rounded-full bg-brand/20 px-2.5 py-0.5 text-xs font-semibold text-[#c084fc]">
+            <span className="inline-flex items-center rounded-full bg-brand-soft px-2.5 py-0.5 text-xs font-semibold text-brand">
               Design context
             </span>
           )}
@@ -378,7 +378,7 @@ export default function TechnicalPlanningPanel({
           helperText="Optional"
           onChange={(e) => onUpdateField?.('preferred_technology_stack', e.target.value)}
           placeholder="e.g. React 19, FastAPI, PostgreSQL"
-          inputClassName="bg-[#0b0517] border-default"
+          inputClassName="bg-elevated border-default"
         />
         <Textarea
           label="Technical Constraints"
@@ -387,7 +387,7 @@ export default function TechnicalPlanningPanel({
           helperText="Optional"
           onChange={(e) => onUpdateField?.('technical_constraints', e.target.value)}
           placeholder="e.g. Must run on Linux ARM64, response time < 200ms"
-          textareaClassName="bg-[#0b0517] border-default"
+          textareaClassName="bg-elevated border-default"
         />
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
@@ -396,7 +396,7 @@ export default function TechnicalPlanningPanel({
             helperText="Optional"
             onChange={(e) => onUpdateField?.('deployment_preference', e.target.value)}
             placeholder="e.g. Docker, AWS ECS"
-            inputClassName="bg-[#0b0517] border-default"
+            inputClassName="bg-elevated border-default"
           />
           <Input
             label="Database Preference"
@@ -404,7 +404,7 @@ export default function TechnicalPlanningPanel({
             helperText="Optional"
             onChange={(e) => onUpdateField?.('database_preference', e.target.value)}
             placeholder="e.g. PostgreSQL 16"
-            inputClassName="bg-[#0b0517] border-default"
+            inputClassName="bg-elevated border-default"
           />
         </div>
         <Textarea
@@ -414,7 +414,7 @@ export default function TechnicalPlanningPanel({
           helperText="Optional"
           onChange={(e) => onUpdateField?.('ui_ux_constraints', e.target.value)}
           placeholder="e.g. Responsive dark theme, WCAG 2.1 AA compliant"
-          textareaClassName="bg-[#0b0517] border-default"
+          textareaClassName="bg-elevated border-default"
         />
         <Textarea
           label="Architecture Notes"
@@ -423,7 +423,7 @@ export default function TechnicalPlanningPanel({
           helperText="Optional"
           onChange={(e) => onUpdateField?.('architecture_notes', e.target.value)}
           placeholder="e.g. Clean architecture, modular monolith"
-          textareaClassName="bg-[#0b0517] border-default"
+          textareaClassName="bg-elevated border-default"
         />
       </div>
     </Card>
@@ -432,14 +432,14 @@ export default function TechnicalPlanningPanel({
   return (
     <div className="space-y-6" data-testid="agent2-panel-TECHNICAL_PLANNING">
       {/* Top Banner: Selected outputs indicator */}
-      <Card className="border-default bg-[#150c2a] p-5">
+      <Card className="border-default bg-surface p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold text-content-primary">
                 Selected Outputs
               </h3>
-              <span className="inline-flex items-center rounded-control border border-[#3c2463] bg-[#211438] px-2.5 py-0.5 text-xs font-medium text-content-secondary">
+              <span className="inline-flex items-center rounded-control border border-default bg-elevated px-2.5 py-0.5 text-xs font-medium text-content-secondary">
                 {selectedOutputs.length} of 14 selected
               </span>
             </div>
@@ -452,7 +452,7 @@ export default function TechnicalPlanningPanel({
             variant="ghost"
             size="sm"
             onClick={() => onNavigate?.(DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION)}
-            className="text-xs text-[#a78bfa] hover:text-white hover:bg-brand/20 underline"
+            className="text-xs text-brand hover:text-content-primary hover:bg-brand-soft underline"
           >
             Change outputs (Node 2)
           </Button>
@@ -468,8 +468,8 @@ export default function TechnicalPlanningPanel({
                   className={cn(
                     'inline-flex items-center rounded-control border px-2 py-0.5 text-[11px] font-mono',
                     isPlanningTrigger
-                      ? 'border-[#7c3aed] bg-[#2a144f] text-[#c084fc] font-semibold'
-                      : 'border-default bg-[#0b0517] text-content-secondary',
+                      ? 'border-brand bg-brand-soft text-brand font-semibold'
+                      : 'border-default bg-elevated text-content-secondary',
                   )}
                 >
                   {code}
@@ -509,7 +509,7 @@ export default function TechnicalPlanningPanel({
       )}
 
       {/* Conditional validation callout card */}
-      <Card className="border-default bg-[#150c2a] p-6">
+      <Card className="border-default bg-surface p-6">
         <h3 className="text-card-heading font-semibold text-content-primary">
           Conditional validation
         </h3>
@@ -550,7 +550,7 @@ export default function TechnicalPlanningPanel({
           type="button"
           variant="outline"
           onClick={handleBack}
-          className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
+          className="border-default bg-surface text-content-primary hover:bg-elevated"
         >
           Back — Output Selection
         </Button>

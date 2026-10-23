@@ -82,7 +82,7 @@ export default function GenerateImplementationPanel({
       </dl>
 
       {warnings.length ? (
-        <section className="rounded-control border border-state-warning/40 bg-state-warning/10 p-4" aria-labelledby="implementation-warning-title">
+        <section className="rounded-control border border-state-warning/40 bg-state-warning-soft p-4" aria-labelledby="implementation-warning-title">
           <h4 id="implementation-warning-title" className="font-semibold text-content-primary">Agent 3 can proceed, but some context is incomplete</h4>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-content-secondary">
             {warnings.map((warning) => <li key={warning.finding_id}>{warning.title}: {warning.message}</li>)}
@@ -132,7 +132,7 @@ export default function GenerateImplementationPanel({
 
       {runState.error ? <p role="alert" className="text-sm text-state-danger">{runState.error}</p> : null}
       {newestRun ? (
-        <section className="rounded-control border border-state-success/40 bg-state-success/10 p-4">
+        <section className="rounded-control border border-state-success/40 bg-state-success-soft p-4">
           <p className="font-semibold text-content-primary">✓ AgentRun Created</p>
           <p className="mt-1 text-sm text-content-secondary">Run ID: <span className="font-mono text-content-primary">{newestRun.run_id}</span></p>
           <p className="mt-1 text-sm text-content-secondary">Status: Ready for Generation</p>

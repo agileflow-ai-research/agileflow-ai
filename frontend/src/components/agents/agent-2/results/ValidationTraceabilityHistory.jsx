@@ -179,7 +179,7 @@ function ValidationTraceabilityHistory({
           <p className="mt-1 text-sm text-content-muted">{subtitle}</p>
         </div>
         <div className="flex items-center gap-3 pt-1">
-          <span className="inline-flex items-center rounded-control border border-[#065f46] bg-[#064e3b]/80 px-3 py-1 text-xs font-semibold text-[#34d399]">
+          <span className="inline-flex items-center rounded-control border border-state-success/40 bg-state-success-soft px-3 py-1 text-xs font-semibold text-state-success">
             Evidence available
           </span>
           {onBackToOverview && (
@@ -193,7 +193,7 @@ function ValidationTraceabilityHistory({
       {/* Two Evidence Cards matching S2-12 PNG */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {/* Left Card: Validation evidence */}
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-3 flex flex-col justify-between">
+        <div className="rounded-panel border border-default bg-surface p-5 space-y-3 flex flex-col justify-between">
           <div className="space-y-1">
             <h3 className="font-semibold text-content-primary text-base">Validation evidence</h3>
             <p className="text-xs text-content-muted">Bounded correction summary</p>
@@ -201,27 +201,27 @@ function ValidationTraceabilityHistory({
 
           <div className="pt-2">
             {hasErrors || effectiveStatus === 'FAILED' ? (
-              <span className="inline-flex items-center rounded-control border border-state-danger/40 bg-state-danger/20 px-2.5 py-1 text-xs font-semibold text-state-danger">
+              <span className="inline-flex items-center rounded-control border border-state-danger/40 bg-state-danger-soft px-2.5 py-1 text-xs font-semibold text-state-danger">
                 Run failed validation/execution. Review persisted findings.
               </span>
             ) : hasCorrections ? (
-              <span className="inline-flex items-center rounded-control border border-[#854d0e] bg-[#78350f]/60 px-2.5 py-1 text-xs font-semibold text-[#fde047]">
+              <span className="inline-flex items-center rounded-control border border-state-warning/40 bg-state-warning-soft px-2.5 py-1 text-xs font-semibold text-state-warning">
                 Initial validation: findings detected
               </span>
             ) : (
-              <span className="inline-flex items-center rounded-control border border-[#065f46] bg-[#064e3b]/80 px-2.5 py-1 text-xs font-semibold text-[#34d399]">
+              <span className="inline-flex items-center rounded-control border border-state-success/40 bg-state-success-soft px-2.5 py-1 text-xs font-semibold text-state-success">
                 Run completed after Agent 2 validation
               </span>
             )}
           </div>
 
-          <div className="space-y-2 pt-2 border-t border-[#2d1b4e]/80 text-xs">
+          <div className="space-y-2 pt-2 border-t border-default text-xs">
             <p className="text-content-secondary">
               Correction attempts: {attemptsValue}
             </p>
 
             {hasOutputCorrectedWarning && (
-              <p className="text-[#fde047]">
+              <p className="text-state-warning">
                 Automatic correction applied bounded repair to align generated schema.
               </p>
             )}
@@ -261,7 +261,7 @@ function ValidationTraceabilityHistory({
         </div>
 
         {/* Right Card: Traceability evidence */}
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-3 flex flex-col justify-between">
+        <div className="rounded-panel border border-default bg-surface p-5 space-y-3 flex flex-col justify-between">
           <div className="space-y-1">
             <h3 className="font-semibold text-content-primary text-base">Traceability evidence</h3>
             <p className="text-xs text-content-muted">Specification → design → planning</p>
@@ -287,7 +287,7 @@ function ValidationTraceabilityHistory({
             )}
           </div>
 
-          <div className="space-y-2 pt-2 border-t border-[#2d1b4e]/80 text-xs text-content-muted">
+          <div className="space-y-2 pt-2 border-t border-default text-xs text-content-muted">
             {groupedRefs.sources.length > 0 && (
               <p>
                 <strong className="text-content-secondary">Source refs:</strong> {groupedRefs.sources.join(', ')}
@@ -311,7 +311,7 @@ function ValidationTraceabilityHistory({
       </div>
 
       {/* Historical Agent 2 runs table Card matching S2-12 PNG */}
-      <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-4">
+      <div className="rounded-panel border border-default bg-surface p-5 space-y-4">
         <div>
           <h3 className="font-semibold text-content-primary text-base">Historical Agent 2 runs</h3>
           <p className="mt-0.5 text-xs text-content-muted">
@@ -322,7 +322,7 @@ function ValidationTraceabilityHistory({
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm" aria-label="Historical Agent 2 runs table">
             <thead>
-              <tr className="border-b border-[#2d1b4e]/80 text-xs text-content-muted font-medium">
+              <tr className="border-b border-default text-xs text-content-muted font-medium">
                 <th scope="col" className="pb-3 pr-4 font-medium">Run</th>
                 <th scope="col" className="pb-3 pr-4 font-medium">Created</th>
                 <th scope="col" className="pb-3 pr-4 font-medium">Status</th>
@@ -330,7 +330,7 @@ function ValidationTraceabilityHistory({
                 <th scope="col" className="pb-3 font-medium text-right sm:text-left">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#2d1b4e]/40">
+            <tbody className="divide-y divide-default">
               {runList.map((r) => {
                 const isRunFailed = r.status === 'FAILED'
                 const outputsArray = Array.isArray(r.selected_outputs)
@@ -348,7 +348,7 @@ function ValidationTraceabilityHistory({
                 }
 
                 return (
-                  <tr key={r.run_id} className="hover:bg-canvas/40 transition-colors">
+                  <tr key={r.run_id} className="hover:bg-elevated/60 transition-colors">
                     <td className="py-3 pr-4 font-mono text-xs font-semibold text-content-primary">
                       {r.run_id}
                     </td>
@@ -359,7 +359,7 @@ function ValidationTraceabilityHistory({
                       {isRunFailed ? (
                         <span className="text-state-danger">FAILED</span>
                       ) : (
-                        <span className="text-[#34d399]">COMPLETED</span>
+                        <span className="text-state-success">COMPLETED</span>
                       )}
                     </td>
                     <td className="py-3 pr-4 text-xs text-content-secondary">
@@ -384,7 +384,7 @@ function ValidationTraceabilityHistory({
       </div>
 
       {/* Standalone scope disclaimer banner matching S2-12 PNG */}
-      <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4 text-xs text-content-muted">
+      <div className="rounded-panel border border-default bg-surface p-4 text-xs text-content-muted">
         Standalone scope: no Agent 1/3/4 execution · no Orchestrator · no H2 · no integrated SKB write · no Jira Cloud sync · no RAG.
       </div>
     </section>

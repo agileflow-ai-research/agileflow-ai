@@ -66,21 +66,21 @@ export default function HumanReviewPanel({
     <div className="space-y-6" data-testid="agent2-panel-HUMAN_REVIEW">
       {/* 4 Summary Metrics Cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4" aria-label="Summary metrics">
-        <Card className="border-default bg-[#150c2a] p-4">
+        <Card className="border-default bg-surface p-4">
           <span className="text-xs font-medium text-content-muted">Specification sources</span>
           <p className="mt-2 text-2xl font-bold text-content-primary">{specSourceCount}</p>
         </Card>
-        <Card className="border-default bg-[#150c2a] p-4">
+        <Card className="border-default bg-surface p-4">
           <span className="text-xs font-medium text-content-muted">Selected outputs</span>
           <p className="mt-2 text-2xl font-bold text-content-primary">{selectedOutputs.length}</p>
         </Card>
-        <Card className="border-default bg-[#150c2a] p-4">
+        <Card className="border-default bg-surface p-4">
           <span className="text-xs font-medium text-content-muted">Developers</span>
           <p className="mt-2 text-2xl font-bold text-content-primary">
             {Number(input.development_team_count) > 0 ? input.development_team_count : 'Not provided'}
           </p>
         </Card>
-        <Card className="border-default bg-[#150c2a] p-4">
+        <Card className="border-default bg-surface p-4">
           <span className="text-xs font-medium text-content-muted">Sprint duration</span>
           <p className="mt-2 text-2xl font-bold text-content-primary">
             {Number(input.sprint_duration) > 0 ? `${input.sprint_duration} days` : 'Not provided'}
@@ -89,7 +89,7 @@ export default function HumanReviewPanel({
       </div>
 
       {/* 1. Specifications summary card */}
-      <Card className="border-default bg-[#150c2a] p-5 space-y-4">
+      <Card className="border-default bg-surface p-5 space-y-4">
         <div className="flex items-center justify-between gap-2 border-b border-border-default/40 pb-3">
           <h3 className="text-card-heading font-semibold text-content-primary">
             Specification summary ({specSourceCount})
@@ -99,7 +99,7 @@ export default function HumanReviewPanel({
             variant="ghost"
             size="sm"
             onClick={() => onNavigate?.(DESIGN_PLANNING_NODE_IDS.PROJECT_SPECIFICATIONS)}
-            className="text-xs text-[#a78bfa] hover:text-white hover:bg-brand/20 underline"
+            className="text-xs text-brand hover:text-content-primary hover:bg-brand-soft underline"
           >
             Edit Node 1
           </Button>
@@ -108,13 +108,13 @@ export default function HumanReviewPanel({
         {activeSpecs.length > 0 ? (
           <div className="space-y-3">
             {activeSpecs.map((spec) => (
-              <div key={spec.id} className="rounded-control border border-default bg-[#0b0517] p-3 space-y-1.5">
+              <div key={spec.id} className="rounded-control border border-default bg-elevated p-3 space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-content-primary">{spec.label}</span>
                   <span className="text-[11px] text-content-muted">{spec.text.length.toLocaleString()} chars</span>
                 </div>
                 {spec.provenance && (
-                  <div className="text-[11px] text-[#34d399] flex items-center gap-1.5">
+                  <div className="text-[11px] text-state-success flex items-center gap-1.5">
                     <span>📄 Uploaded: {spec.provenance.original_filename}</span>
                     <span>({(spec.provenance.size_bytes / 1024).toFixed(1)} KB)</span>
                   </div>
@@ -133,7 +133,7 @@ export default function HumanReviewPanel({
       </Card>
 
       {/* 2. Selected outputs summary card */}
-      <Card className="border-default bg-[#150c2a] p-5 space-y-4">
+      <Card className="border-default bg-surface p-5 space-y-4">
         <div className="flex items-center justify-between gap-2 border-b border-border-default/40 pb-3">
           <h3 className="text-card-heading font-semibold text-content-primary">
             Selected outputs ({selectedOutputs.length})
@@ -143,7 +143,7 @@ export default function HumanReviewPanel({
             variant="ghost"
             size="sm"
             onClick={() => onNavigate?.(DESIGN_PLANNING_NODE_IDS.OUTPUT_SELECTION)}
-            className="text-xs text-[#a78bfa] hover:text-white hover:bg-brand/20 underline"
+            className="text-xs text-brand hover:text-content-primary hover:bg-brand-soft underline"
           >
             Edit Node 2
           </Button>
@@ -160,10 +160,10 @@ export default function HumanReviewPanel({
                   {group.selected.map((output) => (
                     <span
                       key={output.value}
-                      className="inline-flex items-center gap-1.5 rounded-control border border-[#3c2463] bg-[#211438] px-2.5 py-1 text-xs text-content-primary"
+                      className="inline-flex items-center gap-1.5 rounded-control border border-default bg-elevated px-2.5 py-1 text-xs text-content-primary"
                     >
                       <span>{output.label}</span>
-                      <span className="font-mono text-[10px] text-[#a78bfa]">{output.value}</span>
+                      <span className="font-mono text-[10px] text-brand">{output.value}</span>
                     </span>
                   ))}
                 </div>
@@ -176,7 +176,7 @@ export default function HumanReviewPanel({
       </Card>
 
       {/* 3. Relevant Technical & Planning inputs summary card */}
-      <Card className="border-default bg-[#150c2a] p-5 space-y-4">
+      <Card className="border-default bg-surface p-5 space-y-4">
         <div className="flex items-center justify-between gap-2 border-b border-border-default/40 pb-3">
           <h3 className="text-card-heading font-semibold text-content-primary">
             Technical & planning summary
@@ -186,7 +186,7 @@ export default function HumanReviewPanel({
             variant="ghost"
             size="sm"
             onClick={() => onNavigate?.(DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING)}
-            className="text-xs text-[#a78bfa] hover:text-white hover:bg-brand/20 underline"
+            className="text-xs text-brand hover:text-content-primary hover:bg-brand-soft underline"
           >
             Edit Node 3
           </Button>
@@ -199,7 +199,7 @@ export default function HumanReviewPanel({
           </p>
 
           {/* Planning parameters with requirement rationale */}
-          <div className="rounded-control border border-default bg-[#0b0517] p-3.5 space-y-2">
+          <div className="rounded-control border border-default bg-elevated p-3.5 space-y-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-content-muted">
               Planning parameters
             </span>
@@ -217,7 +217,7 @@ export default function HumanReviewPanel({
                   <strong className="font-medium text-content-primary">Project start date:</strong>{' '}
                   {input.project_start_date?.trim() ? input.project_start_date : 'Not provided'}
                   {requiredPlanning.project_start_date ? (
-                    <span className="ml-1.5 text-[#fbbf24]">
+                    <span className="ml-1.5 text-state-warning">
                       ({requiredPlanning.project_start_date.reason})
                     </span>
                   ) : (
@@ -231,7 +231,7 @@ export default function HumanReviewPanel({
                   <strong className="font-medium text-content-primary">Expected project duration:</strong>{' '}
                   {input.expected_project_duration?.trim() ? input.expected_project_duration : 'Not provided'}
                   {requiredPlanning.expected_project_duration ? (
-                    <span className="ml-1.5 text-[#fbbf24]">
+                    <span className="ml-1.5 text-state-warning">
                       ({requiredPlanning.expected_project_duration.reason})
                     </span>
                   ) : (
@@ -245,7 +245,7 @@ export default function HumanReviewPanel({
                   <strong className="font-medium text-content-primary">Sprint duration:</strong>{' '}
                   {Number(input.sprint_duration) > 0 ? `${input.sprint_duration} days` : 'Not provided'}
                   {requiredPlanning.sprint_duration ? (
-                    <span className="ml-1.5 text-[#fbbf24]">
+                    <span className="ml-1.5 text-state-warning">
                       ({requiredPlanning.sprint_duration.reason})
                     </span>
                   ) : (
@@ -259,7 +259,7 @@ export default function HumanReviewPanel({
                   <strong className="font-medium text-content-primary">Development team count:</strong>{' '}
                   {Number(input.development_team_count) > 0 ? input.development_team_count : 'Not provided'}
                   {requiredPlanning.development_team_count ? (
-                    <span className="ml-1.5 text-[#fbbf24]">
+                    <span className="ml-1.5 text-state-warning">
                       ({requiredPlanning.development_team_count.reason})
                     </span>
                   ) : (
@@ -313,7 +313,7 @@ export default function HumanReviewPanel({
             {validationIssues.map((issue) => (
               <li
                 key={issue.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-state-danger/30 bg-[#120618] px-3.5 py-2 text-state-danger"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-state-danger/30 bg-state-danger-soft px-3.5 py-2 text-state-danger"
               >
                 <span>• {issue.message}</span>
                 <Button
@@ -321,7 +321,7 @@ export default function HumanReviewPanel({
                   variant="ghost"
                   size="sm"
                   onClick={() => onNavigate?.(issue.targetNodeId)}
-                  className="text-xs text-[#a78bfa] hover:text-white hover:bg-brand/20 underline"
+                  className="text-xs text-brand hover:text-content-primary hover:bg-brand-soft underline"
                 >
                   Edit in {issue.targetNodeId === 'PROJECT_SPECIFICATIONS' ? 'Node 1' : issue.targetNodeId === 'OUTPUT_SELECTION' ? 'Node 2' : 'Node 3'}
                 </Button>
@@ -333,7 +333,7 @@ export default function HumanReviewPanel({
         <div
           role="note"
           aria-label="Validation status"
-          className="rounded-panel border border-[#065f46] bg-[#064e3b]/20 p-4 text-sm text-[#34d399] flex items-center justify-between"
+          className="rounded-panel border border-state-success/40 bg-state-success-soft p-4 text-sm text-state-success flex items-center justify-between"
         >
           <div className="flex items-center gap-2">
             <span className="font-bold">✓</span>
@@ -344,7 +344,7 @@ export default function HumanReviewPanel({
       )}
 
       {/* Standalone Human Review Checkpoint Card */}
-      <Card className="border border-[#7c3aed]/50 bg-[#241344]/80 p-5 space-y-3">
+      <Card className="border border-brand/50 bg-brand-soft p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-base font-semibold text-content-primary">
             Human review required before starting this standalone run
@@ -379,7 +379,7 @@ export default function HumanReviewPanel({
           type="button"
           variant="outline"
           onClick={() => onNavigate?.(DESIGN_PLANNING_NODE_IDS.TECHNICAL_PLANNING)}
-          className="border-default bg-[#170c2c] text-content-primary hover:bg-[#20103c]"
+          className="border-default bg-surface text-content-primary hover:bg-elevated"
         >
           Back — Technical & Planning
         </Button>

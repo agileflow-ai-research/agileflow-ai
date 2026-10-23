@@ -8,7 +8,7 @@ export default function DeliverySetupPanel({ githubState, repositoryState, deliv
   return (
     <div className="space-y-5">
       {deliveryComplete ? (
-        <section className="rounded-control border border-state-success/40 bg-state-success/10 p-4" role="status">
+        <section className="rounded-control border border-state-success/40 bg-state-success-soft p-4" role="status">
           <h3 className="font-semibold text-content-primary">✓ Delivery setup complete</h3>
           <p className="mt-2 text-sm text-content-secondary">The implementation plan is ready for final approval.</p>
         </section>

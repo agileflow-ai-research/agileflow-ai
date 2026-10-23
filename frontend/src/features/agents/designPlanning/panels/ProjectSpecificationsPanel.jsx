@@ -48,7 +48,7 @@ export default function ProjectSpecificationsPanel({
       {/* Top summary row */}
       <div className="grid gap-4 md:grid-cols-2">
         {/* Specification sources tablist card */}
-        <Card className="border-default bg-[#150c2a] p-5">
+        <Card className="border-default bg-surface p-5">
           <h3 className="text-card-heading font-semibold text-content-primary">
             Specification sources
           </h3>
@@ -74,10 +74,10 @@ export default function ProjectSpecificationsPanel({
                   className={cn(
                     'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer',
                     isSelected
-                      ? 'border border-[#065f46] bg-[#064e3b] text-[#34d399]'
+                      ? 'border border-state-success/60 bg-state-success text-white font-semibold'
                       : hasContent
-                        ? 'border border-[#065f46]/60 bg-[#064e3b]/30 text-[#34d399] hover:bg-[#064e3b]/50'
-                        : 'border border-default bg-[#1f1338] text-content-secondary hover:border-accent-border hover:text-content-primary',
+                        ? 'border border-state-success/40 bg-state-success-soft text-state-success hover:bg-state-success/20'
+                        : 'border border-default bg-elevated text-content-secondary hover:border-brand/40 hover:text-content-primary',
                   )}
                 >
                   {isSelected
@@ -92,7 +92,7 @@ export default function ProjectSpecificationsPanel({
         </Card>
 
         {/* Project context card */}
-        <Card className="border-default bg-[#150c2a] p-5">
+        <Card className="border-default bg-surface p-5">
           <h3 className="text-card-heading font-semibold text-content-primary">
             Project context
           </h3>
@@ -117,7 +117,7 @@ export default function ProjectSpecificationsPanel({
       </div>
 
       {/* Main active source editing card */}
-      <Card className="border-default bg-[#150c2a] p-6">
+      <Card className="border-default bg-surface p-6">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border-default/40 pb-4">
           <div>
             <h3 className="text-card-heading font-semibold text-content-primary">
@@ -129,14 +129,14 @@ export default function ProjectSpecificationsPanel({
                 : 'Document upload — extracted text will populate this specification source.'}
             </p>
           </div>
-          <div className="inline-flex rounded-lg border border-default bg-[#0b0517] p-1 text-xs font-medium">
+          <div className="inline-flex rounded-lg border border-default bg-elevated p-1 text-xs font-medium">
             <button
               type="button"
               onClick={() => onSetSourceMode?.(activeSourceConfig.id, 'manual')}
               className={cn(
                 'rounded-md px-3 py-1.5 transition-colors cursor-pointer',
                 currentMode === 'manual'
-                  ? 'bg-[#1f1338] text-white shadow-sm font-semibold'
+                  ? 'bg-surface text-content-primary shadow-sm font-semibold'
                   : 'text-content-muted hover:text-content-primary',
               )}
             >
@@ -148,7 +148,7 @@ export default function ProjectSpecificationsPanel({
               className={cn(
                 'rounded-md px-3 py-1.5 transition-colors cursor-pointer',
                 currentMode === 'upload'
-                  ? 'bg-[#1f1338] text-white shadow-sm font-semibold'
+                  ? 'bg-surface text-content-primary shadow-sm font-semibold'
                   : 'text-content-muted hover:text-content-primary',
               )}
             >
@@ -167,7 +167,7 @@ export default function ProjectSpecificationsPanel({
               value={input[activeSourceConfig.stateKey] || ''}
               onChange={(e) => onUpdateField?.(activeSourceConfig.stateKey, e.target.value)}
               placeholder={activeSourceConfig.placeholder}
-              textareaClassName="font-sans text-sm bg-[#0b0517] border-default leading-relaxed"
+              textareaClassName="font-sans text-sm bg-elevated border-default leading-relaxed"
             />
           </div>
         ) : (
@@ -186,7 +186,7 @@ export default function ProjectSpecificationsPanel({
             />
 
             {!currentProvenance && (
-              <div className="rounded-lg border-2 border-dashed border-[#2a2046] bg-[#0b0517] p-8 text-center">
+              <div className="rounded-lg border-2 border-dashed border-default bg-elevated p-8 text-center">
                 <div className="mx-auto flex max-w-md flex-col items-center">
                   <div className="text-2xl mb-2">📄</div>
                   <h4 className="text-sm font-semibold text-content-primary">
@@ -206,8 +206,8 @@ export default function ProjectSpecificationsPanel({
                     </Button>
                   </div>
                   {isProcessing && (
-                    <div className="mt-4 inline-flex items-center gap-2 text-xs text-brand-purple">
-                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand-purple border-t-transparent" />
+                    <div className="mt-4 inline-flex items-center gap-2 text-xs text-brand">
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-brand border-t-transparent" />
                       <span>
                         {currentStatus === 'UPLOADING'
                           ? 'Uploading document...'
@@ -230,10 +230,10 @@ export default function ProjectSpecificationsPanel({
 
             {currentProvenance && (
               <div className="space-y-4">
-                <div className="rounded-card border border-default bg-[#0b0517] p-4">
+                <div className="rounded-card border border-default bg-elevated p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-purple/10 text-brand-purple text-xl">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand text-xl">
                         📄
                       </div>
                       <div className="min-w-0">
@@ -241,7 +241,7 @@ export default function ProjectSpecificationsPanel({
                           <span className="font-semibold text-content-primary truncate text-sm">
                             {currentProvenance.original_filename}
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-[#064e3b] px-2 py-0.5 text-[11px] font-medium text-[#34d399]">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-state-success-soft px-2 py-0.5 text-[11px] font-medium text-state-success">
                             ✓ Extraction completed
                           </span>
                         </div>
@@ -309,11 +309,11 @@ export default function ProjectSpecificationsPanel({
                     value={input[activeSourceConfig.stateKey] || ''}
                     onChange={(e) => onUpdateField?.(activeSourceConfig.stateKey, e.target.value)}
                     placeholder={activeSourceConfig.placeholder}
-                    textareaClassName="font-sans text-sm bg-[#0b0517] border-default leading-relaxed"
+                    textareaClassName="font-sans text-sm bg-elevated border-default leading-relaxed"
                   />
                 </div>
 
-                <div className="rounded-card border border-[#2a2046] bg-[#120824] p-3 text-xs text-content-muted">
+                <div className="rounded-card border border-default bg-elevated p-3 text-xs text-content-muted">
                   <strong className="text-content-primary">Human review:</strong> Review extracted content before continuing. You may edit the text directly.
                 </div>
               </div>
@@ -326,7 +326,7 @@ export default function ProjectSpecificationsPanel({
       <div
         role="note"
         aria-label="Validation information"
-        className="rounded-card border border-[#1a3d60] bg-[#0d1e38] p-4 text-sm text-[#7dd3fc]"
+        className="rounded-card border border-state-info/40 bg-state-info-soft p-4 text-sm text-state-info"
       >
         At least one usable source is required: requirements, SRS, user stories, or acceptance criteria.
       </div>

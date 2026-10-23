@@ -11,9 +11,33 @@ html {
   min-height: 100%;
   background: var(--color-bg-canvas);
   font-family: var(--font-family-sans);
+  scrollbar-width: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.brand-wordmark-light {
+  display: none;
+}
+
+:root[data-theme='light'] .brand-wordmark-dark {
+  display: none;
+}
+
+:root[data-theme='light'] .brand-wordmark-light {
+  display: inline-flex;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 body {
@@ -23,6 +47,15 @@ body {
   overflow-x: hidden;
   background: var(--color-bg-canvas);
   color: var(--color-text-primary);
+  scrollbar-width: none;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+input,
+textarea,
+select,
+option {
+  color-scheme: inherit;
 }
 
 #root {
@@ -62,7 +95,7 @@ body {
 }
 
 .react-flow__edge-path {
-  stroke: var(--color-border-accent);
+  stroke: var(--color-workflow-edge);
   stroke-width: 1.5;
 }
 
@@ -76,7 +109,7 @@ body {
 }
 
 .workflow-node--processing {
-  border-color: color-mix(in srgb, var(--color-border-accent) 82%, #7c3aed);
+  border-color: color-mix(in srgb, var(--color-border-accent) 82%, var(--color-primary));
   animation: workflow-processing-pulse 1.8s ease-in-out infinite;
 }
 
@@ -104,9 +137,38 @@ body {
   box-shadow: none;
 }
 
+:root[data-theme='light'] .workflow-node--selected {
+  outline-color: var(--color-primary);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+
+:root[data-theme='light'] .workflow-node--processing {
+  background: var(--color-primary-soft);
+}
+
+:root[data-theme='light'] .workflow-node--warning {
+  background: var(--color-warning-soft);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-warning) 10%, transparent);
+}
+
+:root[data-theme='light'] .workflow-node--failed,
+:root[data-theme='light'] .workflow-node--blocked {
+  background: var(--color-danger-soft);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--color-danger) 10%, transparent);
+}
+
+:root[data-theme='light'] .workflow-node--success {
+  background: var(--color-success-soft);
+}
+
+:root[data-theme='light'] .workflow-node--locked {
+  background: var(--color-bg-elevated);
+  color: var(--color-text-muted);
+}
+
 @keyframes workflow-processing-pulse {
-  0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border-accent) 35%, transparent), 0 0 12px color-mix(in srgb, #7c3aed 18%, transparent); }
-  50% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border-accent) 58%, transparent), 0 0 26px color-mix(in srgb, #7c3aed 34%, transparent); }
+  0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border-accent) 35%, transparent), 0 0 12px color-mix(in srgb, var(--color-primary) 18%, transparent); }
+  50% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border-accent) 58%, transparent), 0 0 26px color-mix(in srgb, var(--color-primary) 34%, transparent); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -121,6 +183,6 @@ body {
 
   .workflow-node--processing {
     animation: none;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border-accent) 45%, transparent), 0 0 16px color-mix(in srgb, #7c3aed 24%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border-accent) 45%, transparent), 0 0 16px color-mix(in srgb, var(--color-primary) 24%, transparent);
   }
 }

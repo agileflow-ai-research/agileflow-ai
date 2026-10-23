@@ -1044,26 +1044,32 @@ class Agent4N3OrchestrationService:
                 execution.status = Agent4N3ExecutionStatus.WAITING_FOR_HUMAN
                 execution.waiting_at = now
                 execution.review_snapshot_fingerprint = projection.review_snapshot_fingerprint
-                node = self._node(record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE)
-                node.status = Agent4WorkflowNodeStatus.WAITING_FOR_HUMAN
-                node.updated_at = now
+                intelligence = self._node(record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE)
+                intelligence.status = Agent4WorkflowNodeStatus.COMPLETED
+                intelligence.updated_at = now
+                approval = self._node(record, Agent4TestGenerationNodeId.HUMAN_APPROVAL)
+                approval.status = Agent4WorkflowNodeStatus.WAITING_FOR_HUMAN
+                approval.updated_at = now
                 fact = self._node(
                     record, Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION
                 )
                 fact.status = Agent4WorkflowNodeStatus.LOCKED
                 fact.updated_at = now
                 record.pipeline_status = Agent4PipelineStatus.WAITING_FOR_HUMAN
-                record.current_node_id = Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
+                record.current_node_id = Agent4TestGenerationNodeId.HUMAN_APPROVAL
             elif derived is Agent4N3ExecutionStatus.COMPLETED:
                 completed = True
                 execution.status = Agent4N3ExecutionStatus.COMPLETED
                 execution.completed_at = now
                 execution.retryable = False
                 n3 = self._node(record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE)
+                approval = self._node(record, Agent4TestGenerationNodeId.HUMAN_APPROVAL)
                 facts = self._node(record, Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION)
                 n4 = self._node(record, Agent4TestGenerationNodeId.CONTEXT_TESTABILITY)
                 n3.status = Agent4WorkflowNodeStatus.COMPLETED
                 n3.updated_at = now
+                approval.status = Agent4WorkflowNodeStatus.COMPLETED
+                approval.updated_at = now
                 facts.status = Agent4WorkflowNodeStatus.COMPLETED
                 facts.updated_at = now
                 n4.status = Agent4WorkflowNodeStatus.NOT_STARTED
@@ -1115,13 +1121,16 @@ class Agent4N3OrchestrationService:
             execution.status = Agent4N3ExecutionStatus.WAITING_FOR_HUMAN
             execution.waiting_at = execution.waiting_at or now
             execution.updated_at = now
-            node = self._node(
+            intelligence = self._node(
                 record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
             )
-            node.status = Agent4WorkflowNodeStatus.WAITING_FOR_HUMAN
-            node.updated_at = now
+            intelligence.status = Agent4WorkflowNodeStatus.COMPLETED
+            intelligence.updated_at = now
+            approval = self._node(record, Agent4TestGenerationNodeId.HUMAN_APPROVAL)
+            approval.status = Agent4WorkflowNodeStatus.WAITING_FOR_HUMAN
+            approval.updated_at = now
             record.pipeline_status = Agent4PipelineStatus.WAITING_FOR_HUMAN
-            record.current_node_id = Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
+            record.current_node_id = Agent4TestGenerationNodeId.HUMAN_APPROVAL
             record.updated_at = now
             return None
         if derived is Agent4N3ExecutionStatus.COMPLETED:
@@ -1130,10 +1139,13 @@ class Agent4N3OrchestrationService:
             execution.updated_at = now
             execution.retryable = False
             n3 = self._node(record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE)
+            approval = self._node(record, Agent4TestGenerationNodeId.HUMAN_APPROVAL)
             facts = self._node(record, Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION)
             n4 = self._node(record, Agent4TestGenerationNodeId.CONTEXT_TESTABILITY)
             n3.status = Agent4WorkflowNodeStatus.COMPLETED
             n3.updated_at = now
+            approval.status = Agent4WorkflowNodeStatus.COMPLETED
+            approval.updated_at = now
             facts.status = Agent4WorkflowNodeStatus.COMPLETED
             facts.updated_at = now
             n4.status = Agent4WorkflowNodeStatus.NOT_STARTED
@@ -1497,17 +1509,24 @@ class Agent4N3OrchestrationService:
         intelligence = self._node(
             record, Agent4TestGenerationNodeId.TESTING_INTELLIGENCE
         )
+        approval = self._node(
+            record, Agent4TestGenerationNodeId.HUMAN_APPROVAL
+        )
         facts = self._node(
             record, Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION
         )
         if node_id is Agent4TestGenerationNodeId.TESTING_FACT_EXTRACTION:
             intelligence.status = Agent4WorkflowNodeStatus.COMPLETED
             intelligence.updated_at = now
+            approval.status = Agent4WorkflowNodeStatus.COMPLETED
+            approval.updated_at = now
             facts.status = status
             facts.updated_at = now
         else:
             intelligence.status = status
             intelligence.updated_at = now
+            approval.status = Agent4WorkflowNodeStatus.LOCKED
+            approval.updated_at = now
             facts.status = Agent4WorkflowNodeStatus.LOCKED
             facts.updated_at = now
         record.current_node_id = node_id

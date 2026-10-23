@@ -245,7 +245,7 @@ function ResultsOverview({
         </div>
         <div className="pt-1">
           {effectiveStatus === 'COMPLETED' ? (
-            <span className="inline-flex items-center rounded-control border border-[#065f46] bg-[#064e3b]/80 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#34d399]">
+            <span className="inline-flex items-center rounded-control border border-state-success/40 bg-state-success-soft px-3 py-1 text-xs font-semibold uppercase tracking-wider text-state-success">
               COMPLETED
             </span>
           ) : effectiveStatus === 'FAILED' ? (
@@ -259,20 +259,20 @@ function ResultsOverview({
       {/* Summary Metrics (4 cards) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Summary metrics">
         {/* Outputs generated */}
-        <div className="flex flex-col justify-between rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+        <div className="flex flex-col justify-between rounded-panel border border-default bg-surface p-4">
           <span className="text-xs text-content-muted">Outputs generated</span>
-          <span className={`mt-2 text-2xl font-bold ${outputCount > 0 ? 'text-[#34d399]' : 'text-content-muted'}`}>
+          <span className={`mt-2 text-2xl font-bold ${outputCount > 0 ? 'text-state-success' : 'text-content-muted'}`}>
             {outputCount}
           </span>
         </div>
 
         {/* Validation */}
-        <div className="flex flex-col justify-between rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+        <div className="flex flex-col justify-between rounded-panel border border-default bg-surface p-4">
           <span className="text-xs text-content-muted">Validation</span>
           <span
             className={`mt-2 text-2xl font-bold ${
               validationStatus === 'Passed'
-                ? 'text-[#34d399]'
+                ? 'text-state-success'
                 : validationStatus === 'Failed'
                   ? 'text-state-danger'
                   : 'text-content-muted'
@@ -283,15 +283,15 @@ function ResultsOverview({
         </div>
 
         {/* Correction attempts */}
-        <div className="flex flex-col justify-between rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+        <div className="flex flex-col justify-between rounded-panel border border-default bg-surface p-4">
           <span className="text-xs text-content-muted">Correction attempts</span>
           <span className="mt-2 text-2xl font-bold text-content-secondary">{correctionAttemptsValue}</span>
         </div>
 
         {/* Traceability */}
-        <div className="flex flex-col justify-between rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+        <div className="flex flex-col justify-between rounded-panel border border-default bg-surface p-4">
           <span className="text-xs text-content-muted">Traceability</span>
-          <span className={`mt-2 text-2xl font-bold ${hasTraceability ? 'text-[#c084fc]' : 'text-content-muted'}`}>
+          <span className={`mt-2 text-2xl font-bold ${hasTraceability ? 'text-brand' : 'text-content-muted'}`}>
             {hasTraceability ? 'Available' : 'Not available'}
           </span>
         </div>
@@ -300,7 +300,7 @@ function ResultsOverview({
       {/* Result Package Cards (2-column grid) */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {/* Design package */}
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+        <div className="rounded-panel border border-default bg-surface p-4">
           <h3 className="font-semibold text-content-primary">Design package</h3>
           <p className="mt-0.5 text-xs text-content-muted">Architecture and technical specifications</p>
           <div className="mt-3 space-y-1.5 text-sm text-content-secondary">
@@ -313,7 +313,7 @@ function ResultsOverview({
         </div>
 
         {/* Planning package */}
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+        <div className="rounded-panel border border-default bg-surface p-4">
           <h3 className="font-semibold text-content-primary">Planning package</h3>
           <p className="mt-0.5 text-xs text-content-muted">Agile hierarchy and delivery plan</p>
           <div className="mt-3 space-y-1.5 text-sm text-content-secondary">
@@ -327,7 +327,7 @@ function ResultsOverview({
       </div>
 
       {/* Validation & Traceability Evidence Card */}
-      <div className="space-y-3 rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+      <div className="space-y-3 rounded-panel border border-default bg-surface p-4">
         <div>
           <h3 className="font-semibold text-content-primary">Validation & traceability evidence</h3>
           <p className="mt-0.5 text-xs text-content-muted">
@@ -340,12 +340,12 @@ function ResultsOverview({
         {/* Validation Badges */}
         <div className="flex flex-wrap items-center gap-2">
           {effectiveStatus === 'COMPLETED' && !hasErrors && (
-            <span className="inline-flex items-center rounded-control border border-[#065f46] bg-[#064e3b]/80 px-3 py-1 text-xs font-medium text-[#34d399]">
+            <span className="inline-flex items-center rounded-control border border-state-success/40 bg-state-success-soft px-3 py-1 text-xs font-medium text-state-success">
               Structural validation passed
             </span>
           )}
           {hasTraceability && (
-            <span className="inline-flex items-center rounded-control border border-[#065f46] bg-[#064e3b]/80 px-3 py-1 text-xs font-medium text-[#34d399]">
+            <span className="inline-flex items-center rounded-control border border-state-success/40 bg-state-success-soft px-3 py-1 text-xs font-medium text-state-success">
               Cross-artifact references valid
             </span>
           )}
@@ -353,7 +353,7 @@ function ResultsOverview({
 
         {/* Traceability preview */}
         {traceabilityChain && traceabilityChain.length >= 2 ? (
-          <p className="text-xs font-mono text-[#c084fc]">
+          <p className="text-xs font-mono text-brand">
             Example trace: {traceabilityChain.join(' → ')}
           </p>
         ) : hasTraceability ? (

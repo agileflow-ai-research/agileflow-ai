@@ -206,14 +206,19 @@ export function deriveDesignPlanningPresentation(workspaceSnapshot = {}) {
     let nodeSummary = definition.summary
     let nodeAttention
 
-    if (isExecutionCompleted) {
+    const hasHistoricalCompleted = runsList.some((r) => r.status === 'COMPLETED')
+    const hasResultsAvailable = isExecutionCompleted || hasHistoricalCompleted
+
+    if (hasResultsAvailable) {
       nodeStatus = WORKFLOW_NODE_STATES.COMPLETE
       if (definition.id === DESIGN_PLANNING_NODE_IDS.DESIGN_RESULTS) {
         nodeSummary = 'Structured technical design deliverables ready'
       } else if (definition.id === DESIGN_PLANNING_NODE_IDS.PLANNING_RESULTS) {
         nodeSummary = 'Agile planning hierarchy and sprint schedule ready'
       } else if (definition.id === DESIGN_PLANNING_NODE_IDS.VALIDATION_TRACEABILITY) {
-        nodeSummary = 'Traceability matrix and quality metrics ready'
+        nodeSummary = runsList.length > 0
+          ? `${runsList.length} historical run${runsList.length === 1 ? '' : 's'} available`
+          : 'Traceability matrix and quality metrics ready'
       }
     } else if (isExecutionFailed && definition.id === DESIGN_PLANNING_NODE_IDS.VALIDATION_TRACEABILITY) {
       nodeStatus = WORKFLOW_NODE_STATES.FAILED

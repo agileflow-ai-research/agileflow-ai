@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import WorkflowControls from '../../../../components/agents/workflow/WorkflowControls.jsx'
 import WorkflowNodeModal from '../../../../components/agents/workflow/WorkflowNodeModal.jsx'
 import StatusBadge from '../../../../components/ui/StatusBadge.jsx'
-import { getAgentProjectRuns } from '../../../../services/agentProjectService.js'
+import { getAgentProjectRun, getAgentProjectRuns } from '../../../../services/agentProjectService.js'
 import DesignPlanningCanvas from '../canvas/DesignPlanningCanvas.jsx'
 import DesignPlanningNodePlaceholder from '../components/DesignPlanningNodePlaceholder.jsx'
 import {
@@ -11,9 +11,11 @@ import {
   WORKFLOW_MODAL_ORIGINS,
 } from '../constants/workflow.js'
 import useDesignPlanningWorkflow from '../hooks/useDesignPlanningWorkflow.js'
+import DesignResultsPanel from '../panels/DesignResultsPanel.jsx'
 import GenerateDesignPlanningPanel from '../panels/GenerateDesignPlanningPanel.jsx'
 import HumanReviewPanel from '../panels/HumanReviewPanel.jsx'
 import OutputSelectionPanel from '../panels/OutputSelectionPanel.jsx'
+import PlanningResultsPanel from '../panels/PlanningResultsPanel.jsx'
 import ProjectSpecificationsPanel from '../panels/ProjectSpecificationsPanel.jsx'
 import TechnicalPlanningPanel from '../panels/TechnicalPlanningPanel.jsx'
 import ValidationTraceabilityPanel from '../panels/ValidationTraceabilityPanel.jsx'
@@ -38,6 +40,8 @@ function DesignPlanningProjectPage({
     : { nodeId: DESIGN_PLANNING_NODE_IDS.PROJECT_SPECIFICATIONS, origin: WORKFLOW_MODAL_ORIGINS.AUTO }
   const [visibleModal, setVisibleModal] = useState(initialVisibleModal)
   const [internalRuns, setInternalRuns] = useState([])
+  const [selectedHistoricalRunId, setSelectedHistoricalRunId] = useState(null)
+  const [selectedHistoricalRunData, setSelectedHistoricalRunData] = useState(null)
 
   const projectId = project?.agent_project_id || project?.id
 
@@ -64,7 +68,84 @@ function DesignPlanningProjectPage({
     return internalRuns
   }, [runs, internalRuns])
 
+  const effectiveSelectedRunId =
+    selectedHistoricalRunId || effectiveRuns.find((r) => r.status === 'COMPLETED')?.run_id || null
+
+  // If the currently selected or auto-selected run does not have full output_manifest, fetch it asynchronously
+  useEffect(() => {
+    if (!effectiveSelectedRunId || !projectId) return
+    const cached = effectiveRuns.find((r) => r.run_id === effectiveSelectedRunId)
+    const hasManifest =
+      cached?.output_manifest &&
+      typeof cached.output_manifest === 'object' &&
+      Object.keys(cached.output_manifest).length > 0
+
+    if (!hasManifest && selectedHistoricalRunData?.run_id !== effectiveSelectedRunId) {
+      let active = true
+      getAgentProjectRun(projectId, effectiveSelectedRunId)
+        .then((res) => {
+          if (active && res?.data) {
+            setSelectedHistoricalRunData(res.data)
+          }
+        })
+        .catch(() => {})
+
+      return () => {
+        active = false
+      }
+    }
+  }, [effectiveSelectedRunId, projectId, effectiveRuns, selectedHistoricalRunData])
+
+  const handleSelectHistoricalRun = useCallback(
+    (targetRunId) => {
+      setSelectedHistoricalRunId(targetRunId)
+      setSelectedHistoricalRunData(null)
+      if (!targetRunId) return
+
+      const cached = effectiveRuns.find((r) => r.run_id === targetRunId)
+      if (cached?.output_manifest && typeof cached.output_manifest === 'object' && Object.keys(cached.output_manifest).length > 0) {
+        setSelectedHistoricalRunData(cached)
+      } else if (projectId) {
+        Promise.resolve()
+          .then(() => getAgentProjectRun(projectId, targetRunId))
+          .then((res) => {
+            if (res?.data) {
+              setSelectedHistoricalRunData(res.data)
+            }
+          })
+          .catch(() => {})
+      }
+      onViewRun?.(targetRunId)
+    },
+    [effectiveRuns, onViewRun, projectId],
+  )
+
   const workflow = useDesignPlanningWorkflow(project)
+
+  const activeRun = useMemo(() => {
+    if (selectedHistoricalRunData && selectedHistoricalRunData.run_id === effectiveSelectedRunId) {
+      return selectedHistoricalRunData
+    }
+    if (effectiveSelectedRunId) {
+      const cached = effectiveRuns.find((r) => r.run_id === effectiveSelectedRunId)
+      if (cached) return cached
+    }
+    if (workflow.runResult) {
+      return {
+        ...workflow.runResult,
+        run_id: workflow.runResult.run_id || 'RUN-CURRENT',
+        status: workflow.runResult.status || (workflow.runState === 'failed' ? 'FAILED' : 'COMPLETED'),
+        selected_outputs: workflow.runResult.selected_outputs || Object.keys(workflow.runResult.outputs || {}),
+        output_manifest: workflow.runResult.outputs || {},
+        outputs: workflow.runResult.outputs || {},
+      }
+    }
+    return null
+  }, [selectedHistoricalRunData, effectiveSelectedRunId, effectiveRuns, workflow.runResult, workflow.runState])
+
+  const activeOutputs = useMemo(() => {
+    return activeRun?.output_manifest || activeRun?.outputs || workflow.runResult?.outputs || {}
+  }, [activeRun, workflow.runResult])
 
   const presentation = useMemo(
     () =>
@@ -124,7 +205,7 @@ function DesignPlanningProjectPage({
             </h1>
             {projectStatus && <StatusBadge label={projectStatus.label} tone={projectStatus.tone} />}
           </div>
-          <p className="mt-1 text-sm text-content-secondary">Agent 2 — Design & Planning</p>
+          <p className="mt-1 text-sm text-content-secondary">Agent 2 — Design &amp; Planning</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <WorkflowControls
@@ -212,6 +293,24 @@ function DesignPlanningProjectPage({
               onNavigate={handleSelectNode}
               onResetRun={workflow.resetRun}
             />
+          ) : visibleModalNodeId === DESIGN_PLANNING_NODE_IDS.DESIGN_RESULTS ? (
+            <DesignResultsPanel
+              project={project}
+              activeRun={activeRun}
+              outputs={activeOutputs}
+              runs={effectiveRuns}
+              onSelectRun={handleSelectHistoricalRun}
+              onNavigate={handleSelectNode}
+            />
+          ) : visibleModalNodeId === DESIGN_PLANNING_NODE_IDS.PLANNING_RESULTS ? (
+            <PlanningResultsPanel
+              project={project}
+              activeRun={activeRun}
+              outputs={activeOutputs}
+              runs={effectiveRuns}
+              onSelectRun={handleSelectHistoricalRun}
+              onNavigate={handleSelectNode}
+            />
           ) : visibleModalNodeId === DESIGN_PLANNING_NODE_IDS.VALIDATION_TRACEABILITY ? (
             <ValidationTraceabilityPanel
               project={project}
@@ -219,6 +318,9 @@ function DesignPlanningProjectPage({
               runState={workflow.runState}
               runError={workflow.runError}
               runs={effectiveRuns}
+              selectedRunId={effectiveSelectedRunId}
+              selectedRunData={selectedHistoricalRunData}
+              onSelectRun={handleSelectHistoricalRun}
               onViewRun={onViewRun}
               onNavigate={handleSelectNode}
             />

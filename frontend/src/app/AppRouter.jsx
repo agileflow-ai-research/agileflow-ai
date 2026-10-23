@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
 import AuthProvider from '../features/auth/AuthProvider.jsx'
+import ThemeProvider from '../features/theme/ThemeProvider.jsx'
 import ProtectedRoute from '../features/auth/ProtectedRoute.jsx'
 import PublicOnlyRoute from '../features/auth/PublicOnlyRoute.jsx'
 import AppLayout from '../layouts/AppLayout.jsx'
@@ -16,31 +17,33 @@ import RegisterPage from '../pages/RegisterPage.jsx'
 
 function AppRouter() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          <Route element={<PublicOnlyRoute />}>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-          </Route>
-
-          <Route element={<ProtectedRoute />}>
-            <Route element={<AppLayout />}>
-              <Route path="/projects" element={<ProjectsPage />} />
-              <Route path="/projects/new" element={<CreateProjectPage />} />
-              <Route path="/projects/:projectId" element={<ProjectOverviewPage />} />
-              <Route path="/agents" element={<AgentHubPage />} />
-              <Route path="/agents/:agentSlug/new" element={<CreateAgentProjectPage />} />
-              <Route path="/agents/:agentSlug" element={<AgentProjectListPage />} />
-              <Route path="/agent-projects/:agentProjectId" element={<AgentProjectOverviewPage />} />
+    <ThemeProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            <Route element={<PublicOnlyRoute />}>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
             </Route>
-          </Route>
 
-          <Route path="/" element={<Navigate to="/projects" replace />} />
-          <Route path="*" element={<Navigate to="/projects" replace />} />
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+            <Route element={<ProtectedRoute />}>
+              <Route element={<AppLayout />}>
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/projects/new" element={<CreateProjectPage />} />
+                <Route path="/projects/:projectId" element={<ProjectOverviewPage />} />
+                <Route path="/agents" element={<AgentHubPage />} />
+                <Route path="/agents/:agentSlug/new" element={<CreateAgentProjectPage />} />
+                <Route path="/agents/:agentSlug" element={<AgentProjectListPage />} />
+                <Route path="/agent-projects/:agentProjectId" element={<AgentProjectOverviewPage />} />
+              </Route>
+            </Route>
+
+            <Route path="/" element={<Navigate to="/projects" replace />} />
+            <Route path="*" element={<Navigate to="/projects" replace />} />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   )
 }
 

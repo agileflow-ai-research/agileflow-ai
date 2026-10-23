@@ -3,15 +3,15 @@ import Button from '../../../ui/Button.jsx'
 function getMethodColor(method) {
   switch (method?.toUpperCase()) {
     case 'POST':
-      return 'text-[#34d399]'
+      return 'text-state-success'
     case 'GET':
-      return 'text-[#60a5fa]'
+      return 'text-state-info'
     case 'PUT':
-      return 'text-[#fbbf24]'
+      return 'text-state-warning'
     case 'PATCH':
-      return 'text-[#a78bfa]'
+      return 'text-brand'
     case 'DELETE':
-      return 'text-[#f87171]'
+      return 'text-state-danger'
     default:
       return 'text-content-primary'
   }
@@ -108,8 +108,8 @@ function DesignArtifacts({
           <span
             className={`inline-flex items-center rounded-control border px-3 py-1 text-xs font-medium ${
               isFailed
-                ? 'border-state-danger/40 bg-state-danger/10 text-state-danger'
-                : 'border-[#065f46] bg-[#064e3b]/80 text-[#34d399]'
+                ? 'border-state-danger/40 bg-state-danger-soft text-state-danger'
+                : 'border-state-success/40 bg-state-success-soft text-state-success'
             }`}
           >
             {isFailed ? 'Validation findings' : 'Validated'}
@@ -146,7 +146,7 @@ function DesignArtifacts({
 
       {/* Empty state if no design artifacts were returned */}
       {!hasDesignOutputs && (
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-8 text-center">
+        <div className="rounded-panel border border-default bg-surface p-8 text-center">
           <p className="text-sm text-content-muted">
             No design artifacts were generated for this run.
           </p>
@@ -165,7 +165,7 @@ function DesignArtifacts({
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {/* System Architecture */}
           {arch && (
-            <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-3">
+            <div className="rounded-panel border border-default bg-surface p-5 space-y-3">
               <div>
                 <h3 className="font-semibold text-content-primary">System architecture</h3>
                 <p className="mt-0.5 text-xs text-content-muted">
@@ -205,7 +205,7 @@ function DesignArtifacts({
               </ul>
 
               {Array.isArray(arch.boundaries) && arch.boundaries.length > 0 && (
-                <div className="border-t border-[#2d1b4e]/60 pt-2 text-xs">
+                <div className="border-t border-default pt-2 text-xs">
                   <span className="font-medium text-content-secondary">Boundaries:</span>{' '}
                   <span className="text-content-muted">{arch.boundaries.join(', ')}</span>
                 </div>
@@ -221,7 +221,7 @@ function DesignArtifacts({
 
           {/* Database Schema */}
           {db && (
-            <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-3">
+            <div className="rounded-panel border border-default bg-surface p-5 space-y-3">
               <div>
                 <h3 className="font-semibold text-content-primary">Database schema</h3>
                 <p className="mt-0.5 text-xs text-content-muted">
@@ -288,7 +288,7 @@ function DesignArtifacts({
 
       {/* Row 2: API Specification (full-width table matching PNG) */}
       {api && (
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-4">
+        <div className="rounded-panel border border-default bg-surface p-5 space-y-4">
           <div>
             <h3 className="font-semibold text-content-primary">API specification</h3>
             <p className="mt-0.5 text-xs text-content-muted">
@@ -300,14 +300,14 @@ function DesignArtifacts({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs" aria-label="API operations">
               <thead>
-                <tr className="border-b border-[#2d1b4e] text-content-muted">
+                <tr className="border-b border-default text-content-muted">
                   <th className="pb-2.5 font-medium">Method</th>
                   <th className="pb-2.5 font-medium">Path</th>
                   <th className="pb-2.5 font-medium">Component / Entity</th>
                   <th className="pb-2.5 font-medium">Source</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#2d1b4e]/50 font-mono">
+              <tbody className="divide-y divide-default font-mono">
                 {apiOperations.map((op) => {
                   const compRefs = Array.isArray(op.component_refs) ? op.component_refs : []
                   const entRefs = Array.isArray(op.entity_refs) ? op.entity_refs : []
@@ -320,7 +320,7 @@ function DesignArtifacts({
                   return (
                     <tr
                       key={op.id || `${op.method}-${op.path}`}
-                      className="transition-colors hover:bg-[#1f123d]/40"
+                      className="transition-colors hover:bg-elevated/60"
                     >
                       <td className="py-2.5 font-bold">
                         <span className={getMethodColor(op.method)}>{op.method}</span>
@@ -346,7 +346,7 @@ function DesignArtifacts({
 
       {/* Row 3: UML diagram source (full-width code block matching PNG) */}
       {uml && (
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-4">
+        <div className="rounded-panel border border-default bg-surface p-5 space-y-4">
           <div>
             <h3 className="font-semibold text-content-primary">UML diagram source</h3>
             <p className="mt-0.5 text-xs text-content-muted">
@@ -366,7 +366,7 @@ function DesignArtifacts({
                     {diag.diagram_type} · {diag.notation}
                   </span>
                 </div>
-                <pre className="overflow-x-auto whitespace-pre-wrap rounded-control border border-[#2d1b4e] bg-[#0c0617] p-3 font-mono text-xs text-[#e2e8f0]">
+                <pre className="overflow-x-auto whitespace-pre-wrap rounded-control border border-default bg-canvas p-3 font-mono text-xs text-content-primary">
                   {diag.source}
                 </pre>
                 {Array.isArray(diag.source_refs) && diag.source_refs.length > 0 && (
@@ -385,7 +385,7 @@ function DesignArtifacts({
 
       {/* Wireframes (when present in output) */}
       {wireframes && (
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-4">
+        <div className="rounded-panel border border-default bg-surface p-5 space-y-4">
           <div>
             <h3 className="font-semibold text-content-primary">Wireframes</h3>
             <p className="mt-0.5 text-xs text-content-muted">
@@ -398,7 +398,7 @@ function DesignArtifacts({
             {wfScreens.map((screen) => (
               <div
                 key={screen.id || screen.name}
-                className="rounded-control border border-[#2d1b4e]/80 bg-[#120824] p-4 space-y-2"
+                className="rounded-control border border-default bg-elevated p-4 space-y-2"
               >
                 <div className="flex items-start justify-between gap-2">
                   <h4 className="text-sm font-semibold text-content-primary">{screen.name}</h4>
@@ -441,7 +441,7 @@ function DesignArtifacts({
 
       {/* UI Flow (when present in output) */}
       {uiFlow && (
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-4">
+        <div className="rounded-panel border border-default bg-surface p-5 space-y-4">
           <div>
             <h3 className="font-semibold text-content-primary">UI flow</h3>
             <p className="mt-0.5 text-xs text-content-muted">
@@ -454,7 +454,7 @@ function DesignArtifacts({
             {flowItems.map((flow) => (
               <div
                 key={flow.id || flow.goal}
-                className="rounded-control border border-[#2d1b4e]/80 bg-[#120824] p-4 space-y-2.5"
+                className="rounded-control border border-default bg-elevated p-4 space-y-2.5"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>

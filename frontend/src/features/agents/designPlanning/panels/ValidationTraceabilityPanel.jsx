@@ -18,13 +18,18 @@ export default function ValidationTraceabilityPanel({
   runState = 'idle',
   runError = '',
   runs = [],
+  selectedRunId: externalSelectedRunId,
+  selectedRunData: externalSelectedRunData,
+  onSelectRun: externalOnSelectRun,
   onViewRun,
   onNavigate,
 }) {
-  const [selectedHistoricalRunId, setSelectedHistoricalRunId] = useState(null)
+  const [internalSelectedRunId, setInternalSelectedRunId] = useState(null)
   const [fetchedRunData, setFetchedRunData] = useState(null)
   const [loadingHistoricalRun, setLoadingHistoricalRun] = useState(false)
   const [historicalRunError, setHistoricalRunError] = useState(null)
+
+  const selectedHistoricalRunId = externalSelectedRunId !== undefined ? externalSelectedRunId : internalSelectedRunId
 
   const effectiveRuns = useMemo(() => {
     return Array.isArray(runs) ? runs : []
@@ -38,19 +43,26 @@ export default function ValidationTraceabilityPanel({
   }, [effectiveRuns, selectedHistoricalRunId])
 
   const historicalRunData = useMemo(() => {
+    if (externalSelectedRunData && externalSelectedRunData.run_id === selectedHistoricalRunId) {
+      return externalSelectedRunData
+    }
     if (!selectedHistoricalRunId) return null
-    if (cachedRun?.output_manifest && typeof cachedRun.output_manifest === 'object') {
+    if (cachedRun?.output_manifest && typeof cachedRun.output_manifest === 'object' && Object.keys(cachedRun.output_manifest).length > 0) {
       return cachedRun
     }
     return fetchedRunData || cachedRun
-  }, [cachedRun, fetchedRunData, selectedHistoricalRunId])
+  }, [cachedRun, externalSelectedRunData, fetchedRunData, selectedHistoricalRunId])
 
   const handleOpenHistoricalRun = useCallback(
     (targetRunId) => {
-      setSelectedHistoricalRunId(targetRunId)
+      if (externalOnSelectRun) {
+        externalOnSelectRun(targetRunId)
+      } else {
+        setInternalSelectedRunId(targetRunId)
+      }
       setFetchedRunData(null)
       const cached = effectiveRuns.find((r) => r.run_id === targetRunId)
-      if (cached?.output_manifest && typeof cached.output_manifest === 'object') {
+      if (cached?.output_manifest && typeof cached.output_manifest === 'object' && Object.keys(cached.output_manifest).length > 0) {
         setFetchedRunData(cached)
       } else if (projectId) {
         setLoadingHistoricalRun(true)
@@ -73,13 +85,17 @@ export default function ValidationTraceabilityPanel({
         onViewRun(targetRunId)
       }
     },
-    [effectiveRuns, onViewRun, projectId],
+    [effectiveRuns, externalOnSelectRun, onViewRun, projectId],
   )
 
   const handleBackToOverview = useCallback(() => {
-    setSelectedHistoricalRunId(null)
+    if (externalOnSelectRun) {
+      externalOnSelectRun(null)
+    } else {
+      setInternalSelectedRunId(null)
+    }
     setFetchedRunData(null)
-  }, [])
+  }, [externalOnSelectRun])
 
   // Determine what run is being viewed
   const hasActiveSessionRun = Boolean(runResult) || runState === 'completed' || runState === 'failed'
@@ -89,16 +105,27 @@ export default function ValidationTraceabilityPanel({
     <div className="space-y-6" data-testid="agent2-panel-VALIDATION_TRACEABILITY">
       {/* Historical run selection banner when inspecting a historical run */}
       {isViewingHistoricalRun && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-[#3b82f6]/40 bg-[#1e3a8a]/20 p-3 text-xs text-content-primary">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-state-info/40 bg-state-info-soft p-3 text-xs text-content-primary">
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-[#60a5fa]" aria-hidden="true" />
+            <span className="h-2 w-2 rounded-full bg-state-info" aria-hidden="true" />
             <span>
               Inspecting historical run <strong className="font-mono">{selectedHistoricalRunId}</strong> — persisted outputs only; no regeneration.
             </span>
           </div>
-          <Button variant="ghost" size="small" onClick={handleBackToOverview}>
-            ← Back to current view
-          </Button>
+          <div className="flex items-center gap-2">
+            {onNavigate && (
+              <Button
+                variant="outline"
+                size="small"
+                onClick={() => onNavigate(DESIGN_PLANNING_NODE_IDS.PLANNING_RESULTS)}
+              >
+                View Planning Results (Node 7) →
+              </Button>
+            )}
+            <Button variant="ghost" size="small" onClick={handleBackToOverview}>
+              ← Back to current view
+            </Button>
+          </div>
         </div>
       )}
 
@@ -109,24 +136,26 @@ export default function ValidationTraceabilityPanel({
       )}
 
       {historicalRunError && (
-        <div className="rounded-panel border border-state-danger/40 bg-state-danger/10 p-3 text-xs text-state-danger">
+        <div className="rounded-panel border border-state-danger/40 bg-state-danger-soft p-3 text-xs text-state-danger">
           {historicalRunError}
         </div>
       )}
 
       {/* Case 1: Viewing a specific historical run */}
       {isViewingHistoricalRun && historicalRunData ? (
-        <ValidationTraceabilityHistory
-          run={historicalRunData}
-          status={historicalRunData.status}
-          outputs={historicalRunData.output_manifest || historicalRunData.outputs || {}}
-          correction_attempts={historicalRunData.correction_attempts}
-          isHistorical={true}
-          project={project}
-          runs={effectiveRuns}
-          onViewRun={handleOpenHistoricalRun}
-          onBackToOverview={handleBackToOverview}
-        />
+        <div className="space-y-4">
+          <ValidationTraceabilityHistory
+            run={historicalRunData}
+            status={historicalRunData.status}
+            outputs={historicalRunData.output_manifest || historicalRunData.outputs || {}}
+            correction_attempts={historicalRunData.correction_attempts}
+            isHistorical={true}
+            project={project}
+            runs={effectiveRuns}
+            onViewRun={handleOpenHistoricalRun}
+            onBackToOverview={handleBackToOverview}
+          />
+        </div>
       ) : hasActiveSessionRun ? (
         /* Case 2: Viewing active session run results */
         <ValidationTraceabilityHistory
@@ -179,7 +208,7 @@ export default function ValidationTraceabilityPanel({
           </div>
 
           {/* Evidence status card */}
-          <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-3">
+          <div className="rounded-panel border border-default bg-surface p-5 space-y-3">
             <div className="space-y-1">
               <h3 className="font-semibold text-content-primary text-base">
                 {effectiveRuns.length > 0
@@ -214,7 +243,7 @@ export default function ValidationTraceabilityPanel({
 
           {/* Historical Agent 2 runs table */}
           {effectiveRuns.length > 0 && (
-            <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-4">
+            <div className="rounded-panel border border-default bg-surface p-5 space-y-4">
               <div>
                 <h3 className="font-semibold text-content-primary text-base">Historical Agent 2 runs</h3>
                 <p className="mt-0.5 text-xs text-content-muted">
@@ -225,7 +254,7 @@ export default function ValidationTraceabilityPanel({
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-sm" aria-label="Historical Agent 2 runs table">
                   <thead>
-                    <tr className="border-b border-[#2d1b4e]/80 text-xs text-content-muted font-medium">
+                    <tr className="border-b border-default text-xs text-content-muted font-medium">
                       <th scope="col" className="pb-3 pr-4 font-medium">Run</th>
                       <th scope="col" className="pb-3 pr-4 font-medium">Created</th>
                       <th scope="col" className="pb-3 pr-4 font-medium">Status</th>
@@ -233,7 +262,7 @@ export default function ValidationTraceabilityPanel({
                       <th scope="col" className="pb-3 font-medium text-right sm:text-left">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#2d1b4e]/40">
+                  <tbody className="divide-y divide-default">
                     {effectiveRuns.map((r) => {
                       const isRunFailed = r.status === 'FAILED'
                       const outputsArray = Array.isArray(r.selected_outputs)
@@ -251,7 +280,7 @@ export default function ValidationTraceabilityPanel({
                       }
 
                       return (
-                        <tr key={r.run_id} className="hover:bg-canvas/40 transition-colors">
+                        <tr key={r.run_id} className="hover:bg-elevated/60 transition-colors">
                           <td className="py-3 pr-4 font-mono text-xs font-semibold text-content-primary">
                             {r.run_id}
                           </td>
@@ -262,7 +291,7 @@ export default function ValidationTraceabilityPanel({
                             {isRunFailed ? (
                               <span className="text-state-danger">FAILED</span>
                             ) : (
-                              <span className="text-[#34d399]">COMPLETED</span>
+                              <span className="text-state-success">COMPLETED</span>
                             )}
                           </td>
                           <td className="py-3 pr-4 text-xs text-content-secondary">
@@ -288,7 +317,7 @@ export default function ValidationTraceabilityPanel({
           )}
 
           {/* Standalone scope disclaimer banner */}
-          <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4 text-xs text-content-muted">
+          <div className="rounded-panel border border-default bg-surface p-4 text-xs text-content-muted">
             Standalone scope: no Agent 1/3/4 execution · no Orchestrator · no H2 · no integrated SKB write · no Jira Cloud sync · no RAG.
           </div>
         </div>
@@ -306,13 +335,22 @@ export default function ValidationTraceabilityPanel({
           </Button>
         ) : <span />}
         {onNavigate && (
-          <Button
-            variant="ghost"
-            size="small"
-            onClick={() => onNavigate(DESIGN_PLANNING_NODE_IDS.HUMAN_REVIEW)}
-          >
-            Go to Node 4 (Human Review)
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="small"
+              onClick={() => onNavigate(DESIGN_PLANNING_NODE_IDS.PLANNING_RESULTS)}
+            >
+              Go to Node 7 (Planning Results) →
+            </Button>
+            <Button
+              variant="ghost"
+              size="small"
+              onClick={() => onNavigate(DESIGN_PLANNING_NODE_IDS.HUMAN_REVIEW)}
+            >
+              Node 4 (Human Review)
+            </Button>
+          </div>
         )}
       </div>
     </div>

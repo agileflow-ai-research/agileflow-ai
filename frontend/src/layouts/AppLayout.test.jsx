@@ -66,10 +66,10 @@ describe('AppLayout', () => {
 
   it('shows all four standalone agent groups for project workspaces', async () => {
     renderLayout('/agent-projects/AGP-001')
-    expect(await screen.findByRole('button', { name: 'Agent 1 — Requirements & Analysis' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Agent 2 — Design & Planning' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Agent 3 — Implementation' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Agent 4 — Testing & Validation' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Requirements' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Design' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Implementation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Testing' })).toBeInTheDocument()
   })
 
   it('uses AuthContext logout from the visible logout control', async () => {

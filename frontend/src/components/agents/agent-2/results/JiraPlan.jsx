@@ -123,7 +123,7 @@ function JiraPlan({
           )}
         </div>
 
-        <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-8 text-center space-y-3">
+        <div className="rounded-panel border border-default bg-surface p-8 text-center space-y-3">
           <h3 className="font-semibold text-content-primary">No Jira-compatible plan generated</h3>
           <p className="text-sm text-content-muted">No Jira-compatible plan was generated for this run.</p>
           <div className="pt-2 flex justify-center gap-3">
@@ -286,7 +286,7 @@ function JiraPlan({
           <p className="mt-1 text-sm text-content-muted">{subtitle}</p>
         </div>
         <div className="flex items-center gap-3 pt-1">
-          <span className="inline-flex items-center rounded-control border border-[#854d0e] bg-[#78350f]/60 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#fde047]">
+          <span className="inline-flex items-center rounded-control border border-state-warning/40 bg-state-warning-soft px-3 py-1 text-xs font-semibold uppercase tracking-wider text-state-warning">
             NOT SYNCHRONIZED
           </span>
           {onBackToOverview && (
@@ -318,8 +318,8 @@ function JiraPlan({
       </div>
 
       {/* Synchronization Banner matching S2-11 PNG */}
-      <div className="rounded-panel border border-[#854d0e]/70 bg-[#451a03]/40 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm">
-        <div className="font-bold text-[#fde047] tracking-tight text-base sm:text-sm">
+      <div className="rounded-panel border border-state-warning/40 bg-state-warning-soft p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm">
+        <div className="font-bold text-state-warning tracking-tight text-base sm:text-sm">
           Synchronization: {syncStatus}
         </div>
         <div className="text-xs sm:text-sm text-content-secondary">
@@ -329,30 +329,30 @@ function JiraPlan({
 
       {/* Summary Metrics (5 cards) matching S2-11 PNG */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" aria-label="Jira plan metrics">
-        <div className="flex flex-col justify-between rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+        <div className="flex flex-col justify-between rounded-panel border border-default bg-surface p-4">
           <span className="text-xs text-content-muted">Epics</span>
           <span className="mt-2 text-2xl font-bold text-content-primary">{epics.length}</span>
         </div>
-        <div className="flex flex-col justify-between rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+        <div className="flex flex-col justify-between rounded-panel border border-default bg-surface p-4">
           <span className="text-xs text-content-muted">Stories</span>
           <span className="mt-2 text-2xl font-bold text-content-primary">{stories.length}</span>
         </div>
-        <div className="flex flex-col justify-between rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+        <div className="flex flex-col justify-between rounded-panel border border-default bg-surface p-4">
           <span className="text-xs text-content-muted">Tasks</span>
           <span className="mt-2 text-2xl font-bold text-content-primary">{tasks.length}</span>
         </div>
-        <div className="flex flex-col justify-between rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+        <div className="flex flex-col justify-between rounded-panel border border-default bg-surface p-4">
           <span className="text-xs text-content-muted">Sprints</span>
           <span className="mt-2 text-2xl font-bold text-content-primary">{sprints.length}</span>
         </div>
-        <div className="flex flex-col justify-between rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-4">
+        <div className="flex flex-col justify-between rounded-panel border border-default bg-surface p-4">
           <span className="text-xs text-content-muted">Assignments</span>
           <span className="mt-2 text-2xl font-bold text-content-primary">{assignments.length}</span>
         </div>
       </div>
 
       {/* Jira-ready structure Card matching S2-11 PNG */}
-      <div className="rounded-panel border border-[#2d1b4e] bg-[#160c2b] p-5 space-y-4">
+      <div className="rounded-panel border border-default bg-surface p-5 space-y-4">
         <div>
           <h3 className="font-semibold text-content-primary text-base">Jira-ready structure</h3>
           <p className="mt-0.5 text-xs text-content-muted">Persisted JIRA_PLAN output</p>
@@ -361,14 +361,14 @@ function JiraPlan({
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm" aria-label="Jira-ready structure table">
             <thead>
-              <tr className="border-b border-[#2d1b4e]/80 text-xs text-content-muted font-medium">
+              <tr className="border-b border-default text-xs text-content-muted font-medium">
                 <th scope="col" className="pb-3 pr-4 font-medium">Type</th>
                 <th scope="col" className="pb-3 pr-4 font-medium">Key</th>
                 <th scope="col" className="pb-3 pr-4 font-medium">Summary</th>
                 <th scope="col" className="pb-3 font-medium text-right sm:text-left">Priority / Sprint</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#2d1b4e]/40">
+            <tbody className="divide-y divide-default/60">
               {rows.map((row) => {
                 const priorityText = getItemPriority(row.item, prioritiesMap, storiesMap)
                 const sprintText = getItemSprint(row.item, sprintItemMap, taskSprintMap, storiesMap, sprintsMap)
@@ -376,11 +376,11 @@ function JiraPlan({
 
                 let typeColor = 'text-content-secondary'
                 if (row.type === 'Epic') {
-                  typeColor = 'text-[#c084fc]'
+                  typeColor = 'text-brand'
                 } else if (row.type === 'Story') {
-                  typeColor = 'text-[#60a5fa]'
+                  typeColor = 'text-state-info'
                 } else if (row.type === 'Task') {
-                  typeColor = 'text-[#34d399]'
+                  typeColor = 'text-state-success'
                 }
 
                 return (
@@ -394,7 +394,7 @@ function JiraPlan({
                     <td className="py-3 pr-4 text-content-secondary text-sm">
                       {row.summary}
                     </td>
-                    <td className="py-3 text-right sm:text-left text-xs font-medium text-[#fde047]">
+                    <td className="py-3 text-right sm:text-left text-xs font-medium text-state-warning">
                       {prioritySprint || '—'}
                     </td>
                   </tr>

@@ -51,7 +51,7 @@ export default function ReadinessReview({ state, onAdapt, onBack, onContinueWith
         </HumanDecisionCallout>
       ) : null}
       {result.status === 'READY_WITH_WARNINGS' && result.continuation_approved ? (
-        <p className="rounded-control border border-state-success/40 bg-state-success/10 p-4 text-sm text-state-success">Readiness warnings approved. Agent 3 may continue to Delivery Setup.</p>
+        <p className="rounded-control border border-state-success/40 bg-state-success-soft p-4 text-sm text-state-success">Readiness warnings approved. Agent 3 may continue to Delivery Setup.</p>
       ) : null}
 
       <section aria-labelledby="selected-outputs-title">

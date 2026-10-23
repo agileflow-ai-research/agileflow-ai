@@ -227,7 +227,7 @@ def test_text_pipeline_completes_n2_and_unlocks_n3_without_extraction(
     assert workflow["n2_execution"]["total_chunks"] >= 1
     assert workflow["current_node_id"] == "TESTING_INTELLIGENCE"
     assert [node["status"] for node in workflow["nodes"]] == [
-        "COMPLETED", "COMPLETED", "NOT_STARTED", "LOCKED", "LOCKED", "LOCKED", "LOCKED"
+            "COMPLETED", "COMPLETED", "NOT_STARTED", "LOCKED", "LOCKED", "LOCKED", "LOCKED", "LOCKED"
     ]
     assert workflow["pipeline_status"] == "RUNNING"
     assert runs.documents == {}
