@@ -7,19 +7,24 @@ import Spinner from '../../../../components/ui/Spinner.jsx'
 import {
   cleanJiraCallbackParams,
   disconnectJira,
+  executeJiraSync,
+  generateJiraSyncPreview,
   getJiraBoards,
   getJiraContext,
+  getJiraIssueTypes,
   getJiraProjects,
   getJiraSites,
   getJiraStatus,
+  getJiraSyncStatus,
   normalizeJiraError,
   selectJiraBoard,
   selectJiraProject,
   selectJiraSite,
   startJiraConnection,
+  suggestIssueTypeMappings,
 } from '../../../../services/jiraService.js'
 
-function JiraIntegrationSection({ project }) {
+function JiraIntegrationSection({ project, outputs = null, runId = null }) {
   const [loadingContext, setLoadingContext] = useState(true)
   const [context, setContext] = useState(null)
   const [statusInfo, setStatusInfo] = useState(null)
@@ -51,6 +56,28 @@ function JiraIntegrationSection({ project }) {
   const [connecting, setConnecting] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
   const [showDisconnectModal, setShowDisconnectModal] = useState(false)
+
+  // Issue Types and Mapping state
+  const [loadingIssueTypes, setLoadingIssueTypes] = useState(false)
+  const [issueTypes, setIssueTypes] = useState([])
+  const [issueTypesError, setIssueTypesError] = useState(null)
+  const [mappings, setMappings] = useState({
+    EPIC: '',
+    FEATURE: '',
+    USER_STORY: '',
+    TASK: '',
+  })
+
+  // Sync Preview state
+  const [generatingPreview, setGeneratingPreview] = useState(false)
+  const [previewData, setPreviewData] = useState(null)
+  const [previewError, setPreviewError] = useState(null)
+
+  // Synchronization execution state (Prompt 7B)
+  const [showSyncConfirmModal, setShowSyncConfirmModal] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncResult, setSyncResult] = useState(null)
+  const [syncError, setSyncError] = useState(null)
 
   // Initial load & OAuth callback check
   useEffect(() => {
@@ -94,6 +121,32 @@ function JiraIntegrationSection({ project }) {
       isMounted = false
     }
   }, [])
+
+  // Check for any existing synchronization record for this run
+  useEffect(() => {
+    let isMounted = true
+    async function loadSyncStatus() {
+      const effectiveProjectId = project?.agent_project_id || project?.id
+      const effectiveRunId = runId || project?.run_id
+      if (!effectiveProjectId || !effectiveRunId) return
+
+      try {
+        const existing = await getJiraSyncStatus({
+          agent_project_id: effectiveProjectId,
+          run_id: effectiveRunId,
+        })
+        if (isMounted && existing && existing.status && existing.status !== 'NOT_PERFORMED') {
+          setSyncResult(existing)
+        }
+      } catch {
+        // Ignore initial status lookup errors
+      }
+    }
+    loadSyncStatus()
+    return () => {
+      isMounted = false
+    }
+  }, [project?.agent_project_id, project?.id, runId, project?.run_id])
 
   // When connected and no site selected (or changing site), fetch sites
   useEffect(() => {
@@ -285,6 +338,76 @@ function JiraIntegrationSection({ project }) {
     }
   }
 
+  const isConnected = Boolean(context?.connected || statusInfo?.connected)
+  const isTargetReady = Boolean(
+    isConnected && context?.site && context?.project && context?.board,
+  )
+
+  // Load available issue types when target becomes ready
+  useEffect(() => {
+    if (!isTargetReady || isChangingSite || isChangingProject || isChangingBoard) return
+
+    let isMounted = true
+
+    async function loadTypes() {
+      try {
+        setLoadingIssueTypes(true)
+        setIssueTypesError(null)
+        const types = await getJiraIssueTypes()
+        if (!isMounted) return
+        setIssueTypes(types || [])
+        const suggestions = suggestIssueTypeMappings(types || [])
+        setMappings(suggestions)
+      } catch (err) {
+        if (!isMounted) return
+        setIssueTypesError(normalizeJiraError(err))
+      } finally {
+        if (isMounted) setLoadingIssueTypes(false)
+      }
+    }
+
+    loadTypes()
+
+    return () => {
+      isMounted = false
+    }
+  }, [
+    isTargetReady,
+    context?.site?.cloud_id,
+    context?.project?.id,
+    context?.project?.key,
+    context?.board?.id,
+    isChangingSite,
+    isChangingProject,
+    isChangingBoard,
+  ])
+
+  const isMappingComplete = Boolean(
+    mappings.EPIC &&
+    mappings.FEATURE &&
+    mappings.USER_STORY &&
+    mappings.TASK,
+  )
+
+  async function handleGeneratePreview() {
+    setGeneratingPreview(true)
+    setPreviewError(null)
+    try {
+      const payload = {
+        agent_project_id: project?.agent_project_id || project?.id,
+        run_id: runId || project?.run_id || null,
+        mappings,
+        outputs: outputs || project?.outputs || null,
+      }
+      const data = await generateJiraSyncPreview(payload)
+      setPreviewData(data)
+    } catch (err) {
+      setPreviewError(normalizeJiraError(err))
+    } finally {
+      setGeneratingPreview(false)
+    }
+  }
+
   if (loadingContext) {
     return (
       <Card className="mt-8 border-default bg-surface/50 p-6" data-testid="jira-integration-loading">
@@ -295,11 +418,6 @@ function JiraIntegrationSection({ project }) {
       </Card>
     )
   }
-
-  const isConnected = Boolean(context?.connected || statusInfo?.connected)
-  const isTargetReady = Boolean(
-    isConnected && context?.site && context?.project && context?.board,
-  )
 
   return (
     <section aria-labelledby="jira-integration-title" className="mt-8 space-y-4">
@@ -664,45 +782,821 @@ function JiraIntegrationSection({ project }) {
 
             {/* Target Ready State */}
             {isTargetReady && !isChangingSite && !isChangingProject && !isChangingBoard && (
-              <div
-                className="rounded-control border border-state-success/40 bg-state-success/10 p-4"
-                data-testid="jira-target-ready"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h4 className="text-sm font-semibold text-state-success">
-                      Jira target is ready. No Jira data has been created or modified.
-                    </h4>
-                    <p className="mt-1 text-xs text-content-secondary">
-                      Your synchronization target is configured for{' '}
-                      <span className="font-semibold text-content-primary">
-                        {context.site.name} / {context.project.key} / {context.board.name}
-                      </span>
-                      .
-                    </p>
+              <>
+                <div
+                  className="rounded-control border border-state-success/40 bg-state-success/10 p-4"
+                  data-testid="jira-target-ready"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h4 className="text-sm font-semibold text-state-success">
+                        Jira target is ready. No Jira data has been created or modified.
+                      </h4>
+                      <p className="mt-1 text-xs text-content-secondary">
+                        Your synchronization target is configured for{' '}
+                        <span className="font-semibold text-content-primary">
+                          {context.site.name} / {context.project.key} / {context.board.name}
+                        </span>
+                        .
+                      </p>
+                    </div>
+                    <StatusBadge label="Not Performed" tone="neutral" />
                   </div>
-                  <StatusBadge label="Not Performed" tone="neutral" />
+
+                  <div className="mt-4 flex flex-wrap items-center gap-3 pt-2">
+                    <Button
+                      variant="outline"
+                      disabled={true}
+                      aria-disabled="true"
+                      title="Synchronization execution is not implemented in this phase"
+                      className="cursor-not-allowed opacity-60 text-xs"
+                    >
+                      Sync Now (Preview Required)
+                    </Button>
+                    <span className="text-xs text-content-muted">
+                      Human confirmation and sync preview will be required before any Jira items are created.
+                    </span>
+                  </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center gap-3 pt-2">
-                  <Button
-                    variant="outline"
-                    disabled={true}
-                    aria-disabled="true"
-                    title="Synchronization execution is not implemented in this phase"
-                    className="cursor-not-allowed opacity-60 text-xs"
-                  >
-                    Sync Now (Preview Required)
-                  </Button>
-                  <span className="text-xs text-content-muted">
-                    Human confirmation and sync preview will be required before any Jira items are created.
-                  </span>
+                {/* Issue Type Mapping Section */}
+                <div
+                  className="rounded-control border border-default bg-surface/90 p-5 space-y-4"
+                  data-testid="jira-issue-type-mapping"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-default pb-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-content-primary">
+                        Issue Type Mapping
+                      </h4>
+                      <p className="mt-0.5 text-xs text-content-secondary">
+                        Map AgileFlow planning hierarchy types to Jira issue types available in{' '}
+                        <span className="font-semibold text-content-primary">
+                          {context.project.key} — {context.project.name}
+                        </span>
+                        .
+                      </p>
+                    </div>
+                    <span className="text-xs text-content-muted">Human review required</span>
+                  </div>
+
+                  {loadingIssueTypes ? (
+                    <div className="flex items-center gap-2 py-4 text-xs text-content-muted">
+                      <Spinner size="small" label="Loading Jira issue types" />
+                      <span>Loading available Jira issue types for {context.project.key}...</span>
+                    </div>
+                  ) : issueTypesError ? (
+                    <div className="space-y-2">
+                      <div className="rounded-control border border-state-danger/40 bg-state-danger/10 p-3 text-xs text-state-danger">
+                        {issueTypesError}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="small"
+                        onClick={() => {
+                          setLoadingIssueTypes(true)
+                          setIssueTypesError(null)
+                          getJiraIssueTypes()
+                            .then((types) => {
+                              setIssueTypes(types || [])
+                              const suggestions = suggestIssueTypeMappings(types || [])
+                              setMappings(suggestions)
+                            })
+                            .catch((err) => setIssueTypesError(normalizeJiraError(err)))
+                            .finally(() => setLoadingIssueTypes(false))
+                        }}
+                      >
+                        Retry Loading Issue Types
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Notice if Feature is unmapped */}
+                      {!mappings.FEATURE && (
+                        <div className="rounded-control border border-state-warning/30 bg-state-warning/10 p-3 text-xs text-state-warning">
+                          <span className="font-semibold">Feature issue type:</span> Project{' '}
+                          {context.project.key} does not have an exact &ldquo;Feature&rdquo; issue type.
+                          Please select a compatible Jira issue type (e.g. Story or Task) to proceed.
+                        </div>
+                      )}
+
+                      {/* Mappings Grid */}
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {/* Epic */}
+                        <div>
+                          <Select
+                            id="jira-mapping-epic"
+                            label="Epic"
+                            placeholder="Select issue type..."
+                            value={mappings.EPIC}
+                            onChange={(e) =>
+                              setMappings((prev) => ({ ...prev, EPIC: e.target.value }))
+                            }
+                            options={issueTypes.map((t) => ({
+                              value: t.name,
+                              label: `${t.name}${t.subtask ? ' (Subtask)' : ''}`,
+                            }))}
+                            helperText="AgileFlow Epic"
+                          />
+                        </div>
+
+                        {/* Feature */}
+                        <div>
+                          <Select
+                            id="jira-mapping-feature"
+                            label="Feature"
+                            placeholder="Select compatible type..."
+                            value={mappings.FEATURE}
+                            onChange={(e) =>
+                              setMappings((prev) => ({ ...prev, FEATURE: e.target.value }))
+                            }
+                            options={issueTypes.map((t) => ({
+                              value: t.name,
+                              label: `${t.name}${t.subtask ? ' (Subtask)' : ''}`,
+                            }))}
+                            helperText={
+                              !mappings.FEATURE
+                                ? 'Required: select compatible Jira type'
+                                : 'AgileFlow Feature'
+                            }
+                            error={!mappings.FEATURE ? 'Mapping required' : undefined}
+                          />
+                        </div>
+
+                        {/* User Story */}
+                        <div>
+                          <Select
+                            id="jira-mapping-user-story"
+                            label="User Story"
+                            placeholder="Select issue type..."
+                            value={mappings.USER_STORY}
+                            onChange={(e) =>
+                              setMappings((prev) => ({ ...prev, USER_STORY: e.target.value }))
+                            }
+                            options={issueTypes.map((t) => ({
+                              value: t.name,
+                              label: `${t.name}${t.subtask ? ' (Subtask)' : ''}`,
+                            }))}
+                            helperText="AgileFlow User Story"
+                          />
+                        </div>
+
+                        {/* Task */}
+                        <div>
+                          <Select
+                            id="jira-mapping-task"
+                            label="Task"
+                            placeholder="Select issue type..."
+                            value={mappings.TASK}
+                            onChange={(e) =>
+                              setMappings((prev) => ({ ...prev, TASK: e.target.value }))
+                            }
+                            options={issueTypes.map((t) => ({
+                              value: t.name,
+                              label: `${t.name}${t.subtask ? ' (Subtask)' : ''}`,
+                            }))}
+                            helperText="AgileFlow Task"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Action Bar */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-default pt-3">
+                        <div className="text-xs text-content-muted">
+                          {!isMappingComplete ? (
+                            <span className="text-state-warning">
+                              Map all 4 AgileFlow types to enable sync preview.
+                            </span>
+                          ) : (
+                            <span className="text-state-success">
+                              All types mapped. Ready to generate preview.
+                            </span>
+                          )}
+                        </div>
+                        <Button
+                          variant="primary"
+                          onClick={handleGeneratePreview}
+                          disabled={!isMappingComplete || generatingPreview}
+                          loading={generatingPreview}
+                          loadingLabel="Generating Preview"
+                          id="generate-sync-preview-btn"
+                        >
+                          {previewData ? 'Regenerate Sync Preview' : 'Generate Sync Preview'}
+                        </Button>
+                      </div>
+
+                      {previewError && (
+                        <div
+                          role="alert"
+                          className="rounded-control border border-state-danger/40 bg-state-danger/10 p-3 text-xs text-state-danger"
+                        >
+                          {previewError}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
+
+                {/* Sync Preview View */}
+                {previewData && (
+                  <div
+                    className="rounded-control border border-accent-border/40 bg-surface/95 p-5 space-y-6"
+                    data-testid="jira-sync-preview"
+                  >
+                    {/* Header */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-default pb-4">
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <h4 className="text-base font-semibold text-content-primary">
+                            Jira Synchronization Preview
+                          </h4>
+                          <StatusBadge label="Synchronization: NOT PERFORMED" tone="neutral" />
+                        </div>
+                        <p className="mt-1 text-xs font-semibold text-state-warning">
+                          No Jira data has been created or modified.
+                        </p>
+                      </div>
+                      <span className="text-xs text-content-muted">Zero Jira writes</span>
+                    </div>
+
+                    {/* Target Site / Project / Board */}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 rounded-control border border-default/60 bg-surface-secondary/40 p-3 text-xs">
+                      <div>
+                        <span className="text-content-muted block">Target Site</span>
+                        <span className="font-medium text-content-primary">
+                          {previewData.target?.site?.name || '—'}
+                        </span>
+                        {previewData.target?.site?.url && (
+                          <span className="text-content-muted block text-[11px] truncate">
+                            {previewData.target.site.url}
+                          </span>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-content-muted block">Project</span>
+                        <span className="font-medium text-content-primary">
+                          {previewData.target?.project?.key} — {previewData.target?.project?.name}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-content-muted block">Scrum Board</span>
+                        <span className="font-medium text-content-primary">
+                          {previewData.target?.board?.name}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Summary Metrics */}
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <div className="rounded-control border border-default bg-surface p-3 text-center">
+                        <div className="text-xl font-bold text-content-primary">
+                          {previewData.summary?.total_sprints ?? 0}
+                        </div>
+                        <div className="text-xs text-content-secondary">Sprints</div>
+                      </div>
+                      <div className="rounded-control border border-default bg-surface p-3 text-center">
+                        <div className="text-xl font-bold text-content-primary">
+                          {previewData.summary?.total_issues ?? 0}
+                        </div>
+                        <div className="text-xs text-content-secondary">Total Issues</div>
+                      </div>
+                      <div className="rounded-control border border-default bg-surface p-3 text-center">
+                        <div className="text-xl font-bold text-content-primary">
+                          {previewData.summary?.total_points ?? 0}
+                        </div>
+                        <div className="text-xs text-content-secondary">Story Points</div>
+                      </div>
+                      <div className="rounded-control border border-default bg-surface p-3 text-center">
+                        <div className="text-xs text-content-secondary space-y-0.5">
+                          <div>
+                            Epics:{' '}
+                            <span className="font-semibold text-content-primary">
+                              {previewData.summary?.epic_count ?? 0}
+                            </span>
+                          </div>
+                          <div>
+                            Features:{' '}
+                            <span className="font-semibold text-content-primary">
+                              {previewData.summary?.feature_count ?? 0}
+                            </span>
+                          </div>
+                          <div>
+                            Stories:{' '}
+                            <span className="font-semibold text-content-primary">
+                              {previewData.summary?.story_count ?? 0}
+                            </span>
+                          </div>
+                          <div>
+                            Tasks:{' '}
+                            <span className="font-semibold text-content-primary">
+                              {previewData.summary?.task_count ?? 0}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-[11px] text-content-muted mt-1">Breakdown</div>
+                      </div>
+                    </div>
+
+                    {/* Warnings */}
+                    {previewData.warnings && previewData.warnings.length > 0 && (
+                      <div className="rounded-control border border-state-warning/40 bg-state-warning/10 p-3 text-xs text-state-warning space-y-1">
+                        <div className="font-semibold">Preview Warnings:</div>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                          {previewData.warnings.map((w, idx) => (
+                            <li key={idx}>{w}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Applied Issue Type Mappings */}
+                    <div className="rounded-control border border-default/60 bg-surface p-3">
+                      <div className="text-xs font-semibold text-content-primary mb-2">
+                        Applied Issue Type Mappings
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-content-muted">Epic →</span>
+                          <span className="font-medium text-content-primary">
+                            {previewData.mappings?.EPIC}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-content-muted">Feature →</span>
+                          <span className="font-medium text-content-primary">
+                            {previewData.mappings?.FEATURE}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-content-muted">User Story →</span>
+                          <span className="font-medium text-content-primary">
+                            {previewData.mappings?.USER_STORY}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-content-muted">Task →</span>
+                          <span className="font-medium text-content-primary">
+                            {previewData.mappings?.TASK}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Generated Sprints Preview */}
+                    {previewData.sprints && previewData.sprints.length > 0 && (
+                      <div className="space-y-2">
+                        <h5 className="text-xs font-semibold uppercase tracking-wider text-content-muted">
+                          Planned Sprints ({previewData.sprints.length})
+                        </h5>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          {previewData.sprints.map((s) => (
+                            <div
+                              key={s.id}
+                              className="rounded-control border border-default bg-surface p-3 text-xs space-y-1"
+                            >
+                              <div className="font-semibold text-content-primary">{s.name}</div>
+                              <div className="flex items-center justify-between text-content-secondary">
+                                <span>{s.planned_points} pts planned</span>
+                                <span>{s.duration_days} days</span>
+                              </div>
+                              {s.start_date && s.end_date && (
+                                <div className="text-[11px] text-content-muted">
+                                  {s.start_date} → {s.end_date}
+                                </div>
+                              )}
+                              <div className="text-[11px] text-content-muted">
+                                {s.item_count} items assigned
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Preview Issues Table */}
+                    <div className="space-y-2">
+                      <h5 className="text-xs font-semibold uppercase tracking-wider text-content-muted">
+                        Preview Issues ({previewData.issues?.length ?? 0})
+                      </h5>
+                      <div className="overflow-x-auto rounded-control border border-default bg-surface">
+                        <table className="w-full text-left text-xs">
+                          <thead className="border-b border-default bg-surface-secondary/50 text-content-muted">
+                            <tr>
+                              <th className="px-3 py-2 font-medium">Artifact ID</th>
+                              <th className="px-3 py-2 font-medium">Mapped Jira Type</th>
+                              <th className="px-3 py-2 font-medium">Summary</th>
+                              <th className="px-3 py-2 font-medium">Planned Sprint</th>
+                              <th className="px-3 py-2 font-medium">Parent</th>
+                              <th className="px-3 py-2 font-medium">Points</th>
+                              <th className="px-3 py-2 font-medium">Assignee</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-default/40">
+                            {(previewData.issues || []).map((issue, idx) => (
+                              <tr key={issue.artifact_id || issue.id || idx} className="hover:bg-surface-secondary/30">
+                                <td className="px-3 py-2 font-mono text-[11px] font-semibold text-content-primary whitespace-nowrap">
+                                  {issue.artifact_id}
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  <span className="inline-block rounded bg-surface-secondary px-1.5 py-0.5 text-[11px] text-content-primary font-medium">
+                                    {issue.jira_issue_type}
+                                  </span>
+                                </td>
+                                <td
+                                  className="px-3 py-2 text-content-primary max-w-xs truncate"
+                                  title={issue.summary}
+                                >
+                                  {issue.summary}
+                                </td>
+                                <td className="px-3 py-2 text-content-secondary whitespace-nowrap">
+                                  {issue.planned_sprint || (
+                                    <span className="text-content-muted italic">Backlog</span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 font-mono text-[11px] text-content-muted whitespace-nowrap">
+                                  {issue.parent_id || '—'}
+                                </td>
+                                <td className="px-3 py-2 text-content-secondary whitespace-nowrap">
+                                  {issue.estimate_points != null
+                                    ? `${issue.estimate_points} pts`
+                                    : '—'}
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  <span className="inline-flex items-center rounded bg-surface-secondary/80 px-2 py-0.5 text-[11px] text-content-muted font-medium">
+                                    Unassigned
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Sync Action Area: Prompt 7B Hard HITL Confirmation Flow */}
+                    {!syncResult && !syncing && (
+                      <div
+                        className="rounded-control border border-state-neutral/30 bg-surface-secondary/40 p-3 text-xs text-content-secondary flex flex-wrap items-center justify-between gap-3"
+                        data-testid="jira-sync-action-area"
+                      >
+                        <div>
+                          <span className="font-semibold text-content-primary">
+                            Synchronization: NOT PERFORMED.
+                          </span>{' '}
+                          <span>No Jira data has been created or modified yet.</span>
+                        </div>
+                        <Button
+                          variant="primary"
+                          size="small"
+                          onClick={() => {
+                            setSyncError(null)
+                            setShowSyncConfirmModal(true)
+                          }}
+                          disabled={syncing}
+                          data-testid="start-sync-btn"
+                        >
+                          Synchronize with Jira
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Syncing In Progress Indicator */}
+                    {syncing && (
+                      <div
+                        className="rounded-control border border-brand/40 bg-brand/10 p-4 text-xs text-content-primary flex items-center justify-between gap-3"
+                        data-testid="jira-sync-in-progress"
+                      >
+                        <div className="flex items-center gap-3">
+                          <Spinner size="small" />
+                          <div>
+                            <span className="font-semibold">Synchronization IN PROGRESS...</span>
+                            <p className="text-content-secondary text-[11px] mt-0.5">
+                              Creating Jira sprints, unassigned issues, and placing planned work.
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="small"
+                          disabled={true}
+                          className="opacity-60 cursor-not-allowed text-xs"
+                        >
+                          Synchronizing...
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Sync Error Banner if any */}
+                    {syncError && !syncing && (
+                      <div className="rounded-control border border-state-danger/40 bg-state-danger/10 p-3 text-xs text-state-danger flex items-center justify-between gap-2">
+                        <span>{syncError}</span>
+                        <Button
+                          variant="ghost"
+                          size="small"
+                          onClick={() => setSyncError(null)}
+                          className="text-xs text-content-muted"
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Synchronization Results Card */}
+                {syncResult && (
+                  <div
+                    className="rounded-control border border-default bg-surface p-4 space-y-4"
+                    data-testid="jira-sync-result-card"
+                  >
+                    {/* Header with status badge */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-default">
+                      <div className="flex items-center gap-2">
+                        <StatusBadge
+                          label={syncResult.status}
+                          tone={
+                            syncResult.status === 'COMPLETED'
+                              ? 'success'
+                              : syncResult.status === 'PARTIAL'
+                              ? 'warning'
+                              : 'danger'
+                          }
+                        />
+                            <span className="font-semibold text-sm text-content-primary">
+                              {syncResult.status === 'COMPLETED' && 'Jira synchronization completed.'}
+                              {syncResult.status === 'PARTIAL' &&
+                                'Jira synchronization partially completed. Review failed items before retrying.'}
+                              {syncResult.status === 'FAILED' &&
+                                'Jira synchronization failed. Your Agent 2 generated results are unchanged.'}
+                            </span>
+                          </div>
+
+                          {(syncResult.status === 'PARTIAL' || syncResult.status === 'FAILED') && (
+                            <Button
+                              variant="primary"
+                              size="small"
+                              onClick={() => {
+                                setSyncError(null)
+                                setShowSyncConfirmModal(true)
+                              }}
+                              disabled={syncing}
+                              data-testid="retry-sync-btn"
+                            >
+                              {syncResult.status === 'PARTIAL'
+                                ? 'Resume Synchronization'
+                                : 'Retry Synchronization'}
+                            </Button>
+                          )}
+                        </div>
+
+                        {/* Summary Metrics Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="rounded border border-default bg-surface-secondary/50 p-3">
+                            <div className="text-[11px] text-content-muted uppercase tracking-wider font-semibold">
+                              Sprints
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-content-primary">
+                              {syncResult.sprint_summary?.created ?? 0} created
+                              {(syncResult.sprint_summary?.reused ?? 0) > 0 &&
+                                ` (${syncResult.sprint_summary.reused} reused)`}
+                            </div>
+                            {(syncResult.sprint_summary?.failed ?? 0) > 0 && (
+                              <div className="text-xs text-state-danger font-medium mt-0.5">
+                                {syncResult.sprint_summary.failed} failed
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="rounded border border-default bg-surface-secondary/50 p-3">
+                            <div className="text-[11px] text-content-muted uppercase tracking-wider font-semibold">
+                              Issues (Unassigned)
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-content-primary">
+                              {syncResult.issue_summary?.created ?? 0} created
+                              {(syncResult.issue_summary?.reused ?? 0) > 0 &&
+                                ` (${syncResult.issue_summary.reused} reused)`}
+                            </div>
+                            {(syncResult.issue_summary?.failed ?? 0) > 0 && (
+                              <div className="text-xs text-state-danger font-medium mt-0.5">
+                                {syncResult.issue_summary.failed} failed
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="rounded border border-default bg-surface-secondary/50 p-3">
+                            <div className="text-[11px] text-content-muted uppercase tracking-wider font-semibold">
+                              Sprint Placements
+                            </div>
+                            <div className="mt-1 text-sm font-semibold text-content-primary">
+                              {syncResult.placement_summary?.created ?? 0} placed
+                            </div>
+                            {(syncResult.placement_summary?.failed ?? 0) > 0 && (
+                              <div className="text-xs text-state-danger font-medium mt-0.5">
+                                {syncResult.placement_summary.failed} failed
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Failures List if any */}
+                        {syncResult.failures && syncResult.failures.length > 0 && (
+                          <div
+                            className="rounded border border-state-danger/40 bg-state-danger/10 p-3 space-y-1.5 text-xs text-content-primary"
+                            data-testid="sync-failures-list"
+                          >
+                            <div className="font-semibold text-state-danger">
+                              Failed Items ({syncResult.failures.length}):
+                            </div>
+                            <ul className="list-disc list-inside space-y-1 text-content-secondary">
+                              {syncResult.failures.map((fail, idx) => (
+                                <li key={idx}>
+                                  <span className="font-mono text-content-primary">
+                                    [{fail.entity_type}] {fail.entity_id}:
+                                  </span>{' '}
+                                  {fail.error}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Warnings if any */}
+                        {syncResult.warnings && syncResult.warnings.length > 0 && (
+                          <div className="rounded border border-state-warning/40 bg-state-warning/10 p-3 space-y-1.5 text-xs text-content-primary">
+                            <div className="font-semibold text-state-warning">Warnings:</div>
+                            <ul className="list-disc list-inside space-y-1 text-content-secondary">
+                              {syncResult.warnings.map((warn, idx) => (
+                                <li key={idx}>{warn}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Traceability Table */}
+                        {syncResult.traceability?.issues &&
+                          syncResult.traceability.issues.length > 0 && (
+                            <div className="space-y-2 pt-1" data-testid="sync-traceability-section">
+                              <div className="text-xs font-semibold text-content-primary">
+                                Traceability & Created Jira Keys
+                              </div>
+                              <div className="overflow-x-auto rounded border border-default">
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead>
+                                    <tr className="border-b border-default bg-surface-secondary/60 text-content-muted">
+                                      <th className="p-2 font-medium">AgileFlow ID</th>
+                                      <th className="p-2 font-medium">Jira Key</th>
+                                      <th className="p-2 font-medium">Type</th>
+                                      <th className="p-2 font-medium">Summary</th>
+                                      <th className="p-2 font-medium">Sprint</th>
+                                      <th className="p-2 font-medium">Parent Key</th>
+                                      <th className="p-2 font-medium">Assignee</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-default">
+                                    {syncResult.traceability.issues.map((iss) => (
+                                      <tr
+                                        key={iss.artifact_id}
+                                        className="hover:bg-surface-secondary/30"
+                                      >
+                                        <td className="p-2 font-mono text-content-primary">
+                                          {iss.artifact_id}
+                                        </td>
+                                        <td className="p-2 font-mono font-semibold">
+                                          {iss.browse_url ? (
+                                            <a
+                                              href={iss.browse_url}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-brand hover:underline inline-flex items-center gap-1"
+                                            >
+                                              {iss.jira_key} ↗
+                                            </a>
+                                          ) : (
+                                            iss.jira_key
+                                          )}
+                                        </td>
+                                        <td className="p-2 text-content-secondary">
+                                          {iss.jira_issue_type}
+                                        </td>
+                                        <td
+                                          className="p-2 text-content-primary max-w-xs truncate"
+                                          title={iss.summary}
+                                        >
+                                          {iss.summary}
+                                        </td>
+                                        <td className="p-2 text-content-secondary">
+                                          {iss.planned_sprint || '—'}
+                                        </td>
+                                        <td className="p-2 font-mono text-content-muted">
+                                          {iss.parent_jira_key || '—'}
+                                        </td>
+                                        <td className="p-2 text-content-muted italic">
+                                          Unassigned
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                      </div>
+                    )}
+              </>
             )}
           </div>
         )}
       </Card>
+
+      {/* Synchronization Confirmation Modal (Prompt 7B Hard HITL Boundary) */}
+      {showSyncConfirmModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sync-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"
+          data-testid="jira-sync-confirm-modal"
+        >
+          <div className="w-full max-w-md rounded-panel border border-default bg-surface p-6 shadow-surface space-y-4">
+            <h3 id="sync-modal-title" className="text-base font-semibold text-content-primary">
+              Synchronize this approved plan with Jira?
+            </h3>
+            <p className="text-sm text-content-secondary leading-relaxed">
+              This will create{' '}
+              <strong className="text-content-primary font-semibold">
+                {previewData?.summary?.total_sprints ?? previewData?.sprints?.length ?? 0} sprints
+              </strong>{' '}
+              and{' '}
+              <strong className="text-content-primary font-semibold">
+                {previewData?.summary?.total_issues ?? previewData?.issues?.length ?? 0} Jira issues
+              </strong>{' '}
+              in{' '}
+              <strong className="text-content-primary font-semibold">
+                {context?.project?.name || context?.project?.key || 'the selected project'}
+              </strong>
+              {context?.board ? ` (${context.board.name})` : ''}.
+            </p>
+            <div className="rounded-control border border-state-neutral/40 bg-surface-secondary/50 p-3 text-xs text-content-secondary">
+              <span className="font-semibold text-content-primary">Notice:</span> Issues will remain unassigned. You can assign developers manually in Jira later.
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                size="small"
+                onClick={() => setShowSyncConfirmModal(false)}
+                disabled={syncing}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="small"
+                onClick={async () => {
+                  setShowSyncConfirmModal(false)
+                  setSyncing(true)
+                  setSyncError(null)
+
+                  try {
+                    const effectiveProjectId = project?.agent_project_id || project?.id
+                    const effectiveRunId = runId || project?.run_id
+
+                    const result = await executeJiraSync({
+                      agent_project_id: effectiveProjectId,
+                      run_id: effectiveRunId,
+                      mappings,
+                      confirmation: true,
+                      outputs,
+                    })
+                    setSyncResult(result)
+                    if (result.status === 'COMPLETED') {
+                      setSuccessNotice('Jira synchronization completed successfully!')
+                    } else if (result.status === 'PARTIAL') {
+                      setErrorMessage(
+                        'Jira synchronization partially completed. Review failed items before retrying.',
+                      )
+                    } else if (result.status === 'FAILED') {
+                      setErrorMessage(
+                        'Jira synchronization failed. Your Agent 2 generated results are unchanged.',
+                      )
+                    }
+                  } catch (err) {
+                    const normalized = normalizeJiraError(err)
+                    setSyncError(normalized)
+                    setErrorMessage(normalized)
+                  } finally {
+                    setSyncing(false)
+                  }
+                }}
+                loading={syncing}
+                loadingLabel="Synchronizing..."
+                data-testid="confirm-sync-btn"
+              >
+                Confirm Synchronization
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Disconnect Confirmation Modal */}
       {showDisconnectModal && (

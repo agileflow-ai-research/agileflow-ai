@@ -167,6 +167,45 @@ export async function generateJiraSyncPreview({
 }
 
 /**
+ * Execute Jira synchronization with explicit human confirmation.
+ */
+export async function executeJiraSync({
+  agent_project_id,
+  run_id = null,
+  mappings,
+  confirmation = false,
+  outputs = null,
+}) {
+  const response = await apiClient.post(
+    `${JIRA_BASE_PATH}/sync`,
+    {
+      agent_project_id,
+      run_id,
+      mappings,
+      confirmation: Boolean(confirmation),
+      outputs,
+    },
+    { authenticated: true },
+  )
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Fetch latest Jira synchronization status and traceability for a run.
+ */
+export async function getJiraSyncStatus({ agent_project_id, run_id }) {
+  const query = new URLSearchParams()
+  if (agent_project_id) query.set('agent_project_id', agent_project_id)
+  if (run_id) query.set('run_id', run_id)
+
+  const response = await apiClient.get(
+    `${JIRA_BASE_PATH}/sync?${query.toString()}`,
+    { authenticated: true },
+  )
+  return response.data ?? response.payload ?? null
+}
+
+/**
  * Auto-suggest obvious mappings from AgileFlow hierarchy to available Jira issue types.
  *
  * Rules:
@@ -307,6 +346,18 @@ export function normalizeJiraError(error) {
   }
   if (messageText.includes('JIRA_HIERARCHY_INVALID')) {
     return 'Planning hierarchy reference is invalid. Your Agent 2 results are unchanged.'
+  }
+  if (messageText.includes('JIRA_CONFIRMATION_REQUIRED')) {
+    return 'Explicit human confirmation is required before synchronizing with Jira.'
+  }
+  if (messageText.includes('JIRA_SYNC_IN_PROGRESS')) {
+    return 'A synchronization operation is already in progress for this plan.'
+  }
+  if (messageText.includes('JIRA_RUN_NOT_COMPLETED')) {
+    return 'Only completed Agent 2 planning runs can be synchronized.'
+  }
+  if (messageText.includes('JIRA_UNAUTHORIZED_PROJECT_ACCESS')) {
+    return 'You do not have permission to synchronize this project.'
   }
   if (messageText.includes('JIRA_RATE_LIMITED') || error.status === 429) {
     return 'Jira is temporarily limiting requests. Please try again shortly.'

@@ -16,7 +16,10 @@ from app.modules.auth.dependencies import (
 from app.modules.auth.repository import UserRepository
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.integrations.jira.client import JiraApiClient
-from app.modules.integrations.jira.repository import JiraConnectionRepository
+from app.modules.integrations.jira.repository import (
+    JiraConnectionRepository,
+    JiraSyncRepository,
+)
 from app.modules.integrations.jira.schemas import (
     JiraBoardResponse,
     JiraConnectResponse,
@@ -33,7 +36,9 @@ from app.modules.integrations.jira.schemas import (
     JiraSelectedSite,
     JiraSiteResponse,
     JiraStatusResponse,
+    JiraSyncExecuteRequest,
     JiraSyncPreviewRequest,
+    JiraSyncResultResponse,
 )
 from app.modules.integrations.jira.service import (
     JiraApiClientError,
@@ -43,6 +48,7 @@ from app.modules.integrations.jira.service import (
     JiraBoardNotSelectedError,
     JiraConfiguration,
     JiraConfigurationError,
+    JiraConfirmationRequiredError,
     JiraCrossUserStateError,
     JiraHierarchyInvalidError,
     JiraIssueTypeUnavailableError,
@@ -63,12 +69,15 @@ from app.modules.integrations.jira.service import (
     JiraReauthorizationRequiredError,
     JiraRemoteApiError,
     JiraResourceNotFoundError,
+    JiraRunNotCompletedError,
     JiraSiteNotAccessibleError,
     JiraSiteNotSelectedError,
     JiraStateExpiredError,
     JiraStateInvalidError,
     JiraStateReusedError,
     JiraStateStore,
+    JiraSyncInProgressError,
+    JiraUnauthorizedProjectAccessError,
     JiraUpstreamError,
 )
 from app.modules.standalone.router import get_standalone_service
@@ -96,12 +105,19 @@ def get_jira_oauth_client() -> JiraOAuthClient:
     return JiraOAuthClient(timeout_seconds=settings.jira_http_timeout_seconds)
 
 
+def get_jira_sync_repository() -> JiraSyncRepository:
+    return JiraSyncRepository()
+
+
 def get_jira_oauth_service(
     repository: Annotated[
         JiraConnectionRepository, Depends(get_jira_connection_repository)
     ],
     state_store: Annotated[JiraStateStore, Depends(get_jira_state_store)],
     client: Annotated[JiraOAuthClient, Depends(get_jira_oauth_client)],
+    sync_repository: Annotated[
+        JiraSyncRepository, Depends(get_jira_sync_repository)
+    ] = None,
 ) -> JiraOAuthService:
     try:
         config: JiraConfiguration | None = JiraConfiguration.from_settings(
@@ -115,6 +131,7 @@ def get_jira_oauth_service(
         repository=repository,
         state_store=state_store,
         client=client,
+        sync_repository=sync_repository,
     )
 
 
@@ -250,6 +267,34 @@ def _handle_jira_exception(exc: Exception) -> JSONResponse:
             field="hierarchy",
             detail=f"JIRA_HIERARCHY_INVALID: {exc}",
         )
+    if isinstance(exc, JiraConfirmationRequiredError):
+        return _error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="JIRA_CONFIRMATION_REQUIRED",
+            field="confirmation",
+            detail=f"JIRA_CONFIRMATION_REQUIRED: {exc}",
+        )
+    if isinstance(exc, JiraSyncInProgressError):
+        return _error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            message="JIRA_SYNC_IN_PROGRESS",
+            field="sync",
+            detail=f"JIRA_SYNC_IN_PROGRESS: {exc}",
+        )
+    if isinstance(exc, JiraRunNotCompletedError):
+        return _error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="JIRA_RUN_NOT_COMPLETED",
+            field="run_id",
+            detail=f"JIRA_RUN_NOT_COMPLETED: {exc}",
+        )
+    if isinstance(exc, JiraUnauthorizedProjectAccessError):
+        return _error_response(
+            status_code=status.HTTP_403_FORBIDDEN,
+            message="JIRA_UNAUTHORIZED_PROJECT_ACCESS",
+            field="agent_project_id",
+            detail=f"JIRA_UNAUTHORIZED_PROJECT_ACCESS: {exc}",
+        )
     if isinstance(exc, JiraRateLimitError):
         return _error_response(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -299,7 +344,7 @@ def _handle_jira_exception(exc: Exception) -> JSONResponse:
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         message="JIRA_INTERNAL_ERROR",
         field="jira",
-        detail="An unexpected Jira integration error occurred",
+        detail=f"JIRA_INTERNAL_ERROR: {exc}",
     )
 
 
@@ -695,5 +740,63 @@ def generate_jira_sync_preview(
             client=api_client,
             standalone_service=standalone_service,
         )
+    except Exception as exc:
+        return _handle_jira_exception(exc)
+
+
+@router.post(
+    "/sync",
+    response_model=JiraSyncResultResponse,
+    status_code=status.HTTP_200_OK,
+)
+def execute_jira_sync(
+    payload: JiraSyncExecuteRequest,
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+    api_client: Annotated[JiraApiClient, Depends(get_jira_api_client)],
+    standalone_service: Annotated[
+        StandaloneService, Depends(get_standalone_service)
+    ],
+) -> JiraSyncResultResponse | JSONResponse:
+    """Execute Jira synchronization for an approved Agent 2 plan.
+
+    Requires explicit human confirmation. Generates sprints, creates unassigned issues
+    preserving hierarchy, places issues into sprints, and persists traceability.
+    """
+    try:
+        return service.execute_sync(
+            user_id=current_user.user_id,
+            request=payload,
+            client=api_client,
+            standalone_service=standalone_service,
+        )
+    except Exception as exc:
+        return _handle_jira_exception(exc)
+
+
+@router.get(
+    "/sync",
+    response_model=JiraSyncResultResponse | None,
+    status_code=status.HTTP_200_OK,
+)
+def get_jira_sync_status(
+    agent_project_id: Annotated[str, Query(min_length=1)],
+    run_id: Annotated[str, Query(min_length=1)],
+    current_user: Annotated[UserPublicResponse, Depends(get_current_user)],
+    service: Annotated[JiraOAuthService, Depends(get_jira_oauth_service)],
+) -> JiraSyncResultResponse | JSONResponse | None:
+    """Retrieve latest Jira synchronization status and traceability for a run."""
+    try:
+        result = service.get_sync_status(
+            user_id=current_user.user_id,
+            agent_project_id=agent_project_id,
+            run_id=run_id,
+        )
+        if result is None:
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={"status": "NOT_PERFORMED", "sync_id": None},
+            )
+        return result
     except Exception as exc:
         return _handle_jira_exception(exc)

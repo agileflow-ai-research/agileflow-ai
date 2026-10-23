@@ -17,13 +17,14 @@ from pymongo import ReturnDocument
 from pymongo.database import Database
 from pymongo.errors import PyMongoError
 
-from app.database.collections import JIRA_CONNECTIONS
+from app.database.collections import JIRA_CONNECTIONS, JIRA_SYNCS
 from app.database.mongodb import get_database
 from app.modules.integrations.jira.schemas import (
     JiraConnectionDocument,
     JiraSelectedBoard,
     JiraSelectedProject,
     JiraSelectedSite,
+    JiraSyncDocument,
 )
 
 
@@ -269,3 +270,85 @@ class JiraConnectionRepository:
             raise JiraConnectionRepositoryError(
                 "Could not delete Jira connection"
             ) from exc
+
+
+class JiraSyncRepositoryError(RuntimeError):
+    """Raised when Jira sync persistence operations fail."""
+
+
+class JiraSyncRepository:
+    """Repository handling persistence of Jira synchronization records and traceability."""
+
+    def __init__(
+        self,
+        database: Database[dict[str, Any]] | None = None,
+    ) -> None:
+        configured_database = database if database is not None else get_database()
+        self._collection = configured_database[JIRA_SYNCS]
+
+    def find_by_sync_id(self, sync_id: str) -> dict[str, Any] | None:
+        """Find a synchronization record by its unique sync_id."""
+        try:
+            document = self._collection.find_one({"sync_id": sync_id}, {"_id": 0})
+        except PyMongoError as exc:
+            raise JiraSyncRepositoryError(
+                "Could not retrieve Jira sync record by sync_id"
+            ) from exc
+        return _clean_document(document) if document is not None else None
+
+    def find_latest_by_run(
+        self, agent_project_id: str, run_id: str
+    ) -> dict[str, Any] | None:
+        """Find the most recent synchronization record for an approved run."""
+        try:
+            cursor = (
+                self._collection.find(
+                    {"agent_project_id": agent_project_id, "run_id": run_id},
+                    {"_id": 0},
+                )
+                .sort("created_at", -1)
+                .limit(1)
+            )
+            docs = list(cursor)
+            document = docs[0] if docs else None
+        except PyMongoError as exc:
+            raise JiraSyncRepositoryError(
+                "Could not retrieve latest Jira sync record for run"
+            ) from exc
+        return _clean_document(document) if document is not None else None
+
+    def find_active_by_run(
+        self, agent_project_id: str, run_id: str
+    ) -> dict[str, Any] | None:
+        """Find an in-progress synchronization record for this run to prevent concurrent executions."""
+        try:
+            document = self._collection.find_one(
+                {
+                    "agent_project_id": agent_project_id,
+                    "run_id": run_id,
+                    "status": "IN_PROGRESS",
+                },
+                {"_id": 0},
+            )
+        except PyMongoError as exc:
+            raise JiraSyncRepositoryError(
+                "Could not check for active Jira synchronization"
+            ) from exc
+        return _clean_document(document) if document is not None else None
+
+    def upsert(self, sync_doc: JiraSyncDocument) -> dict[str, Any]:
+        """Insert or update a Jira synchronization record."""
+        document = sync_doc.model_dump(mode="python")
+        try:
+            persisted = self._collection.find_one_and_update(
+                {"sync_id": sync_doc.sync_id},
+                {"$set": document},
+                upsert=True,
+                projection={"_id": 0},
+                return_document=ReturnDocument.AFTER,
+            )
+        except PyMongoError as exc:
+            raise JiraSyncRepositoryError(
+                "Could not persist Jira sync record"
+            ) from exc
+        return _clean_document(persisted or document)

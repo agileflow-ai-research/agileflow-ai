@@ -8,8 +8,11 @@ from threading import Lock
 from typing import Any
 from urllib.parse import urlencode
 
+import uuid
+
 import httpx
 
+from app.common.status import AgentRunStatus
 from app.core.config import Settings
 from app.modules.auth.schemas import UserPublicResponse
 from app.modules.integrations.jira.constants import (
@@ -23,6 +26,7 @@ from app.modules.integrations.jira.constants import (
 )
 from app.modules.integrations.jira.repository import (
     JiraConnectionRepository,
+    JiraSyncRepository,
 )
 from app.modules.integrations.jira.schemas import (
     AtlassianAccessibleResource,
@@ -33,6 +37,7 @@ from app.modules.integrations.jira.schemas import (
     JiraContextProject,
     JiraContextResponse,
     JiraContextSite,
+    JiraIssueTrace,
     JiraIssueTypeResponse,
     JiraPreviewIssue,
     JiraPreviewResponse,
@@ -44,8 +49,14 @@ from app.modules.integrations.jira.schemas import (
     JiraSelectedProject,
     JiraSelectedSite,
     JiraSiteResponse,
+    JiraSprintTrace,
     JiraStatusResponse,
+    JiraSyncCounts,
+    JiraSyncDocument,
+    JiraSyncExecuteRequest,
+    JiraSyncFailure,
     JiraSyncPreviewRequest,
+    JiraSyncResultResponse,
 )
 
 
@@ -297,6 +308,30 @@ class JiraHierarchyInvalidError(JiraIntegrationError):
     """Raised when a required hierarchy reference is broken or invalid."""
 
     error_code: str = "JIRA_HIERARCHY_INVALID"
+
+
+class JiraConfirmationRequiredError(JiraIntegrationError):
+    """Raised when synchronization execution is attempted without explicit human confirmation."""
+
+    error_code: str = "JIRA_CONFIRMATION_REQUIRED"
+
+
+class JiraSyncInProgressError(JiraIntegrationError):
+    """Raised when a synchronization operation is already active for an approved run."""
+
+    error_code: str = "JIRA_SYNC_IN_PROGRESS"
+
+
+class JiraRunNotCompletedError(JiraIntegrationError):
+    """Raised when attempting to synchronize a run that is not COMPLETED."""
+
+    error_code: str = "JIRA_RUN_NOT_COMPLETED"
+
+
+class JiraUnauthorizedProjectAccessError(JiraIntegrationError):
+    """Raised when an authenticated user attempts to synchronize a project they do not own."""
+
+    error_code: str = "JIRA_UNAUTHORIZED_PROJECT_ACCESS"
 
 
 def suggest_issue_type_mappings(
@@ -577,12 +612,14 @@ class JiraOAuthService:
         state_store: JiraStateStore,
         client: JiraOAuthClient,
         clock=utc_now,
+        sync_repository: JiraSyncRepository | None = None,
     ) -> None:
         self._configuration = configuration
         self._repository = repository
         self._state_store = state_store
         self._client = client
         self._clock = clock
+        self._sync_repository = sync_repository or JiraSyncRepository()
         self._refresh_lock = Lock()
 
     @property
@@ -1507,7 +1544,7 @@ class JiraOAuthService:
                     jira_issue_type=resolved_jira_types["USER_STORY"],
                     summary=str(summary),
                     parent_id=st.get("feature_id") or st.get("epic_id"),
-                    planned_sprint=item_sprint_map.get(str(st["id"])),
+                    planned_sprint=item_sprint_map.get(str(st["id"])) or st.get("planned_sprint"),
                     assignee=None,
                     priority=st.get("priority") or item_priority_map.get(str(st["id"]), "MEDIUM"),
                     estimate_points=int(pts) if pts is not None else None,
@@ -1531,7 +1568,7 @@ class JiraOAuthService:
                     jira_issue_type=resolved_jira_types["TASK"],
                     summary=str(t.get("title", "")),
                     parent_id=t.get("story_id") or t.get("feature_id") or t.get("epic_id"),
-                    planned_sprint=item_sprint_map.get(str(t["id"])),
+                    planned_sprint=item_sprint_map.get(str(t["id"])) or t.get("planned_sprint"),
                     assignee=None,
                     priority=item_priority_map.get(str(t["id"]), "MEDIUM"),
                     estimate_points=int(pts) if pts is not None else None,
@@ -1576,4 +1613,487 @@ class JiraOAuthService:
             summary=summary,
             warnings=warnings,
             synchronization_status="NOT_PERFORMED",
+        )
+
+    def execute_sync(
+        self,
+        user_id: str,
+        request: JiraSyncExecuteRequest,
+        client: Any = None,
+        standalone_service: Any = None,
+    ) -> JiraSyncResultResponse:
+        """Execute Jira synchronization for an approved Agent 2 plan.
+
+        Hard HITL boundary:
+        - Requires valid generated sync preview.
+        - Requires explicit human confirmation (request.confirmation == True).
+        - Generates sprints, creates unassigned issues preserving hierarchy,
+          places issues into sprints, stores traceability, and records result
+          (COMPLETED, PARTIAL, or FAILED).
+        - Idempotent: checks stored traceability and skips creating already-traced
+          sprints/issues. Safe to resume/retry.
+        - NEVER mutates Agent 2 run status or AgentRun documents.
+        """
+        # 1. Hard HITL boundary check
+        if not request.confirmation:
+            raise JiraConfirmationRequiredError(
+                "Explicit human confirmation is required to execute Jira synchronization"
+            )
+
+        # 2. Authenticated user ownership & run check
+        effective_run_id = request.run_id or ""
+        resolved_outputs = request.outputs or {}
+
+        if standalone_service is not None:
+            user_ctx = UserPublicResponse(
+                user_id=user_id,
+                name="User",
+                email="user@example.com",
+                is_active=True,
+                created_at=self._clock(),
+                updated_at=self._clock(),
+            )
+            try:
+                if request.run_id:
+                    run = standalone_service.get_run(
+                        request.agent_project_id, request.run_id, user_ctx
+                    )
+                else:
+                    runs = standalone_service.list_runs(
+                        request.agent_project_id, user_ctx
+                    )
+                    completed_runs = [
+                        r
+                        for r in runs
+                        if (
+                            r.status.value
+                            if hasattr(r.status, "value")
+                            else str(r.status)
+                        )
+                        == "COMPLETED"
+                        and "JIRA_PLAN" in (r.output_manifest or {})
+                    ]
+                    if not completed_runs:
+                        raise JiraRunNotCompletedError(
+                            "No completed Agent 2 run with JIRA_PLAN found"
+                        )
+                    run = completed_runs[-1]
+            except Exception as exc:
+                if (
+                    "Unauthorized" in type(exc).__name__
+                    or "Forbidden" in type(exc).__name__
+                    or "Permission" in type(exc).__name__
+                ):
+                    raise JiraUnauthorizedProjectAccessError(
+                        f"User does not have access to project '{request.agent_project_id}'"
+                    ) from exc
+                if isinstance(exc, JiraIntegrationError):
+                    raise
+                raise JiraPlanUnavailableError(
+                    f"Could not load Agent 2 run: {exc}"
+                ) from exc
+
+            # Run must be COMPLETED
+            status_val = (
+                run.status.value
+                if hasattr(run.status, "value")
+                else str(run.status)
+            )
+            if status_val != "COMPLETED":
+                raise JiraRunNotCompletedError(
+                    f"Agent 2 run '{run.run_id}' has status '{status_val}'; must be COMPLETED to synchronize"
+                )
+
+            effective_run_id = getattr(run, "run_id", effective_run_id)
+            if not resolved_outputs:
+                resolved_outputs = getattr(run, "output_manifest", None) or {}
+
+        if not effective_run_id:
+            effective_run_id = "RUN-AGENT2"
+
+        # 3. Check for concurrent active synchronization for this run
+        active_sync = self._sync_repository.find_active_by_run(
+            request.agent_project_id, effective_run_id
+        )
+        if active_sync:
+            raise JiraSyncInProgressError(
+                f"A synchronization operation is already in progress for run '{effective_run_id}'"
+            )
+
+        # 4. Generate/validate preview server-side
+        preview = self.build_sync_preview(
+            user_id=user_id,
+            agent_project_id=request.agent_project_id,
+            mappings=request.mappings,
+            run_id=effective_run_id,
+            outputs=resolved_outputs,
+            client=client,
+            standalone_service=standalone_service,
+        )
+
+        # 5. Check persisted traceability for idempotency & resuming
+        existing_sync = self._sync_repository.find_latest_by_run(
+            request.agent_project_id, effective_run_id
+        )
+
+        # If already COMPLETED, return completed result directly without new writes
+        if existing_sync and existing_sync.get("status") == "COMPLETED":
+            return self._format_sync_response(existing_sync, preview.target)
+
+        # Load existing traces if resuming from PARTIAL or FAILED
+        sprints_trace: dict[str, JiraSprintTrace] = {}
+        issues_trace: dict[str, JiraIssueTrace] = {}
+        placements_trace: dict[str, bool] = {}
+        failures: list[JiraSyncFailure] = []
+        warnings: list[str] = list(preview.warnings)
+
+        if existing_sync:
+            for k, v in existing_sync.get("sprints_trace", {}).items():
+                if isinstance(v, dict):
+                    sprints_trace[k] = JiraSprintTrace.model_validate(v)
+                elif isinstance(v, JiraSprintTrace):
+                    sprints_trace[k] = v
+            for k, v in existing_sync.get("issues_trace", {}).items():
+                if isinstance(v, dict):
+                    issues_trace[k] = JiraIssueTrace.model_validate(v)
+                elif isinstance(v, JiraIssueTrace):
+                    issues_trace[k] = v
+            placements_trace = dict(existing_sync.get("placements_trace", {}))
+
+        sync_id = (
+            existing_sync.get("sync_id")
+            if existing_sync and existing_sync.get("status") in ("PARTIAL", "FAILED")
+            else f"SYNC-{uuid.uuid4().hex[:12].upper()}"
+        )
+
+        now = self._clock()
+        planned_placements = sum(
+            1
+            for i in preview.issues
+            if i.planned_sprint and i.agileflow_type != "EPIC"
+        )
+
+        # Mark IN_PROGRESS in persistence
+        sync_doc = JiraSyncDocument(
+            sync_id=sync_id,
+            user_id=user_id,
+            agent_project_id=request.agent_project_id,
+            run_id=effective_run_id,
+            cloud_id=preview.target.site.cloud_id,
+            site_name=preview.target.site.name,
+            site_url=preview.target.site.url,
+            project_id=preview.target.project.id,
+            project_key=preview.target.project.key,
+            project_name=preview.target.project.name,
+            board_id=preview.target.board.id,
+            board_name=preview.target.board.name,
+            mappings=preview.mappings,
+            status="IN_PROGRESS",
+            created_at=existing_sync.get("created_at") if existing_sync else now,
+            started_at=now,
+            updated_at=now,
+            sprint_summary=JiraSyncCounts(planned=len(preview.sprints)),
+            issue_summary=JiraSyncCounts(planned=len(preview.issues)),
+            placement_summary=JiraSyncCounts(planned=planned_placements),
+            sprints_trace=sprints_trace,
+            issues_trace=issues_trace,
+            placements_trace=placements_trace,
+            warnings=warnings,
+            failures=failures,
+        )
+        self._sync_repository.upsert(sync_doc)
+
+        api_client = self.get_api_client(client)
+
+        sprints_created = 0
+        sprints_reused = 0
+        sprints_failed = 0
+
+        # 6. Create Sprints (idempotent)
+        for sp in preview.sprints:
+            sp_id = getattr(sp, "id", None) or getattr(sp, "sprint_id", "")
+            if sp_id in sprints_trace and sprints_trace[sp_id].jira_sprint_id:
+                sprints_reused += 1
+                sprints_trace[sp_id].reused = True
+                continue
+
+            try:
+                jira_sprint = api_client.create_sprint(
+                    user_id=user_id,
+                    cloud_id=preview.target.site.cloud_id,
+                    origin_board_id=preview.target.board.id,
+                    name=sp.name,
+                    start_date=sp.start_date,
+                    end_date=sp.end_date,
+                    goal=getattr(sp, "goal", None),
+                )
+                j_sprint_id = int(jira_sprint.get("id"))
+                sprints_trace[sp_id] = JiraSprintTrace(
+                    agileflow_sprint_id=sp_id,
+                    jira_sprint_id=j_sprint_id,
+                    name=sp.name,
+                    state=jira_sprint.get("state", "future"),
+                    reused=False,
+                    created_at=self._clock(),
+                )
+                sprints_created += 1
+            except Exception as exc:
+                sprints_failed += 1
+                err_msg = str(exc)
+                failures.append(
+                    JiraSyncFailure(
+                        entity_type="SPRINT",
+                        entity_id=sp_id,
+                        error=err_msg,
+                    )
+                )
+                warnings.append(f"Failed to create sprint '{sp.name}': {err_msg}")
+
+        # 7. Create Issues in hierarchy order (EPIC -> FEATURE -> USER_STORY -> TASK)
+        issues_created = 0
+        issues_reused = 0
+        issues_failed = 0
+
+        hierarchy_rank = {"EPIC": 0, "FEATURE": 1, "USER_STORY": 2, "TASK": 3}
+        sorted_issues = sorted(
+            preview.issues,
+            key=lambda item: hierarchy_rank.get(item.agileflow_type, 99),
+        )
+
+        for issue in sorted_issues:
+            art_id = issue.artifact_id
+            if art_id in issues_trace and issues_trace[art_id].jira_key:
+                issues_reused += 1
+                issues_trace[art_id].reused = True
+                continue
+
+            # Determine parent Jira key if applicable
+            parent_key = None
+            if issue.parent_id:
+                parent_trace = issues_trace.get(issue.parent_id)
+                if parent_trace and parent_trace.jira_key:
+                    parent_key = parent_trace.jira_key
+                else:
+                    # Parent was not created or failed
+                    issues_failed += 1
+                    err_msg = f"Parent artifact '{issue.parent_id}' was not created in Jira"
+                    failures.append(
+                        JiraSyncFailure(
+                            entity_type="ISSUE",
+                            entity_id=art_id,
+                            error=err_msg,
+                        )
+                    )
+                    warnings.append(f"Skipping issue '{issue.summary}': {err_msg}")
+                    continue
+
+            try:
+                # Description preserving AgileFlow artifact reference
+                desc_text = f"AgileFlow Artifact ID: {art_id}\nType: {issue.agileflow_type}"
+                if issue.planned_sprint:
+                    desc_text += f"\nPlanned Sprint: {issue.planned_sprint}"
+
+                created = api_client.create_issue(
+                    user_id=user_id,
+                    cloud_id=preview.target.site.cloud_id,
+                    project_key=preview.target.project.key,
+                    issue_type_name=issue.jira_issue_type,
+                    summary=issue.summary,
+                    description=desc_text,
+                    parent_key_or_id=parent_key,
+                )
+                j_id = str(created.get("id"))
+                j_key = str(created.get("key"))
+                browse_url = (
+                    f"{preview.target.site.url.rstrip('/')}/browse/{j_key}"
+                    if preview.target.site.url
+                    else None
+                )
+
+                issues_trace[art_id] = JiraIssueTrace(
+                    artifact_id=art_id,
+                    jira_id=j_id,
+                    jira_key=j_key,
+                    agileflow_type=issue.agileflow_type,
+                    jira_issue_type=issue.jira_issue_type,
+                    summary=issue.summary,
+                    parent_id=issue.parent_id,
+                    parent_jira_key=parent_key,
+                    planned_sprint=issue.planned_sprint,
+                    browse_url=browse_url,
+                    reused=False,
+                    created_at=self._clock(),
+                )
+                issues_created += 1
+            except Exception as exc:
+                issues_failed += 1
+                err_msg = str(exc)
+                failures.append(
+                    JiraSyncFailure(
+                        entity_type="ISSUE",
+                        entity_id=art_id,
+                        error=err_msg,
+                    )
+                )
+                warnings.append(f"Failed to create issue '{issue.summary}': {err_msg}")
+
+        # 8. Place issues into planned sprints
+        placements_placed = 0
+        placements_failed = 0
+
+        for issue in preview.issues:
+            if not issue.planned_sprint or issue.agileflow_type == "EPIC":
+                continue
+
+            issue_trace = issues_trace.get(issue.artifact_id)
+            if not issue_trace or not issue_trace.jira_key:
+                continue
+
+            sprint_trace = sprints_trace.get(issue.planned_sprint)
+            if not sprint_trace:
+                for st in sprints_trace.values():
+                    if st.name == issue.planned_sprint or st.agileflow_sprint_id == issue.planned_sprint:
+                        sprint_trace = st
+                        break
+
+            if not sprint_trace or not sprint_trace.jira_sprint_id:
+                placements_failed += 1
+                failures.append(
+                    JiraSyncFailure(
+                        entity_type="PLACEMENT",
+                        entity_id=f"{issue.artifact_id}->{issue.planned_sprint}",
+                        error=f"Sprint '{issue.planned_sprint}' was not created in Jira",
+                    )
+                )
+                continue
+
+            placement_key = f"{issue.artifact_id}:{sprint_trace.jira_sprint_id}"
+            if placements_trace.get(placement_key):
+                placements_placed += 1
+                issue_trace.jira_sprint_id = sprint_trace.jira_sprint_id
+                continue
+
+            try:
+                api_client.add_issues_to_sprint(
+                    user_id=user_id,
+                    cloud_id=preview.target.site.cloud_id,
+                    sprint_id=sprint_trace.jira_sprint_id,
+                    issue_keys=[issue_trace.jira_key],
+                )
+                placements_trace[placement_key] = True
+                issue_trace.jira_sprint_id = sprint_trace.jira_sprint_id
+                placements_placed += 1
+            except Exception as exc:
+                placements_failed += 1
+                err_msg = str(exc)
+                failures.append(
+                    JiraSyncFailure(
+                        entity_type="PLACEMENT",
+                        entity_id=f"{issue.artifact_id}->{sprint_trace.jira_sprint_id}",
+                        error=err_msg,
+                    )
+                )
+                warnings.append(
+                    f"Failed to place issue '{issue_trace.jira_key}' into sprint {sprint_trace.jira_sprint_id}: {err_msg}"
+                )
+
+        # 9. Determine overall status
+        if len(failures) == 0:
+            overall_status = "COMPLETED"
+        elif (sprints_created + sprints_reused == 0) and (
+            issues_created + issues_reused == 0
+        ):
+            overall_status = "FAILED"
+        else:
+            overall_status = "PARTIAL"
+
+        completed_time = self._clock()
+        sync_doc.status = overall_status
+        sync_doc.completed_at = completed_time
+        sync_doc.updated_at = completed_time
+        sync_doc.sprint_summary = JiraSyncCounts(
+            planned=len(preview.sprints),
+            created=sprints_created,
+            reused=sprints_reused,
+            failed=sprints_failed,
+        )
+        sync_doc.issue_summary = JiraSyncCounts(
+            planned=len(preview.issues),
+            created=issues_created,
+            reused=issues_reused,
+            failed=issues_failed,
+        )
+        sync_doc.placement_summary = JiraSyncCounts(
+            planned=planned_placements,
+            created=placements_placed,
+            reused=0,
+            failed=placements_failed,
+        )
+        sync_doc.sprints_trace = sprints_trace
+        sync_doc.issues_trace = issues_trace
+        sync_doc.placements_trace = placements_trace
+        sync_doc.warnings = warnings
+        sync_doc.failures = failures
+
+        self._sync_repository.upsert(sync_doc)
+
+        return self._format_sync_response(sync_doc, preview.target)
+
+    def get_sync_status(
+        self,
+        user_id: str,
+        agent_project_id: str,
+        run_id: str,
+    ) -> JiraSyncResultResponse | None:
+        """Retrieve latest synchronization status and traceability for a run."""
+        doc = self._sync_repository.find_latest_by_run(agent_project_id, run_id)
+        if not doc:
+            return None
+        return self._format_sync_response(doc)
+
+    def _format_sync_response(
+        self,
+        doc_data: dict[str, Any] | JiraSyncDocument,
+        target: JiraPreviewTarget | None = None,
+    ) -> JiraSyncResultResponse:
+        """Format an internal sync document into safe, browseable result response."""
+        if isinstance(doc_data, dict):
+            doc = JiraSyncDocument.model_validate(doc_data)
+        else:
+            doc = doc_data
+
+        if target is None:
+            target = JiraPreviewTarget(
+                site=JiraContextSite(
+                    cloud_id=doc.cloud_id,
+                    name=doc.site_name,
+                    url=doc.site_url,
+                ),
+                project=JiraContextProject(
+                    id=doc.project_id,
+                    key=doc.project_key,
+                    name=doc.project_name,
+                ),
+                board=JiraContextBoard(
+                    id=doc.board_id,
+                    name=doc.board_name,
+                    type="scrum",
+                ),
+            )
+
+        return JiraSyncResultResponse(
+            sync_id=doc.sync_id,
+            status=doc.status,
+            target=target,
+            sprint_summary=doc.sprint_summary,
+            issue_summary=doc.issue_summary,
+            placement_summary=doc.placement_summary,
+            traceability={
+                "sprints": [s.model_dump(mode="python") for s in doc.sprints_trace.values()],
+                "issues": [i.model_dump(mode="python") for i in doc.issues_trace.values()],
+            },
+            warnings=doc.warnings,
+            failures=doc.failures,
+            created_at=doc.created_at,
+            completed_at=doc.completed_at,
         )

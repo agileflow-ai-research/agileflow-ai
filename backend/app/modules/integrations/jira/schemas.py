@@ -318,6 +318,128 @@ class JiraSyncPreviewRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Synchronization Execution & Traceability Schemas
+# ---------------------------------------------------------------------------
+
+
+class JiraSprintTrace(BaseModel):
+    """Traceability mapping for an individual Jira sprint created or reused."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agileflow_sprint_id: str
+    jira_sprint_id: int
+    name: str
+    state: str = "future"
+    reused: bool = False
+    created_at: datetime
+
+
+class JiraIssueTrace(BaseModel):
+    """Traceability mapping for an individual Jira issue created or reused."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_id: str
+    agileflow_type: Literal["EPIC", "FEATURE", "USER_STORY", "TASK"]
+    jira_id: str
+    jira_key: str
+    jira_issue_type: str
+    summary: str
+    parent_id: str | None = None
+    parent_jira_key: str | None = None
+    planned_sprint: str | None = None
+    jira_sprint_id: int | None = None
+    browse_url: str | None = None
+    reused: bool = False
+    created_at: datetime
+
+
+class JiraSyncFailure(BaseModel):
+    """Records a failure for a specific sprint, issue, or placement."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    entity_type: Literal["SPRINT", "ISSUE", "PLACEMENT"]
+    entity_id: str
+    error: str
+
+
+class JiraSyncCounts(BaseModel):
+    """Progress counts for a synchronization operation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    planned: int = 0
+    created: int = 0
+    reused: int = 0
+    failed: int = 0
+
+
+class JiraSyncDocument(BaseModel):
+    """Persistence model for Jira synchronization records and full traceability."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sync_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    agent_project_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    cloud_id: str
+    site_name: str
+    site_url: str | None = None
+    project_id: str
+    project_key: str
+    project_name: str
+    board_id: int
+    board_name: str
+    mappings: dict[str, str]
+    status: Literal["NOT_PERFORMED", "IN_PROGRESS", "PARTIAL", "COMPLETED", "FAILED"]
+    created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    updated_at: datetime
+    sprint_summary: JiraSyncCounts
+    issue_summary: JiraSyncCounts
+    placement_summary: JiraSyncCounts
+    sprints_trace: dict[str, JiraSprintTrace] = Field(default_factory=dict)
+    issues_trace: dict[str, JiraIssueTrace] = Field(default_factory=dict)
+    placements_trace: dict[str, bool] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    failures: list[JiraSyncFailure] = Field(default_factory=list)
+
+
+class JiraSyncExecuteRequest(BaseModel):
+    """Request payload to initiate or resume Jira synchronization."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_project_id: str = Field(min_length=1)
+    run_id: str | None = None
+    mappings: dict[str, str] = Field(min_length=1)
+    confirmation: bool = Field(default=False)
+    outputs: dict[str, Any] | None = None
+
+
+class JiraSyncResultResponse(BaseModel):
+    """Safe synchronization result response containing summaries and browseable traceability."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sync_id: str
+    status: Literal["NOT_PERFORMED", "IN_PROGRESS", "PARTIAL", "COMPLETED", "FAILED"]
+    target: JiraPreviewTarget
+    sprint_summary: JiraSyncCounts
+    issue_summary: JiraSyncCounts
+    placement_summary: JiraSyncCounts
+    traceability: dict[str, Any]
+    warnings: list[str] = Field(default_factory=list)
+    failures: list[JiraSyncFailure] = Field(default_factory=list)
+    created_at: datetime
+    completed_at: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
 # Internal Database Model
 # ---------------------------------------------------------------------------
 

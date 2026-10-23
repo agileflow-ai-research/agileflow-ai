@@ -247,6 +247,103 @@ class JiraApiClient:
             )
         return data
 
+    def create_sprint(
+        self,
+        user_id: str,
+        cloud_id: str,
+        origin_board_id: int,
+        name: str,
+        *,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        goal: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a sprint on a Jira Scrum board.
+
+        Endpoint: POST https://api.atlassian.com/ex/jira/{cloud_id}/rest/agile/1.0/sprint
+        """
+        url = build_jira_cloud_url(cloud_id, "rest/agile/1.0/sprint")
+        payload: dict[str, Any] = {
+            "name": name,
+            "originBoardId": origin_board_id,
+        }
+        if start_date:
+            payload["startDate"] = f"{start_date}T00:00:00.000Z" if len(start_date) == 10 else start_date
+        if end_date:
+            payload["endDate"] = f"{end_date}T00:00:00.000Z" if len(end_date) == 10 else end_date
+        if goal:
+            payload["goal"] = goal
+
+        data = self.request(user_id=user_id, method="POST", url=url, json_data=payload)
+        if not isinstance(data, dict):
+            raise JiraMalformedResponseError("Expected dict response for created Jira sprint")
+        return data
+
+    def create_issue(
+        self,
+        user_id: str,
+        cloud_id: str,
+        project_key: str,
+        issue_type_name: str,
+        summary: str,
+        *,
+        description: str | None = None,
+        parent_key_or_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create an unassigned issue in Jira Cloud v3.
+
+        Endpoint: POST https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/issue
+        Guarantees: Assignee is strictly NOT set (remains Unassigned).
+        """
+        url = build_jira_cloud_url(cloud_id, "rest/api/3/issue")
+        fields: dict[str, Any] = {
+            "project": {"key": project_key},
+            "issuetype": {"name": issue_type_name},
+            "summary": summary,
+        }
+        if description:
+            fields["description"] = {
+                "version": 1,
+                "type": "doc",
+                "content": [
+                    {
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": description}],
+                    }
+                ],
+            }
+        if parent_key_or_id:
+            fields["parent"] = (
+                {"id": parent_key_or_id}
+                if parent_key_or_id.isdigit()
+                else {"key": parent_key_or_id}
+            )
+
+        data = self.request(
+            user_id=user_id, method="POST", url=url, json_data={"fields": fields}
+        )
+        if not isinstance(data, dict):
+            raise JiraMalformedResponseError("Expected dict response for created Jira issue")
+        return data
+
+    def add_issues_to_sprint(
+        self,
+        user_id: str,
+        cloud_id: str,
+        sprint_id: int,
+        issue_keys: list[str],
+    ) -> None:
+        """Place planned Jira issues into a sprint.
+
+        Endpoint: POST https://api.atlassian.com/ex/jira/{cloud_id}/rest/agile/1.0/sprint/{sprint_id}/issue
+        """
+        if not issue_keys:
+            return
+        url = build_jira_cloud_url(cloud_id, f"rest/agile/1.0/sprint/{sprint_id}/issue")
+        self.request(
+            user_id=user_id, method="POST", url=url, json_data={"issues": issue_keys}
+        )
+
     def _execute_http(
         self,
         *,

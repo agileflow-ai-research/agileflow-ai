@@ -3,6 +3,7 @@ import { apiClient } from './apiClient.js'
 import {
   cleanJiraCallbackParams,
   disconnectJira,
+  executeJiraSync,
   generateJiraSyncPreview,
   getJiraBoards,
   getJiraContext,
@@ -10,6 +11,7 @@ import {
   getJiraProjects,
   getJiraSites,
   getJiraStatus,
+  getJiraSyncStatus,
   normalizeJiraError,
   selectJiraBoard,
   selectJiraProject,
@@ -309,12 +311,76 @@ describe('jiraService', () => {
       expect(msg).toContain('Planning hierarchy reference is invalid')
     })
 
+    it('maps JIRA_CONFIRMATION_REQUIRED correctly', () => {
+      const msg = normalizeJiraError({ message: 'JIRA_CONFIRMATION_REQUIRED: Human confirmation required' })
+      expect(msg).toContain('Explicit human confirmation is required')
+    })
+
+    it('maps JIRA_SYNC_IN_PROGRESS correctly', () => {
+      const msg = normalizeJiraError({ message: 'JIRA_SYNC_IN_PROGRESS: Already running' })
+      expect(msg).toContain('A synchronization operation is already in progress')
+    })
+
+    it('maps JIRA_RUN_NOT_COMPLETED correctly', () => {
+      const msg = normalizeJiraError({ message: 'JIRA_RUN_NOT_COMPLETED: Run must be completed' })
+      expect(msg).toContain('Only completed Agent 2 planning runs can be synchronized')
+    })
+
+    it('maps JIRA_UNAUTHORIZED_PROJECT_ACCESS correctly', () => {
+      const msg = normalizeJiraError({ message: 'JIRA_UNAUTHORIZED_PROJECT_ACCESS: Forbidden' })
+      expect(msg).toContain('You do not have permission to synchronize this project')
+    })
+
     it('maps JIRA_UPSTREAM_ERROR without leaking raw details', () => {
       const msg = normalizeJiraError({
         message: 'JIRA_UPSTREAM_ERROR: secret internal token failed at 123',
       })
       expect(msg).toBe('Jira could not be reached. Your Agent 2 results are unchanged.')
       expect(msg).not.toContain('secret')
+    })
+  })
+
+  describe('executeJiraSync and getJiraSyncStatus', () => {
+    it('executeJiraSync calls POST /integrations/jira/sync with payload', async () => {
+      const mockResult = { status: 'COMPLETED', sync_id: 'SYNC-1' }
+      apiClient.post.mockResolvedValueOnce({ data: mockResult })
+
+      const result = await executeJiraSync({
+        agent_project_id: 'proj-1',
+        run_id: 'run-1',
+        mappings: { EPIC: 'Epic' },
+        confirmation: true,
+        outputs: { JIRA_PLAN: {} },
+      })
+
+      expect(apiClient.post).toHaveBeenCalledWith(
+        '/integrations/jira/sync',
+        {
+          agent_project_id: 'proj-1',
+          run_id: 'run-1',
+          mappings: { EPIC: 'Epic' },
+          confirmation: true,
+          outputs: { JIRA_PLAN: {} },
+        },
+        { authenticated: true },
+      )
+      expect(result).toEqual(mockResult)
+    })
+
+    it('getJiraSyncStatus calls GET /integrations/jira/sync with query params', async () => {
+      const mockResult = { status: 'COMPLETED', sync_id: 'SYNC-1' }
+      apiClient.get.mockResolvedValueOnce({ data: mockResult })
+
+      const result = await getJiraSyncStatus({
+        agent_project_id: 'proj-1',
+        run_id: 'run-1',
+      })
+
+      expect(apiClient.get).toHaveBeenCalledWith(
+        '/integrations/jira/sync?agent_project_id=proj-1&run_id=run-1',
+        { authenticated: true },
+      )
+      expect(result).toEqual(mockResult)
     })
   })
 })
