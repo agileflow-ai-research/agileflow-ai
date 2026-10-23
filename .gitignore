@@ -1,6 +1,4 @@
 # Environment
-.env
-.env.*
 !.env.example
 
 # Python
@@ -15,15 +13,17 @@ node_modules/
 dist/
 
 # IDE / OS
-.vscode/
 .idea/
 .DS_Store
 Thumbs.db
 
 # Logs
 *.log
+docs/ui-reference/agent2/
+models/
 
 # Local staged specialist inputs
 backend/storage/standalone/implementation/
 
 backend/storage/standalone/
+config.bat

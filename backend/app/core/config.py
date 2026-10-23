@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     github_api_base_url: str = "https://api.github.com"
     frontend_base_url: str = "http://localhost:5173"
     github_http_timeout_seconds: float = 10.0
+    jira_client_id: str | None = None
+    jira_client_secret: str | None = None
+    jira_redirect_uri: str = "http://localhost:8000/api/v1/integrations/jira/callback"
+    jira_frontend_return_url: str = "http://localhost:5173/integrations/jira"
+    jira_http_timeout_seconds: float = 10.0
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",

@@ -1,0 +1,33 @@
+{
+  "default_branch": "develop",
+  "branches": [
+    "develop",
+    "feature/agent-design-planning",
+    "feature/agent-implementation",
+    "feature/agent-requirements",
+    "feature/agent4-standalone-testing-validation",
+    "feature/agent4-testing-validation-v2",
+    "origin",
+    "refactor/standalone-agent-structure"
+  ],
+  "parent": {
+    "develop": null,
+    "feature/agent-design-planning": "develop",
+    "feature/agent-implementation": "develop",
+    "feature/agent-requirements": "develop",
+    "feature/agent4-standalone-testing-validation": "develop",
+    "feature/agent4-testing-validation-v2": "develop",
+    "origin": "develop",
+    "refactor/standalone-agent-structure": "develop"
+  },
+  "order": [
+    "develop",
+    "feature/agent-design-planning",
+    "feature/agent-implementation",
+    "feature/agent-requirements",
+    "feature/agent4-standalone-testing-validation",
+    "feature/agent4-testing-validation-v2",
+    "origin",
+    "refactor/standalone-agent-structure"
+  ]
+}

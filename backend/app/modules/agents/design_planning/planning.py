@@ -1,6 +1,7 @@
 """Deterministic sprint and dependency planning helpers for Agent 2."""
 
 import re
+from datetime import datetime, timedelta
 from typing import Any
 
 from app.modules.agents.design_planning.schemas import Agent2InputContext
@@ -26,21 +27,43 @@ def enhance_sprints(
         context.development_team_count * context.sprint_duration
         if context.development_team_count and context.sprint_duration else None
     )
-    expected_days = duration_days(context.expected_project_duration)
+    expected_days = duration_days(context.expected_project_duration, context.project_start_date)
     feasible_sprints = expected_days // context.sprint_duration if expected_days and context.sprint_duration else None
+
+    start_date_obj = None
+    if context.project_start_date:
+        try:
+            start_date_obj = datetime.strptime(context.project_start_date.strip(), "%Y-%m-%d").date()
+        except Exception:
+            pass
+
     for index, sprint in enumerate(sprints):
         if context.sprint_duration:
             sprint["duration_days"] = context.sprint_duration
         if capacity:
             sprint["capacity_points"] = capacity
+        else:
+            sprint["capacity_points"] = None
+
+        if start_date_obj and context.sprint_duration:
+            s_start = start_date_obj + timedelta(days=index * context.sprint_duration)
+            s_end = s_start + timedelta(days=context.sprint_duration)
+            sprint["start_date"] = s_start.isoformat()
+            sprint["end_date"] = s_end.isoformat()
+
         known_refs = [ref for ref in sprint["item_refs"] if ref in estimates]
         planned = sum(estimates[ref] for ref in known_refs) if known_refs else sprint.get("planned_points", 0)
         sprint["planned_points"] = planned
-        sprint["utilization_percent"] = round(planned / sprint["capacity_points"] * 100, 1)
+
+        if sprint.get("capacity_points"):
+            sprint["utilization_percent"] = round(planned / sprint["capacity_points"] * 100, 1)
+        else:
+            sprint["utilization_percent"] = None
+
         warnings: list[str] = []
         if not known_refs:
             warnings.append("Workload could not be recomputed because selected story/task estimates were unavailable.")
-        if planned > sprint["capacity_points"]:
+        if capacity and planned > sprint["capacity_points"]:
             warnings.append(f"Estimated workload exceeds capacity by {planned - sprint['capacity_points']} points.")
         if feasible_sprints is not None and index >= feasible_sprints:
             warnings.append("Sprint falls outside the supplied expected project duration estimate.")
@@ -58,10 +81,16 @@ def enhance_sprints(
                 dependency_notes.append(f"{ref} depends on {', '.join(task['depends_on'])}.")
         sprint["dependency_notes"] = dependency_notes
         sprint["planning_warnings"] = warnings
-        sprint["estimate_basis"] = (
-            "Estimated capacity = team count × sprint duration days; planned workload is the sum of "
-            "referenced generated point estimates."
-        )
+        if capacity:
+            sprint["estimate_basis"] = (
+                "Estimated capacity = team count × sprint duration days; planned workload is the sum of "
+                "referenced generated point estimates."
+            )
+        else:
+            sprint["estimate_basis"] = (
+                "Timeline-based sprint schedule organized across project timeline and sprint duration; "
+                "planned workload is the sum of referenced generated point estimates."
+            )
     total_work = sum(item["estimate_points"] for item in (tasks or stories or []))
     if sprints and feasible_sprints is not None and capacity and total_work > feasible_sprints * capacity:
         sprints[-1]["planning_warnings"].append(
@@ -69,13 +98,22 @@ def enhance_sprints(
         )
 
 
-def duration_days(value: str | None) -> int | None:
+def duration_days(value: str | None, start_date: str | None = None) -> int | None:
     if not value:
         return None
     match = re.search(r"(\d+(?:\.\d+)?)\s*(day|week|month)s?", value.casefold())
-    if not match:
-        return None
-    return max(1, round(float(match.group(1)) * {"day": 1, "week": 7, "month": 30}[match.group(2)]))
+    if match:
+        return max(1, round(float(match.group(1)) * {"day": 1, "week": 7, "month": 30}[match.group(2)]))
+    if start_date:
+        try:
+            start_dt = datetime.strptime(start_date.strip(), "%Y-%m-%d").date()
+            end_dt = datetime.strptime(value.strip(), "%Y-%m-%d").date()
+            diff = (end_dt - start_dt).days
+            if diff > 0:
+                return diff
+        except Exception:
+            pass
+    return None
 
 
 def dependency_order(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
