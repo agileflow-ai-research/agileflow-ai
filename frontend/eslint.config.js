@@ -25,4 +25,4 @@ export default [
       ...reactRefresh.configs.vite.rules,
     },
   },
-]
+];

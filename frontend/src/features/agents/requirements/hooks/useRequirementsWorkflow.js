@@ -10,6 +10,7 @@ import {
 const ACTIVE_N2_STATUSES = new Set(['QUEUED', 'RUNNING'])
 const TERMINAL_N2_STATUSES = new Set(['COMPLETE', 'FAILED', 'BLOCKED'])
 const WORKFLOW_POLL_INTERVAL_MS = 2000
+const N4_HANDOFF_POLL_LIMIT = 4
 
 function errorMessage(error, fallback) {
   return error?.errors?.[0]?.message || fallback
@@ -26,6 +27,19 @@ function isStaleActiveResponse(current, next) {
       && ACTIVE_N2_STATUSES.has(nextExecution.status),
     )
   })
+}
+
+function hasActiveExecution(workflowState) {
+  return [
+    workflowState?.n2_execution,
+    workflowState?.n3_execution,
+    workflowState?.n4_execution,
+  ].some((execution) => ACTIVE_N2_STATUSES.has(execution?.status))
+}
+
+function isN4HandoffPending(workflowState) {
+  return workflowState?.n3_execution?.status === 'COMPLETE'
+    && !workflowState?.n4_execution
 }
 
 export function getN3TerminalExecutionIdentity(workflowState) {
@@ -112,37 +126,48 @@ export default function useRequirementsWorkflow(agentProjectId, reloadSequence =
   const n3Status = workflowState?.n3_execution?.status
   const n4ExecutionId = workflowState?.n4_execution?.execution_id
   const n4Status = workflowState?.n4_execution?.status
-  const workflowIsActive = ACTIVE_N2_STATUSES.has(n2Status) || ACTIVE_N2_STATUSES.has(n3Status) || ACTIVE_N2_STATUSES.has(n4Status)
+  const currentProjectKey = `${agentProjectId}:${reloadSequence}`
+  const projectIsLoaded = loadedProjectKey === currentProjectKey
+  const n4HandoffPending = isN4HandoffPending(workflowState)
+  const workflowShouldPoll = projectIsLoaded
+    && (hasActiveExecution(workflowState) || n4HandoffPending)
 
   useEffect(() => {
-    if (!workflowIsActive) return undefined
+    if (!workflowShouldPoll) return undefined
     const generation = projectGeneration.current
     let active = true
     let timer = null
+    let handoffPollCount = 0
 
     const scheduleNextPoll = () => {
       if (active) timer = window.setTimeout(pollWorkflow, WORKFLOW_POLL_INTERVAL_MS)
     }
 
     const pollWorkflow = async () => {
+      if (n4HandoffPending) handoffPollCount += 1
       try {
         const response = await getRequirementWorkflow(agentProjectId)
         if (!active || projectGeneration.current !== generation || !response?.data?.n1_state) return
         if (!acceptWorkflowState(response.data)) {
-          scheduleNextPoll()
+          if (!n4HandoffPending || handoffPollCount < N4_HANDOFF_POLL_LIMIT) {
+            scheduleNextPoll()
+          }
           return
         }
         setWorkflowError('')
-        const nextN2Status = response.data.n2_execution?.status
-        const nextN3Status = response.data.n3_execution?.status
-        const nextN4Status = response.data.n4_execution?.status
-        if (ACTIVE_N2_STATUSES.has(nextN2Status) || ACTIVE_N2_STATUSES.has(nextN3Status) || ACTIVE_N2_STATUSES.has(nextN4Status)) {
+        if (
+          hasActiveExecution(response.data)
+          || (isN4HandoffPending(response.data)
+            && handoffPollCount < N4_HANDOFF_POLL_LIMIT)
+        ) {
           scheduleNextPoll()
         }
       } catch (requestError) {
         if (!active || projectGeneration.current !== generation || requestError?.status === 401) return
         setWorkflowError(errorMessage(requestError, 'Workflow status could not be refreshed.'))
-        scheduleNextPoll()
+        if (!n4HandoffPending || handoffPollCount < N4_HANDOFF_POLL_LIMIT) {
+          scheduleNextPoll()
+        }
       }
     }
 
@@ -151,7 +176,7 @@ export default function useRequirementsWorkflow(agentProjectId, reloadSequence =
       active = false
       if (timer !== null) window.clearTimeout(timer)
     }
-  }, [acceptWorkflowState, agentProjectId, n2ExecutionId, n2Status, n3ExecutionId, n3Status, n4ExecutionId, n4Status, workflowIsActive])
+  }, [acceptWorkflowState, agentProjectId, n2ExecutionId, n2Status, n3ExecutionId, n3Status, n4ExecutionId, n4HandoffPending, n4Status, reloadSequence, workflowShouldPoll])
 
   const changeSelectedOutputs = useCallback(async (selectedOutputs) => {
     if (outputSaving || selectedOutputs.length === 0) return
@@ -218,9 +243,6 @@ export default function useRequirementsWorkflow(agentProjectId, reloadSequence =
     () => getN3TerminalExecutionIdentity(workflowState),
     [workflowState],
   )
-  const currentProjectKey = `${agentProjectId}:${reloadSequence}`
-  const projectIsLoaded = loadedProjectKey === currentProjectKey
-
   return {
     changeSelectedOutputs,
     continueN1,
