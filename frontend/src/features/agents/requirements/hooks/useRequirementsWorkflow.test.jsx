@@ -29,6 +29,24 @@ function execution(status, id = 'N2-AAAAAAAAAAAAAAAA-001') {
   }
 }
 
+function n3Execution(status, id = 'N3-AAAAAAAAAAAAAAAA-001') {
+  return {
+    ...execution('COMPLETE'),
+    n3_execution: { execution_id: id, attempt_number: 1, status },
+  }
+}
+
+function n4Execution(status, n3Id = 'N3-AAAAAAAAAAAAAAAA-001') {
+  return {
+    ...n3Execution('COMPLETE', n3Id),
+    n4_execution: {
+      execution_id: 'N4-AAAAAAAAAAAAAAAA-001',
+      attempt_number: 1,
+      status,
+    },
+  }
+}
+
 function deferred() {
   let resolve
   const promise = new Promise((next) => { resolve = next })
@@ -89,10 +107,10 @@ describe('useRequirementsWorkflow', () => {
     }
   })
 
-  it.each(['QUEUED', 'RUNNING'])('keeps the same poller active for N3 %s and stops at its terminal state', async (n3Status) => {
+  it.each(['QUEUED', 'RUNNING'])('keeps the same poller active for N3 %s and stops when N4 is already terminal', async (n3Status) => {
     vi.useFakeTimers()
-    const active = { ...execution('COMPLETE'), n3_execution: { execution_id: 'N3-AAAAAAAAAAAAAAAA-001', attempt_number: 1, status: n3Status } }
-    const complete = { ...active, n3_execution: { ...active.n3_execution, status: 'COMPLETE' } }
+    const active = n3Execution(n3Status)
+    const complete = n4Execution('COMPLETE')
     getRequirementWorkflow.mockResolvedValueOnce({ data: active }).mockResolvedValueOnce({ data: complete })
     try {
       const { result } = renderHook(() => useRequirementsWorkflow('AGP-001'))
@@ -102,6 +120,169 @@ describe('useRequirementsWorkflow', () => {
       expect(result.current.workflowState.n3_execution.status).toBe('COMPLETE')
       expect(result.current.n3TerminalExecutionIdentity).toBe('N3-AAAAAAAAAAAAAAAA-001:1:COMPLETE')
       expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('continues polling across N3 COMPLETE without N4 and observes terminal N4 without refresh', async () => {
+    vi.useFakeTimers()
+    getRequirementWorkflow
+      .mockResolvedValueOnce({ data: n3Execution('RUNNING') })
+      .mockResolvedValueOnce({ data: n3Execution('COMPLETE') })
+      .mockResolvedValueOnce({ data: n4Execution('COMPLETE') })
+    try {
+      const { result } = renderHook(() => useRequirementsWorkflow('AGP-001'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(result.current.workflowState.n3_execution.status).toBe('RUNNING')
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n3_execution.status).toBe('COMPLETE')
+      expect(result.current.workflowState.n4_execution).toBeUndefined()
+      expect(vi.getTimerCount()).toBe(1)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n4_execution.status).toBe('COMPLETE')
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(3)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hands off from absent N4 through QUEUED and RUNNING to COMPLETE on one poll chain', async () => {
+    vi.useFakeTimers()
+    getRequirementWorkflow
+      .mockResolvedValueOnce({ data: n3Execution('COMPLETE') })
+      .mockResolvedValueOnce({ data: n4Execution('QUEUED') })
+      .mockResolvedValueOnce({ data: n4Execution('RUNNING') })
+      .mockResolvedValueOnce({ data: n4Execution('COMPLETE') })
+    try {
+      const { result } = renderHook(() => useRequirementsWorkflow('AGP-001'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(vi.getTimerCount()).toBe(1)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n4_execution.status).toBe('QUEUED')
+      expect(vi.getTimerCount()).toBe(1)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n4_execution.status).toBe('RUNNING')
+      expect(vi.getTimerCount()).toBe(1)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+      expect(result.current.workflowState.n4_execution.status).toBe('COMPLETE')
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(4)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('bounds an unresolved N4 handoff to four normal polling attempts', async () => {
+    vi.useFakeTimers()
+    getRequirementWorkflow.mockResolvedValue({ data: n3Execution('COMPLETE') })
+    try {
+      const { result } = renderHook(() => useRequirementsWorkflow('AGP-001'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      await act(async () => { await vi.advanceTimersByTimeAsync(20000) })
+
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(5)
+      expect(result.current.workflowState.n4_execution).toBeUndefined()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('discards N4 handoff polling when the project changes', async () => {
+    vi.useFakeTimers()
+    getRequirementWorkflow.mockImplementation((projectId) => Promise.resolve({
+      data: projectId === 'AGP-A'
+        ? n3Execution('COMPLETE', 'N3-AAAAAAAAAAAAAAAA-001')
+        : n4Execution('COMPLETE', 'N3-BBBBBBBBBBBBBBBB-001'),
+    }))
+    try {
+      const { result, rerender } = renderHook(
+        ({ projectId }) => useRequirementsWorkflow(projectId),
+        { initialProps: { projectId: 'AGP-A' } },
+      )
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(vi.getTimerCount()).toBe(1)
+
+      rerender({ projectId: 'AGP-B' })
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(result.current.workflowState.n3_execution.execution_id).toBe('N3-BBBBBBBBBBBBBBBB-001')
+      expect(result.current.workflowState.n4_execution.status).toBe('COMPLETE')
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
+      expect(getRequirementWorkflow.mock.calls.filter(([projectId]) => projectId === 'AGP-A')).toHaveLength(1)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('resets the bounded N4 handoff when the N3 execution identity changes', async () => {
+    vi.useFakeTimers()
+    let requestCount = 0
+    getRequirementWorkflow.mockImplementation(() => {
+      requestCount += 1
+      const n3Id = requestCount <= 4
+        ? 'N3-AAAAAAAAAAAAAAAA-001'
+        : 'N3-BBBBBBBBBBBBBBBB-001'
+      return Promise.resolve({ data: n3Execution('COMPLETE', n3Id) })
+    })
+    try {
+      const { result } = renderHook(() => useRequirementsWorkflow('AGP-001'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      await act(async () => { await vi.advanceTimersByTimeAsync(30000) })
+
+      expect(result.current.workflowState.n3_execution.execution_id).toBe('N3-BBBBBBBBBBBBBBBB-001')
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(20000) })
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(9)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('restarts bounded handoff polling after reloadSequence changes', async () => {
+    vi.useFakeTimers()
+    getRequirementWorkflow.mockResolvedValue({ data: n3Execution('COMPLETE') })
+    try {
+      const { rerender } = renderHook(
+        ({ reloadSequence }) => useRequirementsWorkflow('AGP-001', reloadSequence),
+        { initialProps: { reloadSequence: 0 } },
+      )
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      await act(async () => { await vi.advanceTimersByTimeAsync(20000) })
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(5)
+      expect(vi.getTimerCount()).toBe(0)
+
+      rerender({ reloadSequence: 1 })
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(vi.getTimerCount()).toBe(1)
+      await act(async () => { await vi.advanceTimersByTimeAsync(20000) })
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(10)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(['COMPLETE', 'FAILED', 'BLOCKED'])('does not handoff-poll after terminal N4 %s', async (status) => {
+    vi.useFakeTimers()
+    getRequirementWorkflow.mockResolvedValue({ data: n4Execution(status) })
+    try {
+      const { result } = renderHook(() => useRequirementsWorkflow('AGP-001'))
+      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      expect(result.current.workflowState.n4_execution.status).toBe(status)
+      expect(vi.getTimerCount()).toBe(0)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
+      expect(getRequirementWorkflow).toHaveBeenCalledTimes(1)
     } finally {
       vi.useRealTimers()
     }
