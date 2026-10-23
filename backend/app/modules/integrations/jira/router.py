@@ -183,7 +183,7 @@ def _handle_jira_exception(exc: Exception) -> JSONResponse:
             field="jira",
             detail=f"JIRA_NOT_CONNECTED: {exc}",
         )
-    if isinstance(exc, JiraReauthorizationRequiredError):
+    if isinstance(exc, (JiraReauthorizationRequiredError, JiraAuthenticationError)):
         return _error_response(
             status_code=status.HTTP_401_UNAUTHORIZED,
             message="JIRA_REAUTHORIZATION_REQUIRED",
@@ -306,7 +306,6 @@ def _handle_jira_exception(exc: Exception) -> JSONResponse:
         exc,
         (
             JiraUpstreamError,
-            JiraAuthenticationError,
             JiraPermissionError,
             JiraResourceNotFoundError,
             JiraNetworkTimeoutError,
@@ -320,8 +319,6 @@ def _handle_jira_exception(exc: Exception) -> JSONResponse:
         code = status.HTTP_502_BAD_GATEWAY
         if isinstance(exc, JiraNetworkTimeoutError):
             code = status.HTTP_504_GATEWAY_TIMEOUT
-        elif isinstance(exc, JiraAuthenticationError):
-            code = status.HTTP_401_UNAUTHORIZED
         elif isinstance(exc, JiraPermissionError):
             code = status.HTTP_403_FORBIDDEN
         elif isinstance(exc, JiraResourceNotFoundError):

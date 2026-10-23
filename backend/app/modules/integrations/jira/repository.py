@@ -107,8 +107,8 @@ class JiraConnectionRepository:
             "status": "CONNECTED",
             "reauthorization_reason": None,
         }
-        if new_refresh_token is not None:
-            set_fields["refresh_token"] = new_refresh_token
+        if new_refresh_token is not None and isinstance(new_refresh_token, str) and new_refresh_token.strip():
+            set_fields["refresh_token"] = new_refresh_token.strip()
 
         update_query: dict[str, Any] = {
             "$set": set_fields,

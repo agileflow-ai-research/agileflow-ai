@@ -14,11 +14,34 @@ export function setUnauthorizedHandler(handler) {
 }
 
 function notifyUnauthorized(error) {
+  if (error && !isApplicationAuthError(error)) {
+    return
+  }
   try {
     unauthorizedHandler?.(error)
   } catch {
     // Session cleanup must not replace the original API error.
   }
+}
+
+export function isApplicationAuthError(error) {
+  if (!error || error.status !== 401) {
+    return false
+  }
+
+  // Third-party integration domain authentication failures (e.g. Jira OAuth reauthorization)
+  // must NOT invalidate the AgileFlow application session.
+  const message = typeof error.message === 'string' ? error.message : ''
+  if (message.startsWith('JIRA_')) {
+    return false
+  }
+
+  const errors = Array.isArray(error.errors) ? error.errors : []
+  if (errors.some((err) => err?.field === 'jira')) {
+    return false
+  }
+
+  return true
 }
 
 export class ApiError extends Error {
@@ -103,7 +126,7 @@ export async function request(
       payload,
       response.statusText || 'The request failed',
     )
-    if (authenticated && response.status === 401) {
+    if (authenticated && response.status === 401 && isApplicationAuthError(error)) {
       notifyUnauthorized(error)
     }
     throw error

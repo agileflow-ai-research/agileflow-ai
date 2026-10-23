@@ -1339,4 +1339,35 @@ describe('JiraIntegrationSection', () => {
     expect(screen.getByText('COMPLETED')).toBeInTheDocument()
     expect(screen.getByText(/10 created/i)).toBeInTheDocument()
   })
+
+  // 42. Board selection encountering 401 reauthorization required
+  it('42. board selection encountering 401 reauthorization required displays safe error inside panel without logging out', async () => {
+    const user = userEvent.setup()
+    jiraService.getJiraContext.mockResolvedValueOnce({
+      connected: true,
+      site: { cloud_id: 'site-1', name: 'Site Alpha' },
+      project: { id: '10001', key: 'BOOK', name: 'BookEase' },
+      board: null,
+    })
+    jiraService.getJiraBoards.mockResolvedValueOnce([
+      { id: 101, name: 'BookEase Board', type: 'scrum' },
+    ])
+    jiraService.selectJiraBoard.mockRejectedValueOnce({
+      status: 401,
+      message: 'JIRA_REAUTHORIZATION_REQUIRED',
+      errors: [{ field: 'jira', message: 'JIRA_REAUTHORIZATION_REQUIRED: Token expired' }],
+    })
+
+    render(<JiraIntegrationSection project={project} />)
+
+    const select = await screen.findByLabelText(/Available Scrum Boards/i)
+    await user.selectOptions(select, '101')
+
+    const selectBtn = screen.getByRole('button', { name: 'Select Board' })
+    await user.click(selectBtn)
+
+    expect(
+      await screen.findByText(/Your Jira connection has expired. Reconnect Jira to continue./i),
+    ).toBeInTheDocument()
+  })
 })

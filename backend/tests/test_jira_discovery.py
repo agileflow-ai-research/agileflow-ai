@@ -402,6 +402,17 @@ class MockHttpTransport:
                 )
             return httpx.Response(status_code=404, json={"errorMessages": ["Board not found"]})
 
+        if "issuetypes" in url:
+            return httpx.Response(
+                status_code=200,
+                json=[
+                    {"id": "10001", "name": "Epic", "subtask": False},
+                    {"id": "10002", "name": "Story", "subtask": False},
+                    {"id": "10003", "name": "Task", "subtask": False},
+                    {"id": "10004", "name": "Subtask", "subtask": True},
+                ],
+            )
+
         return httpx.Response(status_code=200, json={})
 
 
@@ -1233,3 +1244,126 @@ def test_upstream_500_normalized_error(discovery_context):
     res = client.get("/api/v1/integrations/jira/projects")
     assert res.status_code == 502
     assert "JIRA_UPSTREAM_ERROR" in res.text
+
+
+# ===========================================================================
+# Board Selection Regression & Auth Domain Separation Tests
+# ===========================================================================
+def test_board_selection_performs_no_jira_writes(discovery_context):
+    """Board selection must perform only read operations against Atlassian API (no writes)."""
+    site = JiraSelectedSite(
+        cloud_id="site-cloud-111",
+        site_name="Acme Jira Cloud 1",
+        selected_at=TEST_TIME,
+    )
+    project = JiraSelectedProject(
+        project_id="10001",
+        project_key="PROJ",
+        project_name="Project Alpha",
+        project_type_key="software",
+        selected_at=TEST_TIME,
+    )
+    discovery_context["create_connection"](
+        "USR-001", selected_site=site, selected_project=project
+    )
+    client = discovery_context["auth"].client("USR-001")
+
+    # Clear recorded requests prior to selecting board
+    discovery_context["mock_transport"].recorded_requests.clear()
+
+    res = client.put(
+        "/api/v1/integrations/jira/board",
+        json={"board_id": 101},
+    )
+    assert res.status_code == 200
+
+    reqs = discovery_context["mock_transport"].recorded_requests
+    assert len(reqs) >= 1
+    # All requests must be GET operations — absolutely no POST, PUT, DELETE to Jira
+    for req in reqs:
+        assert req["method"] == "GET"
+        assert "sprint" not in req["url"].lower() or "issue" not in req["url"].lower()
+
+
+def test_board_selection_continues_to_issue_types(discovery_context):
+    """Selecting Scrum board allows seamlessly continuing to issue-type discovery."""
+    site = JiraSelectedSite(
+        cloud_id="site-cloud-111",
+        site_name="Acme Jira Cloud 1",
+        selected_at=TEST_TIME,
+    )
+    project = JiraSelectedProject(
+        project_id="10001",
+        project_key="PROJ",
+        project_name="Project Alpha",
+        project_type_key="software",
+        selected_at=TEST_TIME,
+    )
+    discovery_context["create_connection"](
+        "USR-001", selected_site=site, selected_project=project
+    )
+    client = discovery_context["auth"].client("USR-001")
+
+    # 1. Select board
+    res_board = client.put(
+        "/api/v1/integrations/jira/board",
+        json={"board_id": 101},
+    )
+    assert res_board.status_code == 200
+
+    # 2. Fetch issue types
+    res_types = client.get("/api/v1/integrations/jira/issue-types")
+    assert res_types.status_code == 200
+    types = res_types.json()
+    assert isinstance(types, list)
+    assert len(types) >= 1
+
+
+def test_board_selection_jira_reauth_returns_domain_401(discovery_context):
+    """When Jira token expires during board selection, backend returns 401 JIRA_REAUTHORIZATION_REQUIRED without invalidating AgileFlow session."""
+    site = JiraSelectedSite(
+        cloud_id="site-cloud-111",
+        site_name="Acme Jira Cloud 1",
+        selected_at=TEST_TIME,
+    )
+    project = JiraSelectedProject(
+        project_id="10001",
+        project_key="PROJ",
+        project_name="Project Alpha",
+        project_type_key="software",
+        selected_at=TEST_TIME,
+    )
+    # Mark connection as REAUTHORIZATION_REQUIRED (e.g. invalid grant or rejected refresh)
+    discovery_context["create_connection"](
+        "USR-001", selected_site=site, selected_project=project
+    )
+    discovery_context["repository"].mark_reauthorization_required(
+        "USR-001", "Atlassian token expired or revoked"
+    )
+    client = discovery_context["auth"].client("USR-001")
+
+    res = client.put(
+        "/api/v1/integrations/jira/board",
+        json={"board_id": 101},
+    )
+    assert res.status_code == 401
+    data = res.json()
+    # Explicit domain code indicating Jira reauthorization
+    assert data["message"] == "JIRA_REAUTHORIZATION_REQUIRED"
+    assert data["errors"][0]["field"] == "jira"
+    # AgileFlow auth is still completely valid
+    assert data["errors"][0]["field"] != "authorization"
+
+
+def test_genuine_agileflow_auth_failure_returns_authorization_field(discovery_context):
+    """Unauthenticated requests to Jira endpoints return standard AgileFlow session 401."""
+    # Using an unauthenticated client (no Bearer token)
+    unauthenticated_client = TestClient(app)
+    res = unauthenticated_client.put(
+        "/api/v1/integrations/jira/board",
+        json={"board_id": 101},
+    )
+    assert res.status_code == 401
+    data = res.json()
+    assert data["message"] == "Authentication failed"
+    assert data["errors"][0]["field"] == "authorization"

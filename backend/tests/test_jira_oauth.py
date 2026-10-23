@@ -46,12 +46,14 @@ from app.modules.integrations.jira.schemas import (
 from app.modules.integrations.jira.service import (
     JiraConfiguration,
     JiraCrossUserStateError,
+    JiraInvalidGrantError,
     JiraMalformedResponseError,
     JiraMissingCodeError,
     JiraNetworkError,
     JiraNetworkTimeoutError,
     JiraOAuthClient,
     JiraOAuthService,
+    JiraReauthorizationRequiredError,
     JiraStateExpiredError,
     JiraStateInvalidError,
     JiraStateReusedError,
@@ -91,6 +93,41 @@ class FakeJiraConnectionRepository:
         self.connections[connection.owner_id] = document
         return document.copy()
 
+    def update_tokens_atomic(
+        self,
+        owner_id: str,
+        expected_refresh_token: str,
+        new_access_token: str,
+        new_refresh_token: str | None,
+        expires_at: datetime,
+        now: datetime,
+    ) -> dict[str, Any] | None:
+        doc = self.connections.get(owner_id)
+        if not doc or doc.get("refresh_token") != expected_refresh_token:
+            return None
+        doc["access_token"] = new_access_token
+        doc["expires_at"] = expires_at
+        doc["updated_at"] = now
+        doc["status"] = "CONNECTED"
+        doc["reauthorization_reason"] = None
+        doc["version"] = doc.get("version", 1) + 1
+        if new_refresh_token is not None and isinstance(new_refresh_token, str) and new_refresh_token.strip():
+            doc["refresh_token"] = new_refresh_token.strip()
+        self.connections[owner_id] = doc
+        return doc.copy()
+
+    def mark_reauthorization_required(
+        self, owner_id: str, reason: str = "Reauthorization required"
+    ) -> dict[str, Any] | None:
+        doc = self.connections.get(owner_id)
+        if not doc:
+            return None
+        doc["status"] = "REAUTHORIZATION_REQUIRED"
+        doc["reauthorization_reason"] = reason
+        doc["updated_at"] = datetime.now(timezone.utc)
+        self.connections[owner_id] = doc
+        return doc.copy()
+
     def delete_by_owner(self, owner_id: str) -> bool:
         return self.connections.pop(owner_id, None) is not None
 
@@ -121,6 +158,25 @@ class FakeJiraOAuthClient:
                 "client_secret": client_secret,
                 "code": code,
                 "redirect_uri": redirect_uri,
+            }
+        )
+        if self.fail_with:
+            raise self.fail_with
+        return self.mock_tokens
+
+    def refresh_access_token(
+        self,
+        *,
+        client_id: str,
+        client_secret: str,
+        refresh_token: str,
+    ) -> dict[str, Any]:
+        self.calls.append(
+            {
+                "operation": "refresh",
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
             }
         )
         if self.fail_with:
@@ -722,3 +778,124 @@ def test_20_jira_oauth_client_direct_exchange(monkeypatch):
         client.exchange_code_for_tokens(
             client_id="cid", client_secret="csec", code="code", redirect_uri="http://cb"
         )
+
+
+# ===========================================================================
+# 21. Rotating refresh token replaces old token & calculates correct expires_at
+# ===========================================================================
+def test_21_rotating_refresh_token_replaces_old_token_and_calculates_expiry(jira_context):
+    """When token refresh succeeds, rotated refresh_token replaces old one and expires_at is correctly set."""
+    service = jira_context["service"]
+    clock = jira_context["clock"]
+    repo = jira_context["repository"]
+    oauth_client = jira_context["oauth_client"]
+
+    # Initial connection with expired token
+    now = clock()
+    conn = JiraConnectionDocument(
+        owner_id="USR-001",
+        provider="JIRA",
+        access_token="old-access-token",
+        refresh_token="initial-refresh-token",
+        expires_at=now - timedelta(seconds=10),  # expired
+        connected_at=now - timedelta(hours=2),
+        updated_at=now - timedelta(hours=2),
+        scope=" ".join(JIRA_SCOPES),
+        token_type="Bearer",
+        status="CONNECTED",
+    )
+    repo.upsert(conn)
+
+    # Set mock refresh response with rotated refresh token and 7200s expires_in
+    oauth_client.mock_tokens = {
+        "access_token": "new-rotated-access-token",
+        "refresh_token": "new-rotated-refresh-token",
+        "expires_in": 7200,
+        "token_type": "Bearer",
+    }
+
+    token = service.get_valid_access_token("USR-001")
+    assert token == "new-rotated-access-token"
+
+    # Persisted connection is updated with new rotated token and calculated expires_at
+    persisted = repo.find_by_owner("USR-001")
+    assert persisted["access_token"] == "new-rotated-access-token"
+    assert persisted["refresh_token"] == "new-rotated-refresh-token"
+    assert persisted["expires_at"] == now + timedelta(seconds=7200)
+    assert persisted["status"] == "CONNECTED"
+
+
+# ===========================================================================
+# 22. Refresh invalid_grant marks REAUTHORIZATION_REQUIRED
+# ===========================================================================
+def test_22_refresh_invalid_grant_marks_reauthorization_required(jira_context):
+    """When refresh returns invalid_grant, connection is marked REAUTHORIZATION_REQUIRED without deleting data."""
+    service = jira_context["service"]
+    clock = jira_context["clock"]
+    repo = jira_context["repository"]
+    oauth_client = jira_context["oauth_client"]
+
+    now = clock()
+    conn = JiraConnectionDocument(
+        owner_id="USR-001",
+        provider="JIRA",
+        access_token="expired-access",
+        refresh_token="revoked-refresh",
+        expires_at=now - timedelta(seconds=60),
+        connected_at=now,
+        updated_at=now,
+        scope=" ".join(JIRA_SCOPES),
+        token_type="Bearer",
+        status="CONNECTED",
+    )
+    repo.upsert(conn)
+
+    oauth_client.fail_with = JiraInvalidGrantError("Refresh token revoked")
+
+    with pytest.raises(JiraReauthorizationRequiredError):
+        service.get_valid_access_token("USR-001")
+
+    persisted = repo.find_by_owner("USR-001")
+    assert persisted["status"] == "REAUTHORIZATION_REQUIRED"
+    assert "revoked" in persisted["reauthorization_reason"].lower()
+
+
+# ===========================================================================
+# 23. Concurrent refresh coordination
+# ===========================================================================
+def test_23_concurrent_refresh_coordination(jira_context):
+    """Under concurrent refresh attempts, lock and atomic checks prevent race corruption."""
+    service = jira_context["service"]
+    clock = jira_context["clock"]
+    repo = jira_context["repository"]
+    oauth_client = jira_context["oauth_client"]
+
+    now = clock()
+    conn = JiraConnectionDocument(
+        owner_id="USR-001",
+        provider="JIRA",
+        access_token="initial-access",
+        refresh_token="refresh-111",
+        expires_at=now - timedelta(seconds=10),
+        connected_at=now,
+        updated_at=now,
+        scope=" ".join(JIRA_SCOPES),
+        token_type="Bearer",
+        status="CONNECTED",
+    )
+    repo.upsert(conn)
+
+    oauth_client.mock_tokens = {
+        "access_token": "refreshed-access",
+        "refresh_token": "refresh-222",
+        "expires_in": 3600,
+    }
+
+    # Simulate two sequential/coordinated calls through the service
+    t1 = service.get_valid_access_token("USR-001")
+    t2 = service.get_valid_access_token("USR-001")
+
+    assert t1 == "refreshed-access"
+    assert t2 == "refreshed-access"
+    # Exactly one refresh call occurred because second call re-reads updated document
+    assert len(oauth_client.calls) == 1

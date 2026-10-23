@@ -844,7 +844,7 @@ class JiraOAuthService:
                 owner_id=user_id,
                 expected_refresh_token=refresh_token,
                 new_access_token=new_access_token,
-                new_refresh_token=new_refresh_token if isinstance(new_refresh_token, str) else None,
+                new_refresh_token=new_refresh_token if isinstance(new_refresh_token, str) and new_refresh_token.strip() else None,
                 expires_at=new_expires_at,
                 now=refresh_time,
             )
