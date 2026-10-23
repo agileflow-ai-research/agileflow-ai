@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import ArtifactViewer from './ArtifactViewer.jsx'
 import RequirementsResults from '../../features/agents/requirements/RequirementsResults.jsx'
-import DesignPlanningResults from '../../features/agents/designPlanning/DesignPlanningResults.jsx'
+import DesignPlanningResults from './agent-2/DesignPlanningResults.jsx'
 import TestingValidationResults from '../../features/agents/testingValidation/TestingValidationResults.jsx'
 import ErrorState from '../feedback/ErrorState.jsx'
 import LoadingState from '../feedback/LoadingState.jsx'
@@ -114,7 +114,15 @@ function RunDetail({ agentProjectId, runId, onClose }) {
       {run.agent_type === 'REQUIREMENTS' ? (
         <RequirementsResults outputs={manifest} title="Persisted requirements outputs" />
       ) : run.agent_type === 'DESIGN_PLANNING' ? (
-        <DesignPlanningResults outputs={manifest} title="Persisted design and planning outputs" />
+        <DesignPlanningResults
+          outputs={manifest}
+          status={run.status}
+          warnings={run.warnings}
+          errors={run.errors}
+          run={run}
+          isHistorical
+          title="Persisted design and planning outputs"
+        />
       ) : run.agent_type === 'TESTING_VALIDATION' ? (
         <TestingValidationResults outputs={manifest} runMode={run.run_mode} title={run.run_mode === 'TEST_GENERATION' ? 'Persisted generated test outputs' : 'Persisted validation evidence'} />
       ) : (

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { setUnauthorizedHandler } from '../../services/apiClient.js'
+import { isApplicationAuthError, setUnauthorizedHandler } from '../../services/apiClient.js'
 import { getCurrentUser } from '../../services/authService.js'
 import {
   getAccessToken,
@@ -121,7 +121,17 @@ function AuthProvider({ children }) {
     return () => clearTimeout(bootstrapTimer)
   }, [verifyStoredSession])
 
-  useEffect(() => setUnauthorizedHandler(logout), [logout])
+  const handleUnauthorized = useCallback(
+    (error) => {
+      if (error && !isApplicationAuthError(error)) {
+        return
+      }
+      logout()
+    },
+    [logout],
+  )
+
+  useEffect(() => setUnauthorizedHandler(handleUnauthorized), [handleUnauthorized])
 
   const value = useMemo(
     () => ({

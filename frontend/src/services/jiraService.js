@@ -1,0 +1,374 @@
+import { apiClient } from './apiClient.js'
+
+const JIRA_BASE_PATH = '/integrations/jira'
+
+/**
+ * Retrieve current Jira connection status for the authenticated user.
+ */
+export async function getJiraStatus() {
+  const response = await apiClient.get(`${JIRA_BASE_PATH}/status`, {
+    authenticated: true,
+  })
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Initiate Jira Cloud OAuth 2.0 flow and obtain safe authorization URL.
+ */
+export async function startJiraConnection() {
+  const response = await apiClient.get(`${JIRA_BASE_PATH}/connect`, {
+    authenticated: true,
+  })
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Disconnect Jira for the authenticated user by removing local connection.
+ */
+export async function disconnectJira() {
+  const response = await apiClient.delete(`${JIRA_BASE_PATH}/connection`, {
+    authenticated: true,
+  })
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Fetch authorized Jira Cloud sites without credentials.
+ */
+export async function getJiraSites() {
+  const response = await apiClient.get(`${JIRA_BASE_PATH}/sites`, {
+    authenticated: true,
+  })
+  const data = response.data ?? response.payload
+  return Array.isArray(data) ? data : []
+}
+
+/**
+ * Select an authorized Jira Cloud site.
+ * Server verifies cloud_id is accessible.
+ */
+export async function selectJiraSite(cloudId) {
+  if (!cloudId) {
+    throw new Error('A valid Jira site cloud_id is required')
+  }
+  const response = await apiClient.put(
+    `${JIRA_BASE_PATH}/site`,
+    { cloud_id: cloudId },
+    { authenticated: true },
+  )
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Fetch accessible Jira Software projects for the selected site.
+ */
+export async function getJiraProjects({ startAt = 0, maxResults = 50 } = {}) {
+  const query = new URLSearchParams()
+  if (startAt !== undefined) query.set('start_at', String(startAt))
+  if (maxResults !== undefined) query.set('max_results', String(maxResults))
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+
+  const response = await apiClient.get(`${JIRA_BASE_PATH}/projects${suffix}`, {
+    authenticated: true,
+  })
+  const data = response.data ?? response.payload
+  return Array.isArray(data) ? data : []
+}
+
+/**
+ * Select an accessible Jira project on the selected site.
+ */
+export async function selectJiraProject({ projectId, projectKey } = {}) {
+  if (!projectId && !projectKey) {
+    throw new Error('Either projectId or projectKey must be provided')
+  }
+  const response = await apiClient.put(
+    `${JIRA_BASE_PATH}/project`,
+    {
+      project_id: projectId || undefined,
+      project_key: projectKey || undefined,
+    },
+    { authenticated: true },
+  )
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Fetch Scrum boards for the selected project.
+ */
+export async function getJiraBoards({ startAt = 0, maxResults = 50 } = {}) {
+  const query = new URLSearchParams()
+  if (startAt !== undefined) query.set('start_at', String(startAt))
+  if (maxResults !== undefined) query.set('max_results', String(maxResults))
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+
+  const response = await apiClient.get(`${JIRA_BASE_PATH}/boards${suffix}`, {
+    authenticated: true,
+  })
+  const data = response.data ?? response.payload
+  return Array.isArray(data) ? data : []
+}
+
+/**
+ * Select a Scrum board for the selected project.
+ */
+export async function selectJiraBoard(boardId) {
+  if (!boardId && boardId !== 0) {
+    throw new Error('A valid boardId is required')
+  }
+  const response = await apiClient.put(
+    `${JIRA_BASE_PATH}/board`,
+    { board_id: Number(boardId) },
+    { authenticated: true },
+  )
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Retrieve current Jira connection and selection context.
+ */
+export async function getJiraContext() {
+  const response = await apiClient.get(`${JIRA_BASE_PATH}/context`, {
+    authenticated: true,
+  })
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Retrieve issue types available for the currently selected Jira project.
+ */
+export async function getJiraIssueTypes() {
+  const response = await apiClient.get(`${JIRA_BASE_PATH}/issue-types`, {
+    authenticated: true,
+  })
+  return response.data ?? response.payload ?? []
+}
+
+/**
+ * Generate deterministic synchronization preview.
+ */
+export async function generateJiraSyncPreview({
+  agent_project_id,
+  run_id = null,
+  mappings,
+  outputs = null,
+}) {
+  const response = await apiClient.post(
+    `${JIRA_BASE_PATH}/preview`,
+    {
+      agent_project_id,
+      run_id,
+      mappings,
+      outputs,
+    },
+    { authenticated: true },
+  )
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Execute Jira synchronization with explicit human confirmation.
+ */
+export async function executeJiraSync({
+  agent_project_id,
+  run_id = null,
+  mappings,
+  confirmation = false,
+  outputs = null,
+}) {
+  const response = await apiClient.post(
+    `${JIRA_BASE_PATH}/sync`,
+    {
+      agent_project_id,
+      run_id,
+      mappings,
+      confirmation: Boolean(confirmation),
+      outputs,
+    },
+    { authenticated: true },
+  )
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Fetch latest Jira synchronization status and traceability for a run.
+ */
+export async function getJiraSyncStatus({ agent_project_id, run_id }) {
+  const query = new URLSearchParams()
+  if (agent_project_id) query.set('agent_project_id', agent_project_id)
+  if (run_id) query.set('run_id', run_id)
+
+  const response = await apiClient.get(
+    `${JIRA_BASE_PATH}/sync?${query.toString()}`,
+    { authenticated: true },
+  )
+  return response.data ?? response.payload ?? null
+}
+
+/**
+ * Auto-suggest obvious mappings from AgileFlow hierarchy to available Jira issue types.
+ *
+ * Rules:
+ * - Epic -> 'Epic' if unambiguous
+ * - User Story -> 'Story' or 'User Story' if unambiguous
+ * - Task -> 'Task' if unambiguous
+ * - Feature -> 'Feature' if exact match, else empty (human must choose)
+ */
+export function suggestIssueTypeMappings(issueTypes = []) {
+  const suggestions = {
+    EPIC: '',
+    FEATURE: '',
+    USER_STORY: '',
+    TASK: '',
+  }
+
+  if (!Array.isArray(issueTypes)) return suggestions
+
+  const epicMatches = issueTypes.filter(
+    (t) => String(t.name || '').toLowerCase() === 'epic',
+  )
+  if (epicMatches.length === 1) {
+    suggestions.EPIC = epicMatches[0].name
+  }
+
+  const storyMatches = issueTypes.filter(
+    (t) =>
+      ['story', 'user story'].includes(String(t.name || '').toLowerCase()) &&
+      !t.subtask,
+  )
+  if (storyMatches.length === 1) {
+    suggestions.USER_STORY = storyMatches[0].name
+  }
+
+  const taskMatches = issueTypes.filter(
+    (t) => String(t.name || '').toLowerCase() === 'task' && !t.subtask,
+  )
+  if (taskMatches.length === 1) {
+    suggestions.TASK = taskMatches[0].name
+  }
+
+  const featureMatches = issueTypes.filter(
+    (t) => String(t.name || '').toLowerCase() === 'feature' && !t.subtask,
+  )
+  if (featureMatches.length === 1) {
+    suggestions.FEATURE = featureMatches[0].name
+  }
+
+  return suggestions
+}
+
+/**
+ * Clean temporary Jira callback query parameters from the browser URL.
+ */
+export function cleanJiraCallbackParams() {
+  if (typeof window === 'undefined' || !window.location) {
+    return { connected: false, error: null }
+  }
+
+  let url
+  try {
+    const rawHref = window.location.href || (window.location.pathname ? `http://localhost${window.location.pathname}` : 'http://localhost/')
+    url = new URL(rawHref)
+  } catch {
+    return { connected: false, error: null }
+  }
+  const connected =
+    url.searchParams.get('jira_connected') === 'true' ||
+    url.searchParams.get('jira') === 'connected'
+  const error =
+    url.searchParams.get('jira_error') ||
+    (url.searchParams.get('jira') === 'error' ? 'connection_failed' : null)
+
+  let changed = false
+  ;['jira_connected', 'jira_error', 'jira'].forEach((param) => {
+    if (url.searchParams.has(param)) {
+      url.searchParams.delete(param)
+      changed = true
+    }
+  })
+
+  if (changed) {
+    const cleanPath = url.pathname + (url.search ? url.search : '') + url.hash
+    window.history.replaceState({}, document.title, cleanPath)
+  }
+
+  return { connected, error }
+}
+
+/**
+ * Normalize Jira error response into user-friendly message.
+ */
+export function normalizeJiraError(error) {
+  if (!error) return 'An unexpected error occurred'
+
+  const messageText = String(
+    error.message ||
+      error.errors?.[0]?.message ||
+      error.data?.message ||
+      '',
+  )
+
+  if (messageText.includes('JIRA_NOT_CONNECTED')) {
+    return 'Jira is not connected'
+  }
+  if (messageText.includes('JIRA_REAUTHORIZATION_REQUIRED')) {
+    return 'Your Jira connection has expired. Reconnect Jira to continue.'
+  }
+  if (messageText.includes('JIRA_SITE_NOT_SELECTED')) {
+    return 'Please select an authorized Jira site.'
+  }
+  if (messageText.includes('JIRA_SITE_NOT_ACCESSIBLE')) {
+    return 'The selected Jira site is no longer accessible. Please reselect a site.'
+  }
+  if (messageText.includes('JIRA_PROJECT_NOT_SELECTED')) {
+    return 'Please select a Jira project.'
+  }
+  if (messageText.includes('JIRA_PROJECT_NOT_ACCESSIBLE')) {
+    return 'The selected project could not be accessed. Please choose another project.'
+  }
+  if (messageText.includes('JIRA_BOARD_NOT_SELECTED')) {
+    return 'Please select a Scrum board before proceeding.'
+  }
+  if (messageText.includes('JIRA_BOARD_NOT_ACCESSIBLE')) {
+    return 'The selected board could not be accessed for this project.'
+  }
+  if (messageText.includes('JIRA_BOARD_NOT_SCRUM')) {
+    return 'Only Scrum boards are supported for sprint synchronization.'
+  }
+  if (messageText.includes('JIRA_PLAN_UNAVAILABLE')) {
+    return 'A completed Agent 2 run with JIRA_PLAN is required for sync preview.'
+  }
+  if (messageText.includes('JIRA_MAPPING_INCOMPLETE')) {
+    return 'Please select a compatible Jira issue type for all required artifact types.'
+  }
+  if (messageText.includes('JIRA_ISSUE_TYPE_UNAVAILABLE')) {
+    return 'One or more selected Jira issue types are not available in this project.'
+  }
+  if (messageText.includes('JIRA_HIERARCHY_INVALID')) {
+    return 'Planning hierarchy reference is invalid. Your Agent 2 results are unchanged.'
+  }
+  if (messageText.includes('JIRA_CONFIRMATION_REQUIRED')) {
+    return 'Explicit human confirmation is required before synchronizing with Jira.'
+  }
+  if (messageText.includes('JIRA_SYNC_IN_PROGRESS')) {
+    return 'A synchronization operation is already in progress for this plan.'
+  }
+  if (messageText.includes('JIRA_RUN_NOT_COMPLETED')) {
+    return 'Only completed Agent 2 planning runs can be synchronized.'
+  }
+  if (messageText.includes('JIRA_UNAUTHORIZED_PROJECT_ACCESS')) {
+    return 'You do not have permission to synchronize this project.'
+  }
+  if (messageText.includes('JIRA_RATE_LIMITED') || error.status === 429) {
+    return 'Jira is temporarily limiting requests. Please try again shortly.'
+  }
+  if (
+    messageText.includes('JIRA_UPSTREAM_ERROR') ||
+    error.status === 502 ||
+    error.status === 504
+  ) {
+    return 'Jira could not be reached. Your Agent 2 results are unchanged.'
+  }
+
+  return 'Jira could not be reached. Your Agent 2 results are unchanged.'
+}

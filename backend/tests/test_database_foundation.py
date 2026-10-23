@@ -28,6 +28,8 @@ EXPECTED_COLLECTIONS = {
     "AGENT_RUNS": "agent_runs",
     "GITHUB_CONNECTIONS": "github_connections",
     "GITHUB_REPOSITORY_BINDINGS": "github_repository_bindings",
+    "JIRA_CONNECTIONS": "jira_connections",
+    "JIRA_SYNCS": "jira_syncs",
 }
 
 

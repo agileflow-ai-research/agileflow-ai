@@ -25,10 +25,13 @@ class DesignPlanningOutputCode(StrEnum):
     JIRA_PLAN = "JIRA_PLAN"
 
 
+class PlanningMode(StrEnum):
+    TIMELINE_BASED = "TIMELINE_BASED"
+    CAPACITY_AWARE = "CAPACITY_AWARE"
+
+
 CAPACITY_OUTPUTS = {
-    DesignPlanningOutputCode.SPRINT_PLAN,
     DesignPlanningOutputCode.TASK_ASSIGNMENT,
-    DesignPlanningOutputCode.JIRA_PLAN,
 }
 
 
@@ -51,6 +54,8 @@ class Agent2RunRequest(BaseModel):
     database_preference: str | None = None
     ui_ux_constraints: str | None = None
     architecture_notes: str | None = None
+    planning_mode: PlanningMode | None = None
+    project_start_date: str | None = None
     development_team_count: int | None = Field(default=None, gt=0)
     sprint_duration: int | None = Field(default=None, gt=0)
     expected_project_duration: str | None = None
@@ -63,8 +68,8 @@ class Agent2RunRequest(BaseModel):
         "requirements", "srs", "user_stories", "acceptance_criteria",
         "technical_constraints", "preferred_technology_stack",
         "deployment_preference", "database_preference", "ui_ux_constraints",
-        "architecture_notes", "expected_project_duration", "developer_roles",
-        "developer_skills", "team_composition",
+        "architecture_notes", "project_start_date", "expected_project_duration",
+        "developer_roles", "developer_skills", "team_composition",
     )
     @classmethod
     def normalize_text(cls, value: str | None) -> str | None:
@@ -86,12 +91,28 @@ class Agent2RunRequest(BaseModel):
                 "at least one usable specification source is required: requirements, SRS, user_stories, or acceptance_criteria"
             )
         selected = set(self.selected_outputs)
-        if selected & CAPACITY_OUTPUTS and self.development_team_count is None:
-            raise ValueError(
-                "development_team_count is required for SPRINT_PLAN, TASK_ASSIGNMENT, and JIRA_PLAN"
-            )
-        if DesignPlanningOutputCode.SPRINT_PLAN in selected and self.sprint_duration is None:
-            raise ValueError("sprint_duration is required for SPRINT_PLAN")
+        is_sprint_plan = DesignPlanningOutputCode.SPRINT_PLAN in selected
+        is_task_assignment = DesignPlanningOutputCode.TASK_ASSIGNMENT in selected
+
+        mode = self.planning_mode or (
+            PlanningMode.CAPACITY_AWARE
+            if self.development_team_count and not self.project_start_date
+            else PlanningMode.TIMELINE_BASED
+        )
+
+        if is_sprint_plan:
+            if not self.sprint_duration:
+                raise ValueError("sprint_duration is required for SPRINT_PLAN")
+            if not self.project_start_date:
+                raise ValueError("project_start_date is required for SPRINT_PLAN")
+            if not self.expected_project_duration:
+                raise ValueError("expected_project_duration is required for SPRINT_PLAN")
+            if mode == PlanningMode.CAPACITY_AWARE and not self.development_team_count:
+                raise ValueError("development_team_count is required for CAPACITY_AWARE sprint planning")
+
+        if is_task_assignment and not self.development_team_count:
+            raise ValueError("development_team_count is required for TASK_ASSIGNMENT")
+
         return self
 
 
@@ -113,6 +134,8 @@ class Agent2InputContext(BaseModel):
     database_preference: str | None = None
     ui_ux_constraints: str | None = None
     architecture_notes: str | None = None
+    planning_mode: PlanningMode = PlanningMode.TIMELINE_BASED
+    project_start_date: str | None = None
     development_team_count: int | None = Field(default=None, gt=0)
     sprint_duration: int | None = Field(default=None, gt=0)
     expected_project_duration: str | None = None
@@ -245,7 +268,7 @@ class UiFlow(BaseModel):
 
 class Epic(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^EPIC-\d{3,}$")
+    id: str = Field(pattern=r"^EPIC-\d{3,}$", description="Canonical epic identifier, e.g. EPIC-001 (never EPIC-1)")
     title: str
     outcome: str
     priority: Literal["HIGHEST", "HIGH", "MEDIUM", "LOW", "LOWEST"]
@@ -254,8 +277,8 @@ class Epic(BaseModel):
 
 class Feature(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^FEATURE-\d{3,}$")
-    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$")
+    id: str = Field(pattern=r"^FEATURE-\d{3,}$", description="Canonical feature identifier, e.g. FEATURE-001 (never FEAT-001 or FEATURE-1)")
+    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$", description="Parent epic identifier, e.g. EPIC-001")
     title: str
     description: str
     source_refs: list[str] = Field(min_length=1)
@@ -263,9 +286,9 @@ class Feature(BaseModel):
 
 class PlanningStory(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^STORY-\d{3,}$")
-    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$")
-    feature_id: str = Field(pattern=r"^FEATURE-\d{3,}$")
+    id: str = Field(pattern=r"^STORY-\d{3,}$", description="Canonical user story identifier, e.g. STORY-001 (never STORY-1)")
+    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$", description="Parent epic identifier, e.g. EPIC-001")
+    feature_id: str = Field(pattern=r"^FEATURE-\d{3,}$", description="Parent feature identifier, e.g. FEATURE-001")
     actor: str
     goal: str
     benefit: str
@@ -277,10 +300,10 @@ class PlanningStory(BaseModel):
 
 class PlanningTask(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^TASK-\d{3,}$")
-    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$")
-    feature_id: str = Field(pattern=r"^FEATURE-\d{3,}$")
-    story_id: str = Field(pattern=r"^STORY-\d{3,}$")
+    id: str = Field(pattern=r"^TASK-\d{3,}$", description="Canonical task identifier, e.g. TASK-001 (never TASK-1)")
+    epic_id: str = Field(pattern=r"^EPIC-\d{3,}$", description="Parent epic identifier, e.g. EPIC-001")
+    feature_id: str = Field(pattern=r"^FEATURE-\d{3,}$", description="Parent feature identifier, e.g. FEATURE-001")
+    story_id: str = Field(pattern=r"^STORY-\d{3,}$", description="Parent story identifier, e.g. STORY-001")
     title: str
     description: str
     required_skills: list[str]
@@ -291,26 +314,28 @@ class PlanningTask(BaseModel):
 
 class BacklogItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    item_id: str
+    item_id: str = Field(description="Canonical work item identifier matching the epic/feature/story/task ID, e.g. EPIC-001, FEATURE-001 (never PB-001)")
     item_type: Literal["EPIC", "FEATURE", "STORY", "TASK"]
     title: str
     priority: Literal["HIGHEST", "HIGH", "MEDIUM", "LOW", "LOWEST"]
-    parent_id: str | None
+    parent_id: str | None = Field(default=None, description="Parent item identifier (null for EPIC, EPIC-### for FEATURE, FEATURE-### for STORY, STORY-### for TASK)")
     source_refs: list[str] = Field(min_length=1)
 
 
 class Sprint(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(pattern=r"^SPRINT-\d{3,}$")
+    id: str = Field(pattern=r"^SPRINT-\d{3,}$", description="Canonical sprint identifier, e.g. SPRINT-001 (never SPRINT-1)")
     name: str
     duration_days: int = Field(gt=0)
-    capacity_points: int = Field(gt=0)
-    item_refs: list[str] = Field(min_length=1)
+    capacity_points: int | None = Field(default=None, gt=0)
+    item_refs: list[str] = Field(min_length=1, description="List of work item identifiers, e.g. TASK-001, STORY-001")
     dependency_notes: list[str]
     planned_points: int = Field(default=0, ge=0)
-    utilization_percent: float = Field(default=0, ge=0)
+    utilization_percent: float | None = Field(default=None, ge=0)
     planning_warnings: list[str] = Field(default_factory=list)
     estimate_basis: str = "Estimated capacity uses team count × sprint duration in days."
+    start_date: str | None = None
+    end_date: str | None = None
 
 
 class TaskAssignment(BaseModel):
@@ -339,7 +364,7 @@ class JiraPlan(BaseModel):
     stories: list[PlanningStory] = Field(min_length=1)
     tasks: list[PlanningTask] = Field(min_length=1)
     sprints: list[Sprint]
-    assignments: list[TaskAssignment]
+    assignments: list[TaskAssignment] = Field(default_factory=list)
     priorities: list[JiraPriority] = Field(min_length=1)
     synchronization: Literal["NOT_PERFORMED"]
 
@@ -375,3 +400,16 @@ class Agent2RunResult(BaseModel):
     outputs: dict[str, Any]
     warnings: list[AgentRunMessage]
     errors: list[AgentRunMessage]
+    correction_attempts: int = 0
+
+
+class DocumentExtractionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_type: Literal["REQUIREMENTS", "SRS", "USER_STORIES", "ACCEPTANCE_CRITERIA"]
+    original_filename: str
+    mime_type: str
+    size_bytes: int
+    sha256: str
+    character_count: int
+    extracted_text: str
+    extraction_status: Literal["COMPLETED"] = "COMPLETED"

@@ -115,19 +115,99 @@ class OpenAICompatibleProvider:
         return result
 
 
+class LocalLlamaCppProvider:
+    """Communicates with a local llama.cpp server using the OpenAI-compatible API."""
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        base_url: str = "http://127.0.0.1:8080",
+        timeout_seconds: float = 120.0,
+    ) -> None:
+        self._model = model
+        self._base_url = base_url.rstrip("/")
+        self._timeout_seconds = timeout_seconds
+
+    @property
+    def endpoint_url(self) -> str:
+        if self._base_url.endswith("/v1"):
+            return f"{self._base_url}/chat/completions"
+        return f"{self._base_url}/v1/chat/completions"
+
+    def generate_structured(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        json_schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.1,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "specialist_structured_output",
+                    "strict": True,
+                    "schema": json_schema,
+                },
+            },
+        }
+        try:
+            response = httpx.post(
+                self.endpoint_url,
+                headers={"Content-Type": "application/json"},
+                json=payload,
+                timeout=self._timeout_seconds,
+            )
+            response.raise_for_status()
+            body = response.json()
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+            raise ModelProviderError("Structured model generation failed") from exc
+        try:
+            content = body["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ModelProviderError("Structured model generation failed") from exc
+        try:
+            result = json.loads(content)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ModelStructuredOutputError(
+                "Model content was not valid structured JSON"
+            ) from exc
+        if not isinstance(result, dict):
+            raise ModelStructuredOutputError(
+                "Structured model response was not an object"
+            )
+        return result
+
+
 def build_model_provider(settings: Settings) -> StructuredModelProvider:
     provider_name = settings.model_provider.strip().lower()
-    if provider_name != "openai_compatible":
-        return UnavailableModelProvider(
-            "MODEL_PROVIDER must be configured as openai_compatible"
+    if provider_name in {"llama_cpp", "local_llama_cpp"}:
+        if not settings.model_name:
+            return UnavailableModelProvider("MODEL_NAME is not configured")
+        base_url = settings.model_base_url or "http://127.0.0.1:8080"
+        return LocalLlamaCppProvider(
+            model=settings.model_name,
+            base_url=base_url,
+            timeout_seconds=settings.model_timeout_seconds,
         )
-    if not settings.model_api_key:
-        return UnavailableModelProvider("MODEL_API_KEY is not configured")
-    if not settings.model_name:
-        return UnavailableModelProvider("MODEL_NAME is not configured")
-    return OpenAICompatibleProvider(
-        api_key=settings.model_api_key,
-        model=settings.model_name,
-        base_url=settings.model_base_url,
-        timeout_seconds=settings.model_timeout_seconds,
+    if provider_name == "openai_compatible":
+        if not settings.model_api_key:
+            return UnavailableModelProvider("MODEL_API_KEY is not configured")
+        if not settings.model_name:
+            return UnavailableModelProvider("MODEL_NAME is not configured")
+        return OpenAICompatibleProvider(
+            api_key=settings.model_api_key,
+            model=settings.model_name,
+            base_url=settings.model_base_url,
+            timeout_seconds=settings.model_timeout_seconds,
+        )
+    return UnavailableModelProvider(
+        f"Unsupported MODEL_PROVIDER: {settings.model_provider}"
     )
