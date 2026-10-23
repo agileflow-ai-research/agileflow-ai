@@ -1,6 +1,4 @@
 # Environment
-.env
-.env.*
 !.env.example
 
 # Python
@@ -15,7 +13,6 @@ node_modules/
 dist/
 
 # IDE / OS
-.vscode/
 .idea/
 .DS_Store
 Thumbs.db
@@ -29,3 +26,4 @@ models/
 backend/storage/standalone/implementation/
 
 backend/storage/standalone/
+config.bat

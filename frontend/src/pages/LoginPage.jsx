@@ -111,7 +111,7 @@ function LoginPage() {
 
   return (
     <AuthLayout illustrationSrc={loginIllustration} illustrationAlt="">
-      <main className="w-full max-w-lg rounded-panel border border-default bg-surface p-6 shadow-card sm:p-8 lg:p-10">
+      <main className="auth-form-card">
         {successMessage ? (
           <div
             className="mb-6 rounded-control border border-state-success/40 bg-state-success-soft px-4 py-3 text-sm text-state-success"
@@ -125,7 +125,7 @@ function LoginPage() {
           <p className="mb-2 text-sm font-semibold uppercase tracking-widest text-brand">
             Sign in
           </p>
-          <h1 className="text-3xl font-bold tracking-tight text-content-primary sm:text-4xl">
+          <h1 className="text-3xl font-bold tracking-tight text-content-primary">
             Welcome back
           </h1>
           <p className="mt-3 text-content-secondary">
