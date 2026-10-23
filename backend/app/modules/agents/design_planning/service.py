@@ -39,8 +39,10 @@ class Agent2Service:
             context.model_dump(mode="json", exclude_none=True),
         )
         run = self._standalone.mark_run_running(current_user.user_id, agent_project_id, run.run_id)
+        correction_attempts = 0
         try:
             execution = self._engine.execute_with_metadata(context, request.selected_outputs)
+            correction_attempts = execution.correction_attempts
             outputs = execution.outputs
             warnings = self._warnings_for(request)
             if execution.correction_attempts:
@@ -80,7 +82,7 @@ class Agent2Service:
             )
         except Exception:
             run = self._fail(run, "INTERNAL_ERROR", "Agent 2 execution failed unexpectedly")
-        return self.to_result(run)
+        return self.to_result(run, correction_attempts=correction_attempts)
 
     @staticmethod
     def normalize(project: AgentProject, request: Agent2RunRequest) -> Agent2InputContext:
@@ -156,7 +158,15 @@ class Agent2Service:
         )
 
     @staticmethod
-    def to_result(run: AgentRun) -> Agent2RunResult:
+    def to_result(run: AgentRun, correction_attempts: int | None = None) -> Agent2RunResult:
+        if correction_attempts is None:
+            correction_attempts = 0
+            for warning in run.warnings:
+                if warning.code == "OUTPUT_CORRECTED" and warning.details:
+                    val = warning.details.get("correction_attempts")
+                    if isinstance(val, int):
+                        correction_attempts = val
+                        break
         return Agent2RunResult(
             run_id=run.run_id,
             agent_project_id=run.agent_project_id,
@@ -169,4 +179,5 @@ class Agent2Service:
             outputs=run.output_manifest,
             warnings=run.warnings,
             errors=run.errors,
+            correction_attempts=correction_attempts,
         )

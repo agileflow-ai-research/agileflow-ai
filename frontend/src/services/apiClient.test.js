@@ -62,6 +62,89 @@ describe('apiClient unauthorized handling', () => {
       expect(unauthorizedHandler).not.toHaveBeenCalled()
     },
   )
+
+  it('does NOT notify the auth layer when an integration request returns 401 with JIRA_REAUTHORIZATION_REQUIRED', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          success: false,
+          message: 'JIRA_REAUTHORIZATION_REQUIRED',
+          errors: [{ field: 'jira', message: 'JIRA_REAUTHORIZATION_REQUIRED: Token expired' }],
+        }),
+      }),
+    )
+    sessionStorage.setItem('agileflow_access_token', 'stored-token')
+    const { request, setUnauthorizedHandler } = await import('./apiClient.js')
+    const unauthorizedHandler = vi.fn()
+    setUnauthorizedHandler(unauthorizedHandler)
+
+    await expect(request('/integrations/jira/board', { method: 'PUT', body: { board_id: 101 } })).rejects.toMatchObject({
+      status: 401,
+      message: 'JIRA_REAUTHORIZATION_REQUIRED',
+    })
+
+    expect(unauthorizedHandler).not.toHaveBeenCalled()
+  })
+
+  it('does NOT notify the auth layer when an integration request returns 401 with field=jira', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          success: false,
+          message: 'JIRA_UPSTREAM_ERROR',
+          errors: [{ field: 'jira', message: 'Atlassian rejected token' }],
+        }),
+      }),
+    )
+    sessionStorage.setItem('agileflow_access_token', 'stored-token')
+    const { request, setUnauthorizedHandler } = await import('./apiClient.js')
+    const unauthorizedHandler = vi.fn()
+    setUnauthorizedHandler(unauthorizedHandler)
+
+    await expect(request('/integrations/jira/issue-types')).rejects.toMatchObject({
+      status: 401,
+    })
+
+    expect(unauthorizedHandler).not.toHaveBeenCalled()
+  })
+
+  it('DOES notify the auth layer when request to /integrations/jira fails with genuine AgileFlow auth 401', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          success: false,
+          message: 'Authentication failed',
+          errors: [{ field: 'authorization', message: 'Authentication failed' }],
+        }),
+      }),
+    )
+    sessionStorage.setItem('agileflow_access_token', 'stored-token')
+    const { request, setUnauthorizedHandler } = await import('./apiClient.js')
+    const unauthorizedHandler = vi.fn()
+    setUnauthorizedHandler(unauthorizedHandler)
+
+    await expect(request('/integrations/jira/board', { method: 'PUT', body: { board_id: 101 } })).rejects.toMatchObject({
+      status: 401,
+      message: 'Authentication failed',
+    })
+
+    expect(unauthorizedHandler).toHaveBeenCalledOnce()
+  })
 })
 
 describe('apiClient response contract', () => {

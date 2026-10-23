@@ -22,9 +22,13 @@ vi.mock('../../services/tokenStorage.js', () => ({
   setAccessToken: vi.fn(),
 }))
 
-vi.mock('../../services/apiClient.js', () => ({
-  setUnauthorizedHandler: vi.fn(() => vi.fn()),
-}))
+vi.mock('../../services/apiClient.js', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    setUnauthorizedHandler: vi.fn(() => vi.fn()),
+  }
+})
 
 const user = {
   user_id: 'USR-001',
@@ -199,5 +203,27 @@ describe('AuthProvider', () => {
     expect(removeAccessToken).toHaveBeenCalled()
     expect(screen.getByTestId('status')).toHaveTextContent('unauthenticated')
     expect(screen.getByTestId('user')).toHaveTextContent('no-user')
+  })
+
+  it('preserves the application session when unauthorizedHandler receives a Jira integration 401', async () => {
+    getAccessToken.mockReturnValue('stored-token')
+    getCurrentUser.mockResolvedValue({ data: user })
+    renderProvider()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+    })
+    const unauthorizedHandler = setUnauthorizedHandler.mock.calls.at(-1)[0]
+    act(() =>
+      unauthorizedHandler({
+        status: 401,
+        message: 'JIRA_REAUTHORIZATION_REQUIRED',
+        errors: [{ field: 'jira', message: 'Token expired' }],
+      }),
+    )
+
+    expect(removeAccessToken).not.toHaveBeenCalled()
+    expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+    expect(screen.getByTestId('user')).toHaveTextContent('ada@example.com')
   })
 })

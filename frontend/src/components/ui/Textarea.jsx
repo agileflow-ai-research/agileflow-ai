@@ -13,6 +13,7 @@ function Textarea({
   rows = 5,
   className,
   textareaClassName,
+  labelClassName,
   ...textareaProps
 }) {
   const generatedId = useId()
@@ -23,13 +24,18 @@ function Textarea({
 
   return (
     <div className={cn('w-full', className)}>
-      <label
-        className="mb-2 block text-label-copy font-medium text-content-primary"
-        htmlFor={textareaId}
-      >
-        {label}
-        {required && <span aria-hidden="true"> *</span>}
-      </label>
+      {label && (
+        <label
+          className={cn(
+            'mb-2 block text-label-copy font-medium text-content-primary',
+            labelClassName,
+          )}
+          htmlFor={textareaId}
+        >
+          {label}
+          {required && <span aria-hidden="true"> *</span>}
+        </label>
+      )}
       <textarea
         {...textareaProps}
         id={textareaId}

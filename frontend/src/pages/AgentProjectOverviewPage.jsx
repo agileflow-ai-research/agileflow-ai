@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 
 import AgentWorkspaceShell from '../components/agents/AgentWorkspaceShell.jsx'
-import DesignPlanningWorkspace from '../features/agents/designPlanning/DesignPlanningWorkspace.jsx'
+import DesignPlanningWorkspace from '../components/agents/agent-2/DesignPlanningWorkspace.jsx'
+import DesignPlanningProjectPage from '../features/agents/designPlanning/pages/DesignPlanningProjectPage.jsx'
 import ImplementationProjectPage from '../features/agents/implementation/pages/ImplementationProjectPage.jsx'
 import RequirementsProjectPage from '../features/agents/requirements/pages/RequirementsProjectPage.jsx'
 import TestingValidationProjectPage from '../features/agents/testingValidation/pages/TestingValidationProjectPage.jsx'
@@ -46,7 +47,8 @@ function AgentProjectOverviewPage() {
   const requestSequence = useRef(0)
   const [loadStatus, setLoadStatus] = useState('loading')
   const [project, setProject] = useState(null)
-  const [, setRuns] = useState([])
+  const [runs, setRuns] = useState([])
+  const [, setSelectedRunId] = useState(null)
   const [statusUpdate, setStatusUpdate] = useState('idle')
   const [statusError, setStatusError] = useState('')
 
@@ -147,6 +149,7 @@ function AgentProjectOverviewPage() {
     (
       project.agent_type === 'IMPLEMENTATION'
       || project.agent_type === 'REQUIREMENTS'
+      || project.agent_type === 'DESIGN_PLANNING'
       || (project.agent_type === 'TESTING_VALIDATION' && project.agent_stage === 'TEST_GENERATION')
     )
     && project.status !== 'ARCHIVED'
@@ -155,7 +158,9 @@ function AgentProjectOverviewPage() {
       ? ImplementationProjectPage
       : project.agent_type === 'REQUIREMENTS'
         ? RequirementsProjectPage
-        : TestingValidationProjectPage
+        : project.agent_type === 'DESIGN_PLANNING'
+          ? DesignPlanningProjectPage
+          : TestingValidationProjectPage
     return (
       <main className="mx-auto w-full max-w-[96rem] space-y-3 px-page py-4 sm:py-5">
         <Button variant="ghost" size="small" onClick={() => navigate(agentListPath)}>Back to projects</Button>
@@ -166,6 +171,9 @@ function AgentProjectOverviewPage() {
           projectStatus={status}
           projectActions={statusAction}
           entryMode={location.state?.agentProjectEntry === 'created' ? 'created' : 'existing'}
+          onRunCompleted={handleRunCompleted}
+          runs={runs}
+          onViewRun={setSelectedRunId}
         />
       </main>
     )

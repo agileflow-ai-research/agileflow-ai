@@ -14,11 +14,34 @@ export function setUnauthorizedHandler(handler) {
 }
 
 function notifyUnauthorized(error) {
+  if (error && !isApplicationAuthError(error)) {
+    return
+  }
   try {
     unauthorizedHandler?.(error)
   } catch {
     // Session cleanup must not replace the original API error.
   }
+}
+
+export function isApplicationAuthError(error) {
+  if (!error || error.status !== 401) {
+    return false
+  }
+
+  // Third-party integration domain authentication failures (e.g. Jira OAuth reauthorization)
+  // must NOT invalidate the AgileFlow application session.
+  const message = typeof error.message === 'string' ? error.message : ''
+  if (message.startsWith('JIRA_')) {
+    return false
+  }
+
+  const errors = Array.isArray(error.errors) ? error.errors : []
+  if (errors.some((err) => err?.field === 'jira')) {
+    return false
+  }
+
+  return true
 }
 
 export class ApiError extends Error {
@@ -74,7 +97,6 @@ export async function request(
   const requestHeaders = new Headers(headers)
   const token = authenticated ? getAccessToken() : null
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData
-
   if (body !== undefined && !isFormData && !requestHeaders.has('Content-Type')) {
     requestHeaders.set('Content-Type', 'application/json')
   }
@@ -104,7 +126,7 @@ export async function request(
       payload,
       response.statusText || 'The request failed',
     )
-    if (authenticated && response.status === 401) {
+    if (authenticated && response.status === 401 && isApplicationAuthError(error)) {
       notifyUnauthorized(error)
     }
     throw error
@@ -113,7 +135,8 @@ export async function request(
   return {
     success: payload?.success ?? true,
     message: payload?.message ?? response.statusText,
-    data: payload?.data ?? null,
+    data: payload?.data !== undefined ? payload.data : (payload ?? null),
+    payload: payload ?? null,
     errors: Array.isArray(payload?.errors) ? payload.errors : [],
     workflow_stage: payload?.workflow_stage ?? null,
     next_action: payload?.next_action ?? null,
