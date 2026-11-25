@@ -27,9 +27,11 @@ describes the intended end state.
   by the workflow or contract is incomplete.
 - **Future:** not implemented. A visible roadmap node is not a backend capability.
 
-The present milestone ends after a human approves an immutable AgentRun snapshot
-that is ready for a future generator. Agent 3 does **not** yet generate source
-code, build it, execute it, correct it, or deliver it to Git.
+The final approval workflow ends after a human approves an immutable AgentRun
+snapshot. GEN-R1.1 loads and validates that historical snapshot as an internal
+read-only generation context, and GEN-R1.2 deterministically plans authorized
+files and dependencies in memory. Agent 3 does **not** yet generate source code,
+build it, execute it, correct it, or deliver it to Git.
 
 ## 2. Executive summary
 
@@ -51,7 +53,9 @@ Sources -> extraction -> chunking -> classification -> human verification
         -> immutable READY_FOR_GENERATION AgentRun
 ```
 
-Everything after `READY_FOR_GENERATION` is future work.
+GEN-R1.1 validates and exposes the approved input after
+`READY_FOR_GENERATION`; GEN-R1.2 produces a validated in-memory plan. Every
+source-producing step remains future work.
 
 ### Agent 3 responsibility
 
@@ -78,7 +82,9 @@ itself.
 
 | Contract or planning concept | Current implementation |
 | --- | --- |
-| Generate selected implementation outputs | Selection is captured and approved; no files are generated. |
+| Generate selected implementation outputs | Selection is captured, approved, and retained by the GEN-R1.1 loader; no files are generated. |
+| Load approved generation input | Implemented internally by GEN-R1.1 from the immutable AgentRun snapshot; no public endpoint or worker is added. |
+| Plan approved generation outputs | Implemented internally by GEN-R1.2 with deterministic files, dependencies, ordering, traceability coverage, and no persistence. |
 | Mandatory `BUILD_RESULT`, `EXECUTION_RESULT`, and `EXECUTION_LOGS` for executable output | Future; there is no build or execution engine. |
 | Bounded correction loop | Future. |
 | Git commit/push/delivery | Future; repository setup is implemented only. |
@@ -705,9 +711,11 @@ UI.
 
 ### GEN-R1 — Implementation Generation
 
-Approved AgentRun -> isolated run workspace -> generation plan -> selected
-artifact generation -> safe proposed/validated paths -> file writes -> manifest
-and traceability. Project archive/workspace export also remains future.
+Approved AgentRun -> **validated read-only context (GEN-R1.1 complete)** ->
+**deterministic validated plan (GEN-R1.2 complete)** -> isolated run workspace
+-> selected artifact generation -> safe file writes -> manifest and
+traceability. Workspace creation, generation, project archive, and workspace
+export remain future.
 
 ### EXEC-R1 — Build & Execution
 
@@ -751,6 +759,8 @@ current implementation.
 | Trusted readiness/warning HITL | **COMPLETE** | Fingerprint-bound continuation |
 | GitHub setup | **COMPLETE FOR SETUP** | New empty repository or skip; no delivery |
 | Immutable AgentRun | **COMPLETE** | Approved `READY_FOR_GENERATION` snapshot |
+| Approved AgentRun input loader | **COMPLETE** | Internal, read-only GEN-R1.1 context; validates historical snapshot only |
+| Deterministic generation planner | **COMPLETE** | Internal GEN-R1.2 plan; no persistence, model, or file writes |
 | Code generation | **FUTURE** | GEN-R1 |
 | Build/run evidence | **FUTURE** | EXEC-R1 |
 | Self-correction | **FUTURE** | FIX-R1 |
@@ -813,5 +823,7 @@ AgentRun -> [GEN-R1 future] -> [EXEC-R1 future] -> [FIX/GIT/Agent 4 future]
 - [Agent 3 Document Extraction UAT](AGENT_3_DOCUMENT_EXTRACTION_UAT.md)
 - [Agent 3 GitHub Repository Setup](AGENT_3_GITHUB_REPOSITORY_SETUP.md)
 - [AgentRun implementation notes](../../backend/app/modules/agents/implementation/runs/README.md)
+- [GEN-R1.1 approved input loader](AGENT_3_GEN_R1_1.md)
+- [GEN-R1.2 deterministic generation planner](AGENT_3_GEN_R1_2.md)
 - [Trusted readiness notes](../../backend/app/modules/agents/implementation/preparation/readiness/trusted/README.md)
 - [Consolidation notes](../../backend/app/modules/agents/implementation/preparation/consolidation/README.md)
