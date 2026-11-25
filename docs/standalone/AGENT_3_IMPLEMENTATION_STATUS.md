@@ -712,10 +712,11 @@ UI.
 ### GEN-R1 — Implementation Generation
 
 Approved AgentRun -> **validated read-only context (GEN-R1.1 complete)** ->
-**deterministic validated plan (GEN-R1.2 complete)** -> isolated run workspace
--> selected artifact generation -> safe file writes -> manifest and
-traceability. Workspace creation, generation, project archive, and workspace
-export remain future.
+**deterministic validated plan (GEN-R1.2 complete)** -> **bounded local Ollama
+candidate generation (GEN-R1.3B complete)** -> **deterministic structural and
+adherence validation (GEN-R1.3D complete)** -> isolated run workspace -> safe
+file writes -> manifest and traceability. Workspace creation, persisted
+generation, project archive, and workspace export remain future.
 
 ### EXEC-R1 — Build & Execution
 
@@ -761,7 +762,9 @@ current implementation.
 | Immutable AgentRun | **COMPLETE** | Approved `READY_FOR_GENERATION` snapshot |
 | Approved AgentRun input loader | **COMPLETE** | Internal, read-only GEN-R1.1 context; validates historical snapshot only |
 | Deterministic generation planner | **COMPLETE** | Internal GEN-R1.2 plan; no persistence, model, or file writes |
-| Code generation | **FUTURE** | GEN-R1 |
+| Local code-generation provider | **COMPLETE INTERNALLY** | GEN-R1.3B Ollama candidate generation; disabled by default; no public endpoint or writes |
+| Deterministic code adherence | **COMPLETE FOR JS/EXPRESS SCOPE** | GEN-R1.3D separates structural validity from writer eligibility; other content types remain explicit future coverage |
+| Persisted code generation | **FUTURE** | No generated application file writer or public generation control |
 | Build/run evidence | **FUTURE** | EXEC-R1 |
 | Self-correction | **FUTURE** | FIX-R1 |
 | Git delivery | **FUTURE** | GIT-R1 |
@@ -825,5 +828,7 @@ AgentRun -> [GEN-R1 future] -> [EXEC-R1 future] -> [FIX/GIT/Agent 4 future]
 - [AgentRun implementation notes](../../backend/app/modules/agents/implementation/runs/README.md)
 - [GEN-R1.1 approved input loader](AGENT_3_GEN_R1_1.md)
 - [GEN-R1.2 deterministic generation planner](AGENT_3_GEN_R1_2.md)
+- [GEN-R1.3B local model integration](AGENT_3_GEN_R1_3B.md)
+- [GEN-R1.3D deterministic code adherence](AGENT_3_GEN_R1_3D.md)
 - [Trusted readiness notes](../../backend/app/modules/agents/implementation/preparation/readiness/trusted/README.md)
 - [Consolidation notes](../../backend/app/modules/agents/implementation/preparation/consolidation/README.md)

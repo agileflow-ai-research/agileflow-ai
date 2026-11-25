@@ -17,6 +17,9 @@ from app.common.status import AgentRunStatus
 from app.modules.agents.implementation.contracts.enums import (
     ImplementationOutputCode,
 )
+from app.modules.agents.implementation.infrastructure.digests import (
+    stable_json_sha256,
+)
 from app.modules.agents.implementation.preparation.consolidation.schemas import (
     ProjectSpecificationItem,
     TrustedProjectSpecification,
@@ -285,6 +288,26 @@ class GeneratedCandidateStatus(StrEnum):
     MISSING_INFORMATION = "MISSING_INFORMATION"
 
 
+class AdherenceFindingSeverity(StrEnum):
+    BLOCKING = "BLOCKING"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    INFORMATIONAL = "INFORMATIONAL"
+
+
+class AdherenceCheckStatus(StrEnum):
+    PASSED = "PASSED"
+    FAILED = "FAILED"
+    NOT_CHECKED = "NOT_CHECKED"
+    INCONCLUSIVE = "INCONCLUSIVE"
+
+
+class CodeAdherenceStatus(StrEnum):
+    PASS = "PASS"
+    BLOCKED = "BLOCKED"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    NOT_CHECKED = "NOT_CHECKED"
+
+
 class FileTrustedSpecificationItem(FrozenStrictModel):
     project_item_id: str = Field(pattern=r"^PSI-[0-9A-F]{24}$")
     artifact_type: str
@@ -402,6 +425,74 @@ class ContentValidationFinding(FrozenStrictModel):
     message: str = Field(min_length=1, max_length=500)
 
 
+class CodeAdherenceFinding(FrozenStrictModel):
+    code: str = Field(pattern=r"^[A-Z][A-Z0-9_]{2,100}$")
+    severity: AdherenceFindingSeverity
+    description: str = Field(min_length=1, max_length=500)
+    expected_behavior: str = Field(min_length=1, max_length=500)
+    observed_behavior: str = Field(min_length=1, max_length=500)
+    line: int | None = Field(default=None, ge=1)
+    column: int | None = Field(default=None, ge=1)
+    evidence_refs: tuple[str, ...] = ()
+
+    @field_validator("evidence_refs")
+    @classmethod
+    def evidence_refs_are_unique(cls, values: tuple[str, ...]):
+        if len(values) != len(set(values)):
+            raise ValueError("adherence evidence references must be unique")
+        return values
+
+
+class CodeAdherenceCheck(FrozenStrictModel):
+    name: str = Field(pattern=r"^[A-Z][A-Z0-9_]{2,100}$")
+    status: AdherenceCheckStatus
+    detail: str = Field(min_length=1, max_length=500)
+
+
+class CodeAdherenceReport(FrozenStrictModel):
+    candidate_file_id: str = Field(pattern=r"^GPF-[0-9a-f]{32}$")
+    generation_plan_id: str = Field(pattern=r"^GPL-[0-9a-f]{32}$")
+    plan_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    validation_policy_version: str = Field(
+        pattern=r"^[A-Z0-9][A-Z0-9._-]{2,50}$"
+    )
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    approved_context_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: CodeAdherenceStatus
+    findings: tuple[CodeAdherenceFinding, ...]
+    checks: tuple[CodeAdherenceCheck, ...]
+    writer_eligible: bool
+    report_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def status_and_eligibility_are_consistent(self):
+        severities = {item.severity for item in self.findings}
+        if self.status is CodeAdherenceStatus.BLOCKED:
+            if AdherenceFindingSeverity.BLOCKING not in severities:
+                raise ValueError("blocked adherence requires a blocking finding")
+        elif self.status is CodeAdherenceStatus.REVIEW_REQUIRED:
+            if AdherenceFindingSeverity.BLOCKING in severities or (
+                AdherenceFindingSeverity.REVIEW_REQUIRED not in severities
+            ):
+                raise ValueError("review status requires only non-blocking review findings")
+        elif self.status is CodeAdherenceStatus.PASS:
+            if severities & {
+                AdherenceFindingSeverity.BLOCKING,
+                AdherenceFindingSeverity.REVIEW_REQUIRED,
+            }:
+                raise ValueError("passing adherence cannot require review or blocking")
+        if self.writer_eligible != (self.status is CodeAdherenceStatus.PASS):
+            raise ValueError("writer eligibility must match passing adherence")
+        if len({item.name for item in self.checks}) != len(self.checks):
+            raise ValueError("adherence checks must be unique")
+        fingerprint_payload = self.model_dump(
+            mode="json", exclude={"report_fingerprint"}
+        )
+        if stable_json_sha256(fingerprint_payload) != self.report_fingerprint:
+            raise ValueError("adherence report fingerprint is inconsistent")
+        return self
+
+
 class GeneratedContentCandidate(FrozenStrictModel):
     agent_project_id: str
     run_id: str
@@ -443,6 +534,8 @@ class GeneratedContentCandidate(FrozenStrictModel):
     prompt_token_count: int | None = Field(default=None, ge=0)
     generated_token_count: int | None = Field(default=None, ge=0)
     safe_failure_code: CodeGenerationErrorCode | None = None
+    adherence_report: CodeAdherenceReport | None = None
+    writer_eligible: bool = False
 
     @field_validator("relevant_specification_item_ids")
     @classmethod
@@ -474,5 +567,25 @@ class GeneratedContentCandidate(FrozenStrictModel):
                 raise ValueError("validated candidates cannot contain failure state")
         elif self.safe_failure_code is None or not self.missing_information:
             raise ValueError("missing-information candidates require safe findings")
+        if self.adherence_report is not None:
+            report = self.adherence_report
+            if (
+                report.candidate_file_id != self.planned_file_id
+                or report.generation_plan_id != self.generation_plan_id
+                or report.plan_fingerprint != self.plan_fingerprint
+                or report.content_sha256 != self.content_sha256
+                or report.approved_context_fingerprint
+                != self.source_snapshot_fingerprint
+            ):
+                raise ValueError("adherence report is not bound to this candidate")
+            if self.writer_eligible != report.writer_eligible:
+                raise ValueError("candidate writer eligibility is inconsistent")
+        elif self.writer_eligible:
+            raise ValueError("writer eligibility requires an adherence report")
+        if (
+            self.writer_eligible
+            and self.validation_status is not GeneratedCandidateStatus.VALIDATED
+        ):
+            raise ValueError("only structurally validated candidates can be writer eligible")
         return self
 

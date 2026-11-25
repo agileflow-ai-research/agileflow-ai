@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 
+from .adherence import CodeAdherenceValidator
 from .content_validator import GeneratedContentValidator
 from .context_builder import FileGenerationContextBuilder
 from .prompt_builder import LocalFileGenerationPromptBuilder
@@ -37,6 +38,7 @@ class LocalCodeGenerationService:
         self._content_validator = GeneratedContentValidator(
             max_content_chars=max_content_chars
         )
+        self._adherence_validator = CodeAdherenceValidator()
         self._max_retries = max_retries
 
     def generate_file(
@@ -93,7 +95,7 @@ class LocalCodeGenerationService:
         validation = self._content_validator.validate(
             file_context, provider_response.result
         )
-        return GeneratedContentCandidate(
+        candidate = GeneratedContentCandidate(
             agent_project_id=file_context.agent_project_id,
             run_id=file_context.run_id,
             generation_plan_id=file_context.generation_plan_id,
@@ -141,5 +143,13 @@ class LocalCodeGenerationService:
             prompt_token_count=metadata.prompt_token_count,
             generated_token_count=metadata.generated_token_count,
             safe_failure_code=validation.safe_failure_code,
+        )
+        adherence_report = self._adherence_validator.validate(file_context, candidate)
+        return GeneratedContentCandidate.model_validate(
+            {
+                **candidate.model_dump(mode="python"),
+                "adherence_report": adherence_report,
+                "writer_eligible": adherence_report.writer_eligible,
+            }
         )
 
