@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,6 +57,22 @@ class Settings(BaseSettings):
     agent3_semantic_model_revision: str = "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
     agent3_semantic_local_files_only: bool = False
     agent3_semantic_device: str = "auto"
+    agent3_code_gen_provider: str = "ollama"
+    agent3_code_gen_local_enabled: bool = False
+    agent3_ollama_base_url: str = "http://127.0.0.1:11434"
+    agent3_ollama_model: str = "qwen2.5-coder:3b"
+    agent3_ollama_expected_model_digest: str = ""
+    agent3_ollama_keep_alive: str = "0"
+    agent3_code_gen_timeout_seconds: float = Field(default=180.0, gt=0, le=600)
+    agent3_code_gen_max_output_tokens: int = Field(default=2048, ge=128, le=8192)
+    agent3_code_gen_context_tokens: int = Field(default=8192, ge=1024, le=32768)
+    agent3_code_gen_max_retries: int = Field(default=1, ge=0, le=1)
+    agent3_code_gen_max_response_bytes: int = Field(
+        default=262_144, ge=16_384, le=2_097_152
+    )
+    agent3_code_gen_max_content_chars: int = Field(
+        default=100_000, ge=1_024, le=1_000_000
+    )
     github_app_id: str | None = None
     github_app_client_id: str | None = None
     github_app_client_secret: str | None = None

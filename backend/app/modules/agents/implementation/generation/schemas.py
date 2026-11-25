@@ -1,5 +1,8 @@
 from datetime import datetime
 from enum import StrEnum
+import hashlib
+import re
+from typing import Any
 
 from pydantic import (
     BaseModel,
@@ -237,5 +240,239 @@ class GenerationValidationResult(FrozenStrictModel):
     def validity_matches_errors(self):
         if self.valid == bool(self.errors):
             raise ValueError("valid must be true exactly when errors is empty")
+        return self
+
+
+class CodeGenerationErrorCode(StrEnum):
+    LOCAL_INFERENCE_DISABLED = "LOCAL_INFERENCE_DISABLED"
+    INVALID_GENERATION_PLAN = "INVALID_GENERATION_PLAN"
+    OLLAMA_UNAVAILABLE = "OLLAMA_UNAVAILABLE"
+    MODEL_NOT_INSTALLED = "MODEL_NOT_INSTALLED"
+    MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"
+    MODEL_TIMEOUT = "MODEL_TIMEOUT"
+    INVALID_MODEL_RESPONSE = "INVALID_MODEL_RESPONSE"
+    INVALID_RESPONSE_SCHEMA = "INVALID_RESPONSE_SCHEMA"
+    EMPTY_GENERATION = "EMPTY_GENERATION"
+    CONTEXT_LIMIT_EXCEEDED = "CONTEXT_LIMIT_EXCEEDED"
+    MISSING_DEPENDENCY_CONTEXT = "MISSING_DEPENDENCY_CONTEXT"
+    MISSING_REQUIRED_INFORMATION = "MISSING_REQUIRED_INFORMATION"
+    UNSUPPORTED_CONTENT = "UNSUPPORTED_CONTENT"
+    UNSAFE_GENERATED_CONTENT = "UNSAFE_GENERATED_CONTENT"
+    GENERATION_INTERRUPTED = "GENERATION_INTERRUPTED"
+
+
+class FileContentType(StrEnum):
+    JAVASCRIPT = "JAVASCRIPT"
+    JSX = "JSX"
+    JSON = "JSON"
+    SQL = "SQL"
+    HTML = "HTML"
+    CSS = "CSS"
+    MARKDOWN = "MARKDOWN"
+    YAML = "YAML"
+    ENV = "ENV"
+    TEXT = "TEXT"
+
+
+class SyntaxValidationStatus(StrEnum):
+    VALID = "VALID"
+    INVALID = "INVALID"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class GeneratedCandidateStatus(StrEnum):
+    VALIDATED = "VALIDATED"
+    MISSING_INFORMATION = "MISSING_INFORMATION"
+
+
+class FileTrustedSpecificationItem(FrozenStrictModel):
+    project_item_id: str = Field(pattern=r"^PSI-[0-9A-F]{24}$")
+    artifact_type: str
+    identity_key: str
+    trusted_data_json: str = Field(min_length=2)
+    source_artifact_ids: tuple[str, ...] = ()
+
+
+class DependencyFingerprint(FrozenStrictModel):
+    planned_file_id: str = Field(pattern=r"^GPF-[0-9a-f]{32}$")
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class FileDependencyContext(FrozenStrictModel):
+    planned_file_id: str = Field(pattern=r"^GPF-[0-9a-f]{32}$")
+    relative_output_path: RelativeOutputPath
+    responsibility: str = Field(min_length=1, max_length=500)
+    validated_content: str = Field(min_length=1)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class FileGenerationContext(FrozenStrictModel):
+    agent_project_id: str
+    run_id: str
+    generation_plan_id: str = Field(pattern=r"^GPL-[0-9a-f]{32}$")
+    plan_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_snapshot_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    planned_file_id: str = Field(pattern=r"^GPF-[0-9a-f]{32}$")
+    relative_output_path: RelativeOutputPath
+    responsibility: str = Field(min_length=1, max_length=500)
+    content_type: FileContentType
+    authorized_output_codes: tuple[ImplementationOutputCode, ...] = Field(
+        min_length=1
+    )
+    effective_stack: ApprovedImplementationStack
+    trusted_specification_items: tuple[FileTrustedSpecificationItem, ...] = ()
+    dependencies: tuple[FileDependencyContext, ...] = ()
+    missing_information_constraints: tuple[str, ...] = Field(min_length=1)
+    traceability_root_refs: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def context_collections_are_unique(self):
+        collections = (
+            self.authorized_output_codes,
+            tuple(item.project_item_id for item in self.trusted_specification_items),
+            tuple(item.planned_file_id for item in self.dependencies),
+        )
+        if any(len(values) != len(set(values)) for values in collections):
+            raise ValueError("generation context collections must be unique")
+        return self
+
+
+class ModelFileResponse(FrozenStrictModel):
+    content: str
+    missing_information: tuple[str, ...] = ()
+    bounded_assumptions: tuple[str, ...] = ()
+    diagnostics: tuple[str, ...] = ()
+
+    @field_validator(
+        "missing_information", "bounded_assumptions", "diagnostics"
+    )
+    @classmethod
+    def bounded_diagnostic_lists(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(values) > 20 or any(
+            not isinstance(value, str)
+            or not value.strip()
+            or len(value) > 500
+            for value in values
+        ):
+            raise ValueError("model diagnostics exceed the bounded contract")
+        return values
+
+
+class ProviderGenerationRequest(FrozenStrictModel):
+    system_prompt: str = Field(min_length=1)
+    user_prompt: str = Field(min_length=1)
+    response_schema: dict[str, Any]
+    prompt_template_version: str
+    generation_policy_version: str
+    context_tokens: int = Field(ge=1024)
+    max_output_tokens: int = Field(ge=1)
+    correction_retry: bool = False
+
+
+class OllamaRuntimeMetadata(FrozenStrictModel):
+    provider_type: str = "ollama"
+    requested_model: str
+    resolved_model: str
+    model_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    model_source: str | None = None
+    model_license: str | None = None
+    quantization_level: str | None = None
+    parameter_size: str | None = None
+    ollama_version: str | None = None
+    done: bool
+    done_reason: str | None = None
+    prompt_token_count: int | None = Field(default=None, ge=0)
+    generated_token_count: int | None = Field(default=None, ge=0)
+    load_duration_ms: float | None = Field(default=None, ge=0)
+    generation_duration_ms: float | None = Field(default=None, ge=0)
+    total_duration_ms: float | None = Field(default=None, ge=0)
+    context_tokens: int = Field(ge=1024)
+    max_output_tokens: int = Field(ge=1)
+    temperature: float
+    keep_alive: str
+
+
+class ProviderGenerationResponse(FrozenStrictModel):
+    result: ModelFileResponse
+    metadata: OllamaRuntimeMetadata
+
+
+class ContentValidationFinding(FrozenStrictModel):
+    code: str = Field(pattern=r"^[A-Z][A-Z0-9_]{2,100}$")
+    message: str = Field(min_length=1, max_length=500)
+
+
+class GeneratedContentCandidate(FrozenStrictModel):
+    agent_project_id: str
+    run_id: str
+    generation_plan_id: str = Field(pattern=r"^GPL-[0-9a-f]{32}$")
+    plan_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_snapshot_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    planned_file_id: str = Field(pattern=r"^GPF-[0-9a-f]{32}$")
+    relative_output_path: RelativeOutputPath
+    authorized_output_codes: tuple[ImplementationOutputCode, ...] = Field(
+        min_length=1
+    )
+    relevant_specification_item_ids: tuple[str, ...] = ()
+    dependency_fingerprints: tuple[DependencyFingerprint, ...] = ()
+    provider_type: str
+    requested_model: str
+    resolved_model: str
+    model_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    model_source: str | None = None
+    model_license: str | None = None
+    quantization_level: str | None = None
+    parameter_size: str | None = None
+    ollama_version: str | None = None
+    prompt_template_version: str
+    generation_policy_version: str
+    context_tokens: int = Field(ge=1024)
+    max_output_tokens: int = Field(ge=1)
+    temperature: float
+    keep_alive: str
+    generated_content: str | None = None
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    validation_status: GeneratedCandidateStatus
+    syntax_validation_status: SyntaxValidationStatus
+    validation_findings: tuple[ContentValidationFinding, ...] = ()
+    missing_information: tuple[str, ...] = ()
+    bounded_assumptions: tuple[str, ...] = ()
+    diagnostics: tuple[str, ...] = ()
+    attempts: int = Field(ge=1, le=2)
+    inference_duration_ms: float | None = Field(default=None, ge=0)
+    prompt_token_count: int | None = Field(default=None, ge=0)
+    generated_token_count: int | None = Field(default=None, ge=0)
+    safe_failure_code: CodeGenerationErrorCode | None = None
+
+    @field_validator("relevant_specification_item_ids")
+    @classmethod
+    def candidate_references_are_valid(cls, values: tuple[str, ...]):
+        if len(values) != len(set(values)) or any(
+            re.fullmatch(r"PSI-[0-9A-F]{24}", value) is None for value in values
+        ):
+            raise ValueError("candidate specification references are invalid")
+        return values
+
+    @model_validator(mode="after")
+    def successful_candidate_has_content_and_hash(self):
+        if len(self.authorized_output_codes) != len(set(self.authorized_output_codes)):
+            raise ValueError("candidate outputs must be unique")
+        dependency_ids = tuple(
+            item.planned_file_id for item in self.dependency_fingerprints
+        )
+        if len(dependency_ids) != len(set(dependency_ids)):
+            raise ValueError("candidate dependencies must be unique")
+        if self.validation_status is GeneratedCandidateStatus.VALIDATED:
+            if not self.generated_content or not self.content_sha256:
+                raise ValueError("validated candidates require content and a hash")
+            if (
+                hashlib.sha256(self.generated_content.encode("utf-8")).hexdigest()
+                != self.content_sha256
+            ):
+                raise ValueError("candidate content hash is inconsistent")
+            if self.safe_failure_code is not None or self.missing_information:
+                raise ValueError("validated candidates cannot contain failure state")
+        elif self.safe_failure_code is None or not self.missing_information:
+            raise ValueError("missing-information candidates require safe findings")
         return self
 
